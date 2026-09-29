@@ -2,10 +2,21 @@
 #import "libtitanox.h"
 #include "offsets.h"
 
-#define TLOG(fmt, ...) do { \
-    NSString *_s = [NSString stringWithFormat:fmt, ##__VA_ARGS__]; \
-    NSLog(@"[Titanox] %@", _s); \
-} while(0)
+static void TLOG(NSString *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    NSString *msg = [[NSString alloc] initWithFormat:fmt arguments:args];
+    va_end(args);
+
+    NSString *path = [NSString stringWithFormat:@"%@/Documents/titanox-debug.log", NSHomeDirectory()];
+    NSString *line = [NSString stringWithFormat:@"[%@] %@\n", [NSDate date], msg];
+
+    FILE *f = fopen([path UTF8String], "a");
+    if (f) {
+        fputs([line UTF8String], f);
+        fclose(f);
+    }
+}
 
 static bool hook_getBool(void* self) {
     TLOG(@"getBool called self=0x%llx", (unsigned long long)(uintptr_t)self);

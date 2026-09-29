@@ -28,6 +28,29 @@ jobs:
         if: steps.cache-theos.outputs.cache-hit != 'true'
         uses: Randomblock1/theos-action@v1
 
+      - name: Cache ldid
+        id: cache-ldid
+        uses: actions/cache@v4
+        with:
+          path: ldid-bin
+          key: ldid-macos-v1
+
+      - name: Build ldid
+        if: steps.cache-ldid.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ldid-bin
+          brew install pkg-config libplist openssl@3
+          OPENSSL_PREFIX=$(brew --prefix openssl@3)
+          LIBPLIST_PREFIX=$(brew --prefix libplist)
+          export PKG_CONFIG_PATH="$OPENSSL_PREFIX/lib/pkgconfig:$LIBPLIST_PREFIX/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+          export LDFLAGS="-L$OPENSSL_PREFIX/lib -L$LIBPLIST_PREFIX/lib"
+          export CPPFLAGS="-I$OPENSSL_PREFIX/include -I$LIBPLIST_PREFIX/include"
+          git clone --depth 1 https://github.com/ProcursusTeam/ldid.git ldid-src
+          cd ldid-src
+          make CXXFLAGS="-O2 -pipe" -j"$(sysctl -n hw.ncpu)"
+          cp ldid ../ldid-bin/ldid
+          chmod +x ../ldid-bin/ldid
+
       - name: Cache Titanox
         id: cache-titanox
         uses: actions/cache@v4
@@ -125,16 +148,11 @@ jobs:
           make clean || true
           make
 
-      - name: Install ldid
-        uses: MOZGIII/install-ldid-action@v1
-        with:
-          ldid-version: v2.1.5-procursus7
-
       - name: Sign and copy dylib
         run: |
           DYLIB=$(find .theos/obj -name "Titanox.dylib" | head -n1)
           test -n "$DYLIB"
-          ldid -S "$DYLIB"
+          ./ldid-bin/ldid -S "$DYLIB"
           file "$DYLIB"
           cp "$DYLIB" ./Titanox.dylib
           ls -la Titanox.dylib

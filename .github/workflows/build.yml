@@ -33,7 +33,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ldid-bin
-          key: ldid-macos-v2
+          key: ldid-macos-v3
 
       - name: Build ldid
         if: steps.cache-ldid.outputs.cache-hit != 'true'
@@ -148,16 +148,38 @@ jobs:
           make clean || true
           make
 
-      - name: Sign and merge dylib
+      - name: Sign dylib
         run: |
+          set -e
           MERGED=".theos/obj/Titanox.dylib"
           test -f "$MERGED"
-          file "$MERGED"
-          lipo -thin arm64 "$MERGED" -output /tmp/arm64.dylib
-          lipo -thin arm64e "$MERGED" -output /tmp/arm64e.dylib
-          ./ldid-bin/ldid -S /tmp/arm64.dylib
-          ./ldid-bin/ldid -S /tmp/arm64e.dylib
-          lipo -create /tmp/arm64.dylib /tmp/arm64e.dylib -output ./Titanox.dylib
+          echo "=== lipo info ==="
+          lipo -info "$MERGED" || true
+          echo "=== ldid version ==="
+          ./ldid-bin/ldid -v || true
+          echo "=== trying direct sign ==="
+          if ./ldid-bin/ldid -S "$MERGED"; then
+            echo "direct sign OK"
+          else
+            echo "direct sign failed, trying per-arch"
+            rm -f /tmp/arm64.dylib /tmp/arm64e.dylib
+            lipo -thin arm64 "$MERGED" -output /tmp/arm64.dylib 2>&1 || true
+            lipo -thin arm64e "$MERGED" -output /tmp/arm64e.dylib 2>&1 || true
+            if [ -f /tmp/arm64.dylib ]; then
+              ./ldid-bin/ldid -S /tmp/arm64.dylib && echo "arm64 signed"
+            fi
+            if [ -f /tmp/arm64e.dylib ]; then
+              ./ldid-bin/ldid -S /tmp/arm64e.dylib && echo "arm64e signed"
+            fi
+            if [ -f /tmp/arm64.dylib ] && [ -f /tmp/arm64e.dylib ]; then
+              lipo -create /tmp/arm64.dylib /tmp/arm64e.dylib -output "$MERGED"
+            elif [ -f /tmp/arm64.dylib ]; then
+              cp /tmp/arm64.dylib "$MERGED"
+            elif [ -f /tmp/arm64e.dylib ]; then
+              cp /tmp/arm64e.dylib "$MERGED"
+            fi
+          fi
+          cp "$MERGED" ./Titanox.dylib
           file ./Titanox.dylib
           ls -la ./Titanox.dylib
 

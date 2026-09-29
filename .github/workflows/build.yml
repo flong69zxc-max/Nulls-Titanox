@@ -50,7 +50,18 @@ jobs:
           ' "$HOOK_C"
           fi
           sed -i '' 's/arm_thread_state64_set_pc_fptr(\*new, hooks\[i\].new);/arm_thread_state64_set_pc_fptr(*new, ptrauth_sign_unauthenticated((void *)hooks[i].new, ptrauth_key_function_pointer, 0));/g' "$HOOK_C"
-          grep -n "ptrauth\|arm_thread_state64_set_pc_fptr" "$HOOK_C"
+
+      - name: Create filter plist
+        run: |
+          mkdir -p layout/Library/MobileSubstrate/DynamicLibraries
+          cat > layout/Library/MobileSubstrate/DynamicLibraries/Titanox.plist <<'EOF'
+          {
+              Filter = {
+                  Bundles = ( "nt.nb.ios.app" );
+              };
+          }
+          EOF
+          cat layout/Library/MobileSubstrate/DynamicLibraries/Titanox.plist
 
       - name: Prepare files
         run: |
@@ -83,14 +94,6 @@ jobs:
           Author: nulls
           Section: Tweaks
           Depends: mobilesubstrate
-          EOF
-
-          cat > Info.plist <<'EOF'
-          {
-              Filter = {
-                  Bundles = ( "nt.nb.ios.app" );
-              };
-          }
           EOF
 
           cat > src/offsets.h <<'EOF'
@@ -137,7 +140,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Makefile control Info.plist src/
+          git add Makefile control layout/ src/
           git diff --cached --quiet || git commit -m "auto: sync source files"
           git push
 

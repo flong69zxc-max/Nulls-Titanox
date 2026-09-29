@@ -19,125 +19,119 @@ jobs:
         uses: actions/cache@v4
         with:
           path: theos
-          key: ${{ runner.os }}-theos-v1
+          key: theos-v1
 
-      - name: Setup Theos
+      - name: Install Theos
         if: steps.cache-theos.outputs.cache-hit != 'true'
         uses: Randomblock1/theos-action@v1
 
+      - name: Cache Titanox
+        id: cache-titanox
+        uses: actions/cache@v4
+        with:
+          path: deps/Titanox
+          key: titanox-v1
+
       - name: Clone Titanox
+        if: steps.cache-titanox.outputs.cache-hit != 'true'
         run: |
-          rm -rf deps
           mkdir -p deps
           git clone --depth 1 https://github.com/Ragekill3377/Titanox.git deps/Titanox
 
-      - name: Build Titanox
-        run: |
-          cd deps/Titanox
-          make -j$(sysctl -n hw.ncpu)
-
-      - name: Create files
+      - name: Prepare files
         run: |
           mkdir -p src
           if [ ! -f Makefile ]; then
-            cat > Makefile <<'EOF'
-TARGET = iphone:clang:latest:14.0
-ARCHS = arm64 arm64e
-INSTALL_TARGET_PROCESSES = Nulls Brawl
+          cat > Makefile <<'EOF'
+          TARGET = iphone:clang:latest:14.0
+          ARCHS = arm64 arm64e
+          INSTALL_TARGET_PROCESSES = Nulls Brawl
 
-include $(THEOS)/makefiles/common.mk
+          include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = Titanox
-Titanox_FILES = src/Tweak.mm
-Titanox_CFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)/deps/Titanox
-Titanox_LDFLAGS = -L$(THEOS)/lib -ltitanox -Wl,-rpath,@executable_path
+          TWEAK_NAME = Titanox
+          Titanox_FILES = src/Tweak.mm $(wildcard $(THEOS_PROJECT_DIR)/deps/Titanox/*.mm $(THEOS_PROJECT_DIR)/deps/Titanox/*.m $(THEOS_PROJECT_DIR)/deps/Titanox/*.xm)
+          Titanox_CFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)/deps/Titanox -I$(THEOS_PROJECT_DIR)/deps/Titanox/include
+          Titanox_FRAMEWORKS = Foundation UIKit
 
-include $(THEOS_MAKE_PATH)/tweak.mk
-EOF
+          include $(THEOS_MAKE_PATH)/tweak.mk
+          EOF
           fi
           if [ ! -f control ]; then
-            cat > control <<'EOF'
-Package: com.nulls.titanox
-Name: Titanox
-Version: 1.0.0
-Architecture: iphoneos-arm64
-Description: Runtime hooks for Nulls Brawl
-Maintainer: nulls
-Author: nulls
-Section: Tweaks
-Depends: mobilesubstrate
-EOF
+          cat > control <<'EOF'
+          Package: com.nulls.titanox
+          Name: Titanox
+          Version: 1.0.0
+          Architecture: iphoneos-arm64
+          Description: Runtime hooks for Nulls Brawl
+          Maintainer: nulls
+          Author: nulls
+          Section: Tweaks
+          Depends: mobilesubstrate
+          EOF
           fi
           if [ ! -f Info.plist ]; then
-            cat > Info.plist <<'EOF'
-{
-    Filter = {
-        Bundles = ( "nt.nb.ios.app" );
-    };
-}
-EOF
+          cat > Info.plist <<'EOF'
+          {
+              Filter = {
+                  Bundles = ( "nt.nb.ios.app" );
+              };
+          }
+          EOF
           fi
           if [ ! -f src/offsets.h ]; then
-            cat > src/offsets.h <<'EOF'
-#ifndef OFFSETS_H
-#define OFFSETS_H
+          cat > src/offsets.h <<'EOF'
+          #ifndef OFFSETS_H
+          #define OFFSETS_H
 
-#define RVA_GETBOOL      0xb24820
-#define RVA_ISDEV        0xd93d80
-#define RVA_ISDEVBUILD   0xd93da0
-#define RVA_DBGMENU_A    0x9b5afc
-#define RVA_DBGMENU_B    0xbd736c
+          #define RVA_GETBOOL      0xb24820
+          #define RVA_ISDEV        0xd93d80
+          #define RVA_ISDEVBUILD   0xd93da0
+          #define RVA_DBGMENU_A    0x9b5afc
+          #define RVA_DBGMENU_B    0xbd736c
 
-#endif
-EOF
+          #endif
+          EOF
           fi
           if [ ! -f src/Tweak.mm ]; then
-            cat > src/Tweak.mm <<'EOF'
-#import <Foundation/Foundation.h>
-#import "Titanox.h"
-#include "offsets.h"
+          cat > src/Tweak.mm <<'EOF'
+          #import <Foundation/Foundation.h>
+          #import "Titanox.h"
+          #include "offsets.h"
 
-static bool (*orig_getBool)(void*);
-static bool (*orig_isDev)(void*);
-static bool (*orig_isDevBuild)(void*);
+          static bool (*orig_getBool)(void*);
+          static bool (*orig_isDev)(void*);
+          static bool (*orig_isDevBuild)(void*);
 
-static bool hook_getBool(void* self) {
-    return true;
-}
+          static bool hook_getBool(void* self) { return true; }
+          static bool hook_isDev(void* self) { return true; }
+          static bool hook_isDevBuild(void* self) { return true; }
 
-static bool hook_isDev(void* self) {
-    return true;
-}
-
-static bool hook_isDevBuild(void* self) {
-    return true;
-}
-
-__attribute__((constructor))
-static void init() {
-    @autoreleasepool {
-        StaticInlineHook *hooker = [[StaticInlineHook alloc] initWithMachOName:@"Nulls Brawl"];
-        if (!hooker) return;
-        uintptr_t base = [hooker getBaseAddress];
-        if (!base) return;
-        orig_getBool = (bool (*)(void*))[hooker hookFunctionAtVaddr:base + RVA_GETBOOL withReplacement:(void*)hook_getBool];
-        orig_isDev = (bool (*)(void*))[hooker hookFunctionAtVaddr:base + RVA_ISDEV withReplacement:(void*)hook_isDev];
-        orig_isDevBuild = (bool (*)(void*))[hooker hookFunctionAtVaddr:base + RVA_ISDEVBUILD withReplacement:(void*)hook_isDevBuild];
-        NSLog(@"[Titanox] hooks installed base=%p", (void*)base);
-    }
-}
-EOF
+          __attribute__((constructor))
+          static void init() {
+              @autoreleasepool {
+                  StaticInlineHook *hooker = [[StaticInlineHook alloc] initWithMachOName:@"Nulls Brawl"];
+                  if (!hooker) return;
+                  uintptr_t base = [hooker getBaseAddress];
+                  if (!base) return;
+                  orig_getBool = (bool (*)(void*))[hooker hookFunctionAtVaddr:base + RVA_GETBOOL withReplacement:(void*)hook_getBool];
+                  orig_isDev = (bool (*)(void*))[hooker hookFunctionAtVaddr:base + RVA_ISDEV withReplacement:(void*)hook_isDev];
+                  orig_isDevBuild = (bool (*)(void*))[hooker hookFunctionAtVaddr:base + RVA_ISDEVBUILD withReplacement:(void*)hook_isDevBuild];
+                  NSLog(@"[Titanox] hooks installed base=%p", (void*)base);
+              }
+          }
+          EOF
           fi
 
       - name: Commit files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Makefile control Info.plist src/offsets.h src/Tweak.mm
-          git diff --cached --quiet || git commit -m "auto: add tweak source files"
+          git add Makefile control Info.plist src/
+          git diff --cached --quiet || git commit -m "auto: add source files"
           git push
 
-      - name: Build Tweak
+      - name: Build
         run: |
           make clean || true
           make package

@@ -1,0 +1,9 @@
+Package: com.nulls.titanox
+Name: Titanox
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: Runtime hooks for Nulls Brawl
+Maintainer: nulls
+Author: nulls
+Section: Tweaks
+Depends: mobilesubstrate

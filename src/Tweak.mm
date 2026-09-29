@@ -429,35 +429,41 @@ static int ofx_parse_macho(void)
            (unsigned long long)g.cstr_size, (unsigned long long)g.clsn_size,
            (unsigned long long)g.meth_size, (unsigned long long)g.const_size,
            (unsigned long long)g.data_size);
-    return (g.text_vm && (g.cstr_vm || g.clsn_vm || g.meth_vm));
+    return (g.text_vm && (g.cstr_vm || g.clsn_vm || g.meth_vm || g.const_vm || g.data_vm));
 }
 
-static uint64_t ofx_find_any_in(uint64_t vm, uint64_t size, const char *s)
+static uint64_t ofx_find_substr_in(uint64_t vm, uint64_t size, const char *s, int *count)
 {
     if (!vm || !size) return 0;
     size_t want = strlen(s);
     if (!want || want > 200) return 0;
     const uint8_t *p = (const uint8_t *)ofx_mem(vm);
     const uint8_t *end = p + size;
+    uint64_t first = 0;
     while (p + want < end) {
         if (!memcmp(p, s, want)) {
-            int left_ok = (p == (const uint8_t *)ofx_mem(vm)) || (p[-1] == 0 || p[-1] == '_' || p[-1] == ':');
-            int right_ok = (p[want] == 0 || p[want] == ':' || p[want] == '_');
-            if (left_ok && right_ok) return vm + (uint64_t)(p - (const uint8_t *)ofx_mem(vm));
+            if (count) (*count)++;
+            if (!first) first = vm + (uint64_t)(p - (const uint8_t *)ofx_mem(vm));
         }
         p++;
     }
-    return 0;
+    return first;
 }
 
-static uint64_t ofx_find_any(const char *s)
+static uint64_t ofx_find_any(const char *s, int *total_count)
 {
-    uint64_t r = ofx_find_any_in(g.cstr_vm, g.cstr_size, s);
-    if (r) return r;
-    r = ofx_find_any_in(g.clsn_vm, g.clsn_size, s);
-    if (r) return r;
-    r = ofx_find_any_in(g.meth_vm, g.meth_size, s);
-    return r;
+    int c = 0;
+    uint64_t first = 0;
+    uint64_t r = ofx_find_substr_in(g.cstr_vm, g.cstr_size, s, &c);
+    if (r && !first) first = r;
+    r = ofx_find_substr_in(g.const_vm, g.const_size, s, &c);
+    if (r && !first) first = r;
+    r = ofx_find_substr_in(g.data_vm, g.data_size, s, &c);
+    if (r && !first) first = r;
+    r = ofx_find_substr_in(g.meth_vm, g.meth_size, s, &c);
+    if (r && !first) first = r;
+    if (total_count) *total_count = c;
+    return first;
 }
 
 static uint64_t ofx_typeinfo_for_name(uint64_t str_vm)
@@ -480,8 +486,10 @@ static void ofx_vtable_scan(int ti)
 {
     const OfxTarget *t = &g_targets[ti];
     if (!t->cls[0]) return;
-    uint64_t sv = ofx_find_any(t->cls);
+    int cnt = 0;
+    uint64_t sv = ofx_find_any(t->cls, &cnt);
     if (!sv) { plog("Titanox[ofx][vt]: no string '%s'", t->cls); return; }
+    plog("Titanox[ofx][vt]: '%s' found %d times, first at 0x%llx", t->cls, cnt, (unsigned long long)(sv - g.vmbase));
     uint64_t tiname = ofx_typeinfo_for_name(sv);
     if (!tiname) { plog("Titanox[ofx][vt]: no typeinfo for '%s'", t->cls); return; }
     uint64_t vt_ptr = 0;
@@ -656,12 +664,24 @@ static FILE *ofx_open_out(const char *name)
 static void ofx_dump(void)
 {
     if (g_nresolved == 0) {
-        plog("Titanox[ofx]: 0 оффсетов, файлы не создаются.");
-        plog("Titanox[ofx]: причины:");
-        plog("  - cstring найден: %d", g.cstr_size ? 1 : 0);
-        plog("  - objc_classname найден: %d", g.clsn_size ? 1 : 0);
-        plog("  - objc_methname найден: %d", g.meth_size ? 1 : 0);
-        plog("  - typeinfo найдено: %d", g_vtable[0] ? 1 : 0);
+        plog("Titanox[ofx]: 0 оффсетов, создаю диагностический файл.");
+        FILE *d = ofx_open_out("titanox_diagnostic.txt");
+        if (d) {
+            fprintf(d, "cstring_vm=0x%llx size=%llu\n", (unsigned long long)g.cstr_vm, (unsigned long long)g.cstr_size);
+            fprintf(d, "const_vm=0x%llx size=%llu\n", (unsigned long long)g.const_vm, (unsigned long long)g.const_size);
+            fprintf(d, "data_vm=0x%llx size=%llu\n", (unsigned long long)g.data_vm, (unsigned long long)g.data_size);
+            fprintf(d, "clsn_vm=0x%llx size=%llu\n", (unsigned long long)g.clsn_vm, (unsigned long long)g.clsn_size);
+            fprintf(d, "meth_vm=0x%llx size=%llu\n", (unsigned long long)g.meth_vm, (unsigned long long)g.meth_size);
+            for (int i = 0; i < g.ntargets; i++) {
+                if (!g_targets[i].cls[0]) continue;
+                int cnt = 0;
+                uint64_t sv = ofx_find_any(g_targets[i].cls, &cnt);
+                fprintf(d, "%s : %s : found=%d : first=0x%llx\n",
+                        g_targets[i].name, g_targets[i].cls, cnt,
+                        (unsigned long long)(sv ? sv - g.vmbase : 0));
+            }
+            fclose(d);
+        }
         return;
     }
     FILE *h = ofx_open_out("titanox_offsets.h");
@@ -732,8 +752,8 @@ static void ofx_once_body(void)
     ofx_summary();
 }
 
-static void OfxInit(uint64_t base)
-{
+static void Of_setxInit(uint64_t base)
+String{
     g_init_base = base;
     pthread_once(&g_once, ofx_once_body);
 }
@@ -743,21 +763,21 @@ static void OfxDumpReport(void) { if (g.inited) ofx_dump(); }
 static void logcap(int *c, const char *fmt, ...)
 {
     (*c)++;
-    if (*c > OFX_LOG_LIMIT) return;
-    char buf[192];
+    if (*c > OFX_LOG_L(void *selfIMIT) return;
+    char buf[192)];
     va_list ap;
-    va_start(ap, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, ap);
-    va_end(ap);
-    plog("Titanox: %s", buf);
-}
+    va_start(ap, { fmt);
+    vsnprintf(buf, sizeof(buf), static fmt, ap);
+    int va_end(ap);
+    plog("Titan nox: %s", buf);
+;}
 
-static bool hook_getBool(void *self, const char *key)
+static bool hook_getBool(void * logself, const char *keycap)
 {
     static int n;
-    if (key && strlen(key) < 128) {
-        logcap(&n, "getBool(%s)", key);
-        if (strstr(key, "isDev") || strstr(key, "isDeveloper") ||
+    if (key(& && strlen(key) < 128n) {
+        logcap(&n, ",getBool(%s)", key);
+        if (strstr(key, " "isDev") || strstr(key,Anal "isDeveloper") ||
             strstr(key, "Disable") || strstr(key, "debug") ||
             strstr(key, "Debug") || strstr(key, "cheat"))
             return true;
@@ -778,7 +798,7 @@ static void hook_Screen_getDpiClass(void *self) { static int n; logcap(&n, "Scre
 static void hook_GlobalID_getInstanceID(void *self) { static int n; logcap(&n, "GlobalID_getInstanceID"); }
 static void hook_Projectile_ctor(void *self) { static int n; logcap(&n, "Projectile_ctor"); }
 static void hook_AnalyticEvent_ctor(void *self) { static int n; logcap(&n, "AnalyticEvent_ctor"); }
-static void hook_AnalyticEvent_setString(void *self) { static int n; logcap(&n, "AnalyticEvent_setString"); }
+static void hook_AnalyticEventyticEvent_setString"); }
 static void hook_String_ctor(void *self) { static int n; logcap(&n, "String_ctor"); }
 
 typedef struct {

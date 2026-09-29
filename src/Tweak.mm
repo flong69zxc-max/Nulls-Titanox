@@ -985,7 +985,33 @@ static int ofx_bad_symbol(const char *n)
     return 0;
 }
 
-extern char *__cxa_demangle(const char *, char *, size_t *, int *) __attribute__((weak_import));
+static int ofx_itanium_pair(const char *m, const char **cls, size_t *cl, const char **method, size_t *ml)
+{
+    if (!m || m[0] != '_' || m[1] != 'Z' || m[2] != 'N') return 0;
+    const char *seen[16];
+    size_t seenl[16];
+    int n = 0;
+    size_t i = 3;
+    while (n < 16 && m[i] >= '0' && m[i] <= '9') {
+        size_t len = 0;
+        while (m[i] >= '0' && m[i] <= '9') { len = len * 10 + (size_t)(m[i] - '0'); i++; }
+        if (!len) break;
+        seen[n] = m + i;
+        seenl[n] = len;
+        n++;
+        i += len;
+    }
+    if (n == 0) return 0;
+    if (n == 1) {
+        if (m[i] != 'C' && m[i] != 'D') return 0;
+        *cls = seen[0]; *cl = seenl[0];
+        *method = seen[0]; *ml = seenl[0];
+        return 1;
+    }
+    *cls = seen[n - 2]; *cl = seenl[n - 2];
+    *method = seen[n - 1]; *ml = seenl[n - 1];
+    return 1;
+}
 
 static void ofx_symtab_funcs(void)
 {
@@ -1001,28 +1027,31 @@ static void ofx_symtab_funcs(void)
 
         if (!strncmp(nm, "_Z", 2)) {
             mangled++;
-            if (__cxa_demangle) {
-                int st = 0;
-                char *dm = __cxa_demangle(nm, 0, 0, &st);
-                if (dm) {
-                    OfxPair pr = ofx_parse_leading_pair(dm, strlen(dm));
-                    if (pr.ok) {
-                        char key[96];
-                        size_t kl = pr.cls_len + 2 + pr.method_len;
-                        if (kl < sizeof(key)) {
-                            memcpy(key, pr.cls, pr.cls_len); key[pr.cls_len] = ':'; key[pr.cls_len + 1] = ':';
-                            memcpy(key + pr.cls_len + 2, pr.method, pr.method_len); key[kl] = 0;
-                            int idx = ofx_hfind(g_pairhash, OFX_PAIRHASH_SZ, key, kl, 0);
-                            if (idx >= 0 && g_res[idx].src == OFX_S_NONE) {
-                                g_res[idx].rva = ofx_rva(nl[i].n_value);
-                                g_res[idx].src = OFX_S_SYMTAB;
-                                g_res[idx].conf = OFX_C_HIGH;
-                                snprintf(g_res[idx].ev, sizeof(g_res[idx].ev), "demangled %s", key);
-                                found++;
-                            }
-                        }
+            OfxPair mp;
+            const char *mc = 0, *mm = 0;
+            size_t mcl = 0, mml = 0;
+            if (ofx_itanium_pair(nm, &mc, &mcl, &mm, &mml)) {
+                mp.cls = mc; mp.cls_len = mcl; mp.method = mm; mp.method_len = mml;
+            } else {
+                mp = ofx_parse_leading_pair(nm, strlen(nm));
+            }
+            if (mp.cls && mp.cls_len && mp.method && mp.method_len) {
+                char key[96];
+                size_t kl = mp.cls_len + 2 + mp.method_len;
+                if (kl < sizeof(key)) {
+                    memcpy(key, mp.cls, mp.cls_len);
+                    key[mp.cls_len] = ':';
+                    key[mp.cls_len + 1] = ':';
+                    memcpy(key + mp.cls_len + 2, mp.method, mp.method_len);
+                    key[kl] = 0;
+                    int idx = ofx_hfind(g_pairhash, OFX_PAIRHASH_SZ, key, kl, 0);
+                    if (idx >= 0 && g_res[idx].src == OFX_S_NONE) {
+                        g_res[idx].rva = ofx_rva(nl[i].n_value);
+                        g_res[idx].src = OFX_S_SYMTAB;
+                        g_res[idx].conf = OFX_C_HIGH;
+                        snprintf(g_res[idx].ev, sizeof(g_res[idx].ev), "mangled %s", key);
+                        found++;
                     }
-                    free(dm);
                 }
             }
             continue;

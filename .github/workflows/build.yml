@@ -28,29 +28,6 @@ jobs:
         if: steps.cache-theos.outputs.cache-hit != 'true'
         uses: Randomblock1/theos-action@v1
 
-      - name: Cache ldid
-        id: cache-ldid
-        uses: actions/cache@v4
-        with:
-          path: ldid-bin
-          key: ldid-macos-v4
-
-      - name: Build ldid
-        if: steps.cache-ldid.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p ldid-bin
-          brew install pkg-config libplist openssl@3
-          OPENSSL_PREFIX=$(brew --prefix openssl@3)
-          LIBPLIST_PREFIX=$(brew --prefix libplist)
-          export PKG_CONFIG_PATH="$OPENSSL_PREFIX/lib/pkgconfig:$LIBPLIST_PREFIX/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
-          export LDFLAGS="-L$OPENSSL_PREFIX/lib -L$LIBPLIST_PREFIX/lib"
-          export CPPFLAGS="-I$OPENSSL_PREFIX/include -I$LIBPLIST_PREFIX/include"
-          git clone --depth 1 https://github.com/ProcursusTeam/ldid.git ldid-src
-          cd ldid-src
-          make CXXFLAGS="-O2 -pipe" -j"$(sysctl -n hw.ncpu)"
-          cp ldid ../ldid-bin/ldid
-          chmod +x ../ldid-bin/ldid
-
       - name: Cache Titanox
         id: cache-titanox
         uses: actions/cache@v4
@@ -148,25 +125,11 @@ jobs:
           make clean || true
           make
 
-      - name: Sign dylib
+      - name: Copy dylib
         run: |
-          set -e
-          MERGED=".theos/obj/Titanox.dylib"
-          test -f "$MERGED"
-          echo "=== lipo info ==="
-          lipo -info "$MERGED" || true
-          echo "=== ldid version ==="
-          ./ldid-bin/ldid -v || true
-          echo "=== extracting arm64 ==="
-          lipo -thin arm64 "$MERGED" -output /tmp/arm64.dylib
-          echo "=== extracting arm64e ==="
-          lipo -thin arm64e "$MERGED" -output /tmp/arm64e.dylib
-          echo "=== signing arm64 ==="
-          ./ldid-bin/ldid -S -M /tmp/arm64.dylib && echo "arm64 OK"
-          echo "=== signing arm64e ==="
-          ./ldid-bin/ldid -S -M /tmp/arm64e.dylib && echo "arm64e OK"
-          echo "=== merging back ==="
-          lipo -create /tmp/arm64.dylib /tmp/arm64e.dylib -output ./Titanox.dylib
+          DYLIB=$(find .theos/obj -name "Titanox.dylib" | head -n1)
+          test -n "$DYLIB"
+          cp "$DYLIB" ./Titanox.dylib
           file ./Titanox.dylib
           ls -la ./Titanox.dylib
 

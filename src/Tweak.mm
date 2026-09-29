@@ -504,7 +504,7 @@ static inline int ofx_camel_match(const char *s, const char *w, int cs)
 #define OFX_HARVHASH_SZ  32768
 #define OFX_PAIRMAP_SZ   8192
 
-typedef struct { uint64_t vmaddr, vmsize, fileoff, initprot; int is_data_like; char name[20]; } OfxSeg;
+typedef struct { uint64_t vmaddr, vmsize, fileoff, filesize, initprot; int is_data_like; char name[20]; } OfxSeg;
 typedef struct { char sect[20], seg[20]; uint64_t vmaddr, size; } OfxSec;
 
 typedef struct {
@@ -546,6 +546,7 @@ static struct {
     uint64_t sym_addr; uint32_t nsyms; uint64_t str_addr; uint32_t strsize;
     uint64_t fs_addr, fs_size;
     uint64_t *fstarts; int nfstarts;
+    int      fs_fallback;
     int      ntargets;
 } g;
 
@@ -590,10 +591,13 @@ static const OfxTarget *ofx_target(int i) { return &g_targets[i]; }
 
 static uint64_t ofx_fileoff_to_vm(uint64_t fileoff)
 {
-    for (int i = 0; i < g.nsegs; i++) {
+    for (int i = 0; i < g.nsegs; i++)
+        if (g.segs[i].filesize && fileoff >= g.segs[i].fileoff &&
+            fileoff < g.segs[i].fileoff + g.segs[i].filesize)
+            return g.segs[i].vmaddr + (fileoff - g.segs[i].fileoff);
+    for (int i = 0; i < g.nsegs; i++)
         if (fileoff >= g.segs[i].fileoff && fileoff < g.segs[i].fileoff + g.segs[i].vmsize)
             return g.segs[i].vmaddr + (fileoff - g.segs[i].fileoff);
-    }
     return 0;
 }
 
@@ -605,6 +609,14 @@ static int ofx_parse_macho(void)
         return 0;
     }
     g.vmbase = 0;
+    g.slide = 0;
+    uint32_t nimg = _dyld_image_count();
+    for (uint32_t k = 0; k < nimg; k++) {
+        if ((uint64_t)(uintptr_t)_dyld_get_image_header(k) == g.base) {
+            g.slide = (uint64_t)(intptr_t)_dyld_get_image_vmaddr_slide(k);
+            break;
+        }
+    }
     const uint8_t *p = (const uint8_t *)mh + sizeof(struct mach_header_64);
     const uint8_t *lend = p + 0x10000;
     for (uint32_t i = 0; i < mh->ncmds; i++) {
@@ -614,15 +626,15 @@ static int ofx_parse_macho(void)
         if (p + lc->cmdsize > lend) break;
         if (lc->cmd == LC_SEGMENT_64) {
             const struct segment_command_64 *sc = (const struct segment_command_64 *)lc;
-            if (g.vmbase == 0) {
+            if (g.vmbase == 0 && sc->filesize) {
                 g.vmbase = sc->vmaddr;
-                g.slide  = g.base - g.vmbase;
+                if (!g.slide) g.slide = g.base - g.vmbase;
             }
             if (g.nsegs < OFX_MAX_SEG) {
                 OfxSeg *s = &g.segs[g.nsegs++];
                 memset(s, 0, sizeof(*s));
                 s->vmaddr = sc->vmaddr; s->vmsize = sc->vmsize;
-                s->fileoff = sc->fileoff; s->initprot = sc->initprot;
+                s->fileoff = sc->fileoff; s->filesize = sc->filesize; s->initprot = sc->initprot;
                 s->is_data_like = (sc->initprot & VM_PROT_WRITE) && (sc->initprot & VM_PROT_READ);
                 strlcpy(s->name, sc->segname, sizeof(s->name));
             }
@@ -652,7 +664,7 @@ static int ofx_parse_macho(void)
     }
     for (int i = 0; i < g.nsecs; i++) {
         OfxSec *d = &g.secs[i];
-        if (!strcmp(d->sect, "__text") && !strcmp(d->seg, "__TEXT")) { g.text_vm = d->vmaddr; g.text_size = d->size; }
+        if (!strcmp(d->sect, "__text") && d->size > g.text_size) { g.text_vm = d->vmaddr; g.text_size = d->size; }
         if (!strcmp(d->sect, "__cstring"))                           { g.cstr_vm = d->vmaddr; g.cstr_size = d->size; }
         if (!strcmp(d->sect, "__objc_methname"))                     { g.meth_vm = d->vmaddr; g.meth_size = d->size; }
     }
@@ -663,23 +675,62 @@ static int ofx_parse_macho(void)
     return (g.text_vm && g.cstr_vm);
 }
 
+static int ofx_is_prologue(uint32_t ins)
+{
+    if (ins == 0xD503237F) return 1;
+    if (ins == 0xD503233F) return 1;
+    if ((ins & 0xFFC07FFF) == 0xA9807BFD) return 1;
+    if ((ins & 0xFF8003FF) == 0xD10003FF) return 1;
+    return 0;
+}
+
+static int ofx_is_pad_or_end(uint32_t ins)
+{
+    if (ins == 0xD503201F) return 1;
+    if (ins == 0xD65F03C0) return 1;
+    if (ins == 0xD65F0FFF) return 1;
+    if ((ins & 0xFF000000) == 0xD4000000) return 1;
+    if (ins == 0x00000000) return 1;
+    return 0;
+}
+
+static void ofx_scan_prologues(void)
+{
+    if (!g.text_vm || !g.text_size) return;
+    const uint32_t *code = (const uint32_t *)ofx_mem(g.text_vm);
+    uint64_t n = g.text_size / 4;
+    for (uint64_t i = 0; i < n && g.nfstarts < OFX_MAX_FSTARTS; i++) {
+        if (!ofx_is_prologue(code[i])) continue;
+        if (i > 0 && !ofx_is_pad_or_end(code[i - 1])) continue;
+        g.fstarts[g.nfstarts++] = g.text_vm + i * 4;
+    }
+    g.fs_fallback = 1;
+    plog("Titanox[ofx]: function starts (prologue fallback): %d", g.nfstarts);
+}
+
 static void ofx_load_fstarts(void)
 {
-    if (!g.fs_addr || !g.fs_size) return;
     g.fstarts = (uint64_t *)malloc(sizeof(uint64_t) * OFX_MAX_FSTARTS);
     if (!g.fstarts) return;
-    const uint8_t *p = (const uint8_t *)(uintptr_t)g.fs_addr;
-    const uint8_t *end = p + g.fs_size;
-    uint64_t acc = g.vmbase;
-    while (p < end && g.nfstarts < OFX_MAX_FSTARTS) {
-        uint64_t d = 0; size_t used = 0;
-        if (!ofx_uleb128_next(p, end, &d, &used)) break;
-        p += used;
-        if (d == 0) break;
-        acc += d;
-        g.fstarts[g.nfstarts++] = acc;
+    if (g.fs_addr && g.fs_size > 8) {
+        const uint8_t *p = (const uint8_t *)(uintptr_t)g.fs_addr;
+        const uint8_t *end = p + g.fs_size;
+        uint64_t acc = g.vmbase;
+        while (p < end && g.nfstarts < OFX_MAX_FSTARTS) {
+            uint64_t d = 0; size_t used = 0;
+            if (!ofx_uleb128_next(p, end, &d, &used)) break;
+            p += used;
+            if (d == 0) break;
+            acc += d;
+            g.fstarts[g.nfstarts++] = acc;
+        }
     }
-    plog("Titanox[ofx]: function starts: %d", g.nfstarts);
+    if (g.nfstarts == 0) {
+        plog("Titanox[ofx]: LC_FUNCTION_STARTS пуст (fs=%llu) -- сканирую прологи", (unsigned long long)g.fs_size);
+        ofx_scan_prologues();
+    } else {
+        plog("Titanox[ofx]: function starts (LC_FUNCTION_STARTS): %d", g.nfstarts);
+    }
 }
 
 static void ofx_hinsert(OfxKey *t, int sz, const char *k, size_t klen, int idx)
@@ -930,11 +981,11 @@ static void ofx_scan_xrefs(void)
     const uint32_t *code = (const uint32_t *)ofx_mem(g.text_vm);
     uint64_t n = g.text_size / 4;
     int hit = 0;
-    for (uint64_t i = 0; i + 4 < n; i++) {
+    for (uint64_t i = 0; i + 6 < n; i++) {
         OfxAdrp a = ofx_adrp(code[i], g.text_vm + i * 4);
         if (!a.ok) continue;
         uint64_t tgt = 0;
-        for (int k = 1; k <= 4; k++) {
+        for (int k = 1; k <= 6; k++) {
             uint32_t n2 = code[i + k];
             OfxAddImm ad = ofx_add_imm(n2, a.page);
             if (ad.ok && ad.rn == a.rd) { tgt = ad.value; break; }
@@ -961,6 +1012,7 @@ static void ofx_finalize_logstr(void)
     for (int i = 0; i < g.ntargets; i++) {
         OfxRes *r = &g_res[i];
         if (r->src != OFX_S_LOGSTR || r->rva) continue;
+        if (g.fs_fallback) r->conf = OFX_C_MED;
         int hi = ofx_addr_get(r->str_vm);
         if (hi >= 0 && hi < OFX_MAX_HARVEST && g_harv[hi].fn_vm) {
             r->rva = ofx_rva(g_harv[hi].fn_vm);
@@ -1195,7 +1247,7 @@ static int ofx_func_data_refs(uint64_t fn_vm, uint64_t *out, int cap)
     const uint32_t *code = (const uint32_t *)ofx_mem(fn_vm);
     uint64_t n = (end - fn_vm) / 4;
     int cnt = 0;
-    for (uint64_t i = 0; i + 4 < n && cnt < cap; i++) {
+    for (uint64_t i = 0; i + 6 < n && cnt < cap; i++) {
         OfxAdrp a = ofx_adrp(code[i], fn_vm + i * 4);
         if (!a.ok) continue;
         for (int k = 1; k <= 4; k++) {
@@ -1493,7 +1545,7 @@ static uint64_t ofx_xref_func_for(uint64_t str_vm)
     if (!str_vm || !g.text_vm) return 0;
     const uint32_t *code = (const uint32_t *)ofx_mem(g.text_vm);
     uint64_t n = g.text_size / 4;
-    for (uint64_t i = 0; i + 4 < n; i++) {
+    for (uint64_t i = 0; i + 6 < n; i++) {
         OfxAdrp a = ofx_adrp(code[i], g.text_vm + i * 4);
         if (!a.ok) continue;
         for (int k = 1; k <= 4; k++) {

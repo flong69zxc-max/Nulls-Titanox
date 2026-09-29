@@ -21,9 +21,6 @@ jobs:
       THEOS: ${{ github.workspace }}/theos
     steps:
       - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          persist-credentials: true
 
       - name: Cache Theos
         id: cache-theos
@@ -49,15 +46,6 @@ jobs:
           mkdir -p deps
           git clone --depth 1 https://github.com/Ragekill3377/Titanox.git deps/Titanox
 
-      - name: Setup ldid
-        run: |
-          if ! command -v ldid >/dev/null; then
-            brew install ldid
-          fi
-          if command -v brew >/dev/null; then
-            echo "$(brew --prefix)/bin" >> $GITHUB_PATH
-          fi
-
       - name: Patch hook.c
         run: |
           HOOK_C="deps/Titanox/libtitanox/brk_hook/Hook/hook.c"
@@ -65,84 +53,12 @@ jobs:
           sed -i '' 's/arm_thread_state64_set_pc_fptr(\*new, ptrauth_sign_unauthenticated((void \*)hooks\[i\].new, ptrauth_key_function_pointer, 0));/arm_thread_state64_set_pc_fptr(*new, (void *)hooks[i].new);/g' "$HOOK_C"
           sed -i '' 's/arm_thread_state64_set_pc_fptr(\*new, hooks\[i\].new);/arm_thread_state64_set_pc_fptr(*new, (void *)hooks[i].new);/g' "$HOOK_C"
 
-      - name: Prepare files
-        run: |
-          mkdir -p src
-          cp deps/Titanox/libtitanox/libtitanox/main.mm src/TitanoxImpl.mm
-          sed -i '' -e '/^[[:space:]]*\/\/.*$/d' -e 's|;[[:space:]]*//.*$|;|' src/TitanoxImpl.mm
-          cat > Makefile <<'EOF'
-          TARGET = iphone:clang:latest:14.0
-          ARCHS = arm64 arm64e
-          INSTALL_TARGET_PROCESSES = Nulls Brawl
-
-          include $(THEOS)/makefiles/common.mk
-
-          TWEAK_NAME = Titanox
-          Titanox_FILES = src/Tweak.mm src/TitanoxImpl.mm $(shell find deps/Titanox/libtitanox -type f \( -name '*.mm' -o -name '*.m' -o -name '*.cpp' -o -name '*.cc' -o -name '*.c' -o -name '*.S' \) ! -name 'main.mm')
-          Titanox_CFLAGS = -I$(THEOS_PROJECT_DIR)/deps/Titanox/libtitanox/libtitanox
-          Titanox_CCFLAGS = -std=c++17 -Wno-everything -I$(THEOS_PROJECT_DIR)/deps/Titanox/libtitanox/libtitanox
-          Titanox_OBJCFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)/deps/Titanox/libtitanox/libtitanox
-          Titanox_FRAMEWORKS = Foundation UIKit
-          Titanox_LIBRARIES = c++
-
-          include $(THEOS_MAKE_PATH)/tweak.mk
-          EOF
-
-          cat > src/offsets.h <<'EOF'
-          #ifndef OFFSETS_H
-          #define OFFSETS_H
-
-          #define RVA_GETBOOL      0xb24820
-          #define RVA_ISDEV        0xd93d80
-          #define RVA_ISDEVBUILD   0xd93da0
-          #define RVA_DBGMENU_A    0x9b5afc
-          #define RVA_DBGMENU_B    0xbd736c
-
-          #endif
-          EOF
-
-          cat > src/Tweak.mm <<'EOF'
-          #import <Foundation/Foundation.h>
-          #import "libtitanox.h"
-          #include "offsets.h"
-
-          static bool (*orig_getBool)(void*);
-          static bool (*orig_isDev)(void*);
-          static bool (*orig_isDevBuild)(void*);
-
-          static bool hook_getBool(void* self) { return true; }
-          static bool hook_isDev(void* self) { return true; }
-          static bool hook_isDevBuild(void* self) { return true; }
-
-          __attribute__((constructor))
-          static void init() {
-              @autoreleasepool {
-                  uint64_t base = [TitanoxHook getBaseAddressOfLibrary:"Nulls Brawl"];
-                  if (!base) return;
-                  TitanoxHook *hooker = [[TitanoxHook alloc] initWithMachOName:@"Nulls Brawl"];
-                  if (!hooker) return;
-                  orig_getBool = (bool(*)(void*))[hooker hookFunctionAtVaddr:base + RVA_GETBOOL withReplacement:(void*)hook_getBool];
-                  orig_isDev = (bool(*)(void*))[hooker hookFunctionAtVaddr:base + RVA_ISDEV withReplacement:(void*)hook_isDev];
-                  orig_isDevBuild = (bool(*)(void*))[hooker hookFunctionAtVaddr:base + RVA_ISDEVBUILD withReplacement:(void*)hook_isDevBuild];
-              }
-          }
-          EOF
-
-      - name: Commit files
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Makefile src/
-          git diff --cached --quiet || git commit -m "auto: sync source files"
-          git pull --rebase origin main || true
-          git push || true
-
       - name: Build
         run: |
           make clean || true
           make -j4
 
-      - name: Check and copy dylib
+      - name: Package dylib
         run: |
           DYLIB=$(find .theos/obj -name "Titanox.dylib" ! -path "*/arm64/*" ! -path "*/arm64e/*" | head -n1)
           test -n "$DYLIB"
@@ -151,8 +67,7 @@ jobs:
           cp "$DYLIB" ./Titanox.dylib
           file ./Titanox.dylib
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: Titanox.dylib
           path: Titanox.dylib

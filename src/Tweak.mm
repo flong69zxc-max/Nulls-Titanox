@@ -13,29 +13,8 @@ static void TLOG(NSString *fmt, ...) {
     if (f) { fputs([line UTF8String], f); fclose(f); }
 }
 
-static void dumpBytes(uint64_t addr) {
-    uint8_t buf[32];
-    if ([TitanoxHook readMemoryAt:addr buffer:buf size:sizeof(buf)]) {
-        NSMutableString *hex = [NSMutableString string];
-        for (int i = 0; i < 32; i++) [hex appendFormat:@"%02x ", buf[i]];
-        TLOG(@"bytes @ 0x%llx: %@", (unsigned long long)addr, hex);
-    } else {
-        TLOG(@"read fail @ 0x%llx", (unsigned long long)addr);
-    }
-}
-
 static bool hook_getBool(void* self) {
-    TLOG(@"getBool called self=0x%llx", (unsigned long long)(uintptr_t)self);
-    return true;
-}
-
-static bool hook_isDev(void* self) {
-    TLOG(@"isDev called self=0x%llx", (unsigned long long)(uintptr_t)self);
-    return true;
-}
-
-static bool hook_isDevBuild(void* self) {
-    TLOG(@"isDevBuild called self=0x%llx", (unsigned long long)(uintptr_t)self);
+    TLOG(@"getBool called self=0x%llx -> true", (unsigned long long)(uintptr_t)self);
     return true;
 }
 
@@ -46,15 +25,17 @@ static void init() {
         uint64_t base = [TitanoxHook getBaseAddressOfLibrary:"Nulls Brawl"];
         TLOG(@"base=0x%llx", (unsigned long long)base);
         if (!base) return;
-        uint64_t a1 = base + RVA_GETBOOL;
-        uint64_t a2 = base + RVA_ISDEV;
-        uint64_t a3 = base + RVA_ISDEVBUILD;
-        dumpBytes(a1);
-        dumpBytes(a2);
-        dumpBytes(a3);
-        [TitanoxHook addBreakpointAtAddress:(void*)a1 withHook:(void*)hook_getBool];
-        [TitanoxHook addBreakpointAtAddress:(void*)a2 withHook:(void*)hook_isDev];
-        [TitanoxHook addBreakpointAtAddress:(void*)a3 withHook:(void*)hook_isDevBuild];
-        TLOG(@"breakpoints installed");
+
+        uint64_t getBoolAddr = base + RVA_GETBOOL;
+        [TitanoxHook addBreakpointAtAddress:(void*)getBoolAddr withHook:(void*)hook_getBool];
+        TLOG(@"breakpoint getBool @ 0x%llx", (unsigned long long)getBoolAddr);
+
+        uint64_t isDevAddr = base + RVA_ISDEV;
+        uint64_t isDevBuildAddr = base + RVA_ISDEVBUILD;
+        uint8_t trueByte = 1;
+        [TitanoxHook writeMemoryAt:isDevAddr data:&trueByte size:1];
+        [TitanoxHook writeMemoryAt:isDevBuildAddr data:&trueByte size:1];
+        TLOG(@"patched isDev @ 0x%llx = 1", (unsigned long long)isDevAddr);
+        TLOG(@"patched isDevBuild @ 0x%llx = 1", (unsigned long long)isDevBuildAddr);
     }
 }

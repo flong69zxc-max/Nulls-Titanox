@@ -320,7 +320,9 @@ static struct {
     uint64_t text_vm, text_size;
     uint64_t cstr_vm, cstr_size;
     uint64_t meth_vm, meth_size;
+    uint64_t clsn_vm, clsn_size;
     uint64_t const_vm, const_size;
+    uint64_t data_vm, data_size;
     uint64_t sym_addr; uint32_t nsyms; uint64_t str_addr; uint32_t strsize;
     uint64_t fs_addr, fs_size;
     uint64_t *fstarts; int nfstarts;
@@ -345,7 +347,6 @@ typedef struct {
 } OfxRes;
 static OfxRes g_res[256];
 static uint64_t g_known[256];
-static char g_pkey[256][80];
 
 static uint64_t g_slots[256][64];
 static int      g_nslots[256];
@@ -414,36 +415,57 @@ static int ofx_parse_macho(void)
         if (!strcmp(d->sect, "__text") && d->size > g.text_size) { g.text_vm = d->vmaddr; g.text_size = d->size; }
         if (!strcmp(d->sect, "__cstring")) { g.cstr_vm = d->vmaddr; g.cstr_size = d->size; }
         if (!strcmp(d->sect, "__objc_methname")) { g.meth_vm = d->vmaddr; g.meth_size = d->size; }
+        if (!strcmp(d->sect, "__objc_classname")) { g.clsn_vm = d->vmaddr; g.clsn_size = d->size; }
         if (!strcmp(d->sect, "__const")) { g.const_vm = d->vmaddr; g.const_size = d->size; }
+        if (!strcmp(d->sect, "__data")) { g.data_vm = d->vmaddr; g.data_size = d->size; }
     }
-    plog("Titanox[ofx]: slide=0x%llx vmbase=0x%llx text=0x%llx/%llu cstr=%llu const=%llu",
+    plog("Titanox[ofx]: slide=0x%llx vmbase=0x%llx text=0x%llx/%llu cstr=%llu clsn=%llu meth=%llu const=%llu data=%llu",
            (unsigned long long)g.slide, (unsigned long long)g.vmbase,
            (unsigned long long)g.text_vm, (unsigned long long)g.text_size,
-           (unsigned long long)g.cstr_size, (unsigned long long)g.const_size);
-    return (g.text_vm && g.cstr_vm && g.const_vm);
+           (unsigned long long)g.cstr_size, (unsigned long long)g.clsn_size,
+           (unsigned long long)g.meth_size, (unsigned long long)g.const_size,
+           (unsigned long long)g.data_size);
+    return (g.text_vm && (g.cstr_vm || g.clsn_vm || g.meth_vm));
 }
 
-static uint64_t ofx_str_vm_exact(const char *s)
+static uint64_t ofx_find_any_in(uint64_t vm, uint64_t size, const char *s)
 {
-    if (!g.cstr_vm) return 0;
+    if (!vm || !size) return 0;
     size_t want = strlen(s);
     if (!want || want > 200) return 0;
-    const uint8_t *p = (const uint8_t *)ofx_mem(g.cstr_vm);
-    const uint8_t *end = p + g.cstr_size;
-    while (p + want + 1 < end) {
-        if (p[want] == 0 && !memcmp(p, s, want)) return g.cstr_vm + (uint64_t)(p - (const uint8_t *)ofx_mem(g.cstr_vm));
+    const uint8_t *p = (const uint8_t *)ofx_mem(vm);
+    const uint8_t *end = p + size;
+    while (p + want < end) {
+        if (!memcmp(p, s, want)) {
+            int left_ok = (p == (const uint8_t *)ofx_mem(vm)) || (p[-1] == 0 || p[-1] == '_' || p[-1] == ':');
+            int right_ok = (p[want] == 0 || p[want] == ':' || p[want] == '_');
+            if (left_ok && right_ok) return vm + (uint64_t)(p - (const uint8_t *)ofx_mem(vm));
+        }
         p++;
     }
     return 0;
 }
 
+static uint64_t ofx_find_any(const char *s)
+{
+    uint64_t r = ofx_find_any_in(g.cstr_vm, g.cstr_size, s);
+    if (r) return r;
+    r = ofx_find_any_in(g.clsn_vm, g.clsn_size, s);
+    if (r) return r;
+    r = ofx_find_any_in(g.meth_vm, g.meth_size, s);
+    return r;
+}
+
 static uint64_t ofx_typeinfo_for_name(uint64_t str_vm)
 {
-    if (!g.const_vm) return 0;
-    const uint64_t *p = (const uint64_t *)ofx_mem(g.const_vm);
-    uint64_t n = g.const_size / 8;
-    for (uint64_t i = 1; i + 1 < n; i++) {
-        if (p[i] == g.slide + str_vm && p[i - 1] == 0) return g.const_vm + i * 8;
+    uint64_t secs[2][2] = { { g.const_vm, g.const_size }, { g.data_vm, g.data_size } };
+    for (int k = 0; k < 2; k++) {
+        if (!secs[k][0] || !secs[k][1]) continue;
+        const uint64_t *p = (const uint64_t *)ofx_mem(secs[k][0]);
+        uint64_t n = secs[k][1] / 8;
+        for (uint64_t i = 1; i + 1 < n; i++) {
+            if (p[i] == g.slide + str_vm && p[i - 1] == 0) return secs[k][0] + i * 8;
+        }
     }
     return 0;
 }
@@ -454,7 +476,7 @@ static void ofx_vtable_scan(int ti)
 {
     const OfxTarget *t = &g_targets[ti];
     if (!t->cls[0]) return;
-    uint64_t sv = ofx_str_vm_exact(t->cls);
+    uint64_t sv = ofx_find_any(t->cls);
     if (!sv) { plog("Titanox[ofx][vt]: no string '%s'", t->cls); return; }
     uint64_t tiname = ofx_typeinfo_for_name(sv);
     if (!tiname) { plog("Titanox[ofx][vt]: no typeinfo for '%s'", t->cls); return; }
@@ -491,6 +513,7 @@ static void ofx_vtable_all(void)
 
 static void ofx_vtable_dump(void)
 {
+    if (g_nresolved == 0 && g.vtable[0] == 0) return;
     char path[700];
     snprintf(path, sizeof(path), "%s/titanox_vtables.txt", ofx_dir());
     FILE *f = fopen(path, "w");
@@ -631,6 +654,15 @@ static FILE *ofx_open_out(const char *name)
 
 static void ofx_dump(void)
 {
+    if (g_nresolved == 0) {
+        plog("Titanox[ofx]: 0 оффсетов, файлы не создаются.");
+        plog("Titanox[ofx]: причины:");
+        plog("  - найдено строк классов: %d", g.clsn_size ? 1 : 0);
+        plog("  - найдено строк методов: %d", g.meth_size ? 1 : 0);
+        plog("  - найдено строк cstring: %d", g.cstr_size ? 1 : 0);
+        plog("  - typeinfo найдено: %d", g.vtable[0] ? 1 : 0);
+        return;
+    }
     FILE *h = ofx_open_out("titanox_offsets.h");
     if (h) {
         fprintf(h, "// titanox_offsets.h\n");
@@ -678,7 +710,7 @@ static void ofx_once_body(void)
     g.base = g_init_base;
     if (!g.base) return;
     g.ntargets = g_target_count;
-    if (!ofx_parse_macho()) return;
+    if (!ofx_parse_macho()) { plog("Titanox[ofx]: parse_macho failed"); return; }
 
     ofx_vtable_all();
     ofx_vtable_dump();

@@ -56,6 +56,10 @@ jobs:
       - name: Prepare files
         run: |
           mkdir -p src
+          cp deps/Titanox/libtitanox/libtitanox/main.mm src/TitanoxImpl.mm
+          sed -i '' '1i\
+          #define main titanox_unused_main
+          ' src/TitanoxImpl.mm
           cat > Makefile <<'EOF'
           TARGET = iphone:clang:latest:14.0
           ARCHS = arm64 arm64e
@@ -64,7 +68,7 @@ jobs:
           include $(THEOS)/makefiles/common.mk
 
           TWEAK_NAME = Titanox
-          Titanox_FILES = src/Tweak.mm $(shell find deps/Titanox/libtitanox -type f \( -name '*.mm' -o -name '*.m' -o -name '*.cpp' -o -name '*.cc' -o -name '*.c' -o -name '*.S' \) ! -name 'main.mm')
+          Titanox_FILES = src/Tweak.mm src/TitanoxImpl.mm $(shell find deps/Titanox/libtitanox -type f \( -name '*.mm' -o -name '*.m' -o -name '*.cpp' -o -name '*.cc' -o -name '*.c' -o -name '*.S' \) ! -name 'main.mm')
           Titanox_CFLAGS = -I$(THEOS_PROJECT_DIR)/deps/Titanox/libtitanox/libtitanox
           Titanox_CCFLAGS = -std=c++17 -Wno-everything -I$(THEOS_PROJECT_DIR)/deps/Titanox/libtitanox/libtitanox
           Titanox_OBJCFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)/deps/Titanox/libtitanox/libtitanox

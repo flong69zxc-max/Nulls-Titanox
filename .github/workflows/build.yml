@@ -19,6 +19,7 @@ jobs:
     runs-on: macos-14
     env:
       THEOS: ${{ github.workspace }}/theos
+      TARGET_CODESIGN: ""
     steps:
       - uses: actions/checkout@v4
 

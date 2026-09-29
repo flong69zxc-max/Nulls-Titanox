@@ -38,7 +38,6 @@ jobs:
       - name: Prepare files
         run: |
           mkdir -p src
-          if [ ! -f Makefile ]; then
           cat > Makefile <<'EOF'
           TARGET = iphone:clang:latest:14.0
           ARCHS = arm64 arm64e
@@ -47,14 +46,14 @@ jobs:
           include $(THEOS)/makefiles/common.mk
 
           TWEAK_NAME = Titanox
-          Titanox_FILES = src/Tweak.mm $(filter-out %/main.mm, $(shell find deps/Titanox \( -name '*.mm' -o -name '*.m' -o -name '*.cpp' -o -name '*.cc' \)))
-          Titanox_CFLAGS = -fobjc-arc -std=c++17 -I$(THEOS_PROJECT_DIR)/deps/Titanox/libtitanox/libtitanox
+          Titanox_FILES = src/Tweak.mm $(filter-out %/main.mm, $(shell find deps/Titanox \( -name '*.mm' -o -name '*.m' -o -name '*.cpp' -o -name '*.cc' \) -not -path '*/examples/*'))
+          Titanox_CFLAGS = -fobjc-arc -std=c++17 -Wno-everything -I$(THEOS_PROJECT_DIR)/deps/Titanox/libtitanox/libtitanox
           Titanox_FRAMEWORKS = Foundation UIKit
+          Titanox_LIBRARIES = c++
 
           include $(THEOS_MAKE_PATH)/tweak.mk
           EOF
-          fi
-          if [ ! -f control ]; then
+
           cat > control <<'EOF'
           Package: com.nulls.titanox
           Name: Titanox
@@ -66,8 +65,7 @@ jobs:
           Section: Tweaks
           Depends: mobilesubstrate
           EOF
-          fi
-          if [ ! -f Info.plist ]; then
+
           cat > Info.plist <<'EOF'
           {
               Filter = {
@@ -75,8 +73,7 @@ jobs:
               };
           }
           EOF
-          fi
-          if [ ! -f src/offsets.h ]; then
+
           cat > src/offsets.h <<'EOF'
           #ifndef OFFSETS_H
           #define OFFSETS_H
@@ -89,8 +86,7 @@ jobs:
 
           #endif
           EOF
-          fi
-          if [ ! -f src/Tweak.mm ]; then
+
           cat > src/Tweak.mm <<'EOF'
           #import <Foundation/Foundation.h>
           #import "libtitanox.h"
@@ -117,7 +113,14 @@ jobs:
               }
           }
           EOF
-          fi
+
+      - name: Commit files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Makefile control Info.plist src/
+          git diff --cached --quiet || git commit -m "auto: sync source files"
+          git push
 
       - name: Build
         run: |

@@ -2,38 +2,45 @@
 #import "libtitanox.h"
 #include "offsets.h"
 
+#define TLOG(fmt, ...) do { \
+    NSString *_s = [NSString stringWithFormat:fmt, ##__VA_ARGS__]; \
+    [TitanoxHook log:@"%@", _s]; \
+    NSLog(@"[Titanox] %@", _s); \
+} while(0)
+
 static bool hook_getBool(void* self) {
-    [TitanoxHook log:@"getBool self=%p -> true", self];
+    TLOG(@"getBool called self=0x%llx", (unsigned long long)(uintptr_t)self);
     return true;
 }
 
 static bool hook_isDev(void* self) {
-    [TitanoxHook log:@"isDev self=%p -> true", self];
+    TLOG(@"isDev called self=0x%llx", (unsigned long long)(uintptr_t)self);
     return true;
 }
 
 static bool hook_isDevBuild(void* self) {
-    [TitanoxHook log:@"isDevBuild self=%p -> true", self];
+    TLOG(@"isDevBuild called self=0x%llx", (unsigned long long)(uintptr_t)self);
     return true;
 }
 
 __attribute__((constructor))
 static void init() {
     @autoreleasepool {
-        [TitanoxHook log:@"=== Titanox init ==="];
+        TLOG(@"=== Titanox init ===");
         uint64_t base = [TitanoxHook getBaseAddressOfLibrary:"Nulls Brawl"];
-        [TitanoxHook log:@"base=%p", (void*)base];
+        TLOG(@"base=0x%llx", (unsigned long long)base);
         if (!base) {
-            [TitanoxHook log:@"base not found, abort"];
+            TLOG(@"base not found, abort");
             return;
         }
-        void* a1 = (void*)(base + RVA_GETBOOL);
-        void* a2 = (void*)(base + RVA_ISDEV);
-        void* a3 = (void*)(base + RVA_ISDEVBUILD);
-        [TitanoxHook log:@"target getBool=%p isDev=%p isDevBuild=%p", a1, a2, a3];
-        BOOL r1 = [TitanoxHook addBreakpointAtAddress:a1 withHook:(void*)hook_getBool];
-        BOOL r2 = [TitanoxHook addBreakpointAtAddress:a2 withHook:(void*)hook_isDev];
-        BOOL r3 = [TitanoxHook addBreakpointAtAddress:a3 withHook:(void*)hook_isDevBuild];
-        [TitanoxHook log:@"installed getBool=%d isDev=%d isDevBuild=%d", r1, r2, r3];
+        uint64_t a1 = base + RVA_GETBOOL;
+        uint64_t a2 = base + RVA_ISDEV;
+        uint64_t a3 = base + RVA_ISDEVBUILD;
+        TLOG(@"addr getBool=0x%llx isDev=0x%llx isDevBuild=0x%llx",
+             (unsigned long long)a1, (unsigned long long)a2, (unsigned long long)a3);
+        [TitanoxHook addBreakpointAtAddress:(void*)a1 withHook:(void*)hook_getBool];
+        [TitanoxHook addBreakpointAtAddress:(void*)a2 withHook:(void*)hook_isDev];
+        [TitanoxHook addBreakpointAtAddress:(void*)a3 withHook:(void*)hook_isDevBuild];
+        TLOG(@"breakpoints installed");
     }
 }

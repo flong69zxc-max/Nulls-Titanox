@@ -31,6 +31,8 @@ static int g_by_src[8];
 static char  g_dir[512];
 static FILE *g_log;
 
+static void plog(const char *fmt, ...);
+
 static int ofx_try_dir(const char *d)
 {
     mkdir(d, 0755);
@@ -87,6 +89,18 @@ static void plog(const char *fmt, ...)
     va_end(ap);
     fputc('\n', f);
     fflush(f);
+}
+
+static void logcap(int *c, const char *fmt, ...)
+{
+    (*c)++;
+    if (*c > OFX_LOG_LIMIT) return;
+    char buf[192];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    plog("Titanox: %s", buf);
 }
 
 typedef enum {
@@ -585,7 +599,7 @@ static void ofx_ctor_from_vtable(int ti)
                                 g_res[ti].rva = ofx_rva(fn);
                                 g_res[ti].src = OFX_S_VTABLE;
                                 g_res[ti].conf = OFX_C_HIGH;
-                                snprintf(g_res[ti].ev, sizeof(g_res[ti].ev), "ctor пишет vtable");
+                                snprintf(g_res[ti].ev, sizeof(g_res[ti].ev), "ctor");
                                 return;
                             }
                         }
@@ -615,7 +629,6 @@ static void OfxSetKnown(const char *name, uint64_t rva)
     snprintf(g_res[i].ev, sizeof(g_res[i].ev), "offsets.h");
 }
 
-static uint64_t OfxRVA(const char *name) { int i = ofx_index(name); return i < 0 ? 0 : g_res[i].rva; }
 static uint64_t OfxAddr(const char *name) { int i = ofx_index(name); return i < 0 || !g_res[i].rva ? 0 : g.base + g_res[i].rva; }
 static OfxSource OfxSourceOf(const char *name) { int i = ofx_index(name); return i < 0 ? OFX_S_NONE : (OfxSource)g_res[i].src; }
 static OfxConf   OfxConfOf(const char *name) { int i = ofx_index(name); return i < 0 ? OFX_C_LOW : (OfxConf)g_res[i].conf; }
@@ -752,32 +765,20 @@ static void ofx_once_body(void)
     ofx_summary();
 }
 
-static void Of_setxInit(uint64_t base)
-String{
+static void OfxInit(uint64_t base)
+{
     g_init_base = base;
     pthread_once(&g_once, ofx_once_body);
 }
 
 static void OfxDumpReport(void) { if (g.inited) ofx_dump(); }
 
-static void logcap(int *c, const char *fmt, ...)
-{
-    (*c)++;
-    if (*c > OFX_LOG_L(void *selfIMIT) return;
-    char buf[192)];
-    va_list ap;
-    va_start(ap, { fmt);
-    vsnprintf(buf, sizeof(buf), static fmt, ap);
-    int va_end(ap);
-    plog("Titan nox: %s", buf);
-;}
-
-static bool hook_getBool(void * logself, const char *keycap)
+static bool hook_getBool(void *self, const char *key)
 {
     static int n;
-    if (key(& && strlen(key) < 128n) {
-        logcap(&n, ",getBool(%s)", key);
-        if (strstr(key, " "isDev") || strstr(key,Anal "isDeveloper") ||
+    if (key && strlen(key) < 128) {
+        logcap(&n, "getBool(%s)", key);
+        if (strstr(key, "isDev") || strstr(key, "isDeveloper") ||
             strstr(key, "Disable") || strstr(key, "debug") ||
             strstr(key, "Debug") || strstr(key, "cheat"))
             return true;
@@ -798,7 +799,7 @@ static void hook_Screen_getDpiClass(void *self) { static int n; logcap(&n, "Scre
 static void hook_GlobalID_getInstanceID(void *self) { static int n; logcap(&n, "GlobalID_getInstanceID"); }
 static void hook_Projectile_ctor(void *self) { static int n; logcap(&n, "Projectile_ctor"); }
 static void hook_AnalyticEvent_ctor(void *self) { static int n; logcap(&n, "AnalyticEvent_ctor"); }
-static void hook_AnalyticEventyticEvent_setString"); }
+static void hook_AnalyticEvent_setString(void *self) { static int n; logcap(&n, "AnalyticEvent_setString"); }
 static void hook_String_ctor(void *self) { static int n; logcap(&n, "String_ctor"); }
 
 typedef struct {
@@ -825,9 +826,6 @@ static const OfxHookSpec g_hooks[] = {
 
 static void feed_known(void)
 {
-#ifdef RVA_GETBOOL
-    OfxSetKnown("__settings_getBool", 0);
-#endif
 #ifdef RVA_GAMEBUTTON_SETTEXT
     OfxSetKnown("GameButton_setText", RVA_GAMEBUTTON_SETTEXT);
 #endif
@@ -898,27 +896,20 @@ static int install_hooks(const OfxHookSpec *specs)
 
 static void install_settings(uint64_t base)
 {
-    struct { const char *m; void *fn; } st[] = {
-        { "getBool",          (void *)hook_getBool },
-        { "isDev",            (void *)hook_isDev },
-        { "isDevBuild",       (void *)hook_isDevBuild },
-        { "isDeveloperBuild", (void *)hook_isDeveloperBuild },
-        { NULL, NULL }
-    };
 #ifdef RVA_GETBOOL
-    [TitanoxHook addBreakpointAtAddress:(void *)(base + RVA_GETBOOL) withHook:st[0].fn];
+    [TitanoxHook addBreakpointAtAddress:(void *)(base + RVA_GETBOOL) withHook:(void *)hook_getBool];
     plog("Titanox: settings getBool 0x%llx hooked", (unsigned long long)(base + RVA_GETBOOL));
 #endif
 #ifdef RVA_ISDEV
-    [TitanoxHook addBreakpointAtAddress:(void *)(base + RVA_ISDEV) withHook:st[1].fn];
+    [TitanoxHook addBreakpointAtAddress:(void *)(base + RVA_ISDEV) withHook:(void *)hook_isDev];
     plog("Titanox: settings isDev 0x%llx hooked", (unsigned long long)(base + RVA_ISDEV));
 #endif
 #ifdef RVA_ISDEVBUILD
-    [TitanoxHook addBreakpointAtAddress:(void *)(base + RVA_ISDEVBUILD) withHook:st[2].fn];
+    [TitanoxHook addBreakpointAtAddress:(void *)(base + RVA_ISDEVBUILD) withHook:(void *)hook_isDevBuild];
     plog("Titanox: settings isDevBuild 0x%llx hooked", (unsigned long long)(base + RVA_ISDEVBUILD));
 #endif
 #ifdef RVA_ISDEVELOPERBUILD
-    [TitanoxHook addBreakpointAtAddress:(void *)(base + RVA_ISDEVELOPERBUILD) withHook:st[3].fn];
+    [TitanoxHook addBreakpointAtAddress:(void *)(base + RVA_ISDEVELOPERBUILD) withHook:(void *)hook_isDeveloperBuild];
     plog("Titanox: settings isDeveloperBuild 0x%llx hooked", (unsigned long long)(base + RVA_ISDEVELOPERBUILD));
 #endif
 }

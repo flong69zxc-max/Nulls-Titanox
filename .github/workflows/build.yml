@@ -50,8 +50,9 @@ jobs:
           include $(THEOS)/makefiles/common.mk
 
           TWEAK_NAME = Titanox
-          Titanox_FILES = src/Tweak.mm $(shell find deps/Titanox -name '*.mm' -o -name '*.m')
-          Titanox_CFLAGS = -fobjc-arc $(shell find deps/Titanox -type d -exec echo -I{} \;)
+          Titanox_FILES = src/Tweak.mm
+          Titanox_CFLAGS = -fobjc-arc -I$(THEOS)/include
+          Titanox_LDFLAGS = -L$(THEOS)/lib -ltitanox -Wl,-rpath,@executable_path
           Titanox_FRAMEWORKS = Foundation UIKit
 
           include $(THEOS_MAKE_PATH)/tweak.mk
@@ -129,6 +130,17 @@ jobs:
           git add Makefile control Info.plist src/
           git diff --cached --quiet || git commit -m "auto: add source files"
           git push
+
+      - name: Install Titanox
+        run: |
+          cd deps/Titanox
+          make clean || true
+          make -j$(sysctl -n hw.ncpu)
+          LIB=$(find . -name "libtitanox.dylib" | head -n1)
+          test -n "$LIB"
+          mkdir -p "$THEOS/lib" "$THEOS/include"
+          cp "$LIB" "$THEOS/lib/libtitanox.dylib"
+          find . -name "*.h" -exec cp {} "$THEOS/include/" \;
 
       - name: Build
         run: |

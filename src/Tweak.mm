@@ -15,11 +15,10 @@ static void init() {
     @autoreleasepool {
         uint64_t base = [TitanoxHook getBaseAddressOfLibrary:"Nulls Brawl"];
         if (!base) return;
-        uint64_t addr_getBool    = base + RVA_GETBOOL;
-        uint64_t addr_isDev      = base + RVA_ISDEV;
-        uint64_t addr_isDevBuild = base + RVA_ISDEVBUILD;
-        [TitanoxHook addBreakpointAtAddress:(void*)addr_getBool    withHook:(void*)hook_getBool];
-        [TitanoxHook addBreakpointAtAddress:(void*)addr_isDev      withHook:(void*)hook_isDev];
-        [TitanoxHook addBreakpointAtAddress:(void*)addr_isDevBuild withHook:(void*)hook_isDevBuild];
+        TitanoxHook *hooker = [[TitanoxHook alloc] initWithMachOName:@"Nulls Brawl"];
+        if (!hooker) return;
+        orig_getBool = (bool(*)(void*))[hooker hookFunctionAtVaddr:base + RVA_GETBOOL withReplacement:(void*)hook_getBool];
+        orig_isDev = (bool(*)(void*))[hooker hookFunctionAtVaddr:base + RVA_ISDEV withReplacement:(void*)hook_isDev];
+        orig_isDevBuild = (bool(*)(void*))[hooker hookFunctionAtVaddr:base + RVA_ISDEVBUILD withReplacement:(void*)hook_isDevBuild];
     }
 }

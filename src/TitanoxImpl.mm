@@ -48,7 +48,6 @@ intptr_t GetVmAddrSlide(const char* libName) {
 
 #pragma mark - Breakpoint hook
 
-// breakpoint hook with NO orig.
 + (BOOL)addBreakpointAtAddress:(void *)original withHook:(void *)hook {
     if (!original || !hook) {
         THLog(@"[ERROR] addBreakpointAtAddress: invalid params. original=%p, hook=%p", original, hook);
@@ -125,7 +124,6 @@ intptr_t GetVmAddrSlide(const char* libName) {
         };
     }
     
-    // this is weird but i don't know another way for objc...
     switch (typeMap[type].intValue) {
         case 0: MemX::Write<int>(address, [value intValue]); break;
         case 1: MemX::Write<long>(address, [value longValue]); break;
@@ -137,14 +135,11 @@ intptr_t GetVmAddrSlide(const char* libName) {
     }
 }
 
-// note to dumbass self: you can't do void func() {}
-// you have to do void func {} without '()' [objc]
 + (void)ClearAddrRanges {
     MemX::ClearAddrRange();
 }
 
 #pragma mark - MemX Virtual Function hooking stuff
-//from -> ../MemX/VMTWrapper.h"
 + (void *)vmthookCreateWithNewFunction:(void *)newFunc index:(int32_t)index {
     if (!newFunc) {
         THLog(@"[ERROR] vmthookCreateWithNewFunction: ERROR - newFunc is NULL");
@@ -159,7 +154,6 @@ intptr_t GetVmAddrSlide(const char* libName) {
     if (!makehook) {
         THLog(@"[ERROR] vmthookCreateWithNewFunction: Failed to create hook");
     } else {
-        // fixed: was erroneously logging undefined 'hook', should be 'makehook'
         THLog(@"[Success] vmthookCreateWithNewFunction: Hook created at %p", makehook);
     }
     return makehook;
@@ -297,7 +291,6 @@ intptr_t GetVmAddrSlide(const char* libName) {
         return;
     }
 
-    // resolve the current symbol address before hooking so isFunctionHooked has a valid pointer to check
     void *symAddr = dlsym(handle, symbol);
     if (!symAddr) {
         THLog(@"Failed to resolve symbol %s before hooking", symbol);
@@ -391,7 +384,6 @@ intptr_t GetVmAddrSlide(const char* libName) {
                    withPatch:(uint8_t*)patch
                        size:(size_t)size {
 
-    // validate address before attempting the patch
     if (!address) {
         THLog(@"Invalid address.");
         return;
@@ -408,7 +400,6 @@ intptr_t GetVmAddrSlide(const char* libName) {
 
 #pragma mark - isHooked
 
-// needs sym
 + (BOOL)isFunctionHooked:(const char *)symbol
            withOriginal:(void *)original
              inLibrary:(const char *)libName {
@@ -420,7 +411,7 @@ intptr_t GetVmAddrSlide(const char* libName) {
 
         if (strcmp(info.dli_sname, symbol) == 0 &&
             (!libName || [libPath isEqualToString:[NSString stringWithUTF8String:info.dli_fname]])) {
-            return NO; // Not hooked
+            return NO;
         }
     }
     return YES;

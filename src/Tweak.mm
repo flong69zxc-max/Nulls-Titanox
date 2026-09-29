@@ -13,8 +13,14 @@ static void TLOG(NSString *fmt, ...) {
     if (f) { fputs([line UTF8String], f); fclose(f); }
 }
 
-static bool hook_getBool(void *self) {
-    TLOG(@"getBool called");
+static bool hook_getBool(void *self, void *arg) {
+    TLOG(@"getBool called arg=%p", arg);
+    if (arg) {
+        @try {
+            NSString *s = (__bridge NSString *)arg;
+            TLOG(@"  key=%@", s);
+        } @catch (NSException *e) {}
+    }
     return true;
 }
 

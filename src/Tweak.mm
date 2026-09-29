@@ -13,14 +13,8 @@ static void TLOG(NSString *fmt, ...) {
     if (f) { fputs([line UTF8String], f); fclose(f); }
 }
 
-static bool hook_getBool(void *self, void *arg) {
-    TLOG(@"getBool called arg=%p", arg);
-    if (arg) {
-        @try {
-            NSString *s = (__bridge NSString *)arg;
-            TLOG(@"  key=%@", s);
-        } @catch (NSException *e) {}
-    }
+static bool hook_getBool(void *self) {
+    TLOG(@"getBool called");
     return true;
 }
 
@@ -39,6 +33,10 @@ static bool hook_isDeveloperBuild(void *self) {
     return true;
 }
 
+static void hook_loadResources(void *self) {
+    TLOG(@"loadResources called");
+}
+
 __attribute__((constructor))
 static void init() {
     @autoreleasepool {
@@ -51,16 +49,19 @@ static void init() {
         uint64_t a_isDev             = base + RVA_ISDEV;
         uint64_t a_isDevBuild        = base + RVA_ISDEVBUILD;
         uint64_t a_isDeveloperBuild  = base + RVA_ISDEVELOPERBUILD;
+        uint64_t a_loadResources     = base + RVA_LOADRESOURCES;
 
         [TitanoxHook addBreakpointAtAddress:(void*)a_getBool          withHook:(void*)hook_getBool];
         [TitanoxHook addBreakpointAtAddress:(void*)a_isDev            withHook:(void*)hook_isDev];
         [TitanoxHook addBreakpointAtAddress:(void*)a_isDevBuild       withHook:(void*)hook_isDevBuild];
         [TitanoxHook addBreakpointAtAddress:(void*)a_isDeveloperBuild withHook:(void*)hook_isDeveloperBuild];
+        [TitanoxHook addBreakpointAtAddress:(void*)a_loadResources    withHook:(void*)hook_loadResources];
 
-        TLOG(@"bp getBool=0x%llx isDev=0x%llx isDevBuild=0x%llx isDeveloperBuild=0x%llx",
+        TLOG(@"bp getBool=0x%llx isDev=0x%llx isDevBuild=0x%llx isDeveloperBuild=0x%llx loadResources=0x%llx",
              (unsigned long long)a_getBool,
              (unsigned long long)a_isDev,
              (unsigned long long)a_isDevBuild,
-             (unsigned long long)a_isDeveloperBuild);
+             (unsigned long long)a_isDeveloperBuild,
+             (unsigned long long)a_loadResources);
     }
 }

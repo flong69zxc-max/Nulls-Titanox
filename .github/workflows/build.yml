@@ -38,29 +38,6 @@ jobs:
           mkdir -p deps
           git clone --depth 1 https://github.com/Ragekill3377/Titanox.git deps/Titanox
 
-      - name: Build Titanox
-        run: |
-          cd deps/Titanox
-          make clean || true
-          make -j$(sysctl -n hw.ncpu)
-
-      - name: Install libtitanox
-        run: |
-          LIB=$(find deps/Titanox -name "libtitanox.dylib" | head -n1)
-          test -n "$LIB"
-          mkdir -p "$THEOS/lib"
-          cp "$LIB" "$THEOS/lib/libtitanox.dylib"
-          ls -la "$THEOS/lib/libtitanox.dylib"
-
-      - name: Find Titanox headers
-        id: headers
-        run: |
-          HDR=$(find deps/Titanox -name "Titanox.h" | head -n1)
-          test -n "$HDR"
-          DIR=$(dirname "$HDR")
-          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
-          echo "header found: $HDR"
-
       - name: Prepare files
         run: |
           mkdir -p src
@@ -73,9 +50,8 @@ jobs:
           include $(THEOS)/makefiles/common.mk
 
           TWEAK_NAME = Titanox
-          Titanox_FILES = src/Tweak.mm
-          Titanox_CFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)/${{ steps.headers.outputs.dir }}
-          Titanox_LDFLAGS = -L$(THEOS)/lib -ltitanox -Wl,-rpath,@executable_path
+          Titanox_FILES = src/Tweak.mm $(shell find deps/Titanox -name '*.mm' -o -name '*.m')
+          Titanox_CFLAGS = -fobjc-arc $(shell find deps/Titanox -type d -exec echo -I{} \;)
           Titanox_FRAMEWORKS = Foundation UIKit
 
           include $(THEOS_MAKE_PATH)/tweak.mk
@@ -141,7 +117,6 @@ jobs:
                   orig_getBool = (bool (*)(void*))[hooker hookFunctionAtVaddr:base + RVA_GETBOOL withReplacement:(void*)hook_getBool];
                   orig_isDev = (bool (*)(void*))[hooker hookFunctionAtVaddr:base + RVA_ISDEV withReplacement:(void*)hook_isDev];
                   orig_isDevBuild = (bool (*)(void*))[hooker hookFunctionAtVaddr:base + RVA_ISDEVBUILD withReplacement:(void*)hook_isDevBuild];
-                  NSLog(@"[Titanox] hooks installed base=%p", (void*)base);
               }
           }
           EOF

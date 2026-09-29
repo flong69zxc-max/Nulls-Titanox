@@ -33,7 +33,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ldid-bin
-          key: ldid-macos-v1
+          key: ldid-macos-v2
 
       - name: Build ldid
         if: steps.cache-ldid.outputs.cache-hit != 'true'
@@ -148,14 +148,18 @@ jobs:
           make clean || true
           make
 
-      - name: Sign and copy dylib
+      - name: Sign and merge dylib
         run: |
-          DYLIB=$(find .theos/obj -name "Titanox.dylib" | head -n1)
-          test -n "$DYLIB"
-          ./ldid-bin/ldid -S "$DYLIB"
-          file "$DYLIB"
-          cp "$DYLIB" ./Titanox.dylib
-          ls -la Titanox.dylib
+          MERGED=".theos/obj/Titanox.dylib"
+          test -f "$MERGED"
+          file "$MERGED"
+          lipo -thin arm64 "$MERGED" -output /tmp/arm64.dylib
+          lipo -thin arm64e "$MERGED" -output /tmp/arm64e.dylib
+          ./ldid-bin/ldid -S /tmp/arm64.dylib
+          ./ldid-bin/ldid -S /tmp/arm64e.dylib
+          lipo -create /tmp/arm64.dylib /tmp/arm64e.dylib -output ./Titanox.dylib
+          file ./Titanox.dylib
+          ls -la ./Titanox.dylib
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

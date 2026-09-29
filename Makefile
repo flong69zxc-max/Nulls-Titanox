@@ -5,8 +5,9 @@ INSTALL_TARGET_PROCESSES = Nulls Brawl
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = Titanox
-Titanox_FILES = src/Tweak.mm $(wildcard $(THEOS_PROJECT_DIR)/deps/Titanox/*.mm $(THEOS_PROJECT_DIR)/deps/Titanox/*.m $(THEOS_PROJECT_DIR)/deps/Titanox/*.xm)
-Titanox_CFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)/deps/Titanox -I$(THEOS_PROJECT_DIR)/deps/Titanox/include
+Titanox_FILES = src/Tweak.mm $(filter-out %/main.mm, $(shell find deps/Titanox \( -name '*.mm' -o -name '*.m' -o -name '*.cpp' -o -name '*.cc' \) -not -path '*/examples/*'))
+Titanox_CFLAGS = -fobjc-arc -std=c++17 -Wno-everything -I$(THEOS_PROJECT_DIR)/deps/Titanox/libtitanox/libtitanox
 Titanox_FRAMEWORKS = Foundation UIKit
+Titanox_LIBRARIES = c++
 
 include $(THEOS_MAKE_PATH)/tweak.mk

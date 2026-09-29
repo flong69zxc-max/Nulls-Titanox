@@ -41,6 +41,17 @@ jobs:
           mkdir -p deps
           git clone --depth 1 https://github.com/Ragekill3377/Titanox.git deps/Titanox
 
+      - name: Patch hook.c for ptrauth
+        run: |
+          HOOK_C="deps/Titanox/libtitanox/brk_hook/Hook/hook.c"
+          if ! grep -q "#include <ptrauth.h>" "$HOOK_C"; then
+            sed -i '' '1i\
+          #include <ptrauth.h>
+          ' "$HOOK_C"
+          fi
+          sed -i '' 's/arm_thread_state64_set_pc_fptr(\*new, hooks\[i\].new);/arm_thread_state64_set_pc_fptr(*new, ptrauth_sign_unauthenticated((void *)hooks[i].new, ptrauth_key_function_pointer, 0));/g' "$HOOK_C"
+          grep -n "ptrauth\|arm_thread_state64_set_pc_fptr" "$HOOK_C"
+
       - name: Prepare files
         run: |
           mkdir -p src

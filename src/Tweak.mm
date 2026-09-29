@@ -372,6 +372,11 @@ static uint64_t g_vtable[256];
 static uint64_t ofx_rva(uint64_t vm) { return vm - g.vmbase; }
 static const uint8_t *ofx_mem(uint64_t vm) { return (const uint8_t *)(uintptr_t)(g.slide + vm); }
 
+static int ofx_is_ident(unsigned char c)
+{
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
+}
+
 static int ofx_parse_macho(void)
 {
     const struct mach_header_64 *mh = (const struct mach_header_64 *)(uintptr_t)g.base;
@@ -452,12 +457,17 @@ static uint64_t ofx_find_substr_in(uint64_t vm, uint64_t size, const char *s, in
     size_t want = strlen(s);
     if (!want || want > 200) return 0;
     const uint8_t *p = (const uint8_t *)ofx_mem(vm);
+    const uint8_t *begin = p;
     const uint8_t *end = p + size;
     uint64_t first = 0;
     while (p + want < end) {
         if (!memcmp(p, s, want)) {
-            if (count) (*count)++;
-            if (!first) first = vm + (uint64_t)(p - (const uint8_t *)ofx_mem(vm));
+            unsigned char prev = (p == begin) ? 0 : p[-1];
+            unsigned char next = p[want];
+            if (!ofx_is_ident(prev) && !ofx_is_ident(next)) {
+                if (count) (*count)++;
+                if (!first) first = vm + (uint64_t)(p - begin);
+            }
         }
         p++;
     }
@@ -480,7 +490,40 @@ static uint64_t ofx_find_any(const char *s, int *total_count)
     return first;
 }
 
+static uint64_t ofx_absptr(uint64_t v)
+{
+    if (v >= g.slide + g.vmbase && v < g.slide + g.vmbase + 0x80000000ULL) return v;
+    if (v >= g.vmbase && v < g.vmbase + 0x80000000ULL) return g.slide + v;
+    uint64_t c1 = v & 0x0000FFFFFFFFFFFFULL;
+    if (c1 >= g.vmbase && c1 < g.vmbase + 0x80000000ULL) return g.slide + c1;
+    uint64_t c2 = v & 0x0000000FFFFFFFFFULL;
+    if (c2 >= g.vmbase && c2 < g.vmbase + 0x80000000ULL) return g.slide + c2;
+    return 0;
+}
+
+static uint64_t ofx_find_pointer_to(uint64_t target)
+{
+    uint64_t abs_t = g.slide + target;
+    uint64_t secs[2][2] = { { g.const_vm, g.const_size }, { g.data_vm, g.data_size } };
+    for (int k = 0; k < 2; k++) {
+        if (!secs[k][0] || !secs[k][1]) continue;
+        const uint64_t *p = (const uint64_t *)ofx_mem(secs[k][0]);
+        uint64_t n = secs[k][1] / 8;
+        for (uint64_t i = 0; i < n; i++) {
+            if (p[i] == abs_t || p[i] == target) return secs[k][0] + i * 8;
+        }
+    }
+    return 0;
+}
+
 static uint64_t ofx_typeinfo_for_name(uint64_t str_vm)
+{
+    return ofx_find_pointer_to(str_vm);
+}
+
+static int ofx_is_code_vm(uint64_t vm) { return vm >= g.text_vm && vm < g.text_vm + g.text_size; }
+
+static uint64_t ofx_find_vtable_for_typeinfo(uint64_t typeinfo_abs)
 {
     uint64_t secs[2][2] = { { g.const_vm, g.const_size }, { g.data_vm, g.data_size } };
     for (int k = 0; k < 2; k++) {
@@ -488,13 +531,16 @@ static uint64_t ofx_typeinfo_for_name(uint64_t str_vm)
         const uint64_t *p = (const uint64_t *)ofx_mem(secs[k][0]);
         uint64_t n = secs[k][1] / 8;
         for (uint64_t i = 1; i + 1 < n; i++) {
-            if (p[i] == g.slide + str_vm && p[i - 1] == 0) return secs[k][0] + i * 8;
+            uint64_t abs_v = ofx_absptr(p[i]);
+            if (abs_v == typeinfo_abs) {
+                uint64_t next = ofx_absptr(p[i + 1]);
+                if (next && next - g.slide >= g.text_vm && next - g.slide < g.text_vm + g.text_size)
+                    return secs[k][0] + (i + 1) * 8;
+            }
         }
     }
     return 0;
 }
-
-static int ofx_is_code_vm(uint64_t vm) { return vm >= g.text_vm && vm < g.text_vm + g.text_size; }
 
 static void ofx_vtable_scan(int ti)
 {
@@ -502,34 +548,37 @@ static void ofx_vtable_scan(int ti)
     if (!t->cls[0]) return;
     int cnt = 0;
     uint64_t sv = ofx_find_any(t->cls, &cnt);
-    if (!sv) { plog("Titanox[ofx][vt]: no string '%s'", t->cls); return; }
-    plog("Titanox[ofx][vt]: '%s' found %d times, first at 0x%llx", t->cls, cnt, (unsigned long long)(sv - g.vmbase));
-    uint64_t tiname = ofx_typeinfo_for_name(sv);
-    if (!tiname) { plog("Titanox[ofx][vt]: no typeinfo for '%s'", t->cls); return; }
-    uint64_t vt_ptr = 0;
-    memcpy(&vt_ptr, ofx_mem(tiname - 8), 8);
-    uint64_t vt_vm = vt_ptr & 0x0000FFFFFFFFFFFFULL;
-    if (!vt_vm || (int64_t)vt_vm > 0) {
-        vt_vm = vt_ptr - g.slide;
+    if (!sv) return;
+    if (cnt != 1) {
+        plog("Titanox[ofx][vt]: '%s' found %d times (ambiguous), skip", t->cls, cnt);
+        return;
     }
-    if (!vt_vm) { plog("Titanox[ofx][vt]: null vtable for '%s'", t->cls); return; }
-
-    g_vtable[ti] = vt_vm;
+    uint64_t name_slot = ofx_typeinfo_for_name(sv);
+    if (!name_slot) {
+        plog("Titanox[ofx][vt]: '%s' string at 0x%llx, no typeinfo (RTTI stripped)",
+             t->cls, (unsigned long long)(sv - g.vmbase));
+        return;
+    }
+    uint64_t typeinfo = name_slot - 8;
+    uint64_t vtable = ofx_find_vtable_for_typeinfo(g.slide + typeinfo);
+    if (!vtable) {
+        plog("Titanox[ofx][vt]: '%s' typeinfo at 0x%llx, no vtable ref",
+             t->cls, (unsigned long long)(typeinfo - g.vmbase));
+        return;
+    }
+    g_vtable[ti] = vtable;
     int n = 0;
-    const uint64_t *slots = (const uint64_t *)ofx_mem(vt_vm + 16);
+    const uint64_t *slots = (const uint64_t *)ofx_mem(vtable);
     for (int i = 0; i < 64; i++) {
-        uint64_t v = slots[i];
-        if (!v) break;
-        uint64_t fn = v & 0x0000FFFFFFFFFFFFULL;
-        if (!fn || (int64_t)fn < 0) fn = (v - g.slide) & 0x0000FFFFFFFFFFFFULL;
-        uint64_t rva;
-        if (fn >= g.text_vm && fn < g.text_vm + g.text_size) rva = fn;
-        else if ((v - g.slide) >= g.text_vm && (v - g.slide) < g.text_vm + g.text_size) rva = v - g.slide;
-        else break;
+        uint64_t abs_v = ofx_absptr(slots[i]);
+        if (!abs_v) break;
+        uint64_t rva = abs_v - g.slide;
+        if (rva < g.text_vm || rva >= g.text_vm + g.text_size) break;
         g_slots[ti][n++] = rva;
     }
     g_nslots[ti] = n;
-    plog("Titanox[ofx][vt]: %s vtable=0x%llx slots=%d", t->cls, (unsigned long long)ofx_rva(vt_vm), n);
+    plog("Titanox[ofx][vt]: %s vtable=0x%llx slots=%d",
+         t->cls, (unsigned long long)(vtable - g.vmbase), n);
 }
 
 static void ofx_vtable_all(void)
@@ -539,7 +588,9 @@ static void ofx_vtable_all(void)
 
 static void ofx_vtable_dump(void)
 {
-    if (g_nresolved == 0 && g_vtable[0] == 0) return;
+    int any = 0;
+    for (int i = 0; i < g.ntargets; i++) if (g_vtable[i]) { any = 1; break; }
+    if (!any) return;
     char path[700];
     snprintf(path, sizeof(path), "%s/titanox_vtables.txt", ofx_dir());
     FILE *f = fopen(path, "w");
@@ -547,7 +598,7 @@ static void ofx_vtable_dump(void)
     for (int i = 0; i < g.ntargets; i++) {
         if (!g_vtable[i]) continue;
         fprintf(f, "=== %s (vtable=0x%llx, slots=%d) ===\n",
-                g_targets[i].cls, (unsigned long long)ofx_rva(g_vtable[i]), g_nslots[i]);
+                g_targets[i].cls, (unsigned long long)(g_vtable[i] - g.vmbase), g_nslots[i]);
         for (int k = 0; k < g_nslots[i]; k++)
             fprintf(f, "  slot[%2d] = 0x%llx\n", k, (unsigned long long)g_slots[i][k]);
         fprintf(f, "\n");
@@ -561,17 +612,18 @@ static void ofx_ctor_from_vtable(int ti)
     const OfxTarget *t = &g_targets[ti];
     if (t->kind != OFX_K_CTOR || !g_vtable[ti]) return;
     uint64_t vt = g_vtable[ti];
+    uint64_t abs_vt = g.slide + vt;
     for (int i = 0; i < g_nsegs; i++) {
         if (!g_segs[i].is_data_like) continue;
         const uint64_t *p = (const uint64_t *)ofx_mem(g_segs[i].vmaddr);
         uint64_t n = g_segs[i].vmsize / 8;
         for (uint64_t k = 0; k < n; k++) {
             uint64_t v = p[k];
-            if (v != g.slide + vt) continue;
+            if (v != abs_vt) continue;
             uint64_t ref_vm = g_segs[i].vmaddr + k * 8;
             const uint32_t *code = (const uint32_t *)ofx_mem(g.text_vm);
             uint64_t cn = g.text_size / 4;
-            for (uint64_t j = 0; j < cn; j++) {
+            for (uint64_t j = 0; j + 4 < cn; j++) {
                 uint64_t pc = g.text_vm + j * 4;
                 uint64_t page = pc & ~0xFFFULL;
                 uint32_t ins = code[j];
@@ -582,14 +634,11 @@ static void ofx_ctor_from_vtable(int ti)
                 if (imm & (1LL << 20)) imm -= (1LL << 21);
                 uint64_t tgt_page = page + (imm << 12);
                 if ((tgt_page & 0xFFFFF000) != (ref_vm & 0xFFFFF000)) continue;
-                for (int m = 1; m <= 3; m++) {
+                for (int m = 1; m <= 4; m++) {
                     uint32_t i2 = code[j + m];
                     if ((i2 & 0xFF000000) == 0x91000000) {
                         int64_t add = (i2 >> 10) & 0xFFF;
                         if (i2 & (1 << 22)) add <<= 12;
-                        int rn = (i2 >> 5) & 0x1F;
-                        int rd = i2 & 0x1F;
-                        (void)rn; (void)rd;
                         if (tgt_page + add == ref_vm) {
                             uint64_t fn = 0;
                             for (int s = 0; s < g.nfstarts; s++)
@@ -660,8 +709,6 @@ static void ofx_summary(void)
         if (g_res[i].rva)
             plog("  %-58s 0x%-9llx %-8s %s", g_targets[i].name,
                    (unsigned long long)g_res[i].rva, ofx_src_name(g_res[i].src), g_res[i].ev);
-        else
-            plog("  %-58s НЕ НАЙДЕН  %s", g_targets[i].name, g_res[i].ev);
     }
 }
 
@@ -674,27 +721,37 @@ static FILE *ofx_open_out(const char *name)
     return f;
 }
 
+static void ofx_dump_diagnostic(void)
+{
+    FILE *d = ofx_open_out("titanox_diagnostic.txt");
+    if (!d) return;
+    fprintf(d, "cstring_vm=0x%llx size=%llu\n", (unsigned long long)g.cstr_vm, (unsigned long long)g.cstr_size);
+    fprintf(d, "const_vm=0x%llx size=%llu\n", (unsigned long long)g.const_vm, (unsigned long long)g.const_size);
+    fprintf(d, "data_vm=0x%llx size=%llu\n", (unsigned long long)g.data_vm, (unsigned long long)g.data_size);
+    fprintf(d, "meth_vm=0x%llx size=%llu\n", (unsigned long long)g.meth_vm, (unsigned long long)g.meth_size);
+    fprintf(d, "\n");
+    for (int i = 0; i < g.ntargets; i++) {
+        if (!g_targets[i].cls[0]) continue;
+        int cnt = 0;
+        uint64_t sv = ofx_find_any(g_targets[i].cls, &cnt);
+        if (cnt == 0) continue;
+        uint64_t name_slot = ofx_typeinfo_for_name(sv);
+        uint64_t typeinfo = name_slot ? name_slot - 8 : 0;
+        uint64_t vtable = typeinfo ? ofx_find_vtable_for_typeinfo(g.slide + typeinfo) : 0;
+        fprintf(d, "%-45s cls='%s' hits=%d rva=0x%llx typeinfo=%s vtable=%s\n",
+                g_targets[i].name, g_targets[i].cls, cnt,
+                (unsigned long long)(sv - g.vmbase),
+                typeinfo ? "yes" : "no",
+                vtable ? "yes" : "no");
+    }
+    fclose(d);
+}
+
 static void ofx_dump(void)
 {
     if (g_nresolved == 0) {
-        plog("Titanox[ofx]: 0 оффсетов, создаю диагностический файл.");
-        FILE *d = ofx_open_out("titanox_diagnostic.txt");
-        if (d) {
-            fprintf(d, "cstring_vm=0x%llx size=%llu\n", (unsigned long long)g.cstr_vm, (unsigned long long)g.cstr_size);
-            fprintf(d, "const_vm=0x%llx size=%llu\n", (unsigned long long)g.const_vm, (unsigned long long)g.const_size);
-            fprintf(d, "data_vm=0x%llx size=%llu\n", (unsigned long long)g.data_vm, (unsigned long long)g.data_size);
-            fprintf(d, "clsn_vm=0x%llx size=%llu\n", (unsigned long long)g.clsn_vm, (unsigned long long)g.clsn_size);
-            fprintf(d, "meth_vm=0x%llx size=%llu\n", (unsigned long long)g.meth_vm, (unsigned long long)g.meth_size);
-            for (int i = 0; i < g.ntargets; i++) {
-                if (!g_targets[i].cls[0]) continue;
-                int cnt = 0;
-                uint64_t sv = ofx_find_any(g_targets[i].cls, &cnt);
-                fprintf(d, "%s : %s : found=%d : first=0x%llx\n",
-                        g_targets[i].name, g_targets[i].cls, cnt,
-                        (unsigned long long)(sv ? sv - g.vmbase : 0));
-            }
-            fclose(d);
-        }
+        plog("Titanox[ofx]: 0 оффсетов, создаю titanox_diagnostic.txt");
+        ofx_dump_diagnostic();
         return;
     }
     FILE *h = ofx_open_out("titanox_offsets.h");
@@ -730,6 +787,7 @@ static void ofx_dump(void)
         }
         fclose(t);
     }
+    ofx_dump_diagnostic();
 }
 
 static pthread_once_t g_once = PTHREAD_ONCE_INIT;

@@ -9,7 +9,6 @@ Titanox_FILES = src/Tweak.mm src/TitanoxImpl.mm $(shell find deps/Titanox/libtit
 Titanox_CFLAGS = -I$(THEOS_PROJECT_DIR)/deps/Titanox/libtitanox/libtitanox
 Titanox_CCFLAGS = -std=c++17 -Wno-everything -I$(THEOS_PROJECT_DIR)/deps/Titanox/libtitanox/libtitanox
 Titanox_OBJCFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)/deps/Titanox/libtitanox/libtitanox
-Titanox_LDFLAGS = -dynamiclib
 Titanox_FRAMEWORKS = Foundation UIKit
 Titanox_LIBRARIES = c++
 

@@ -1,4 +1,3 @@
-#define main titanox_unused_main
 #import "libtitanox.h"
 #import <dlfcn.h>
 #import <mach/mach.h>

@@ -25,6 +25,9 @@
 #define OFX_LOG_LIMIT 24
 #define OFX_ALLOW_LOW 0
 
+static int g_nresolved;
+static int g_by_src[8];
+
 static char  g_dir[512];
 static FILE *g_log;
 
@@ -410,6 +413,7 @@ static int ofx_parse_macho(void)
         }
         p += lc->cmdsize;
     }
+    g.clsn_vm = 0; g.clsn_size = 0;
     for (int i = 0; i < g_nsecs; i++) {
         OfxSec *d = &g_secs[i];
         if (!strcmp(d->sect, "__text") && d->size > g.text_size) { g.text_vm = d->vmaddr; g.text_size = d->size; }
@@ -513,7 +517,7 @@ static void ofx_vtable_all(void)
 
 static void ofx_vtable_dump(void)
 {
-    if (g_nresolved == 0 && g.vtable[0] == 0) return;
+    if (g_nresolved == 0 && g_vtable[0] == 0) return;
     char path[700];
     snprintf(path, sizeof(path), "%s/titanox_vtables.txt", ofx_dir());
     FILE *f = fopen(path, "w");
@@ -622,9 +626,6 @@ static const char *ofx_src_name(uint8_t s)
     }
 }
 
-static int g_nresolved;
-static int g_by_src[8];
-
 static void ofx_summary(void)
 {
     g_nresolved = 0;
@@ -657,10 +658,10 @@ static void ofx_dump(void)
     if (g_nresolved == 0) {
         plog("Titanox[ofx]: 0 оффсетов, файлы не создаются.");
         plog("Titanox[ofx]: причины:");
-        plog("  - найдено строк классов: %d", g.clsn_size ? 1 : 0);
-        plog("  - найдено строк методов: %d", g.meth_size ? 1 : 0);
-        plog("  - найдено строк cstring: %d", g.cstr_size ? 1 : 0);
-        plog("  - typeinfo найдено: %d", g.vtable[0] ? 1 : 0);
+        plog("  - cstring найден: %d", g.cstr_size ? 1 : 0);
+        plog("  - objc_classname найден: %d", g.clsn_size ? 1 : 0);
+        plog("  - objc_methname найден: %d", g.meth_size ? 1 : 0);
+        plog("  - typeinfo найдено: %d", g_vtable[0] ? 1 : 0);
         return;
     }
     FILE *h = ofx_open_out("titanox_offsets.h");

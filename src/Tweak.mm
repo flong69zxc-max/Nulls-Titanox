@@ -13,8 +13,22 @@ static void TLOG(NSString *fmt, ...) {
     if (f) { fputs([line UTF8String], f); fclose(f); }
 }
 
+static bool (*orig_getBool)(void*);
+static bool (*orig_isDev)(void*);
+static bool (*orig_isDevBuild)(void*);
+
 static bool hook_getBool(void* self) {
-    TLOG(@"getBool called self=0x%llx -> true", (unsigned long long)(uintptr_t)self);
+    TLOG(@"getBool called -> true");
+    return true;
+}
+
+static bool hook_isDev(void* self) {
+    TLOG(@"isDev called -> true");
+    return true;
+}
+
+static bool hook_isDevBuild(void* self) {
+    TLOG(@"isDevBuild called -> true");
     return true;
 }
 
@@ -22,21 +36,23 @@ __attribute__((constructor))
 static void init() {
     @autoreleasepool {
         TLOG(@"=== Titanox init ===");
-        uint64_t base = [TitanoxHook getBaseAddressOfLibrary:"Nulls Brawl"];
-        TLOG(@"base=0x%llx", (unsigned long long)base);
-        if (!base) return;
 
-        uint64_t getBoolAddr = base + RVA_GETBOOL;
-        [TitanoxHook addBreakpointAtAddress:(void*)getBoolAddr withHook:(void*)hook_getBool];
-        TLOG(@"breakpoint getBool @ 0x%llx", (unsigned long long)getBoolAddr);
+        [TitanoxHook hookStaticFunction:"_ZN10SCIDConfig7getBoolEPKc"
+                        withReplacement:(void*)hook_getBool
+                            inLibrary:"Nulls Brawl"
+                       outOldFunction:(void**)&orig_getBool];
+        TLOG(@"hooked getBool (fishhook)");
 
-        uint64_t isDevAddr = base + RVA_ISDEV;
-        uint64_t isDevBuildAddr = base + RVA_ISDEVBUILD;
+        [TitanoxHook hookStaticFunction:"_ZN12LogicVersion5isDevEv"
+                        withReplacement:(void*)hook_isDev
+                            inLibrary:"Nulls Brawl"
+                       outOldFunction:(void**)&orig_isDev];
+        TLOG(@"hooked isDev (fishhook)");
 
-        uint8_t patch[1] = { 0x01 };
-        [TitanoxHook patchMemoryAtAddress:(void*)isDevAddr withPatch:patch size:1];
-        [TitanoxHook patchMemoryAtAddress:(void*)isDevBuildAddr withPatch:patch size:1];
-        TLOG(@"patched isDev @ 0x%llx", (unsigned long long)isDevAddr);
-        TLOG(@"patched isDevBuild @ 0x%llx", (unsigned long long)isDevBuildAddr);
+        [TitanoxHook hookStaticFunction:"_ZN12LogicVersion12isDevBuildEv"
+                        withReplacement:(void*)hook_isDevBuild
+                            inLibrary:"Nulls Brawl"
+                       outOldFunction:(void**)&orig_isDevBuild];
+        TLOG(@"hooked isDevBuild (fishhook)");
     }
 }

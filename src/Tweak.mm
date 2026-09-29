@@ -32,10 +32,11 @@ static void init() {
 
         uint64_t isDevAddr = base + RVA_ISDEV;
         uint64_t isDevBuildAddr = base + RVA_ISDEVBUILD;
-        uint8_t trueByte = 1;
-        [TitanoxHook writeMemoryAt:isDevAddr data:&trueByte size:1];
-        [TitanoxHook writeMemoryAt:isDevBuildAddr data:&trueByte size:1];
-        TLOG(@"patched isDev @ 0x%llx = 1", (unsigned long long)isDevAddr);
-        TLOG(@"patched isDevBuild @ 0x%llx = 1", (unsigned long long)isDevBuildAddr);
+
+        uint8_t patch[1] = { 0x01 };
+        BOOL ok1 = [TitanoxHook patchMemoryAtAddress:(void*)isDevAddr withPatch:patch size:1];
+        BOOL ok2 = [TitanoxHook patchMemoryAtAddress:(void*)isDevBuildAddr withPatch:patch size:1];
+        TLOG(@"patched isDev @ 0x%llx ok=%d", (unsigned long long)isDevAddr, ok1);
+        TLOG(@"patched isDevBuild @ 0x%llx ok=%d", (unsigned long long)isDevBuildAddr, ok2);
     }
 }

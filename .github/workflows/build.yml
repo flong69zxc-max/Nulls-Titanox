@@ -11,6 +11,8 @@ permissions:
 jobs:
   build:
     runs-on: macos-14
+    env:
+      THEOS: ${{ github.workspace }}/theos
     steps:
       - uses: actions/checkout@v4
         with:

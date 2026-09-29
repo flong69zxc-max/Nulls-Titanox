@@ -5,5 +5,6 @@
 #define RVA_ISDEV            0xd93d80
 #define RVA_ISDEVBUILD       0xd93da0
 #define RVA_ISDEVELOPERBUILD 0xda1060
+#define RVA_LOADRESOURCES    0x45c320
 
 #endif

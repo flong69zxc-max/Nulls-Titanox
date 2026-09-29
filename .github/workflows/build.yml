@@ -3,6 +3,12 @@ name: Build Titanox
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - Makefile
+      - 'src/**'
+      - layout/**
+      - Info.plist
+      - control
   workflow_dispatch:
 
 permissions:
@@ -35,7 +41,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: deps/Titanox
-          key: titanox-v3
+          key: titanox-v4
 
       - name: Clone Titanox
         if: steps.cache-titanox.outputs.cache-hit != 'true'
@@ -43,23 +49,17 @@ jobs:
           mkdir -p deps
           git clone --depth 1 https://github.com/Ragekill3377/Titanox.git deps/Titanox
 
-      - name: Patch hook.c for ptrauth
+      - name: Patch hook.c
         run: |
           HOOK_C="deps/Titanox/libtitanox/brk_hook/Hook/hook.c"
-          if ! grep -q "#include <ptrauth.h>" "$HOOK_C"; then
-            sed -i '' '1i\
-          #include <ptrauth.h>
-          ' "$HOOK_C"
-          fi
-          sed -i '' 's/arm_thread_state64_set_pc_fptr(\*new, hooks\[i\].new);/arm_thread_state64_set_pc_fptr(*new, ptrauth_sign_unauthenticated((void *)hooks[i].new, ptrauth_key_function_pointer, 0));/g' "$HOOK_C"
+          sed -i '' '/^#include <ptrauth.h>$/d' "$HOOK_C"
+          sed -i '' 's/arm_thread_state64_set_pc_fptr(\*new, ptrauth_sign_unauthenticated((void \*)hooks\[i\].new, ptrauth_key_function_pointer, 0));/arm_thread_state64_set_pc_fptr(*new, (void *)hooks[i].new);/g' "$HOOK_C"
+          sed -i '' 's/arm_thread_state64_set_pc_fptr(\*new, hooks\[i\].new);/arm_thread_state64_set_pc_fptr(*new, (void *)hooks[i].new);/g' "$HOOK_C"
 
       - name: Prepare files
         run: |
           mkdir -p src
           cp deps/Titanox/libtitanox/libtitanox/main.mm src/TitanoxImpl.mm
-          sed -i '' '1i\
-          #define main titanox_unused_main
-          ' src/TitanoxImpl.mm
           cat > Makefile <<'EOF'
           TARGET = iphone:clang:latest:14.0
           ARCHS = arm64 arm64e
@@ -72,7 +72,6 @@ jobs:
           Titanox_CFLAGS = -I$(THEOS_PROJECT_DIR)/deps/Titanox/libtitanox/libtitanox
           Titanox_CCFLAGS = -std=c++17 -Wno-everything -I$(THEOS_PROJECT_DIR)/deps/Titanox/libtitanox/libtitanox
           Titanox_OBJCFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)/deps/Titanox/libtitanox/libtitanox
-          Titanox_LDFLAGS = -dynamiclib
           Titanox_FRAMEWORKS = Foundation UIKit
           Titanox_LIBRARIES = c++
 
@@ -125,21 +124,22 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Makefile src/
           git diff --cached --quiet || git commit -m "auto: sync source files"
-          git push
+          git pull --rebase origin main || true
+          git push || true
 
       - name: Build
         run: |
           make clean || true
-          make
+          make -j4
 
       - name: Check and copy dylib
         run: |
-          DYLIB=$(find .theos/obj -name "Titanox.dylib" | head -n1)
+          DYLIB=$(find .theos/obj -name "Titanox.dylib" ! -path "*/arm64/*" ! -path "*/arm64e/*" | head -n1)
           test -n "$DYLIB"
-          file "$DYLIB"
-          lipo -info "$DYLIB" || true
+          lipo -archs "$DYLIB" | tr ' ' '\n' | grep -qx arm64
+          lipo -archs "$DYLIB" | tr ' ' '\n' | grep -qx arm64e
           cp "$DYLIB" ./Titanox.dylib
-          ls -la ./Titanox.dylib
+          file ./Titanox.dylib
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

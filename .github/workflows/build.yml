@@ -51,18 +51,6 @@ jobs:
           fi
           sed -i '' 's/arm_thread_state64_set_pc_fptr(\*new, hooks\[i\].new);/arm_thread_state64_set_pc_fptr(*new, ptrauth_sign_unauthenticated((void *)hooks[i].new, ptrauth_key_function_pointer, 0));/g' "$HOOK_C"
 
-      - name: Create filter plist
-        run: |
-          mkdir -p layout/Library/MobileSubstrate/DynamicLibraries
-          cat > layout/Library/MobileSubstrate/DynamicLibraries/Titanox.plist <<'EOF'
-          {
-              Filter = {
-                  Bundles = ( "nt.nb.ios.app" );
-              };
-          }
-          EOF
-          cat layout/Library/MobileSubstrate/DynamicLibraries/Titanox.plist
-
       - name: Prepare files
         run: |
           mkdir -p src
@@ -82,18 +70,6 @@ jobs:
           Titanox_LIBRARIES = c++
 
           include $(THEOS_MAKE_PATH)/tweak.mk
-          EOF
-
-          cat > control <<'EOF'
-          Package: com.nulls.titanox
-          Name: Titanox
-          Version: 1.0.0
-          Architecture: iphoneos-arm64
-          Description: Runtime hooks for Nulls Brawl
-          Maintainer: nulls
-          Author: nulls
-          Section: Tweaks
-          Depends: mobilesubstrate
           EOF
 
           cat > src/offsets.h <<'EOF'
@@ -140,30 +116,32 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Makefile control layout/ src/
+          git add Makefile src/
           git diff --cached --quiet || git commit -m "auto: sync source files"
           git push
 
       - name: Build
         run: |
           make clean || true
-          make package
+          make
 
       - name: Install ldid
         uses: MOZGIII/install-ldid-action@v1
         with:
           ldid-version: v2.1.5-procursus7
 
-      - name: Sign dylib
+      - name: Sign and copy dylib
         run: |
           DYLIB=$(find .theos/obj -name "Titanox.dylib" | head -n1)
           test -n "$DYLIB"
           ldid -S "$DYLIB"
           file "$DYLIB"
+          cp "$DYLIB" ./Titanox.dylib
+          ls -la Titanox.dylib
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: Titanox.dylib
-          path: .theos/obj/**/Titanox.dylib
+          path: Titanox.dylib
           if-no-files-found: error

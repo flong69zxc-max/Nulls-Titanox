@@ -4,7 +4,6 @@
 
 #define TLOG(fmt, ...) do { \
     NSString *_s = [NSString stringWithFormat:fmt, ##__VA_ARGS__]; \
-    [TitanoxHook log:@"%@", _s]; \
     NSLog(@"[Titanox] %@", _s); \
 } while(0)
 

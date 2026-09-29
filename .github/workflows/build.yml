@@ -1,0 +1,146 @@
+name: Build Titanox Tweak
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Theos
+        uses: Randomblock1/theos-action@v1
+
+      - name: Clone Titanox
+        run: |
+          git clone --depth 1 https://github.com/Ragekill3377/Titanox.git Titanox
+          cd Titanox
+          make clean && make
+
+      - name: Create files
+        run: |
+          if [ ! -f Makefile ]; then
+            cat > Makefile <<'EOF'
+TARGET = iphone:clang:latest:14.0
+ARCHS = arm64 arm64e
+INSTALL_TARGET_PROCESSES = Nulls Brawl
+
+include $(THEOS)/makefiles/common.mk
+
+TWEAK_NAME = AutoDodge
+AutoDodge_FILES = src/Tweak.mm
+AutoDodge_CFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)/Titanox/include
+AutoDodge_LDFLAGS = -L$(THEOS_PROJECT_DIR)/Titanox/lib -lTitanox
+
+include $(THEOS_MAKE_PATH)/tweak.mk
+EOF
+          fi
+          if [ ! -f control ]; then
+            cat > control <<'EOF'
+Package: com.yourname.autododge
+Name: AutoDodge
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: Debug menu enabler for Nulls Brawl
+Maintainer: yourname
+Author: yourname
+Section: Tweaks
+Depends: mobilesubstrate
+EOF
+          fi
+          if [ ! -f Info.plist ]; then
+            cat > Info.plist <<'EOF'
+{
+    Filter = {
+        Bundles = ( "nt.nb.ios.app" );
+    };
+}
+EOF
+          fi
+          mkdir -p src
+          if [ ! -f src/offsets.h ]; then
+            cat > src/offsets.h <<'EOF'
+#ifndef OFFSETS_H
+#define OFFSETS_H
+
+#define RVA_GETBOOL 0xb24820
+#define RVA_ISDEV 0xd93d80
+#define RVA_ISDEVBUILD 0xd93da0
+
+#endif
+EOF
+          fi
+          if [ ! -f src/Tweak.mm ]; then
+            cat > src/Tweak.mm <<'EOF'
+#import <Foundation/Foundation.h>
+#import "Titanox.h"
+#include "offsets.h"
+
+static bool (*orig_getBool)(void*);
+static bool (*orig_isDev)(void*);
+static bool (*orig_isDevBuild)(void*);
+
+static bool hook_getBool(void* self) {
+    return true;
+}
+
+static bool hook_isDev(void* self) {
+    return true;
+}
+
+static bool hook_isDevBuild(void* self) {
+    return true;
+}
+
+__attribute__((constructor))
+static void init() {
+    @autoreleasepool {
+        StaticInlineHook *hooker = [[StaticInlineHook alloc] initWithMachOName:@"Nulls Brawl"];
+        if (!hooker) return;
+        uintptr_t base = [hooker getBaseAddress];
+        if (!base) return;
+        orig_getBool = (bool (*)(void*))[hooker hookFunctionAtVaddr:base + RVA_GETBOOL withReplacement:(void*)hook_getBool];
+        orig_isDev = (bool (*)(void*))[hooker hookFunctionAtVaddr:base + RVA_ISDEV withReplacement:(void*)hook_isDev];
+        orig_isDevBuild = (bool (*)(void*))[hooker hookFunctionAtVaddr:base + RVA_ISDEVBUILD withReplacement:(void*)hook_isDevBuild];
+        NSLog(@"[AutoDodge] hooks installed");
+    }
+}
+EOF
+          fi
+
+      - name: Commit files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Makefile control Info.plist src/offsets.h src/Tweak.mm
+          git diff --cached --quiet || git commit -m "auto: add tweak source files"
+          git push
+
+      - name: Build Tweak
+        run: make clean && make package
+
+      - name: Install ldid
+        uses: MOZGIII/install-ldid-action@v1
+        with:
+          ldid-version: v2.1.5-procursus7
+
+      - name: Sign dylib
+        run: |
+          DYLIB=$(find .theos/obj -name "*.dylib" | head -n1)
+          ldid -S "$DYLIB"
+          file "$DYLIB"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoDodge.dylib
+          path: .theos/obj/**/*.dylib
+          if-no-files-found: error

@@ -6,7 +6,7 @@
 #include <mach-o/dyld.h>
 #include <mach/mach.h>
 #import "../fishhook/fishhook.h"
-#include "../brk_hook/Hook/hook_wrapper.hpp"
+#import "../brk_hook/Hook/hook_wrapper.hpp"
 #import "../MemX/MemX.hpp"
 #import "../MemX/VMTWrapper.h"
 #import "../vm_funcs/vm.hpp"
@@ -14,17 +14,12 @@
 
 @implementation TitanoxHook : NSObject
 
-#pragma mark - logging to TITANOX_LOGS.txt
-
 + (void)log:(NSString *)format, ... {
     va_list args;
     va_start(args, format);
     THLog(format, args);
     va_end(args);
 }
-
-
-#pragma mark - Base Address and VM Address Slide
 
 uint64_t GetBaseAddress(const char* libName) {
     for (uint32_t i = 0; i < _dyld_image_count(); ++i) {
@@ -46,8 +41,6 @@ intptr_t GetVmAddrSlide(const char* libName) {
     return 0;
 }
 
-#pragma mark - Breakpoint hook
-
 + (BOOL)addBreakpointAtAddress:(void *)original withHook:(void *)hook {
     if (!original || !hook) {
         THLog(@"[ERROR] addBreakpointAtAddress: invalid params. original=%p, hook=%p", original, hook);
@@ -63,8 +56,6 @@ intptr_t GetVmAddrSlide(const char* libName) {
     }
     return res;
 }
-
-#pragma mark - remove breakpoint (Only supports new method)
 
 + (BOOL)removeBreakpointAtAddress:(void *)original {
     if (!original) {
@@ -139,7 +130,6 @@ intptr_t GetVmAddrSlide(const char* libName) {
     MemX::ClearAddrRange();
 }
 
-#pragma mark - MemX Virtual Function hooking stuff
 + (void *)vmthookCreateWithNewFunction:(void *)newFunc index:(int32_t)index {
     if (!newFunc) {
         THLog(@"[ERROR] vmthookCreateWithNewFunction: ERROR - newFunc is NULL");
@@ -226,8 +216,6 @@ intptr_t GetVmAddrSlide(const char* libName) {
     THLog(@"[Success] vmtinvokerDestroy: Destroy complete");
 }
 
-#pragma mark - Static Inline Patch
-
 - (instancetype)initWithMachOName:(NSString *)machoName {
     self = [super init];
     if (self) {
@@ -274,33 +262,25 @@ intptr_t GetVmAddrSlide(const char* libName) {
     return _hooker->deactivate_patch(vaddr, hexStr);
 }
 
-#pragma mark - Static Function Hooking
-
 + (void)hookStaticFunction:(const char *)symbol
          withReplacement:(void *)replacement
           inLibrary:(const char *)libName
         outOldFunction:(void **)oldFunction {
 
-    NSString *libNameString = [NSString stringWithUTF8String:libName];
-    NSString *libPath = [self findExecInBundle:libNameString];
-
-    void *handle = dlopen([libPath UTF8String], RTLD_NOW | RTLD_NOLOAD);
-
+    void *handle = dlopen(NULL, RTLD_NOW | RTLD_GLOBAL);
     if (!handle) {
-        THLog(@"Failed to open library: %s", libName);
+        THLog(@"Failed to get main handle: %s", dlerror());
         return;
     }
 
     void *symAddr = dlsym(handle, symbol);
     if (!symAddr) {
-        THLog(@"Failed to resolve symbol %s before hooking", symbol);
-        dlclose(handle);
+        THLog(@"Failed to resolve symbol %s", symbol);
         return;
     }
 
     if ([self isFunctionHooked:symbol withOriginal:symAddr inLibrary:libName]) {
         THLog(@"Warning: Function %s is already hooked.", symbol);
-        dlclose(handle);
         return;
     }
 
@@ -315,10 +295,7 @@ intptr_t GetVmAddrSlide(const char* libName) {
     } else {
         THLog(@"Successfully hooked %s", symbol);
     }
-    dlclose(handle);
 }
-
-#pragma mark - Method Swizzling
 
 + (void)swizzleMethod:(SEL)originalSelector
           withMethod:(SEL)swizzledSelector
@@ -342,8 +319,6 @@ intptr_t GetVmAddrSlide(const char* libName) {
     }
 }
 
-#pragma mark - Method Overriding
-
 + (void)overrideMethodInClass:(Class)targetClass
                      selector:(SEL)selector
               withNewFunction:(IMP)newFunction
@@ -357,8 +332,6 @@ intptr_t GetVmAddrSlide(const char* libName) {
     
     method_setImplementation(method, newFunction);
 }
-
-#pragma mark - Memory Patching
 
 + (BOOL)readMemoryAt:(mach_vm_address_t)address buffer:(void *)buffer size:(mach_vm_size_t)size {
     return vm_read_custom(address, buffer, size);
@@ -398,8 +371,6 @@ intptr_t GetVmAddrSlide(const char* libName) {
     }
 }
 
-#pragma mark - isHooked
-
 + (BOOL)isFunctionHooked:(const char *)symbol
            withOriginal:(void *)original
              inLibrary:(const char *)libName {
@@ -417,40 +388,29 @@ intptr_t GetVmAddrSlide(const char* libName) {
     return YES;
 }
 
-#pragma mark - Bool Hooking
-
 + (void)hookBoolByName:(const char *)symbol
              inLibrary:(const char *)libName {
 
-    NSString *libNameString = [NSString stringWithUTF8String:libName];
-    NSString *libPath = [self findExecInBundle:libNameString];
-    
-    void *handle = dlopen([libPath UTF8String], RTLD_NOW | RTLD_NOLOAD);
+    void *handle = dlopen(NULL, RTLD_NOW | RTLD_GLOBAL);
     if (!handle) {
-        THLog(@"Failed to open library: %s", libName);
+        THLog(@"Failed to get main handle: %s", dlerror());
         return;
     }
     
     bool *boolAddress = (bool *)dlsym(handle, symbol);
     if (!boolAddress) {
         THLog(@"Failed to find symbol: %s", symbol);
-        dlclose(handle);
         return;
     }
     
     if (![self isSafeToPatchMemoryAtAddress:boolAddress length:sizeof(bool)]) {
         THLog(@"Memory patching aborted: unsafe memory region.");
-        dlclose(handle);
         return;
     }
     
     *boolAddress = !*boolAddress;
-    THLog(@"Successfully toggled bool %s in library %s to %d", symbol, libName, *boolAddress);
-    
-    dlclose(handle);
+    THLog(@"Successfully toggled bool %s to %d", symbol, *boolAddress);
 }
-
-#pragma mark - Safety Checks
 
 + (BOOL)isSafeToPatchMemoryAtAddress:(void *)address
                               length:(size_t)length {
@@ -473,9 +433,6 @@ intptr_t GetVmAddrSlide(const char* libName) {
 
     return info.protection & VM_PROT_WRITE;
 }
-
-
-#pragma mark - B.A & VM.ADDR.SLIDE
 
 + (uint64_t)getBaseAddressOfLibrary:(const char *)libName {
     return GetBaseAddress(libName); 

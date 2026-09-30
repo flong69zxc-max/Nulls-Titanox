@@ -1,27 +1,23 @@
 #ifndef OFFSETS_H
 #define OFFSETS_H
 
-#define RVA_GETBOOL                          0xb24820
-#define RVA_ISDEV                            0xd93d80
-#define RVA_ISDEVBUILD                       0xd93da0
-#define RVA_ISDEVELOPERBUILD                 0xda1060
+#define RVA_NATIVEFONT_FORMATSTRING                    0xb3fde8
+#define RVA_MESSAGEMANAGER_RECEIVEMESSAGE              0x75cce0
+#define RVA_LOGICDATATABLES_INITDATATABLE              0x9a8f3c
+#define RVA_LOGICPROJECTILEDATA_GETINTVALUEFROMCOLUMN  0x9cb098
+#define RVA_STAGE_SETVIEWPORT                          0xba17b8
 
-#define RVA_GAMEBUTTON_SETTEXT               0x54332c
-#define RVA_MESSAGEMANAGER_RECEIVEMESSAGE    0x75d20c
-#define RVA_LOGICPLAYERMAP_SAVE              0x518998
-#define RVA_STRING_FORMAT                    0xc50b70
-#define RVA_SCREEN_WIDTH                     0x1097ef0
-#define RVA_STAGE_INSTANCE                   0x10254e0
+#define RVA_GAMEBUTTON_CTOR                            0x5425b0
+#define RVA_HOMEPAGE_CTOR                              0x86eb80
 
-#define RVA_ANALYTICEVENT_CTOR               0xa8be24
-#define RVA_ANALYTICEVENT_SETSTRING          0xdb2ca0
-#define RVA_CLIENTINPUTMANAGER_ADDINPUT      0x3ea028
-#define RVA_GAMEBUTTON_BUTTONPRESSED         0x409158
-#define RVA_GENERICPOPUP_SETTITLE            0xdb3260
-#define RVA_LOGIC_TILEDATA_BLOCKSMOVEMENT    0x9edc20
-#define RVA_SCREEN_GETDPICLASS               0xd9b5c0
-
-#define RVA_GLOBALID_GETINSTANCEID           0x9b9ed0
-#define RVA_PROJECTILE_CTOR                  0x650988
+#define VT_GAMEBUTTON                                  0xf9b0f8
+#define VT_HOMEPAGE                                    0xfe4008
+#define VT_CHARACTER                                   0xff45c0
+#define VT_LOGICDATATABLES                             0xff2478
+#define VT_LOGICPROJECTILEDATA                         0xff3aa0
+#define VT_MESSAGEMANAGER                              0xfd57e8
+#define VT_MOVIECLIP                                   0x1006150
+#define VT_NATIVEFONT                                  0x1005858
+#define VT_STAGE                                       0x10091b0
 
 #endif

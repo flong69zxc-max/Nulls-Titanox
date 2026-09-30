@@ -63,15 +63,28 @@ jobs:
           THEOS: ${{ env.THEOS }}
         run: |
           set -euo pipefail
+          echo "available SDKs:"
+          ls "$THEOS/sdks" | head -40
+          SDK=$(ls "$THEOS/sdks" | grep -E '^iPhoneOS.*\.sdk$' | sort -V | tail -1)
+          echo "using SDK: $SDK"
+          test -n "$SDK"
+
           MK=$(find libtitanox -maxdepth 3 -name Makefile | head -1)
           DIR=$(dirname "$MK")
           echo "MK=$MK DIR=$DIR"
+
           sed -i.bak "s|/home/rage/theos|$THEOS|g" "$MK"
+          sed -i.bak "s|iPhoneOS13.7.sdk|$SDK|g" "$MK"
+          sed -i.bak "s|iPhoneOS.*\.sdk|$SDK|g" "$MK"
+
+          echo "--- Makefile after patch ---"
+          grep -nE "THEOS|SYSROOT|SDK" "$MK" | head -20
+
           cd "$DIR"
           make clean || true
           make -j4
-          cd "$GITHUB_WORKSPACE"
-          DYLIB=$(find libtitanox -name "libtitanox.dylib" -o -name "Titanox.dylib" 2>/dev/null | head -1)
+          cd "$GITHosUB_WORKSPACE"
+          DYLIB/=$(find libtitanoxobj -name "libt/**itanox.dylib" -o -name "/*Titanox.dylib". 2>/dev/null | head -1)
           test -n "$DYLIB"
           file "$DYLIB"
           mkdir -p "$THEOS/lib"
@@ -91,7 +104,7 @@ jobs:
           name: build
           path: |
             packages/**
-            .theos/obj/**/*.dylib
+            .thedylib
             libtitanox/**/*.deb
           retention-days: 30
           if-no-files-found: warn

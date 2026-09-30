@@ -1,88 +1,66 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import <objc/runtime.h>
+#import <dlfcn.h>
 #import <mach-o/dyld.h>
-#import <mach-o/loader.h>
-#import <mach/mach.h>
 #import <libgen.h>
-#import "libtitanox.h"
 
-#define IMAGE_BASE          0x100000000ULL
-#define RVA_RECEIVE_MESSAGE 0x75cce0
-#define LOG_LIMIT           50
+typedef void (*MSHookMessageEx_t)(Class _class, SEL message, IMP hook, IMP *old);
+static MSHookMessageEx_t MSHookMessageEx_p = nullptr;
 
-extern __thread int g_in_hook;
+typedef void (*litehook_hook_function_t)(void *target, void *replacement, void **original);
+static litehook_hook_function_t litehook_hook_function_p = nullptr;
 
-static intptr_t  gSlide = 0;
-static NSString *gMainBinaryName = nil;
+static int g_receiveMessage_count = 0;
+static IMP g_original_receiveMessage = NULL;
 
-extern "C" void OXLogC(const char *tag, uint64_t a, uint64_t b) {
-    THLog(@"[C] %s a=0x%llx b=0x%llx", tag, a, b);
-}
-
-static NSString *OXDetectMainBinary(void) {
-    NSString *exePath = [[NSBundle mainBundle] executablePath];
-    if (exePath) {
-        NSString *base = [exePath lastPathComponent];
-        if (base.length) return base;
+static void my_receiveMessage(id self, SEL _cmd, id msg) {
+    g_receiveMessage_count++;
+    NSLog(@"[TaleMod] receiveMessage #%d self=%p msg=%p",
+          g_receiveMessage_count, self, msg);
+    if (g_original_receiveMessage) {
+        ((void (*)(id, SEL, id))g_original_receiveMessage)(self, _cmd, msg);
     }
-    return [TitanoxHook findExecInBundle:nil];
 }
 
-static intptr_t OXFindSlide(NSString *name) {
-    const char *target = name.UTF8String;
-    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
-        const char *imgName = _dyld_get_image_name(i);
-        if (!imgName) continue;
-        const char *base = basename((char *)imgName);
-        if (strcmp(base, target) != 0) continue;
-        const struct mach_header *hdr = _dyld_get_image_header(i);
-        uint32_t magic = 0;
-        if (hdr) memcpy(&magic, hdr, 4);
-        if (magic == MH_MAGIC_64 || magic == MH_CIGAM_64) {
-            return _dyld_get_image_vmaddr_slide(i);
-        }
+static void install_hooks(void) {
+    NSLog(@"[TaleMod] === install hooks ===");
+
+    MSHookMessageEx_p = (MSHookMessageEx_t)dlsym(RTLD_DEFAULT, "MSHookMessageEx");
+    if (!MSHookMessageEx_p) {
+        NSLog(@"[TaleMod] MSHookMessageEx not found");
+        return;
     }
-    return 0;
-}
+    NSLog(@"[TaleMod] MSHookMessageEx = %p", MSHookMessageEx_p);
 
-typedef void (*orig_receiveMessage_t)(void *self, void *msg);
-static orig_receiveMessage_t orig_receiveMessage = NULL;
-static int cnt_receiveMessage = 0;
-
-static void my_receiveMessage(void *self, void *msg) {
-    g_in_hook = 1;
-    if (cnt_receiveMessage < LOG_LIMIT) {
-        cnt_receiveMessage++;
-        THLog(@"[BRK] receiveMessage #%d self=%p msg=%p",
-              cnt_receiveMessage, self, msg);
+    Class messageManagerClass = objc_getClass("MessageManager");
+    if (messageManagerClass) {
+        NSLog(@"[TaleMod] MessageManager class found");
+        MSHookMessageEx_p(messageManagerClass,
+                          @selector(receiveMessage:),
+                          (IMP)my_receiveMessage,
+                          &g_original_receiveMessage);
+        NSLog(@"[TaleMod] hook installed on -[MessageManager receiveMessage:]");
+    } else {
+        NSLog(@"[TaleMod] MessageManager class not found");
     }
-    if (orig_receiveMessage) orig_receiveMessage(self, msg);
-    g_in_hook = 0;
-}
 
-static void OXInstallHooks(void) {
-    THLog(@"=== INSTALLING BRK HOOK (EL0, 0x1e5) ===");
-    THLog(@"main=%@ slide=0x%lx", gMainBinaryName, (long)gSlide);
+    litehook_hook_function_p = (litehook_hook_function_t)dlsym(RTLD_DEFAULT, "litehook_hook_function");
+    if (litehook_hook_function_p) {
+        NSLog(@"[TaleMod] litehook_hook_function = %p", litehook_hook_function_p);
+    } else {
+        NSLog(@"[TaleMod] litehook_hook_function not found");
+    }
 
-    uint64_t rt = IMAGE_BASE + RVA_RECEIVE_MESSAGE + gSlide;
-    THLog(@"[brk] target rt=0x%llx", rt);
-
-    orig_receiveMessage = (orig_receiveMessage_t)rt;
-
-    BOOL ok = [TitanoxHook addBreakpointAtAddress:(void *)rt
-                                         withHook:(void *)&my_receiveMessage];
-    THLog(@"[brk] receiveMessage -> %s", ok ? "OK" : "FAIL");
-
-    THLog(@"=== INSTALLED ===");
+    NSLog(@"[TaleMod] === install done ===");
 }
 
 __attribute__((constructor))
-static void initMod(void) {
+static void tweak_init(void) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
-        gMainBinaryName = OXDetectMainBinary();
-        gSlide = OXFindSlide(gMainBinaryName);
-        OXInstallHooks();
-        THLog(@"=== DONE ===");
+        NSLog(@"[TaleMod] init");
+        install_hooks();
+        NSLog(@"[TaleMod] === done ===");
     });
 }

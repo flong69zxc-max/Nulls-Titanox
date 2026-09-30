@@ -10,7 +10,7 @@ permissions:
 jobs:
   build:
     runs-on: macos-14
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - name: Checkout tweak repo
         uses: actions/checkout@v4
@@ -37,10 +37,25 @@ jobs:
       - name: Install Theos SDKs
         run: |
           set -euo pipefail
-          if [ ! -d "$THEOS/sdks" ] || [ -z "$(ls -A "$THEOS/sdks" 2>/dev/null)" ]; then
-            rm -rf "$THEOS/sdks"
-            git clone --depth 1 https://github.com/theos/sdks.git "$THEOS/sdks"
+          mkdir -p "$THEOS/sdks"
+          if ! ls "$THEOS/sdks"/iPhoneOS*.sdk >/dev/null 2>&1; then
+            rm -rf /tmp/sdks
+            git clone --depth 1 --recursive https://github.com/theos/sdks.git /tmp/sdks || true
+            if ls /tmp/sdks/iPhoneOS*.sdk >/dev/null 2>&1; then
+              cp -a /tmp/sdks/iPhoneOS*.sdk "$THEOS/sdks/"
+            fi
           fi
+          if ! ls "$THEOS/sdks"/iPhoneOS*.sdk >/dev/null 2>&1; then
+            echo "no SDK yet, downloading iPhoneOS16.5.sdk"
+            cd "$THEOS/sdks"
+            curl -fL --retry 3 -o sdk.tar.gz \
+              https://github.com/theos/sdks/archive/refs/heads/master.tar.gz || true
+            if [ -f sdk.tar.gz ]; then
+              tar -xzf sdk.tar.gz --strip-components=1 --wildcards '*/iPhoneOS*.sdk' || true
+              rm -f sdk.tar.gz
+            fi
+          fi
+          echo "available SDKs:"
           ls "$THEOS/sdks" | head -40
 
       - name: Install ldid
@@ -49,7 +64,7 @@ jobs:
       - name: Patch duplicate segment name
         run: |
           set -euo pipefail
-          find libtitanox -name "sih.hpp" -o -name "sih.mm" | while read f; do
+          find libtitanox \( -name "sih.hpp" -o -name "sih.mm" \) -print | while read f; do
             echo "checking $f"
             grep -n "HOOK_DATA_SEGMENT\|HOOK_TEXT_SEGMENT" "$f" || true
             sed -i.bak 's|HOOK_DATA_SEGMENT = "__TITANOX_HOOK"|HOOK_DATA_SEGMENT = "__TITANOX_DATA"|g' "$f"
@@ -65,7 +80,7 @@ jobs:
           set -euo pipefail
           echo "available SDKs:"
           ls "$THEOS/sdks" | head -40
-          SDK=$(ls "$THEOS/sdks" | grep -E '^iPhoneOS.*\.sdk$' | sort -V | tail -1)
+          SDK=$(ls "$THEOS/sdks" | grep -E '^iPhoneOS.*\.sdk$' | sort -V | tail -1 || true)
           echo "using SDK: $SDK"
           test -n "$SDK"
 
@@ -78,13 +93,13 @@ jobs:
           sed -i.bak "s|iPhoneOS.*\.sdk|$SDK|g" "$MK"
 
           echo "--- Makefile after patch ---"
-          grep -nE "THEOS|SYSROOT|SDK" "$MK" | head -20
+          grep -nE "THEOS|SYSROOT|SDK" "$MK" | head -20 || true
 
           cd "$DIR"
           make clean || true
           make -j4
-          cd "$GITHosUB_WORKSPACE"
-          DYLIB/=$(find libtitanoxobj -name "libt/**itanox.dylib" -o -name "/*Titanox.dylib". 2>/dev/null | head -1)
+          cd "$GITHUB_WORKSPACE"
+          DYLIB=$(find libtitanox \( -name "libtitanox.dylib" -o -name "Titanox.dylib" \) 2>/dev/null | head -1)
           test -n "$DYLIB"
           file "$DYLIB"
           mkdir -p "$THEOS/lib"
@@ -104,7 +119,7 @@ jobs:
           name: build
           path: |
             packages/**
-            .thedylib
+            .theos/obj/**/*.dylib
             libtitanox/**/*.deb
           retention-days: 30
           if-no-files-found: warn

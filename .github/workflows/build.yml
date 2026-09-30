@@ -56,7 +56,7 @@ jobs:
             'd="$THEOS/include/Titanox/$(dirname "${1#./}")"; mkdir -p "$d"; cp "$1" "$d/"' _ {} \;)
           find deps/Titanox -name 'libtitanox.h' -exec cp {} "$THEOS/include/Titanox/" \;
 
-      - name: Build tweak
+      - name: Build + package tweak
         run: |
           set -euo pipefail
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
@@ -67,6 +67,10 @@ jobs:
           printf '\nADDITIONAL_CFLAGS += %s\nADDITIONAL_CXXFLAGS += %s\n' "$EXTRA" "$EXTRA" >> Makefile
 
           make -j$(sysctl -n hw.ncpu)
+          make package FINALPACKAGE=1
+
+          echo "--- packages ---"
+          find . -name '*.deb' -not -path './deps/*' -print
 
       - uses: actions/upload-artifact@v4
         if: always()

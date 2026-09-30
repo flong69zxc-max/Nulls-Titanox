@@ -44,7 +44,12 @@ jobs:
           set -euo pipefail
           MK=$(find libtitanox -maxdepth 3 -name Makefile | head -1)
           DIR=$(dirname "$MK")
-          sed -i.bak "s|^theos[[:space:]]*=.*|theos = $THEOS|" "$MK" || true
+          echo "MK=$MK"
+          echo "THEOS=$THEOS"
+          grep -n "theos" "$MK" | head -5
+          sed -i.bak "s|/home/rage/theos|$THEOS|g" "$MK"
+          echo "--- after sed ---"
+          grep -n "theos" "$MK" | head -5
           cd "$DIR"
           make clean || true
           make -j4

@@ -7,10 +7,11 @@
 #import <libgen.h>
 #import "libtitanox.h"
 
-#define FILE_LO   0x100000000ULL
-#define FILE_HI   0x101170000ULL
-#define TEXT_LO   0x100004000ULL
-#define TEXT_HI   0x100D8AF60ULL
+#define FILE_LO       0x100000000ULL
+#define FILE_HI       0x101170000ULL
+#define TEXT_FILE_LO  0x100004000ULL
+#define TEXT_FILE_HI  0x100D8AF60ULL
+#define DATA_FILE_LO  0x100F74000ULL
 
 static intptr_t  gSlide = 0;
 static NSString *gMainBinaryName = nil;
@@ -21,50 +22,26 @@ static NSString *OXDetectMainBinary(void) {
         NSString *base = [exePath lastPathComponent];
         if (base.length) return base;
     }
-    NSString *found = [TitanoxHook findExecInBundle:nil];
-    return found.length ? found : nil;
+    return [TitanoxHook findExecInBundle:nil];
 }
 
-/* Собираем ВСЕ image с таким basename и находим тот, у которого magic MH_MAGIC_64 */
-static void OXFindAllCandidates(NSString *name, intptr_t *outSlide, uint64_t *outRuntimeBase) {
+static intptr_t OXFindSlide(NSString *name) {
     const char *target = name.UTF8String;
-    int found = 0;
     for (uint32_t i = 0; i < _dyld_image_count(); i++) {
         const char *imgName = _dyld_get_image_name(i);
         if (!imgName) continue;
         const char *base = basename((char *)imgName);
         if (strcmp(base, target) != 0) continue;
-        
         const struct mach_header *hdr = _dyld_get_image_header(i);
-        intptr_t slide = _dyld_get_image_vmaddr_slide(i);
         uint32_t magic = 0;
         if (hdr) memcpy(&magic, hdr, 4);
-        
-        THLog(@"[cand] image[%u] hdr=%p slide=0x%lx magic=0x%08x",
-              i, hdr, (long)slide, magic);
-        
-        // Verify by reading magic
         if (magic == MH_MAGIC_64 || magic == MH_CIGAM_64) {
-            *outSlide = slide;
-            *outRuntimeBase = (uint64_t)hdr;
-            found++;
-            THLog(@"[cand] -> MATCH (magic MH_MAGIC_64)");
+            return _dyld_get_image_vmaddr_slide(i);
         }
     }
-    if (!found) {
-        THLog(@"[cand] no valid image found for %@, dumping all:", name);
-        for (uint32_t i = 0; i < _dyld_image_count(); i++) {
-            const char *imgName = _dyld_get_image_name(i);
-            if (imgName && strstr(imgName, target)) {
-                THLog(@"  [%u] %s hdr=%p slide=0x%lx", i, imgName,
-                      _dyld_get_image_header(i),
-                      (long)_dyld_get_image_vmaddr_slide(i));
-            }
-        }
-    }
+    return 0;
 }
 
-/* Три способа чтения, чтобы понять какой работает */
 static BOOL OXReadBytes(uint64_t fileVaddr, void *buf, size_t size) {
     if (fileVaddr < FILE_LO) return NO;
     if (fileVaddr + size < fileVaddr) return NO;
@@ -78,16 +55,13 @@ static BOOL OXReadBytes(uint64_t fileVaddr, void *buf, size_t size) {
                                          (vm_address_t)buf,
                                          &outSize);
     if (kr == KERN_SUCCESS && outSize == size) return YES;
-
-    if ([TitanoxHook MemXreadMemory:(uintptr_t)runtime buffer:buf length:size]) return YES;
-
     memcpy(buf, (void *)runtime, size);
     return YES;
 }
 
-static uint64_t OXReadPtr(uint64_t fileVaddr) {
+static uint64_t OXReadQword(uint64_t fileVaddr) {
     uint64_t v = 0;
-    if (!OXReadBytes(fileVaddr, &v, 8)) return 0;
+    OXReadBytes(fileVaddr, &v, 8);
     return v;
 }
 
@@ -101,114 +75,148 @@ static NSString *OXReadCString(uint64_t fileVaddr, int maxLen) {
     return [NSString stringWithUTF8String:buf];
 }
 
-static uint64_t OXDecodeFixup(uint64_t raw) {
-    uint64_t t43   = raw & 0x7FFFFFFFFFFULL;
-    uint64_t high8 = (raw >> 43) & 0xFFULL;
-    if (high8) return (high8 << 56) | t43;
-    return t43;
+/* vtable slot: содержит готовый runtime VA */
+static uint64_t OXSlotRuntime(uint64_t vtFileVaddr, int idx) {
+    return OXReadQword(vtFileVaddr + idx * 8);
 }
 
-static NSArray<NSString *> *OXSplitMangled(NSString *raw) {
-    if (!raw || raw.length < 2) return nil;
-    if ([raw hasPrefix:@"N"] && [raw hasSuffix:@"E"]) {
-        NSString *inner = [raw substringWithRange:NSMakeRange(1, raw.length - 2)];
-        NSMutableArray *parts = [NSMutableArray array];
-        NSUInteger i = 0;
-        while (i < inner.length) {
-            NSUInteger j = i;
-            while (j < inner.length && isdigit([inner characterAtIndex:j])) j++;
-            if (j == i) break;
-            int len = [[inner substringWithRange:NSMakeRange(i, j - i)] intValue];
-            if (len <= 0 || j + len > inner.length) break;
-            [parts addObject:[inner substringWithRange:NSMakeRange(j, len)]];
-            i = j + len;
+static BOOL OXIsRuntimeFunc(uint64_t rt) {
+    if (!rt) return NO;
+    if ((rt & 3) != 0) return NO;
+    uint64_t lo = gSlide + TEXT_FILE_LO;
+    uint64_t hi = gSlide + TEXT_FILE_HI;
+    return rt >= lo && rt < hi;
+}
+
+static uint64_t OXFileFromRuntime(uint64_t rt) {
+    return rt - gSlide;
+}
+
+/* typeinfo: пробуем разные offset'ы назад от vt */
+static NSDictionary *OXGetTypeInfo(uint64_t vtFileVaddr) {
+    for (int off = 8; off <= 64; off += 8) {
+        uint64_t tiRt = OXReadQword(vtFileVaddr - off);
+        if (!tiRt) continue;
+        if (tiRt < gSlide + FILE_LO) continue;
+        uint64_t tiFile = OXFileFromRuntime(tiRt);
+        if (tiFile < FILE_LO || tiFile >= FILE_HI) continue;
+
+        for (int noff = 8; noff <= 24; noff += 8) {
+            uint64_t nameRt = OXReadQword(tiFile + noff);
+            if (!nameRt) continue;
+            uint64_t nameFile = OXFileFromRuntime(nameRt);
+            if (nameFile < FILE_LO || nameFile >= FILE_HI) continue;
+            NSString *s = OXReadCString(nameFile, 160);
+            if (!s || s.length == 0) continue;
+            if (s.length < 2) continue;
+            if (s.length > 128) continue;
+
+            // _ZTS / _ZTI demangle
+            if ([s hasPrefix:@"_ZTS"] || [s hasPrefix:@"_ZTI"]) {
+                s = [s substringFromIndex:4];
+            }
+
+            NSArray *parts = nil;
+            if ([s hasPrefix:@"N"] && [s hasSuffix:@"E"]) {
+                NSString *inner = [s substringWithRange:NSMakeRange(1, s.length - 2)];
+                NSMutableArray *arr = [NSMutableArray array];
+                NSUInteger i = 0;
+                while (i < inner.length) {
+                    NSUInteger j = i;
+                    while (j < inner.length && isdigit([inner characterAtIndex:j])) j++;
+                    if (j == i) break;
+                    int len = [[inner substringWithRange:NSMakeRange(i, j - i)] intValue];
+                    if (len <= 0 || j + len > inner.length) break;
+                    [arr addObject:[inner substringWithRange:NSMakeRange(j, len)]];
+                    i = j + len;
+                }
+                if (arr.count) parts = arr;
+            }
+            if (!parts) {
+                NSMutableArray *arr = [NSMutableArray array];
+                NSUInteger i = 0;
+                while (i < s.length && isdigit([s characterAtIndex:i])) {
+                    NSUInteger j = i;
+                    while (j < s.length && isdigit([s characterAtIndex:j])) j++;
+                    if (j == i) break;
+                    int len = [[s substringWithRange:NSMakeRange(i, j - i)] intValue];
+                    if (len <= 0 || j + len > s.length) break;
+                    [arr addObject:[s substringWithRange:NSMakeRange(j, len)]];
+                    i = j + len;
+                }
+                if (arr.count) parts = arr;
+            }
+            if (!parts || parts.count == 0) continue;
+
+            return @{@"class": parts.lastObject, @"raw": s,
+                     @"ti_off": @(off), @"name_off": @(noff)};
         }
-        if (parts.count) return parts;
     }
-    NSMutableArray *parts = [NSMutableArray array];
-    NSUInteger i = 0;
-    while (i < raw.length && isdigit([raw characterAtIndex:i])) {
-        NSUInteger j = i;
-        while (j < raw.length && isdigit([raw characterAtIndex:j])) j++;
-        if (j == i) break;
-        int len = [[raw substringWithRange:NSMakeRange(i, j - i)] intValue];
-        if (len <= 0 || j + len > raw.length) break;
-        [parts addObject:[raw substringWithRange:NSMakeRange(j, len)]];
-        i = j + len;
-    }
-    if (parts.count) return parts;
     return nil;
 }
 
-static NSDictionary *OXGetTypeInfo(uint64_t vtVaddr) {
-    if (vtVaddr < 8) return nil;
-    uint64_t raw = OXReadPtr(vtVaddr - 8);
-    if (!raw) return nil;
-    uint64_t tiVaddr = OXDecodeFixup(raw);
-    if (!tiVaddr || tiVaddr < FILE_LO || tiVaddr >= FILE_HI) return nil;
-    uint64_t nameRaw = OXReadPtr(tiVaddr + 8);
-    if (!nameRaw) return nil;
-    uint64_t nameVaddr = OXDecodeFixup(nameRaw);
-    if (!nameVaddr || nameVaddr < FILE_LO || nameVaddr >= FILE_HI) return nil;
-    NSString *rawStr = OXReadCString(nameVaddr, 160);
-    if (!rawStr || rawStr.length == 0) return nil;
-    NSArray *parts = OXSplitMangled(rawStr);
-    if (!parts || parts.count == 0) return nil;
-    return @{@"class": parts.lastObject, @"raw": rawStr};
-}
-
-static void OXDumpVtable(uint64_t vtFileVaddr, NSString *label) {
+static int OXDumpVtable(uint64_t vtFileVaddr, NSString *label) {
     NSDictionary *ti = OXGetTypeInfo(vtFileVaddr);
     NSString *cls = ti ? ti[@"class"] : @"unknown";
-    THLog(@"=== VT %@ @ 0x%llx class=%@ ===", label, vtFileVaddr, cls);
-    for (int i = 0; i < 256; i++) {
-        uint64_t slotVaddr = vtFileVaddr + i * 8;
-        uint64_t raw = OXReadPtr(slotVaddr);
-        if (!raw) break;
-        uint64_t fn = OXDecodeFixup(raw);
-        if (fn < TEXT_LO || fn >= TEXT_HI) break;
-        THLog(@"  [%3d] 0x%llx", i, fn);
+    uint64_t rt = vtFileVaddr + gSlide;
+    THLog(@"=== VT %@ file=0x%llx rt=0x%llx class=%@ ===",
+          label, vtFileVaddr, rt, cls);
+
+    int slots = 0;
+    for (int i = 0; i < 512; i++) {
+        uint64_t rtFn = OXSlotRuntime(vtFileVaddr, i);
+        if (!OXIsRuntimeFunc(rtFn)) break;
+        uint64_t fileFn = OXFileFromRuntime(rtFn);
+        THLog(@"  [%3d] rt=0x%llx file=0x%llx", i, rtFn, fileFn);
+        slots++;
     }
+    THLog(@"  total slots: %d", slots);
+    return slots;
 }
 
-static void OXDiagnose(void) {
-    THLog(@"=== DIAGNOSTICS ===");
+static void OXScanDataForVtables(void) {
+    THLog(@"=== SCAN DATA FOR VTABLE RUNS ===");
+    uint64_t totalSlots = (FILE_HI - DATA_FILE_LO) / 8;
+    int runLen = 0, hits = 0;
+    uint64_t runStart = 0, prevSlot = 0;
 
-    // 1. Какие image называются "Nulls Brawl"
-    THLog(@"[diag] searching for main image...");
-    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
-        const char *name = _dyld_get_image_name(i);
-        if (!name) continue;
-        if (strstr(name, "Nulls") || strstr(name, "nt.nb")) {
-            const struct mach_header *hdr = _dyld_get_image_header(i);
-            intptr_t slide = _dyld_get_image_vmaddr_slide(i);
-            uint32_t magic = 0;
-            if (hdr) memcpy(&magic, hdr, 4);
-            THLog(@"[diag] [%u] %s", i, name);
-            THLog(@"[diag]     hdr=%p slide=0x%lx magic=0x%08x", hdr, (long)slide, magic);
+    for (uint64_t i = 0; i < totalSlots; i++) {
+        uint64_t slotFile = DATA_FILE_LO + i * 8;
+        uint64_t rt = OXReadQword(slotFile);
+        BOOL valid = OXIsRuntimeFunc(rt);
+        if (valid) {
+            if (runLen == 0) { runStart = slotFile; runLen = 1; }
+            else if (slotFile == prevSlot + 8) { runLen++; }
+            else {
+                if (runLen >= 4) {
+                    NSDictionary *ti = OXGetTypeInfo(runStart);
+                    THLog(@"VT file=0x%llx rt=0x%llx slots=%d class=%@",
+                          runStart, runStart + gSlide, runLen,
+                          ti ? ti[@"class"] : @"?");
+                    hits++;
+                }
+                runStart = slotFile; runLen = 1;
+            }
+            prevSlot = slotFile;
+        } else {
+            if (runLen >= 4) {
+                NSDictionary *ti = OXGetTypeInfo(runStart);
+                THLog(@"VT file=0x%llx rt=0x%llx slots=%d class=%@",
+                      runStart, runStart + gSlide, runLen,
+                      ti ? ti[@"class"] : @"?");
+                hits++;
+            }
+            runLen = 0;
         }
     }
-
-    // 2. Читаем magic по runtime base
-    if (gSlide) {
-        uint64_t runtimeBase = FILE_LO + gSlide;
-        uint32_t magic = 0;
-        OXReadBytes(FILE_LO, &magic, 4);
-        THLog(@"[diag] read magic at runtime 0x%llx -> 0x%08x (expect 0xfeedfacf)",
-              runtimeBase, magic);
+    if (runLen >= 4) {
+        NSDictionary *ti = OXGetTypeInfo(runStart);
+        THLog(@"VT file=0x%llx rt=0x%llx slots=%d class=%@",
+              runStart, runStart + gSlide, runLen,
+              ti ? ti[@"class"] : @"?");
+        hits++;
     }
-
-    // 3. Читаем содержимое нашей известной vtable
-    uint64_t vt = FILE_LO + 0x00F9B0F8;
-    THLog(@"[diag] reading GameButton vt at file 0x%llx runtime 0x%llx",
-          vt, vt + gSlide);
-    for (int i = -2; i < 6; i++) {
-        uint64_t slot = vt + i * 8;
-        uint64_t v = OXReadPtr(slot);
-        THLog(@"[diag]   slot[%d] @file 0x%llx = 0x%016llx", i, slot, v);
-    }
-
-    THLog(@"=== DIAG END ===");
+    THLog(@"total vtable-like runs: %d", hits);
 }
 
 __attribute__((constructor))
@@ -216,15 +224,29 @@ static void initTitanoxTrace(void) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
         gMainBinaryName = OXDetectMainBinary();
-        THLog(@"main binary detected: %@", gMainBinaryName);
+        gSlide = OXFindSlide(gMainBinaryName);
+        THLog(@"=== TITANOX TRACE v19 ===");
+        THLog(@"main = %@ slide=0x%lx rtBase=0x%llx",
+              gMainBinaryName, (long)gSlide, gSlide + FILE_LO);
 
-        intptr_t slide = 0;
-        uint64_t runtimeBase = 0;
-        OXFindAllCandidates(gMainBinaryName, &slide, &runtimeBase);
+        NSArray *vtList = @[
+            @{@"name": @"Character",          @"addr": @(0x00FF45C0)},
+            @{@"name": @"GameButton",         @"addr": @(0x00F9B0F8)},
+            @{@"name": @"HomePage",           @"addr": @(0x00FE4008)},
+            @{@"name": @"LogicDataTables",    @"addr": @(0x00FF2478)},
+            @{@"name": @"LogicProjectileData",@"addr": @(0x00FF3AA0)},
+            @{@"name": @"MessageManager",     @"addr": @(0x00FD57E8)},
+            @{@"name": @"MovieClip",          @"addr": @(0x01006150)},
+            @{@"name": @"NativeFont",         @"addr": @(0x01005858)},
+            @{@"name": @"Stage",              @"addr": @(0x010091B0)},
+        ];
 
-        gSlide = slide;
-        THLog(@"FINAL slide=0x%lx runtimeBase=0x%llx", (long)gSlide, runtimeBase);
+        for (NSDictionary *vt in vtList) {
+            uint64_t vaddr = FILE_LO + [vt[@"addr"] unsignedLongLongValue];
+            OXDumpVtable(vaddr, vt[@"name"]);
+        }
 
-        OXDiagnose();
+        OXScanDataForVtables();
+        THLog(@"=== TRACE READY ===");
     });
 }

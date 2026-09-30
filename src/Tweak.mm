@@ -11,13 +11,14 @@
 #import <netinet/in.h>
 #import <arpa/inet.h>
 
-// Объявление fishhook без хедера
-struct rebinding {
-    const char *name;
-    void *replacement;
-    void *replaced;
-};
-extern int rebind_symbols(struct rebinding rebindings[], size_t rebindings_nel);
+extern "C" {
+    struct rebinding {
+        const char *name;
+        void *replacement;
+        void *replaced;
+    };
+    int rebind_symbols(struct rebinding rebindings[], size_t rebindings_nel);
+}
 
 static FILE *g_logf = NULL;
 

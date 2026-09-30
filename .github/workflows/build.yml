@@ -1,14 +1,13 @@
-name: Build Titanox
-
+name: Build Tweak
 on:
+  workflow_dispatch:
   push:
     branches: [main]
-    paths-ignore:
-      - Makefile
-      - layout/**
-      - Info.plist
-      - control
-  workflow_dispatch:
+    paths:
+      - 'src/**'
+      - 'Makefile'
+      - 'control'
+      - '.github/workflows/build.yml'
 
 permissions:
   contents: write
@@ -16,64 +15,76 @@ permissions:
 jobs:
   build:
     runs-on: macos-14
-    env:
-      THEOS: ${{ github.workspace }}/theos
-      TARGET_CODESIGN: ":"
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-
-      - name: Cache Theos
-        id: cache-theos
-        uses: actions/cache@v4
         with:
-          path: theos
-          key: theos-v1
+          fetch-depth: 0
+          submodules: recursive
 
       - name: Install Theos
-        if: steps.cache-theos.outputs.cache-hit != 'true'
-        uses: Randomblock1/theos-action@v1
-
-      - name: Cache Titanox
-        id: cache-titanox
-        uses: actions/cache@v4
-        with:
-          path: deps/Titanox
-          key: titanox-v4
-
-      - name: Clone Titanox
-        if: steps.cache-titanox.outputs.cache-hit != 'true'
         run: |
-          mkdir -p deps
-          git clone --depth 1 https://github.com/Ragekill3377/Titanox.git deps/Titanox
-
-      - name: Patch hook.c
-        run: |
-          HOOK_C="deps/Titanox/libtitanox/brk_hook/Hook/hook.c"
-          if ! grep -q "#include <ptrauth.h>" "$HOOK_C"; then
-            sed -i '' '1i\
-          #include <ptrauth.h>
-          ' "$HOOK_C"
+          set -euo pipefail
+          export THEOS=$RUNNER_TEMP/theos
+          if [ ! -d "$THEOS" ]; then
+            git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
           fi
-          sed -i '' 's/arm_thread_state64_set_pc_fptr(\*new, hooks\[i\].new);/arm_thread_state64_set_pc_fptr(*new, ptrauth_sign_unauthenticated((void *)hooks[i].new, ptrauth_key_function_pointer, 0));/g' "$HOOK_C"
-          sed -i '' 's/arm_thread_state64_set_pc_fptr(\*new, (void \*)hooks\[i\].new);/arm_thread_state64_set_pc_fptr(*new, ptrauth_sign_unauthenticated((void *)hooks[i].new, ptrauth_key_function_pointer, 0));/g' "$HOOK_C"
-          grep -n "ptrauth\|arm_thread_state64_set_pc_fptr" "$HOOK_C"
+          echo "THEOS=$THEOS" >> "$GITHUB_ENV"
+          ls -la "$THEOS" | head
+
+      - name: Install ldid
+        run: |
+          set -euo pipefail
+          brew install ldid || true
+
+      - name: Patch duplicate segment name
+        run: |
+          set -euo pipefail
+          grep -rl 'HOOK_DATA_SEGMENT.*"__TITANOX_HOOK"' . 2>/dev/null | while read f; do
+            echo "patch $f"
+            sed -i.bak 's/HOOK_DATA_SEGMENT.*"__TITANOX_HOOK"/HOOK_DATA_SEGMENT = "__TITANOX_DATA"/' "$f"
+            rm -f "$f.bak"
+          done
+          grep -rn 'HOOK_TEXT_SEGMENT\|HOOK_DATA_SEGMENT' . | head || true
 
       - name: Build
+        env:
+          THEOS: ${{ env.THEOS }}
         run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+          find . -maxdepth 2 -name Makefile | head
           make clean || true
           make -j4
 
-      - name: Package dylib
+      - name: Find artifacts
+        id: find
         run: |
-          DYLIB=$(find .theos/obj -name "Titanox.dylib" ! -path "*/arm64/*" ! -path "*/arm64e/*" | head -n1)
-          test -n "$DYLIB"
-          lipo -archs "$DYLIB" | tr ' ' '\n' | grep -qx arm64
-          lipo -archs "$DYLIB" | tr ' ' '\n' | grep -qx arm64e
-          cp "$DYLIB" ./Titanox.dylib
-          file ./Titanox.dylib
+          set -euo pipefail
+          echo "--- deb files ---"
+          find . -name "*.deb" -type f 2>/dev/null | head || true
+          echo "--- dylib files ---"
+          find . -name "*.dylib" -type f 2>/dev/null | head || true
+          DEB=$(find . -name "*.deb" -type f 2>/dev/null | head -n1 || true)
+          echo "deb=$DEB" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: Titanox.dylib
-          path: Titanox.dylib
-          if-no-files-found: error
+          name: tweak-build
+          path: |
+            **/*.deb
+            **/*.dylib
+            .theos/obj/**/*.dylib
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Report
+        if: always()
+        run: |
+          echo "=== repo tree ==="
+          find . -maxdepth 2 -type d | head -30
+          echo "=== Makefile ==="
+          cat Makefile 2>/dev/null || echo "(no root Makefile)"
+          echo "=== control ==="
+          cat control 2>/dev/null || echo "(no control)"

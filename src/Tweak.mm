@@ -11,6 +11,7 @@
 #import <sys/socket.h>
 #import <netinet/in.h>
 #import <arpa/inet.h>
+#import <netdb.h>
 
 extern "C" {
     struct rebinding {
@@ -48,6 +49,8 @@ static ssize_t (*orig_sendto)(int, const void *, size_t, int, const struct socka
 static ssize_t (*orig_recvfrom)(int, void *, size_t, int, struct sockaddr *, socklen_t *) = NULL;
 static ssize_t (*orig_write)(int, const void *, size_t) = NULL;
 static ssize_t (*orig_read)(int, void *, size_t) = NULL;
+static int (*orig_getaddrinfo)(const char *, const char *, const struct addrinfo *, struct addrinfo **) = NULL;
+static struct hostent *(*orig_gethostbyname)(const char *) = NULL;
 
 static void log_addr(const char *fn, const struct sockaddr *addr) {
     if (!addr) return;
@@ -136,26 +139,53 @@ static ssize_t my_read(int fd, void *buf, size_t len) {
     return r;
 }
 
+static int my_getaddrinfo(const char *node, const char *service,
+                          const struct addrinfo *hints, struct addrinfo **res) {
+    TaleLog("[DNS] getaddrinfo node=%s service=%s",
+            node ? node : "(null)", service ? service : "(null)");
+
+    int r = orig_getaddrinfo ? orig_getaddrinfo(node, service, hints, res) : -1;
+
+    if (r == 0 && res && *res) {
+        struct addrinfo *ai = *res;
+        while (ai) {
+            log_addr("[DNS] resolved", ai->ai_addr);
+            ai = ai->ai_next;
+        }
+    }
+    return r;
+}
+
+static struct hostent *my_gethostbyname(const char *name) {
+    TaleLog("[DNS] gethostbyname name=%s", name ? name : "(null)");
+    if (orig_gethostbyname) return orig_gethostbyname(name);
+    return NULL;
+}
+
 static void install_hooks(void) {
     TaleLog("[NetLog] === install ===");
     struct rebinding rb[] = {
-        {"connect",  (void *)my_connect,  (void **)&orig_connect},
-        {"send",     (void *)my_send,     (void **)&orig_send},
-        {"recv",     (void *)my_recv,     (void **)&orig_recv},
-        {"sendto",   (void *)my_sendto,   (void **)&orig_sendto},
-        {"recvfrom", (void *)my_recvfrom, (void **)&orig_recvfrom},
-        {"write",    (void *)my_write,    (void **)&orig_write},
-        {"read",     (void *)my_read,     (void **)&orig_read}
+        {"connect",       (void *)my_connect,       (void **)&orig_connect},
+        {"send",          (void *)my_send,          (void **)&orig_send},
+        {"recv",          (void *)my_recv,          (void **)&orig_recv},
+        {"sendto",        (void *)my_sendto,        (void **)&orig_sendto},
+        {"recvfrom",      (void *)my_recvfrom,      (void **)&orig_recvfrom},
+        {"write",         (void *)my_write,         (void **)&orig_write},
+        {"read",          (void *)my_read,          (void **)&orig_read},
+        {"getaddrinfo",   (void *)my_getaddrinfo,   (void **)&orig_getaddrinfo},
+        {"gethostbyname", (void *)my_gethostbyname, (void **)&orig_gethostbyname}
     };
-    int r = rebind_symbols(rb, 7);
+    int r = rebind_symbols(rb, 9);
     TaleLog("[NetLog] rebind_symbols = %d", r);
-    TaleLog("[NetLog] connect=%p",  orig_connect);
-    TaleLog("[NetLog] send=%p",     orig_send);
-    TaleLog("[NetLog] recv=%p",     orig_recv);
-    TaleLog("[NetLog] sendto=%p",   orig_sendto);
-    TaleLog("[NetLog] recvfrom=%p", orig_recvfrom);
-    TaleLog("[NetLog] write=%p",    orig_write);
-    TaleLog("[NetLog] read=%p",     orig_read);
+    TaleLog("[NetLog] connect=%p",       orig_connect);
+    TaleLog("[NetLog] send=%p",          orig_send);
+    TaleLog("[NetLog] recv=%p",          orig_recv);
+    TaleLog("[NetLog] sendto=%p",        orig_sendto);
+    TaleLog("[NetLog] recvfrom=%p",      orig_recvfrom);
+    TaleLog("[NetLog] write=%p",         orig_write);
+    TaleLog("[NetLog] read=%p",          orig_read);
+    TaleLog("[NetLog] getaddrinfo=%p",   orig_getaddrinfo);
+    TaleLog("[NetLog] gethostbyname=%p", orig_gethostbyname);
     TaleLog("[NetLog] === install done ===");
 }
 

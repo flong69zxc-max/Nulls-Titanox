@@ -10,7 +10,14 @@
 #import <sys/socket.h>
 #import <netinet/in.h>
 #import <arpa/inet.h>
-#import "fishhook.h"
+
+// Объявление fishhook без хедера
+struct rebinding {
+    const char *name;
+    void *replacement;
+    void *replaced;
+};
+extern int rebind_symbols(struct rebinding rebindings[], size_t rebindings_nel);
 
 static FILE *g_logf = NULL;
 

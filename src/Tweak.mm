@@ -40,17 +40,18 @@ static NSString *OXDetectMainBinary(void) {
     return [TitanoxHook findExecInBundle:nil];
 }
 
-static BOOL OXBinaryHasTitanoxSegment(NSString *path) {
+static NSDictionary *OXCountSegments(NSString *path) {
     NSData *data = [NSData dataWithContentsOfFile:path];
-    if (!data || data.length < 32) return NO;
+    if (!data || data.length < 32) return nil;
     const uint8_t *bytes = (const uint8_t *)data.bytes;
     uint32_t magic = 0;
     memcpy(&magic, bytes, 4);
-    if (magic != 0xfeedfacf) return NO;
+    if (magic != 0xfeedfacf) return nil;
     uint32_t ncmds = 0, sizeofcmds = 0;
     memcpy(&ncmds,     bytes + 16, 4);
     memcpy(&sizeofcmds, bytes + 20, 4);
-    if (sizeofcmds > data.length - 32) return NO;
+    if (sizeofcmds > data.length - 32) return nil;
+    int hookCount = 0, dataCount = 0;
     const uint8_t *p = bytes + 32;
     for (uint32_t i = 0; i < ncmds; i++) {
         if ((uintptr_t)(p - bytes) + 8 > data.length) break;
@@ -58,17 +59,28 @@ static BOOL OXBinaryHasTitanoxSegment(NSString *path) {
         memcpy(&cmd,     p,     4);
         memcpy(&cmdsize, p + 4, 4);
         if (cmdsize < 8) break;
-        if (cmd == 0x19) {
-            if ((uintptr_t)(p - bytes) + 24 <= data.length) {
-                char segname[17];
-                memcpy(segname, p + 8, 16);
-                segname[16] = 0;
-                if (strcmp(segname, "__TITANOX_HOOK") == 0) return YES;
-            }
+        if (cmd == 0x19 && (uintptr_t)(p - bytes) + 24 <= data.length) {
+            char segname[17];
+            memcpy(segname, p + 8, 16);
+            segname[16] = 0;
+            if (strcmp(segname, "__TITANOX_HOOK") == 0) hookCount++;
+            if (strcmp(segname, "__TITANOX_DATA") == 0) dataCount++;
         }
         p += cmdsize;
     }
-    return NO;
+    return @{@"hook": @(hookCount), @"data": @(dataCount)};
+}
+
+static BOOL OXBinaryHasTitanoxSegment(NSString *path) {
+    NSDictionary *c = OXCountSegments(path);
+    if (!c) return NO;
+    return ([c[@"hook"] intValue] > 0) || ([c[@"data"] intValue] > 0);
+}
+
+static BOOL OXBinaryHasDuplicateTitanoxSegment(NSString *path) {
+    NSDictionary *c = OXCountSegments(path);
+    if (!c) return NO;
+    return ([c[@"hook"] intValue] > 1) || ([c[@"data"] intValue] > 1);
 }
 
 static intptr_t OXFindSlide(NSString *name) {
@@ -200,19 +212,41 @@ static void OXFindCtorsForKnown(void) {
 
 static void OXPreparePatches(void) {
     NSString *exePath = [[NSBundle mainBundle] executablePath];
+    NSString *patchedPath = [NSHomeDirectory() stringByAppendingPathComponent:
+                             [NSString stringWithFormat:@"Documents/titanox-hook/%@", gMainBinaryName]];
 
-    if (exePath && OXBinaryHasTitanoxSegment(exePath)) {
-        THLog(@"[patch] .app binary ALREADY PATCHED (has __TITANOX_HOOK) -> skip");
-        THLog(@"[patch] to repatch, restore original first");
+    NSDictionary *appC = exePath ? OXCountSegments(exePath) : nil;
+    NSDictionary *cacheC = [[NSFileManager defaultManager] fileExistsAtPath:patchedPath]
+                             ? OXCountSegments(patchedPath) : nil;
+
+    THLog(@"[patch] .app  segments: hook=%d data=%d",
+          [appC[@"hook"] intValue], [appC[@"data"] intValue]);
+    THLog(@"[patch] cache segments: hook=%d data=%d",
+          [cacheC[@"hook"] intValue], [cacheC[@"data"] intValue]);
+
+    if (appC && ([appC[@"hook"] intValue] > 0 || [appC[@"data"] intValue] > 0)) {
+        if (OXBinaryHasDuplicateTitanoxSegment(exePath)) {
+            THLog(@"[patch] .app has DUPLICATE segments -> delete .app and restore original");
+        } else {
+            THLog(@"[patch] .app already patched (unique segments) -> skip");
+        }
         return;
     }
 
-    NSString *patchedPath = [NSHomeDirectory() stringByAppendingPathComponent:
-                             [NSString stringWithFormat:@"Documents/titanox-hook/%@", gMainBinaryName]];
-    if ([[NSFileManager defaultManager] fileExistsAtPath:patchedPath]) {
-        THLog(@"[patch] output already exists: %@", patchedPath);
-        THLog(@"[patch] sign with zsign and replace in .app");
-        return;
+    if (cacheC) {
+        BOOL cacheDup = ([cacheC[@"hook"] intValue] > 1) || ([cacheC[@"data"] intValue] > 1);
+        BOOL cacheOk  = ([cacheC[@"hook"] intValue] == 1) && ([cacheC[@"data"] intValue] == 1);
+        if (cacheDup) {
+            THLog(@"[patch] cache has DUPLICATES -> deleting cache");
+            [[NSFileManager defaultManager] removeItemAtPath:patchedPath error:nil];
+        } else if (cacheOk) {
+            THLog(@"[patch] cache is valid (1+1) -> skip, sign & replace");
+            THLog(@"[patch] output: %@", patchedPath);
+            return;
+        } else {
+            THLog(@"[patch] cache incomplete -> deleting and repatching");
+            [[NSFileManager defaultManager] removeItemAtPath:patchedPath error:nil];
+        }
     }
 
     TitanoxHook *hooker = [[TitanoxHook alloc] initWithMachOName:gMainBinaryName];
@@ -229,6 +263,10 @@ static void OXPreparePatches(void) {
         THLog(@"[patch] 0x%llx -> %@", off, res ?: @"(nil)");
     }
     THLog(@"=== PATCH DONE ===");
+
+    NSDictionary *finalC = OXCountSegments(patchedPath);
+    THLog(@"[patch] final cache segments: hook=%d data=%d",
+          [finalC[@"hook"] intValue], [finalC[@"data"] intValue]);
     THLog(@"[patch] output: %@", patchedPath);
     THLog(@"[patch] sign manually, then replace in .app");
 }

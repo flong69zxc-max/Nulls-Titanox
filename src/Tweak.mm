@@ -15,6 +15,7 @@
 
 static intptr_t  gSlide = 0;
 static NSString *gMainBinaryName = nil;
+static NSMutableDictionary<NSNumber *, NSMutableArray<NSNumber *> *> *gAdrpAddMap = nil;
 
 static NSString *OXDetectMainBinary(void) {
     NSString *exePath = [[NSBundle mainBundle] executablePath];
@@ -47,7 +48,6 @@ static BOOL OXReadBytes(uint64_t fileVaddr, void *buf, size_t size) {
     if (fileVaddr + size < fileVaddr) return NO;
     if (fileVaddr + size > FILE_HI) return NO;
     uint64_t runtime = fileVaddr + gSlide;
-
     vm_size_t outSize = 0;
     kern_return_t kr = vm_read_overwrite(mach_task_self(),
                                          (vm_address_t)runtime,
@@ -65,120 +65,165 @@ static uint64_t OXReadQword(uint64_t fileVaddr) {
     return v;
 }
 
-static NSString *OXReadCString(uint64_t fileVaddr, int maxLen) {
-    if (!fileVaddr) return nil;
-    char buf[256];
-    memset(buf, 0, sizeof(buf));
-    size_t n = (maxLen < 255) ? maxLen : 255;
-    if (!OXReadBytes(fileVaddr, buf, n)) return nil;
-    if (buf[0] == 0) return nil;
-    return [NSString stringWithUTF8String:buf];
-}
-
-/* vtable slot: содержит готовый runtime VA */
-static uint64_t OXSlotRuntime(uint64_t vtFileVaddr, int idx) {
-    return OXReadQword(vtFileVaddr + idx * 8);
-}
-
 static BOOL OXIsRuntimeFunc(uint64_t rt) {
-    if (!rt) return NO;
-    if ((rt & 3) != 0) return NO;
+    if (!rt || (rt & 3) != 0) return NO;
     uint64_t lo = gSlide + TEXT_FILE_LO;
     uint64_t hi = gSlide + TEXT_FILE_HI;
     return rt >= lo && rt < hi;
 }
 
-static uint64_t OXFileFromRuntime(uint64_t rt) {
-    return rt - gSlide;
+static uint64_t OXFileFromRuntime(uint64_t rt) { return rt - gSlide; }
+
+static void OXBuildAdrpAddMap(void) {
+    gAdrpAddMap = [NSMutableDictionary dictionary];
+    uint64_t size = TEXT_FILE_HI - TEXT_FILE_LO;
+    const uint64_t CHUNK = 0x100000;
+    uint8_t *buf = malloc(CHUNK);
+    uint64_t prevPc = 0;
+    uint32_t prevRd = 0;
+    uint64_t prevPage = 0;
+
+    for (uint64_t off = 0; off < size; off += CHUNK) {
+        uint64_t n = (size - off < CHUNK) ? (size - off) : CHUNK;
+        if (!OXReadBytes(TEXT_FILE_LO + off, buf, n)) break;
+        for (uint64_t i = 0; i + 4 <= n; i += 4) {
+            uint64_t pcFile = TEXT_FILE_LO + off + i;
+            uint32_t w = *(uint32_t *)(buf + i);
+            if ((w & 0x9F000000) == 0x90000000) {
+                prevPc = pcFile;
+                prevRd = w & 0x1F;
+                uint32_t immlo = (w >> 29) & 3;
+                uint32_t immhi = (w >> 5) & 0x7FFFF;
+                int64_t imm = ((int64_t)immhi << 2) | immlo;
+                if (imm & (1 << 20)) imm -= (1 << 21);
+                prevPage = (pcFile & ~0xFFFULL) + (imm << 12);
+                continue;
+            }
+            if (prevPc != 0 && (w & 0xFF800000) == 0x91000000) {
+                uint32_t rd = w & 0x1F;
+                uint32_t rn = (w >> 5) & 0x1F;
+                uint32_t imm12 = (w >> 10) & 0xFFF;
+                uint32_t sh = (w >> 22) & 1;
+                if (sh) imm12 <<= 12;
+                if (rd == prevRd && rn == prevRd) {
+                    uint64_t target = prevPage + imm12;
+                    if (target >= FILE_LO && target < FILE_HI) {
+                        NSNumber *key = @(target);
+                        NSMutableArray *arr = gAdrpAddMap[key];
+                        if (!arr) { arr = [NSMutableArray array]; gAdrpAddMap[key] = arr; }
+                        if (arr.count < 16) [arr addObject:@(prevPc)];
+                    }
+                }
+            }
+            prevPc = 0;
+        }
+    }
+    free(buf);
+    THLog(@"[adrp] map entries=%d", (int)gAdrpAddMap.count);
 }
 
-/* typeinfo: пробуем разные offset'ы назад от vt */
-static NSDictionary *OXGetTypeInfo(uint64_t vtFileVaddr) {
-    for (int off = 8; off <= 64; off += 8) {
-        uint64_t tiRt = OXReadQword(vtFileVaddr - off);
-        if (!tiRt) continue;
-        if (tiRt < gSlide + FILE_LO) continue;
-        uint64_t tiFile = OXFileFromRuntime(tiRt);
-        if (tiFile < FILE_LO || tiFile >= FILE_HI) continue;
+static uint64_t OXFindPrologueBackward(uint64_t pcFile) {
+    uint64_t start = (pcFile > 0x10000) ? pcFile - 0x10000 : TEXT_FILE_LO;
+    if (start < TEXT_FILE_LO) start = TEXT_FILE_LO;
+    uint32_t w;
+    for (uint64_t p = pcFile; p >= start; p -= 4) {
+        if (!OXReadBytes(p, &w, 4)) break;
+        if ((w & 0xFFC07FFF) == 0xA9807BFD) return p;
+        if (w == 0xD503237F || w == 0xD503233F) return p;
+        if (p < start + 4) break;
+    }
+    return pcFile;
+}
 
-        for (int noff = 8; noff <= 24; noff += 8) {
-            uint64_t nameRt = OXReadQword(tiFile + noff);
-            if (!nameRt) continue;
-            uint64_t nameFile = OXFileFromRuntime(nameRt);
-            if (nameFile < FILE_LO || nameFile >= FILE_HI) continue;
-            NSString *s = OXReadCString(nameFile, 160);
-            if (!s || s.length == 0) continue;
-            if (s.length < 2) continue;
-            if (s.length > 128) continue;
-
-            // _ZTS / _ZTI demangle
-            if ([s hasPrefix:@"_ZTS"] || [s hasPrefix:@"_ZTI"]) {
-                s = [s substringFromIndex:4];
-            }
-
-            NSArray *parts = nil;
-            if ([s hasPrefix:@"N"] && [s hasSuffix:@"E"]) {
-                NSString *inner = [s substringWithRange:NSMakeRange(1, s.length - 2)];
-                NSMutableArray *arr = [NSMutableArray array];
-                NSUInteger i = 0;
-                while (i < inner.length) {
-                    NSUInteger j = i;
-                    while (j < inner.length && isdigit([inner characterAtIndex:j])) j++;
-                    if (j == i) break;
-                    int len = [[inner substringWithRange:NSMakeRange(i, j - i)] intValue];
-                    if (len <= 0 || j + len > inner.length) break;
-                    [arr addObject:[inner substringWithRange:NSMakeRange(j, len)]];
-                    i = j + len;
+static NSString *OXStringInFunc(uint64_t funcFile, uint64_t maxScan) {
+    uint64_t end = funcFile + maxScan;
+    if (end > TEXT_FILE_HI) end = TEXT_FILE_HI;
+    for (uint64_t pc = funcFile; pc + 8 <= end; pc += 4) {
+        uint32_t w;
+        if (!OXReadBytes(pc, &w, 4)) continue;
+        if ((w & 0x9F000000) != 0x90000000) continue;
+        uint32_t rd = w & 0x1F;
+        uint32_t immlo = (w >> 29) & 3;
+        uint32_t immhi = (w >> 5) & 0x7FFFF;
+        int64_t imm = ((int64_t)immhi << 2) | immlo;
+        if (imm & (1 << 20)) imm -= (1 << 21);
+        uint64_t page = (pc & ~0xFFFULL) + (imm << 12);
+        for (int j = 1; j <= 4 && pc + j * 4 + 4 <= end; j++) {
+            uint32_t w2;
+            if (!OXReadBytes(pc + j * 4, &w2, 4)) break;
+            if ((w2 & 0xFF800000) == 0x91000000) {
+                uint32_t rd2 = w2 & 0x1F;
+                uint32_t rn2 = (w2 >> 5) & 0x1F;
+                uint32_t imm12 = (w2 >> 10) & 0xFFF;
+                uint32_t sh = (w2 >> 22) & 1;
+                if (sh) imm12 <<= 12;
+                if (rd2 == rd && rn2 == rd) {
+                    uint64_t target = page + imm12;
+                    if (target >= FILE_LO && target < FILE_HI) {
+                        char str[96];
+                        memset(str, 0, sizeof(str));
+                        if (!OXReadBytes(target, str, 95)) break;
+                        if (str[0] >= 0x20 && str[0] < 0x7F) {
+                            BOOL printable = YES;
+                            size_t len = strnlen(str, 95);
+                            if (len < 5) break;
+                            for (size_t k = 0; k < len; k++) {
+                                if (str[k] < 0x20 || str[k] > 0x7E) { printable = NO; break; }
+                            }
+                            if (printable) return [NSString stringWithUTF8String:str];
+                        }
+                    }
+                    break;
                 }
-                if (arr.count) parts = arr;
             }
-            if (!parts) {
-                NSMutableArray *arr = [NSMutableArray array];
-                NSUInteger i = 0;
-                while (i < s.length && isdigit([s characterAtIndex:i])) {
-                    NSUInteger j = i;
-                    while (j < s.length && isdigit([s characterAtIndex:j])) j++;
-                    if (j == i) break;
-                    int len = [[s substringWithRange:NSMakeRange(i, j - i)] intValue];
-                    if (len <= 0 || j + len > s.length) break;
-                    [arr addObject:[s substringWithRange:NSMakeRange(j, len)]];
-                    i = j + len;
-                }
-                if (arr.count) parts = arr;
-            }
-            if (!parts || parts.count == 0) continue;
-
-            return @{@"class": parts.lastObject, @"raw": s,
-                     @"ti_off": @(off), @"name_off": @(noff)};
         }
     }
     return nil;
 }
 
-static int OXDumpVtable(uint64_t vtFileVaddr, NSString *label) {
-    NSDictionary *ti = OXGetTypeInfo(vtFileVaddr);
-    NSString *cls = ti ? ti[@"class"] : @"unknown";
-    uint64_t rt = vtFileVaddr + gSlide;
-    THLog(@"=== VT %@ file=0x%llx rt=0x%llx class=%@ ===",
-          label, vtFileVaddr, rt, cls);
+static void OXFindCtorsForKnown(void) {
+    NSArray *known = @[
+        @{@"name": @"Character",          @"addr": @(0x00FF45C0)},
+        @{@"name": @"GameButton",         @"addr": @(0x00F9B0F8)},
+        @{@"name": @"HomePage",           @"addr": @(0x00FE4008)},
+        @{@"name": @"LogicDataTables",    @"addr": @(0x00FF2478)},
+        @{@"name": @"LogicProjectileData",@"addr": @(0x00FF3AA0)},
+        @{@"name": @"MessageManager",     @"addr": @(0x00FD57E8)},
+        @{@"name": @"MovieClip",          @"addr": @(0x01006150)},
+        @{@"name": @"NativeFont",         @"addr": @(0x01005858)},
+        @{@"name": @"Stage",              @"addr": @(0x010091B0)},
+    ];
 
-    int slots = 0;
-    for (int i = 0; i < 512; i++) {
-        uint64_t rtFn = OXSlotRuntime(vtFileVaddr, i);
-        if (!OXIsRuntimeFunc(rtFn)) break;
-        uint64_t fileFn = OXFileFromRuntime(rtFn);
-        THLog(@"  [%3d] rt=0x%llx file=0x%llx", i, rtFn, fileFn);
-        slots++;
+    THLog(@"=== CTOR SCAN (9 known vtables) ===");
+    for (NSDictionary *vt in known) {
+        uint64_t vaddr = FILE_LO + [vt[@"addr"] unsignedLongLongValue];
+        NSArray *refs = gAdrpAddMap[@(vaddr)];
+        if (!refs || refs.count == 0) {
+            THLog(@"[ctor] %@ no refs", vt[@"name"]);
+            continue;
+        }
+        NSMutableSet *uniqCtors = [NSMutableSet set];
+        for (NSNumber *pcNum in refs) {
+            uint64_t func = OXFindPrologueBackward([pcNum unsignedLongLongValue]);
+            [uniqCtors addObject:@(func)];
+        }
+        for (NSNumber *funcNum in uniqCtors) {
+            uint64_t func = [funcNum unsignedLongLongValue];
+            NSString *str = OXStringInFunc(func, 0x800);
+            THLog(@"[ctor] %@ ctor=0x%llx str=%@",
+                  vt[@"name"], func, str ?: @"(none)");
+        }
     }
-    THLog(@"  total slots: %d", slots);
-    return slots;
 }
 
-static void OXScanDataForVtables(void) {
-    THLog(@"=== SCAN DATA FOR VTABLE RUNS ===");
+static void OXScanVtableRunsAndCtors(void) {
+    THLog(@"=== VTABLE RUNS + CTORS ===");
     uint64_t totalSlots = (FILE_HI - DATA_FILE_LO) / 8;
-    int runLen = 0, hits = 0;
-    uint64_t runStart = 0, prevSlot = 0;
+    int runLen = 0;
+    uint64_t runStart = 0;
+    uint64_t prevSlot = 0;
+    int totalRuns = 0;
+    int resolvedCtors = 0;
 
     for (uint64_t i = 0; i < totalSlots; i++) {
         uint64_t slotFile = DATA_FILE_LO + i * 8;
@@ -189,34 +234,73 @@ static void OXScanDataForVtables(void) {
             else if (slotFile == prevSlot + 8) { runLen++; }
             else {
                 if (runLen >= 4) {
-                    NSDictionary *ti = OXGetTypeInfo(runStart);
-                    THLog(@"VT file=0x%llx rt=0x%llx slots=%d class=%@",
-                          runStart, runStart + gSlide, runLen,
-                          ti ? ti[@"class"] : @"?");
-                    hits++;
+                    totalRuns++;
+                    uint64_t vtFile = runStart;
+                    NSArray *refs = gAdrpAddMap[@(vtFile)];
+                    if (refs && refs.count > 0) {
+                        NSMutableSet *uniqCtors = [NSMutableSet set];
+                        for (NSNumber *pcNum in refs) {
+                            uint64_t func = OXFindPrologueBackward([pcNum unsignedLongLongValue]);
+                            [uniqCtors addObject:@(func)];
+                        }
+                        for (NSNumber *funcNum in uniqCtors) {
+                            uint64_t func = [funcNum unsignedLongLongValue];
+                            NSString *str = OXStringInFunc(func, 0x600);
+                            if (str) {
+                                resolvedCtors++;
+                                THLog(@"VT 0x%llx slots=%d ctor=0x%llx str=%@",
+                                      vtFile, runLen, func, str);
+                                break;
+                            }
+                        }
+                    }
                 }
                 runStart = slotFile; runLen = 1;
             }
             prevSlot = slotFile;
         } else {
             if (runLen >= 4) {
-                NSDictionary *ti = OXGetTypeInfo(runStart);
-                THLog(@"VT file=0x%llx rt=0x%llx slots=%d class=%@",
-                      runStart, runStart + gSlide, runLen,
-                      ti ? ti[@"class"] : @"?");
-                hits++;
+                totalRuns++;
+                uint64_t vtFile = runStart;
+                NSArray *refs = gAdrpAddMap[@(vtFile)];
+                if (refs && refs.count > 0) {
+                    NSMutableSet *uniqCtors = [NSMutableSet set];
+                    for (NSNumber *pcNum in refs) {
+                        uint64_t func = OXFindPrologueBackward([pcNum unsignedLongLongValue]);
+                        [uniqCtors addObject:@(func)];
+                    }
+                    for (NSNumber *funcNum in uniqCtors) {
+                        uint64_t func = [funcNum unsignedLongLongValue];
+                        NSString *str = OXStringInFunc(func, 0x600);
+                        if (str) {
+                            resolvedCtors++;
+                            THLog(@"VT 0x%llx slots=%d ctor=0x%llx str=%@",
+                                  vtFile, runLen, func, str);
+                            break;
+                        }
+                    }
+                }
             }
             runLen = 0;
         }
     }
     if (runLen >= 4) {
-        NSDictionary *ti = OXGetTypeInfo(runStart);
-        THLog(@"VT file=0x%llx rt=0x%llx slots=%d class=%@",
-              runStart, runStart + gSlide, runLen,
-              ti ? ti[@"class"] : @"?");
-        hits++;
+        totalRuns++;
+        NSArray *refs = gAdrpAddMap[@(runStart)];
+        if (refs && refs.count > 0) {
+            for (NSNumber *pcNum in refs) {
+                uint64_t func = OXFindPrologueBackward([pcNum unsignedLongLongValue]);
+                NSString *str = OXStringInFunc(func, 0x600);
+                if (str) {
+                    resolvedCtors++;
+                    THLog(@"VT 0x%llx slots=%d ctor=0x%llx str=%@",
+                          runStart, runLen, func, str);
+                    break;
+                }
+            }
+        }
     }
-    THLog(@"total vtable-like runs: %d", hits);
+    THLog(@"[summary] total runs=%d with named ctor=%d", totalRuns, resolvedCtors);
 }
 
 __attribute__((constructor))
@@ -226,27 +310,12 @@ static void initTitanoxTrace(void) {
         gMainBinaryName = OXDetectMainBinary();
         gSlide = OXFindSlide(gMainBinaryName);
         THLog(@"=== TITANOX TRACE v19 ===");
-        THLog(@"main = %@ slide=0x%lx rtBase=0x%llx",
-              gMainBinaryName, (long)gSlide, gSlide + FILE_LO);
+        THLog(@"main=%@ slide=0x%lx", gMainBinaryName, (long)gSlide);
 
-        NSArray *vtList = @[
-            @{@"name": @"Character",          @"addr": @(0x00FF45C0)},
-            @{@"name": @"GameButton",         @"addr": @(0x00F9B0F8)},
-            @{@"name": @"HomePage",           @"addr": @(0x00FE4008)},
-            @{@"name": @"LogicDataTables",    @"addr": @(0x00FF2478)},
-            @{@"name": @"LogicProjectileData",@"addr": @(0x00FF3AA0)},
-            @{@"name": @"MessageManager",     @"addr": @(0x00FD57E8)},
-            @{@"name": @"MovieClip",          @"addr": @(0x01006150)},
-            @{@"name": @"NativeFont",         @"addr": @(0x01005858)},
-            @{@"name": @"Stage",              @"addr": @(0x010091B0)},
-        ];
+        OXBuildAdrpAddMap();
+        OXFindCtorsForKnown();
+        OXScanVtableRunsAndCtors();
 
-        for (NSDictionary *vt in vtList) {
-            uint64_t vaddr = FILE_LO + [vt[@"addr"] unsignedLongLongValue];
-            OXDumpVtable(vaddr, vt[@"name"]);
-        }
-
-        OXScanDataForVtables();
-        THLog(@"=== TRACE READY ===");
+        THLog(@"=== DONE ===");
     });
 }

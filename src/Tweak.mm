@@ -16,6 +16,21 @@ static intptr_t  gSlide = 0;
 static NSString *gMainBinaryName = nil;
 static NSMutableDictionary<NSNumber *, NSMutableArray<NSNumber *> *> *gAdrpAddMap = nil;
 
+static uint64_t gPatchOffsets[] = {
+    0x5425b0,
+    0x86eb80,
+    0x9e3100,
+    0x9a4cbc,
+    0x9cb098,
+    0x75bb1c,
+    0xb5f028,
+    0xb3ec50,
+    0xb9ee6c,
+    0x75cce0,
+    0x9a8f3c,
+    0xba17b8,
+};
+
 static NSString *OXDetectMainBinary(void) {
     NSString *exePath = [[NSBundle mainBundle] executablePath];
     if (exePath) {
@@ -152,16 +167,36 @@ static void OXFindCtorsForKnown(void) {
     }
 }
 
+static void OXPreparePatches(void) {
+    StaticInlineHook *hooker = [[StaticInlineHook alloc] initWithMachOName:gMainBinaryName];
+    if (!hooker) {
+        THLog(@"[patch] hooker init FAILED");
+        return;
+    }
+    THLog(@"=== PATCHING BINARY ===");
+    size_t count = sizeof(gPatchOffsets) / sizeof(gPatchOffsets[0]);
+    for (size_t i = 0; i < count; i++) {
+        uint64_t off = gPatchOffsets[i];
+        NSString *res = [hooker applyPatchAtVaddr:off patchBytes:@""];
+        THLog(@"[patch] 0x%llx -> %@", off, res ?: @"(nil)");
+    }
+    THLog(@"=== PATCH DONE ===");
+    THLog(@"[patch] check Documents/titanox-hook/%@", gMainBinaryName);
+}
+
 __attribute__((constructor))
 static void initTitanoxTrace(void) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
         gMainBinaryName = OXDetectMainBinary();
         gSlide = OXFindSlide(gMainBinaryName);
-        THLog(@"=== TITANOX TRACE v19 ===");
+        THLog(@"=== TITANOX PATCHER v19 ===");
         THLog(@"main=%@ slide=0x%lx", gMainBinaryName, (long)gSlide);
+
         OXBuildAdrpAddMap();
         OXFindCtorsForKnown();
+        OXPreparePatches();
+
         THLog(@"=== DONE ===");
     });
 }

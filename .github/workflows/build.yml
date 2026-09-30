@@ -19,11 +19,19 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 1 }
 
-      - name: Setup + patch
+      - name: Cache Theos + brew
+        uses: actions/cache@v4
+        with:
+          path: |
+            .theos
+            ~/Library/Caches/Homebrew
+          key: theos-${{ runner.os }}-v1
+
+      - name: Setup
         run: |
           set -euo pipefail
-          brew install ldid dpkg >/dev/null 2>&1 || true
-          git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
+          brew install ldid dpkg make >/dev/null 2>&1 || true
+          [ -d "$THEOS" ] || git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
           mkdir -p "$THEOS/lib" "$THEOS/include/Titanox" deps
 
           git clone --depth 1 https://github.com/flong69zxc-max/Titanox.git deps/Titanox
@@ -34,29 +42,15 @@ jobs:
           find deps/Titanox -name 'hook.c' -exec \
             sed -i '' 's|arm_thread_state64_set_pc_fptr(\*new, hooks\[i\].new)|arm_thread_state64_set_pc_fptr(*new, (void *)hooks[i].new)|g' {} +
 
-      - name: Build libtitanox
-        run: |
-          set -euo pipefail
-          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-          CXXINC=$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/include/c++/v1
-
-          MK=$(find deps/Titanox -maxdepth 4 -name Makefile | head -1)
-          sed -i '' -e "s|/home/rage/theos|$THEOS|g" \
-                    -e "s|^SYSROOT =.*|SYSROOT = $SDK|" "$MK"
-          printf '\nADDITIONAL_CFLAGS += -isystem %s\nADDITIONAL_CXXFLAGS += -isystem %s\n' "$CXXINC" "$CXXINC" >> "$MK"
-
-          make -C "$(dirname "$MK")" -j$(sysctl -n hw.ncpu)
-
-          DYLIB=$(find deps/Titanox \( -name 'libtitanox.dylib' -o -name 'Titanox.dylib' \) | head -1)
-          test -n "$DYLIB"
-          cp "$DYLIB" "$THEOS/lib/libtitanox.dylib"
-          cp "$DYLIB" "$THEOS/lib/Titanox.dylib"
-
           (cd deps/Titanox && find . -name '*.h*' -exec sh -c \
             'd="$THEOS/include/Titanox/$(dirname "${1#./}")"; mkdir -p "$d"; cp "$1" "$d/"' _ {} \;)
           find deps/Titanox -name 'libtitanox.h' -exec cp {} "$THEOS/include/Titanox/" \;
 
-      - name: Build + package tweak
+          if [ ! -f Titanox.plist ] && [ ! -f Filter.plist ] && [ ! -f layout/Library/MobileSubstrate/DynamicLibraries/Titanox.plist ]; then
+            printf '{\n  Filter = { Bundles = ( "com.apple.springboard" ); };\n}\n' > Titanox.plist
+          fi
+
+      - name: Build + package
         run: |
           set -euo pipefail
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
@@ -66,11 +60,7 @@ jobs:
           sed -i '' "s|^SYSROOT =.*|SYSROOT = $SDK|" Makefile
           printf '\nADDITIONAL_CFLAGS += %s\nADDITIONAL_CXXFLAGS += %s\n' "$EXTRA" "$EXTRA" >> Makefile
 
-          make -j$(sysctl -n hw.ncpu)
-          make package FINALPACKAGE=1
-
-          echo "--- packages ---"
-          find . -name '*.deb' -not -path './deps/*' -print
+          gmake -j$(sysctl -n hw.ncpu) package FINALPACKAGE=1
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -79,6 +69,5 @@ jobs:
           path: |
             packages/**
             .theos/obj/**/*.dylib
-            deps/Titanox/**/*.deb
           retention-days: 30
           if-no-files-found: warn

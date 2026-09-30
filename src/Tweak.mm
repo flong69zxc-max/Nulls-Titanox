@@ -1,35 +1,17 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
-#import <objc/runtime.h>
 #import <mach-o/dyld.h>
 #import <mach-o/loader.h>
 #import <mach/mach.h>
 #import <libgen.h>
 #import "libtitanox.h"
 
-#define FILE_LO       0x100000000ULL
-#define FILE_HI       0x101170000ULL
-#define TEXT_FILE_LO  0x100004000ULL
-#define TEXT_FILE_HI  0x100D8AF60ULL
+#define IMAGE_BASE 0x100000000ULL
+
+extern __thread int g_in_hook;
 
 static intptr_t  gSlide = 0;
 static NSString *gMainBinaryName = nil;
-static NSMutableDictionary<NSNumber *, NSMutableArray<NSNumber *> *> *gAdrpAddMap = nil;
-
-static uint64_t gPatchOffsets[] = {
-    0x5425b0,
-    0x86eb80,
-    0x9e3100,
-    0x9a4cbc,
-    0x9cb098,
-    0x75bb1c,
-    0xb5f028,
-    0xb3ec50,
-    0xb9ee6c,
-    0x75cce0,
-    0x9a8f3c,
-    0xba17b8,
-};
 
 static NSString *OXDetectMainBinary(void) {
     NSString *exePath = [[NSBundle mainBundle] executablePath];
@@ -38,49 +20,6 @@ static NSString *OXDetectMainBinary(void) {
         if (base.length) return base;
     }
     return [TitanoxHook findExecInBundle:nil];
-}
-
-static NSDictionary *OXCountSegments(NSString *path) {
-    NSData *data = [NSData dataWithContentsOfFile:path];
-    if (!data || data.length < 32) return nil;
-    const uint8_t *bytes = (const uint8_t *)data.bytes;
-    uint32_t magic = 0;
-    memcpy(&magic, bytes, 4);
-    if (magic != 0xfeedfacf) return nil;
-    uint32_t ncmds = 0, sizeofcmds = 0;
-    memcpy(&ncmds,     bytes + 16, 4);
-    memcpy(&sizeofcmds, bytes + 20, 4);
-    if (sizeofcmds > data.length - 32) return nil;
-    int hookCount = 0, dataCount = 0;
-    const uint8_t *p = bytes + 32;
-    for (uint32_t i = 0; i < ncmds; i++) {
-        if ((uintptr_t)(p - bytes) + 8 > data.length) break;
-        uint32_t cmd = 0, cmdsize = 0;
-        memcpy(&cmd,     p,     4);
-        memcpy(&cmdsize, p + 4, 4);
-        if (cmdsize < 8) break;
-        if (cmd == 0x19 && (uintptr_t)(p - bytes) + 24 <= data.length) {
-            char segname[17];
-            memcpy(segname, p + 8, 16);
-            segname[16] = 0;
-            if (strcmp(segname, "__TITANOX_HOOK") == 0) hookCount++;
-            if (strcmp(segname, "__TITANOX_DATA") == 0) dataCount++;
-        }
-        p += cmdsize;
-    }
-    return @{@"hook": @(hookCount), @"data": @(dataCount)};
-}
-
-static BOOL OXBinaryHasTitanoxSegment(NSString *path) {
-    NSDictionary *c = OXCountSegments(path);
-    if (!c) return NO;
-    return ([c[@"hook"] intValue] > 0) || ([c[@"data"] intValue] > 0);
-}
-
-static BOOL OXBinaryHasDuplicateTitanoxSegment(NSString *path) {
-    NSDictionary *c = OXCountSegments(path);
-    if (!c) return NO;
-    return ([c[@"hook"] intValue] > 1) || ([c[@"data"] intValue] > 1);
 }
 
 static intptr_t OXFindSlide(NSString *name) {
@@ -100,175 +39,118 @@ static intptr_t OXFindSlide(NSString *name) {
     return 0;
 }
 
-static BOOL OXReadBytes(uint64_t fileVaddr, void *buf, size_t size) {
-    if (fileVaddr < FILE_LO) return NO;
-    if (fileVaddr + size < fileVaddr) return NO;
-    if (fileVaddr + size > FILE_HI) return NO;
-    uint64_t runtime = fileVaddr + gSlide;
+static uint64_t OXReadPtr(uint64_t runtimeAddr) {
+    uint64_t v = 0;
     vm_size_t outSize = 0;
     kern_return_t kr = vm_read_overwrite(mach_task_self(),
-                                         (vm_address_t)runtime,
-                                         (vm_size_t)size,
-                                         (vm_address_t)buf,
-                                         &outSize);
-    if (kr == KERN_SUCCESS && outSize == size) return YES;
-    memcpy(buf, (void *)runtime, size);
-    return YES;
+                                         (vm_address_t)runtimeAddr,
+                                         sizeof(v), (vm_address_t)&v, &outSize);
+    if (kr != KERN_SUCCESS || outSize != sizeof(v)) return 0;
+    return v;
 }
 
-static void OXBuildAdrpAddMap(void) {
-    gAdrpAddMap = [NSMutableDictionary dictionary];
-    uint64_t size = TEXT_FILE_HI - TEXT_FILE_LO;
-    const uint64_t CHUNK = 0x100000;
-    uint8_t *buf = (uint8_t *)malloc(CHUNK);
-    if (!buf) return;
-    uint64_t prevPc = 0;
-    uint32_t prevRd = 0;
-    uint64_t prevPage = 0;
+typedef void (*orig_GameButton_ctor_t)(void *self);
+static orig_GameButton_ctor_t orig_GameButton_ctor = NULL;
 
-    for (uint64_t off = 0; off < size; off += CHUNK) {
-        uint64_t n = (size - off < CHUNK) ? (size - off) : CHUNK;
-        if (!OXReadBytes(TEXT_FILE_LO + off, buf, n)) break;
-        for (uint64_t i = 0; i + 4 <= n; i += 4) {
-            uint64_t pcFile = TEXT_FILE_LO + off + i;
-            uint32_t w = *(uint32_t *)(buf + i);
-            if ((w & 0x9F000000) == 0x90000000) {
-                prevPc = pcFile;
-                prevRd = w & 0x1F;
-                uint32_t immlo = (w >> 29) & 3;
-                uint32_t immhi = (w >> 5) & 0x7FFFF;
-                int64_t imm = ((int64_t)immhi << 2) | immlo;
-                if (imm & (1 << 20)) imm -= (1 << 21);
-                prevPage = (pcFile & ~0xFFFULL) + (imm << 12);
-                continue;
-            }
-            if (prevPc != 0 && (w & 0xFF800000) == 0x91000000) {
-                uint32_t rd = w & 0x1F;
-                uint32_t rn = (w >> 5) & 0x1F;
-                uint32_t imm12 = (w >> 10) & 0xFFF;
-                uint32_t sh = (w >> 22) & 1;
-                if (sh) imm12 <<= 12;
-                if (rd == prevRd && rn == prevRd) {
-                    uint64_t target = prevPage + imm12;
-                    if (target >= FILE_LO && target < FILE_HI) {
-                        NSNumber *key = @(target);
-                        NSMutableArray *arr = gAdrpAddMap[key];
-                        if (!arr) { arr = [NSMutableArray array]; gAdrpAddMap[key] = arr; }
-                        if (arr.count < 16) [arr addObject:@(prevPc)];
-                    }
-                }
-            }
-            prevPc = 0;
-        }
-    }
-    free(buf);
+static void hook_GameButton_ctor(void *self) {
+    g_in_hook = 1;
+    uint64_t vt = self ? OXReadPtr((uint64_t)self) : 0;
+    THLog(@"[BRK] GameButton::ctor self=%p vt=0x%llx file=0x%llx",
+          self, vt, vt ? (vt - gSlide - IMAGE_BASE) : 0);
+    if (orig_GameButton_ctor) orig_GameButton_ctor(self);
+    g_in_hook = 0;
 }
 
-static uint64_t OXFindPrologueBackward(uint64_t pcFile) {
-    uint64_t start = (pcFile > 0x10000) ? pcFile - 0x10000 : TEXT_FILE_LO;
-    if (start < TEXT_FILE_LO) start = TEXT_FILE_LO;
-    uint32_t w;
-    for (uint64_t p = pcFile; p >= start; p -= 4) {
-        if (!OXReadBytes(p, &w, 4)) break;
-        if ((w & 0xFFC07FFF) == 0xA9807BFD) return p;
-        if (w == 0xD503237F || w == 0xD503233F) return p;
-        if (p < start + 4) break;
-    }
-    return pcFile;
+typedef void (*orig_HomePage_ctor_t)(void *self);
+static orig_HomePage_ctor_t orig_HomePage_ctor = NULL;
+
+static void hook_HomePage_ctor(void *self) {
+    g_in_hook = 1;
+    uint64_t vt = self ? OXReadPtr((uint64_t)self) : 0;
+    THLog(@"[BRK] HomePage::ctor self=%p vt=0x%llx file=0x%llx",
+          self, vt, vt ? (vt - gSlide - IMAGE_BASE) : 0);
+    if (orig_HomePage_ctor) orig_HomePage_ctor(self);
+    g_in_hook = 0;
 }
 
-static void OXFindCtorsForKnown(void) {
-    NSArray *known = @[
-        @{@"name": @"Character",          @"vt": @(0x00FF45C0)},
-        @{@"name": @"GameButton",         @"vt": @(0x00F9B0F8)},
-        @{@"name": @"HomePage",           @"vt": @(0x00FE4008)},
-        @{@"name": @"LogicDataTables",    @"vt": @(0x00FF2478)},
-        @{@"name": @"LogicProjectileData",@"vt": @(0x00FF3AA0)},
-        @{@"name": @"MessageManager",     @"vt": @(0x00FD57E8)},
-        @{@"name": @"MovieClip",          @"vt": @(0x01006150)},
-        @{@"name": @"NativeFont",         @"vt": @(0x01005858)},
-        @{@"name": @"Stage",              @"vt": @(0x010091B0)},
-    ];
+typedef void (*orig_MessageManager_receiveMessage_t)(void *self, void *msg);
+static orig_MessageManager_receiveMessage_t orig_MessageManager_receiveMessage = NULL;
 
-    THLog(@"=== CTOR SCAN ===");
-    for (NSDictionary *vt in known) {
-        uint64_t vaddr = FILE_LO + [vt[@"vt"] unsignedLongLongValue];
-        NSArray *refs = gAdrpAddMap[@(vaddr)];
-        if (!refs || refs.count == 0) {
-            THLog(@"[ctor] %@ no refs", vt[@"name"]);
-            continue;
-        }
-        NSMutableSet *uniqCtors = [NSMutableSet set];
-        for (NSNumber *pcNum in refs) {
-            uint64_t func = OXFindPrologueBackward([pcNum unsignedLongLongValue]);
-            [uniqCtors addObject:@(func)];
-        }
-        for (NSNumber *funcNum in uniqCtors) {
-            uint64_t func = [funcNum unsignedLongLongValue];
-            THLog(@"[ctor] %@ ctor=0x%llx", vt[@"name"], func);
-        }
-    }
+static void hook_MessageManager_receiveMessage(void *self, void *msg) {
+    g_in_hook = 1;
+    THLog(@"[BRK] MessageManager::receiveMessage self=%p msg=%p", self, msg);
+    if (orig_MessageManager_receiveMessage) orig_MessageManager_receiveMessage(self, msg);
+    g_in_hook = 0;
 }
 
-static void OXPreparePatches(void) {
-    NSString *exePath = [[NSBundle mainBundle] executablePath];
-    NSString *patchedPath = [NSHomeDirectory() stringByAppendingPathComponent:
-                             [NSString stringWithFormat:@"Documents/titanox-hook/%@", gMainBinaryName]];
+typedef void (*orig_NativeFont_formatString_t)(void *self, void *str);
+static orig_NativeFont_formatString_t orig_NativeFont_formatString = NULL;
 
-    NSDictionary *appC = exePath ? OXCountSegments(exePath) : nil;
-    NSDictionary *cacheC = [[NSFileManager defaultManager] fileExistsAtPath:patchedPath]
-                             ? OXCountSegments(patchedPath) : nil;
+static void hook_NativeFont_formatString(void *self, void *str) {
+    g_in_hook = 1;
+    THLog(@"[BRK] NativeFont::formatString self=%p str=%p", self, str);
+    if (orig_NativeFont_formatString) orig_NativeFont_formatString(self, str);
+    g_in_hook = 0;
+}
 
-    THLog(@"[patch] .app  segments: hook=%d data=%d",
-          [appC[@"hook"] intValue], [appC[@"data"] intValue]);
-    THLog(@"[patch] cache segments: hook=%d data=%d",
-          [cacheC[@"hook"] intValue], [cacheC[@"data"] intValue]);
+typedef void (*orig_Stage_setViewport_t)(void *self, double x, double y, double w, double h);
+static orig_Stage_setViewport_t orig_Stage_setViewport = NULL;
 
-    if (appC && ([appC[@"hook"] intValue] > 0 || [appC[@"data"] intValue] > 0)) {
-        if (OXBinaryHasDuplicateTitanoxSegment(exePath)) {
-            THLog(@"[patch] .app has DUPLICATE segments -> delete .app and restore original");
-        } else {
-            THLog(@"[patch] .app already patched (unique segments) -> skip");
-        }
-        return;
+static void hook_Stage_setViewport(void *self, double x, double y, double w, double h) {
+    g_in_hook = 1;
+    THLog(@"[BRK] Stage::setViewport self=%p x=%f y=%f w=%f h=%f", self, x, y, w, h);
+    if (orig_Stage_setViewport) orig_Stage_setViewport(self, x, y, w, h);
+    g_in_hook = 0;
+}
+
+typedef int (*orig_LogicProjectileData_getIntValueFromColumn_t)(void *self, int col);
+static orig_LogicProjectileData_getIntValueFromColumn_t orig_LogicProjectileData_getIntValueFromColumn = NULL;
+
+static int hook_LogicProjectileData_getIntValueFromColumn(void *self, int col) {
+    g_in_hook = 1;
+    THLog(@"[BRK] LogicProjectileData::getIntValueFromColumn self=%p col=%d", self, col);
+    int r = 0;
+    if (orig_LogicProjectileData_getIntValueFromColumn)
+        r = orig_LogicProjectileData_getIntValueFromColumn(self, col);
+    g_in_hook = 0;
+    return r;
+}
+
+static void OXInstallHooks(void) {
+    THLog(@"=== INSTALLING 6 BRK HOOKS ===");
+
+    uint64_t offs[] = {
+        0x5425b0,
+        0x86eb80,
+        0x75cce0,
+        0xb3fde8,
+        0xba17b8,
+        0x9cb098,
+    };
+    void *hooks[] = {
+        (void *)&hook_GameButton_ctor,
+        (void *)&hook_HomePage_ctor,
+        (void *)&hook_MessageManager_receiveMessage,
+        (void *)&hook_NativeFont_formatString,
+        (void *)&hook_Stage_setViewport,
+        (void *)&hook_LogicProjectileData_getIntValueFromColumn,
+    };
+
+    orig_GameButton_ctor = (orig_GameButton_ctor_t)(IMAGE_BASE + 0x5425b0 + gSlide);
+    orig_HomePage_ctor = (orig_HomePage_ctor_t)(IMAGE_BASE + 0x86eb80 + gSlide);
+    orig_MessageManager_receiveMessage = (orig_MessageManager_receiveMessage_t)(IMAGE_BASE + 0x75cce0 + gSlide);
+    orig_NativeFont_formatString = (orig_NativeFont_formatString_t)(IMAGE_BASE + 0xb3fde8 + gSlide);
+    orig_Stage_setViewport = (orig_Stage_setViewport_t)(IMAGE_BASE + 0xba17b8 + gSlide);
+    orig_LogicProjectileData_getIntValueFromColumn = (orig_LogicProjectileData_getIntValueFromColumn_t)(IMAGE_BASE + 0x9cb098 + gSlide);
+
+    for (int i = 0; i < 6; i++) {
+        uint64_t rt = IMAGE_BASE + offs[i] + gSlide;
+        BOOL ok = [TitanoxHook addBreakpointAtAddress:(void *)rt
+                                             withHook:hooks[i]];
+        THLog(@"[brk] 0x%llx -> %s", offs[i], ok ? "OK" : "FAIL");
     }
 
-    if (cacheC) {
-        BOOL cacheDup = ([cacheC[@"hook"] intValue] > 1) || ([cacheC[@"data"] intValue] > 1);
-        BOOL cacheOk  = ([cacheC[@"hook"] intValue] == 1) && ([cacheC[@"data"] intValue] == 1);
-        if (cacheDup) {
-            THLog(@"[patch] cache has DUPLICATES -> deleting cache");
-            [[NSFileManager defaultManager] removeItemAtPath:patchedPath error:nil];
-        } else if (cacheOk) {
-            THLog(@"[patch] cache is valid (1+1) -> skip, sign & replace");
-            THLog(@"[patch] output: %@", patchedPath);
-            return;
-        } else {
-            THLog(@"[patch] cache incomplete -> deleting and repatching");
-            [[NSFileManager defaultManager] removeItemAtPath:patchedPath error:nil];
-        }
-    }
-
-    TitanoxHook *hooker = [[TitanoxHook alloc] initWithMachOName:gMainBinaryName];
-    if (!hooker) {
-        THLog(@"[patch] hooker init FAILED");
-        return;
-    }
-    THLog(@"=== PATCHING BINARY ===");
-    size_t count = sizeof(gPatchOffsets) / sizeof(gPatchOffsets[0]);
-    for (size_t i = 0; i < count; i++) {
-        uint64_t off = gPatchOffsets[i];
-        uint64_t fullAddr = FILE_LO + off;
-        NSString *res = [hooker applyPatchAtVaddr:fullAddr patchBytes:@""];
-        THLog(@"[patch] 0x%llx -> %@", off, res ?: @"(nil)");
-    }
-    THLog(@"=== PATCH DONE ===");
-
-    NSDictionary *finalC = OXCountSegments(patchedPath);
-    THLog(@"[patch] final cache segments: hook=%d data=%d",
-          [finalC[@"hook"] intValue], [finalC[@"data"] intValue]);
-    THLog(@"[patch] output: %@", patchedPath);
-    THLog(@"[patch] sign manually, then replace in .app");
+    THLog(@"=== HOOKS INSTALLED ===");
 }
 
 __attribute__((constructor))
@@ -277,13 +159,9 @@ static void initTitanoxTrace(void) {
                    dispatch_get_main_queue(), ^{
         gMainBinaryName = OXDetectMainBinary();
         gSlide = OXFindSlide(gMainBinaryName);
-        THLog(@"=== TITANOX PATCHER v19 ===");
+        THLog(@"=== BRK TRACER v19 ===");
         THLog(@"main=%@ slide=0x%lx", gMainBinaryName, (long)gSlide);
-
-        OXBuildAdrpAddMap();
-        OXFindCtorsForKnown();
-        OXPreparePatches();
-
+        OXInstallHooks();
         THLog(@"=== DONE ===");
     });
 }

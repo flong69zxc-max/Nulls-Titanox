@@ -2,6 +2,7 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import <mach-o/dyld.h>
+#import <mach-o/loader.h>
 #import <mach/mach.h>
 #import <libgen.h>
 #import "libtitanox.h"
@@ -11,57 +12,65 @@
 #define TEXT_LO   0x100004000ULL
 #define TEXT_HI   0x100D8AF60ULL
 
-static intptr_t   gSlide = 0;
-static NSString  *gMainBinaryName = nil;
+static intptr_t  gSlide = 0;
+static NSString *gMainBinaryName = nil;
 
 static NSString *OXDetectMainBinary(void) {
     NSString *exePath = [[NSBundle mainBundle] executablePath];
     if (exePath) {
         NSString *base = [exePath lastPathComponent];
-        THLog(@"[detect] executablePath=%@ -> base=%@", exePath, base);
         if (base.length) return base;
     }
     NSString *found = [TitanoxHook findExecInBundle:nil];
-    if (found.length) {
-        THLog(@"[detect] findExecInBundle=%@", found);
-        return found;
-    }
-    return nil;
+    return found.length ? found : nil;
 }
 
-static intptr_t OXFindSlideForName(NSString *name) {
-    if (!name.length) return 0;
+/* Собираем ВСЕ image с таким basename и находим тот, у которого magic MH_MAGIC_64 */
+static void OXFindAllCandidates(NSString *name, intptr_t *outSlide, uint64_t *outRuntimeBase) {
     const char *target = name.UTF8String;
+    int found = 0;
     for (uint32_t i = 0; i < _dyld_image_count(); i++) {
         const char *imgName = _dyld_get_image_name(i);
         if (!imgName) continue;
         const char *base = basename((char *)imgName);
-        if (strcmp(base, target) == 0) {
-            intptr_t s = _dyld_get_image_vmaddr_slide(i);
-            THLog(@"[slide] image[%u] %s -> 0x%lx", i, imgName, (long)s);
-            return s;
+        if (strcmp(base, target) != 0) continue;
+        
+        const struct mach_header *hdr = _dyld_get_image_header(i);
+        intptr_t slide = _dyld_get_image_vmaddr_slide(i);
+        uint32_t magic = 0;
+        if (hdr) memcpy(&magic, hdr, 4);
+        
+        THLog(@"[cand] image[%u] hdr=%p slide=0x%lx magic=0x%08x",
+              i, hdr, (long)slide, magic);
+        
+        // Verify by reading magic
+        if (magic == MH_MAGIC_64 || magic == MH_CIGAM_64) {
+            *outSlide = slide;
+            *outRuntimeBase = (uint64_t)hdr;
+            found++;
+            THLog(@"[cand] -> MATCH (magic MH_MAGIC_64)");
         }
     }
-    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
-        const char *imgName = _dyld_get_image_name(i);
-        if (imgName && strstr(imgName, target)) {
-            intptr_t s = _dyld_get_image_vmaddr_slide(i);
-            THLog(@"[slide] image[%u] %s -> 0x%lx (substr)", i, imgName, (long)s);
-            return s;
+    if (!found) {
+        THLog(@"[cand] no valid image found for %@, dumping all:", name);
+        for (uint32_t i = 0; i < _dyld_image_count(); i++) {
+            const char *imgName = _dyld_get_image_name(i);
+            if (imgName && strstr(imgName, target)) {
+                THLog(@"  [%u] %s hdr=%p slide=0x%lx", i, imgName,
+                      _dyld_get_image_header(i),
+                      (long)_dyld_get_image_vmaddr_slide(i));
+            }
         }
     }
-    THLog(@"[slide] NOT FOUND for name=%@", name);
-    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
-        THLog(@"  [%u] %s", i, _dyld_get_image_name(i));
-    }
-    return 0;
 }
 
+/* Три способа чтения, чтобы понять какой работает */
 static BOOL OXReadBytes(uint64_t fileVaddr, void *buf, size_t size) {
     if (fileVaddr < FILE_LO) return NO;
     if (fileVaddr + size < fileVaddr) return NO;
     if (fileVaddr + size > FILE_HI) return NO;
     uint64_t runtime = fileVaddr + gSlide;
+
     vm_size_t outSize = 0;
     kern_return_t kr = vm_read_overwrite(mach_task_self(),
                                          (vm_address_t)runtime,
@@ -69,6 +78,9 @@ static BOOL OXReadBytes(uint64_t fileVaddr, void *buf, size_t size) {
                                          (vm_address_t)buf,
                                          &outSize);
     if (kr == KERN_SUCCESS && outSize == size) return YES;
+
+    if ([TitanoxHook MemXreadMemory:(uintptr_t)runtime buffer:buf length:size]) return YES;
+
     memcpy(buf, (void *)runtime, size);
     return YES;
 }
@@ -133,11 +145,11 @@ static NSDictionary *OXGetTypeInfo(uint64_t vtVaddr) {
     uint64_t raw = OXReadPtr(vtVaddr - 8);
     if (!raw) return nil;
     uint64_t tiVaddr = OXDecodeFixup(raw);
-    if (!tiVaddr || tiVaddr < FILE_LO) return nil;
+    if (!tiVaddr || tiVaddr < FILE_LO || tiVaddr >= FILE_HI) return nil;
     uint64_t nameRaw = OXReadPtr(tiVaddr + 8);
     if (!nameRaw) return nil;
     uint64_t nameVaddr = OXDecodeFixup(nameRaw);
-    if (!nameVaddr || nameVaddr < FILE_LO) return nil;
+    if (!nameVaddr || nameVaddr < FILE_LO || nameVaddr >= FILE_HI) return nil;
     NSString *rawStr = OXReadCString(nameVaddr, 160);
     if (!rawStr || rawStr.length == 0) return nil;
     NSArray *parts = OXSplitMangled(rawStr);
@@ -159,125 +171,44 @@ static void OXDumpVtable(uint64_t vtFileVaddr, NSString *label) {
     }
 }
 
-static void OXScanDataForVtables(void) {
-    THLog(@"=== SCAN DATA FOR VTABLE RUNS ===");
-    uint64_t totalSlots = (FILE_HI - 0x100F74000ULL) / 8;
-    int runLen = 0;
-    uint64_t runStart = 0;
-    uint64_t prevSlot = 0;
-    int hits = 0;
+static void OXDiagnose(void) {
+    THLog(@"=== DIAGNOSTICS ===");
 
-    for (uint64_t i = 0; i < totalSlots; i++) {
-        uint64_t slot = 0x100F74000ULL + i * 8;
-        uint64_t raw = OXReadPtr(slot);
-        if (!raw) { if (runLen >= 4) { runLen = 0; } continue; }
-        uint64_t fn = OXDecodeFixup(raw);
-        BOOL valid = (fn >= TEXT_LO && fn < TEXT_HI && (fn & 3) == 0);
-        if (valid) {
-            if (runLen == 0) { runStart = slot; runLen = 1; }
-            else if (slot == prevSlot + 8) { runLen++; }
-            else {
-                if (runLen >= 4) {
-                    NSDictionary *ti = OXGetTypeInfo(runStart);
-                    THLog(@"VT 0x%llx slots=%d class=%@",
-                          runStart, runLen, ti ? ti[@"class"] : @"?");
-                    hits++;
-                }
-                runStart = slot; runLen = 1;
-            }
-            prevSlot = slot;
-        } else {
-            if (runLen >= 4) {
-                NSDictionary *ti = OXGetTypeInfo(runStart);
-                THLog(@"VT 0x%llx slots=%d class=%@",
-                      runStart, runLen, ti ? ti[@"class"] : @"?");
-                hits++;
-            }
-            runLen = 0;
+    // 1. Какие image называются "Nulls Brawl"
+    THLog(@"[diag] searching for main image...");
+    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
+        const char *name = _dyld_get_image_name(i);
+        if (!name) continue;
+        if (strstr(name, "Nulls") || strstr(name, "nt.nb")) {
+            const struct mach_header *hdr = _dyld_get_image_header(i);
+            intptr_t slide = _dyld_get_image_vmaddr_slide(i);
+            uint32_t magic = 0;
+            if (hdr) memcpy(&magic, hdr, 4);
+            THLog(@"[diag] [%u] %s", i, name);
+            THLog(@"[diag]     hdr=%p slide=0x%lx magic=0x%08x", hdr, (long)slide, magic);
         }
     }
-    if (runLen >= 4) {
-        NSDictionary *ti = OXGetTypeInfo(runStart);
-        THLog(@"VT 0x%llx slots=%d class=%@",
-              runStart, runLen, ti ? ti[@"class"] : @"?");
-        hits++;
-    }
-    THLog(@"total vtable-like runs: %d", hits);
-}
 
-static void brk_MessageManager_receiveMessage(void *self, void *msg) {
-    THLog(@"[BRK] MessageManager::receiveMessage self=%p msg=%p", self, msg);
-}
-
-static void brk_GameButton_ctor(void *self) {
-    THLog(@"[BRK] GameButton::ctor self=%p", self);
-    uint64_t vt = 0;
-    OXReadBytes((uint64_t)self - gSlide, &vt, 8);
-    THLog(@"      self->vtable runtime=0x%llx", vt);
-}
-
-static void brk_NativeFont_formatString(void *self, void *str) {
-    THLog(@"[BRK] NativeFont::formatString self=%p str=%p", self, str);
-}
-
-static void brk_HomePage_ctor(void *self) {
-    THLog(@"[BRK] HomePage::ctor self=%p", self);
-}
-
-static void brk_Stage_setViewport(void *self, double x, double y, double w, double h) {
-    THLog(@"[BRK] Stage::setViewport self=%p x=%f y=%f w=%f h=%f", self, x, y, w, h);
-}
-
-static void brk_MovieClip_setText(void *self, void *str) {
-    THLog(@"[BRK] MovieClip::setText self=%p str=%p", self, str);
-}
-
-#define INSTALL_BRK(fileOff, fn) do { \
-    void *real = (void *)(FILE_LO + (fileOff) + gSlide); \
-    if ([TitanoxHook addBreakpointAtAddress:real withHook:(void *)&fn]) { \
-        THLog(@"brk OK: %s file=0x%llx runtime=%p", #fn, (uint64_t)(fileOff), real); \
-    } else { \
-        THLog(@"brk FAIL: %s file=0x%llx runtime=%p", #fn, (uint64_t)(fileOff), real); \
-    } \
-} while (0)
-
-static void OXInstallBrkHooks(void) {
-    THLog(@"=== BRK HOOKS (one-shot, max 6) ===");
-    INSTALL_BRK(0x0075CCE0, brk_MessageManager_receiveMessage);
-    INSTALL_BRK(0x005425B0, brk_GameButton_ctor);
-    INSTALL_BRK(0x00B3FDE8, brk_NativeFont_formatString);
-    INSTALL_BRK(0x0086EB80, brk_HomePage_ctor);
-    INSTALL_BRK(0x00BA17B8, brk_Stage_setViewport);
-    INSTALL_BRK(0x00B5F068, brk_MovieClip_setText);
-}
-
-static void OXRunTrace(void) {
-    THLog(@"=== TITANOX TRACE v19 ===");
-    THLog(@"main binary = %@", gMainBinaryName);
-    THLog(@"slide        = 0x%lx", (long)gSlide);
-    THLog(@"file range   = 0x%llx .. 0x%llx", FILE_LO, FILE_HI);
-
-    NSArray *vtList = @[
-        @{@"name": @"Character",          @"addr": @(0x00FF45C0)},
-        @{@"name": @"GameButton",         @"addr": @(0x00F9B0F8)},
-        @{@"name": @"HomePage",           @"addr": @(0x00FE4008)},
-        @{@"name": @"LogicDataTables",    @"addr": @(0x00FF2478)},
-        @{@"name": @"LogicProjectileData",@"addr": @(0x00FF3AA0)},
-        @{@"name": @"MessageManager",     @"addr": @(0x00FD57E8)},
-        @{@"name": @"MovieClip",          @"addr": @(0x01006150)},
-        @{@"name": @"NativeFont",         @"addr": @(0x01005858)},
-        @{@"name": @"Stage",              @"addr": @(0x010091B0)},
-    ];
-
-    for (NSDictionary *vt in vtList) {
-        uint64_t vaddr = FILE_LO + [vt[@"addr"] unsignedLongLongValue];
-        OXDumpVtable(vaddr, vt[@"name"]);
+    // 2. Читаем magic по runtime base
+    if (gSlide) {
+        uint64_t runtimeBase = FILE_LO + gSlide;
+        uint32_t magic = 0;
+        OXReadBytes(FILE_LO, &magic, 4);
+        THLog(@"[diag] read magic at runtime 0x%llx -> 0x%08x (expect 0xfeedfacf)",
+              runtimeBase, magic);
     }
 
-    OXScanDataForVtables();
-    OXInstallBrkHooks();
+    // 3. Читаем содержимое нашей известной vtable
+    uint64_t vt = FILE_LO + 0x00F9B0F8;
+    THLog(@"[diag] reading GameButton vt at file 0x%llx runtime 0x%llx",
+          vt, vt + gSlide);
+    for (int i = -2; i < 6; i++) {
+        uint64_t slot = vt + i * 8;
+        uint64_t v = OXReadPtr(slot);
+        THLog(@"[diag]   slot[%d] @file 0x%llx = 0x%016llx", i, slot, v);
+    }
 
-    THLog(@"=== TRACE READY ===");
+    THLog(@"=== DIAG END ===");
 }
 
 __attribute__((constructor))
@@ -286,8 +217,14 @@ static void initTitanoxTrace(void) {
                    dispatch_get_main_queue(), ^{
         gMainBinaryName = OXDetectMainBinary();
         THLog(@"main binary detected: %@", gMainBinaryName);
-        gSlide = OXFindSlideForName(gMainBinaryName);
-        THLog(@"slide=0x%lx", (long)gSlide);
-        OXRunTrace();
+
+        intptr_t slide = 0;
+        uint64_t runtimeBase = 0;
+        OXFindAllCandidates(gMainBinaryName, &slide, &runtimeBase);
+
+        gSlide = slide;
+        THLog(@"FINAL slide=0x%lx runtimeBase=0x%llx", (long)gSlide, runtimeBase);
+
+        OXDiagnose();
     });
 }

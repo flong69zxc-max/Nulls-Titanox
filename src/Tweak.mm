@@ -168,7 +168,7 @@ static void OXFindCtorsForKnown(void) {
 }
 
 static void OXPreparePatches(void) {
-    StaticInlineHook *hooker = [[StaticInlineHook alloc] initWithMachOName:gMainBinaryName];
+    TitanoxHook *hooker = [[TitanoxHook alloc] initWithMachOName:gMainBinaryName];
     if (!hooker) {
         THLog(@"[patch] hooker init FAILED");
         return;

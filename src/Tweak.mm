@@ -2,6 +2,7 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import <mach-o/dyld.h>
+#import <libgen.h>
 #import "libtitanox.h"
 
 #define IMAGE_BASE      0x100000000ULL
@@ -14,6 +15,7 @@
 static NSMutableString *gLog = nil;
 static NSLock         *gLock = nil;
 static intptr_t        gSlide = 0;
+static NSString       *gMainBinaryName = nil;
 
 static void OXLog(NSString *fmt, ...) {
     va_list args;
@@ -31,22 +33,46 @@ static void OXFlush(void) {
     [gLock unlock];
 }
 
-static intptr_t OXFindSlide(void) {
-    const char *hints[] = { "Nulls Brawl", "NullsBrawl", "Brawl", "Nulls" };
-    for (int h = 0; h < 4; h++) {
-        const char *hint = hints[h];
-        for (uint32_t i = 0; i < _dyld_image_count(); i++) {
-            const char *name = _dyld_get_image_name(i);
-            if (name && strstr(name, hint)) {
-                intptr_t s = _dyld_get_image_vmaddr_slide(i);
-                OXLog(@"image[%u] %s slide=0x%lx", i, name, (long)s);
-                return s;
-            }
+static NSString *OXDetectMainBinary(void) {
+    NSString *exePath = [[NSBundle mainBundle] executablePath];
+    if (exePath) {
+        NSString *base = [exePath lastPathComponent];
+        OXLog(@"[detect] executablePath=%@ -> base=%@", exePath, base);
+        if (base.length) return base;
+    }
+    NSString *found = [TitanoxHook findExecInBundle:nil];
+    if (found.length) {
+        OXLog(@"[detect] findExecInBundle=%@", found);
+        return found;
+    }
+    return nil;
+}
+
+static intptr_t OXFindSlideForName(NSString *name) {
+    if (!name.length) return 0;
+    const char *target = name.UTF8String;
+    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
+        const char *imgName = _dyld_get_image_name(i);
+        if (!imgName) continue;
+        const char *base = basename((char *)imgName);
+        if (strcmp(base, target) == 0) {
+            intptr_t s = _dyld_get_image_vmaddr_slide(i);
+            OXLog(@"[slide] image[%u] %s -> 0x%lx", i, imgName, (long)s);
+            return s;
         }
     }
     for (uint32_t i = 0; i < _dyld_image_count(); i++) {
-        const char *name = _dyld_get_image_name(i);
-        OXLog(@"image[%u] %s", i, name ? name : "?");
+        const char *imgName = _dyld_get_image_name(i);
+        if (imgName && strstr(imgName, target)) {
+            intptr_t s = _dyld_get_image_vmaddr_slide(i);
+            OXLog(@"[slide] image[%u] %s -> 0x%lx (substr)", i, imgName, (long)s);
+            return s;
+        }
+    }
+    OXLog(@"[slide] NOT FOUND for name=%@", name);
+    OXLog(@"[slide] dumping all images:");
+    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
+        OXLog(@"  [%u] %s", i, _dyld_get_image_name(i));
     }
     return 0;
 }
@@ -219,7 +245,7 @@ static void brk_MovieClip_setText(void *self, void *str) {
     if ([TitanoxHook addBreakpointAtAddress:real withHook:(void *)&fn]) { \
         OXLog(@"brk OK: %s file=0x%llx runtime=%p", #fn, (uint64_t)(fileOff), real); \
     } else { \
-        OXLog(@"brk FAIL: %s file=0x%llx", #fn, (uint64_t)(fileOff)); \
+        OXLog(@"brk FAIL: %s file=0x%llx runtime=%p", #fn, (uint64_t)(fileOff), real); \
     } \
 } while (0)
 
@@ -235,15 +261,16 @@ static void OXInstallBrkHooks(void) {
 }
 
 static void OXRunTrace(void) {
-    OXLog(@"=== TITANOX TRACE v19 (Nulls Brawl) ===");
-    OXLog(@"slide=0x%lx (real)", (long)gSlide);
+    OXLog(@"=== TITANOX TRACE v19 ===");
+    OXLog(@"main binary = %@", gMainBinaryName);
+    OXLog(@"slide        = 0x%lx", (long)gSlide);
 
     NSArray *vtList = @[
         @{@"name": @"Character",          @"addr": @(0x00FF45C0)},
         @{@"name": @"GameButton",         @"addr": @(0x00F9B0F8)},
         @{@"name": @"HomePage",           @"addr": @(0x00FE4008)},
         @{@"name": @"LogicDataTables",    @"addr": @(0x00FF2478)},
-        @{@"name": @"LogicProjectileData",@"addr": @(0x00FF3AA0)},
+        {@"name": @"LogicProjectileData",@"addr": @(0x00FF3AA0)},
         @{@"name": @"MessageManager",     @"addr": @(0x00FD57E8)},
         @{@"name": @"MovieClip",          @"addr": @(0x01006150)},
         @{@"name": @"NativeFont",         @"addr": @(0x01005858)},
@@ -269,7 +296,9 @@ static void initTitanoxTrace(void) {
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
-        gSlide = OXFindSlide();
+        gMainBinaryName = OXDetectMainBinary();
+        OXLog(@"main binary detected: %@", gMainBinaryName);
+        gSlide = OXFindSlideForName(gMainBinaryName);
         OXLog(@"slide=0x%lx", (long)gSlide);
         OXRunTrace();
     });

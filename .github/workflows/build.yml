@@ -1,26 +1,40 @@
-name: Build Tweak
+name: Build Nulls-Titanox
 on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths:
-      - 'src/**'
-      - 'Makefile'
-      - 'control'
-      - '.github/workflows/build.yml'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
     runs-on: macos-14
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout tweak repo
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-          submodules: recursive
+          fetch-depth: 1
+
+      - name: Clone Titanox lib repo
+        run: |
+          set -euo pipefail
+          rm -rf libtitanox
+          git clone --depth 1 https://github.com/flong69zxc-max/Titanox.git libtitanox
+          rm -rf libtitanox/.git
+          rm -rf libtitanox/.github
+          ls -la libtitanox | head
+
+      - name: Patch duplicate segment
+        run: |
+          set -euo pipefail
+          grep -rl 'HOOK_DATA_SEGMENT.*"__TITANOX_HOOK"' libtitanox 2>/dev/null | while read f; do
+            echo "patch $f"
+            sed -i.bak 's/HOOK_DATA_SEGMENT.*"__TITANOX_HOOK"/HOOK_DATA_SEGMENT = "__TITANOX_DATA"/' "$f"
+            rm -f "$f.bak"
+          done
+          grep -rn 'HOOK_TEXT_SEGMENT\|HOOK_DATA_SEGMENT' libtitanox | head || true
 
       - name: Install Theos
         run: |
@@ -30,61 +44,42 @@ jobs:
             git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
           fi
           echo "THEOS=$THEOS" >> "$GITHUB_ENV"
-          ls -la "$THEOS" | head
 
       - name: Install ldid
-        run: |
-          set -euo pipefail
-          brew install ldid || true
+        run: brew install ldid || true
 
-      - name: Patch duplicate segment name
-        run: |
-          set -euo pipefail
-          grep -rl 'HOOK_DATA_SEGMENT.*"__TITANOX_HOOK"' . 2>/dev/null | while read f; do
-            echo "patch $f"
-            sed -i.bak 's/HOOK_DATA_SEGMENT.*"__TITANOX_HOOK"/HOOK_DATA_SEGMENT = "__TITANOX_DATA"/' "$f"
-            rm -f "$f.bak"
-          done
-          grep -rn 'HOOK_TEXT_SEGMENT\|HOOK_DATA_SEGMENT' . | head || true
-
-      - name: Build
+      - name: Build libtitanox
         env:
           THEOS: ${{ env.THEOS }}
         run: |
           set -euo pipefail
-          cd "$GITHUB_WORKSPACE"
-          find . -maxdepth 2 -name Makefile | head
+          cd libtitanox
           make clean || true
           make -j4
+          cd "$GITHUB_WORKSPACE"
+          DYLIB=$(find libtitanox -name "libtitanox.dylib" -o -name "Titanox.dylib" 2>/dev/null | head -1)
+          echo "dylib=$DYLIB"
+          test -n "$DYLIB"
+          file "$DYLIB"
+          mkdir -p "$THEOS/lib"
+          cp "$DYLIB" "$THEOS/lib/libtitanox.dylib"
+          ls -la "$THEOS/lib/"
 
-      - name: Find artifacts
-        id: find
+      - name: Build tweak
+        env:
+          THEOS: ${{ env.THEOS }}
         run: |
           set -euo pipefail
-          echo "--- deb files ---"
-          find . -name "*.deb" -type f 2>/dev/null | head || true
-          echo "--- dylib files ---"
-          find . -name "*.dylib" -type f 2>/dev/null | head || true
-          DEB=$(find . -name "*.deb" -type f 2>/dev/null | head -n1 || true)
-          echo "deb=$DEB" >> "$GITHUB_OUTPUT"
+          make clean || true
+          make -j4
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: tweak-build
+          name: nulls-titanox-build
           path: |
+            packages/**
             **/*.deb
-            **/*.dylib
             .theos/obj/**/*.dylib
           retention-days: 30
           if-no-files-found: warn
-
-      - name: Report
-        if: always()
-        run: |
-          echo "=== repo tree ==="
-          find . -maxdepth 2 -type d | head -30
-          echo "=== Makefile ==="
-          cat Makefile 2>/dev/null || echo "(no root Makefile)"
-          echo "=== control ==="
-          cat control 2>/dev/null || echo "(no control)"

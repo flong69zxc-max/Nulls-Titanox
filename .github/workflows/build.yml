@@ -19,30 +19,20 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 1 }
 
-      - name: Setup Theos + Titanox
+      - name: Setup + patch
         run: |
           set -euo pipefail
-          brew install ldid dpkg >/dev/null 2>&1 || brew install ldid >/dev/null 2>&1 || true
-
+          brew install ldid dpkg >/dev/null 2>&1 || true
           git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
-          mkdir -p "$THEOS/lib" "$THEOS/include/Titanox"
+          mkdir -p "$THEOS/lib" "$THEOS/include/Titanox" deps
 
-          git clone --depth 1 https://github.com/flong69zxc-max/Titanox.git libtitanox
-          rm -rf libtitanox/.git
+          git clone --depth 1 https://github.com/flong69zxc-max/Titanox.git deps/Titanox
+          rm -rf deps/Titanox/.git
 
-      - name: Patch sources
-        run: |
-          set -euo pipefail
-
-          # 1) Duplicate segment name
-          find libtitanox \( -name 'sih.hpp' -o -name 'sih.mm' \) -exec \
+          find deps/Titanox \( -name 'sih.hpp' -o -name 'sih.mm' \) -exec \
             sed -i '' 's|"__TITANOX_HOOK"|"__TITANOX_DATA"|g' {} +
-
-          # 2) arm64e ptrauth cast fix (unsigned long -> void*)
-          find libtitanox -name 'hook.c' -exec \
+          find deps/Titanox -name 'hook.c' -exec \
             sed -i '' 's|arm_thread_state64_set_pc_fptr(\*new, hooks\[i\].new)|arm_thread_state64_set_pc_fptr(*new, (void *)hooks[i].new)|g' {} +
-
-          grep -rn "arm_thread_state64_set_pc_fptr" libtitanox | head || true
 
       - name: Build libtitanox
         run: |
@@ -50,35 +40,31 @@ jobs:
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
           CXXINC=$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/include/c++/v1
 
-          MK=$(find libtitanox -maxdepth 3 -name Makefile | head -1)
-          MK_DIR=$(dirname "$MK")
-          echo "Makefile: $MK"
-
+          MK=$(find deps/Titanox -maxdepth 4 -name Makefile | head -1)
           sed -i '' -e "s|/home/rage/theos|$THEOS|g" \
                     -e "s|^SYSROOT =.*|SYSROOT = $SDK|" "$MK"
           printf '\nADDITIONAL_CFLAGS += -isystem %s\nADDITIONAL_CXXFLAGS += -isystem %s\n' "$CXXINC" "$CXXINC" >> "$MK"
 
-          make -C "$MK_DIR" -j$(sysctl -n hw.ncpu)
+          make -C "$(dirname "$MK")" -j$(sysctl -n hw.ncpu)
 
-          DYLIB=$(find libtitanox \( -name 'libtitanox.dylib' -o -name 'Titanox.dylib' \) | head -1)
+          DYLIB=$(find deps/Titanox \( -name 'libtitanox.dylib' -o -name 'Titanox.dylib' \) | head -1)
           test -n "$DYLIB"
-          echo "Built: $DYLIB"
           cp "$DYLIB" "$THEOS/lib/libtitanox.dylib"
           cp "$DYLIB" "$THEOS/lib/Titanox.dylib"
 
-          (cd libtitanox && find . -name '*.h*' -exec sh -c \
+          (cd deps/Titanox && find . -name '*.h*' -exec sh -c \
             'd="$THEOS/include/Titanox/$(dirname "${1#./}")"; mkdir -p "$d"; cp "$1" "$d/"' _ {} \;)
+          find deps/Titanox -name 'libtitanox.h' -exec cp {} "$THEOS/include/Titanox/" \;
 
       - name: Build tweak
         run: |
           set -euo pipefail
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
           CXXINC=$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/include/c++/v1
+          EXTRA="-isystem $CXXINC -I$THEOS/include -I$THEOS/include/Titanox -Ideps/Titanox/include -Ideps/Titanox/libtitanox -Ideps/Titanox"
 
-          if [ -f Makefile ]; then
-            sed -i '' "s|^SYSROOT =.*|SYSROOT = $SDK|" Makefile
-            printf '\nADDITIONAL_CFLAGS += -isystem %s\nADDITIONAL_CXXFLAGS += -isystem %s\n' "$CXXINC" "$CXXINC" >> Makefile
-          fi
+          sed -i '' "s|^SYSROOT =.*|SYSROOT = $SDK|" Makefile
+          printf '\nADDITIONAL_CFLAGS += %s\nADDITIONAL_CXXFLAGS += %s\n' "$EXTRA" "$EXTRA" >> Makefile
 
           make -j$(sysctl -n hw.ncpu)
 
@@ -89,6 +75,6 @@ jobs:
           path: |
             packages/**
             .theos/obj/**/*.dylib
-            libtitanox/**/*.deb
+            deps/Titanox/**/*.deb
           retention-days: 30
           if-no-files-found: warn

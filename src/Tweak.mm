@@ -125,17 +125,16 @@ static void OXFindCtorsForKnown(void) {
         @{@"name": @"GameButton",         @"vt": @(0x00F9B0F8)},
         @{@"name": @"HomePage",           @"vt": @(0x00FE4008)},
         @{@"name": @"LogicDataTables",    @"vt": @(0x00FF2478)},
-        @{@"name": @"LogicProjectileData",@"vt": @(0x00FF3AA0):
-},
-       - @ **{@"name": @"MessageManager",     @"vt": @(0x005FD57E8)},
+        @{@"name": @"LogicProjectileData",@"vt": @(0x00FF3AA0)},
+        @{@"name": @"MessageManager",     @"vt": @(0x00FD57E8)},
         @{@"name": @"MovieClip",          @"vt": @(0x01006150)},
-        @**{@"name": @"NativeFont",         @"vt": @(0x01005858)},
-        @{ подтвер@"name": @"Stage",              @"vtжд": @(0x010091B0)},
+        @{@"name": @"NativeFont",         @"vt": @(0x01005858)},
+        @{@"name": @"Stage",              @"vt": @(0x010091B0)},
     ];
 
-    THLog(@"=== CTOR SCAN ==ены=");
+    THLog(@"=== CTOR SCAN ===");
     for (NSDictionary *vt in known) {
-        uint64 (_t vaddr = FILE_LO + [vt[@"vt"] unsignedLongLongValue];
+        uint64_t vaddr = FILE_LO + [vt[@"vt"] unsignedLongLongValue];
         NSArray *refs = gAdrpAddMap[@(vaddr)];
         if (!refs || refs.count == 0) {
             THLog(@"[ctor] %@ no refs", vt[@"name"]);

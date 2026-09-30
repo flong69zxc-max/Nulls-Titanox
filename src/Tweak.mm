@@ -6,24 +6,21 @@
 #import <mach/vm_map.h>
 #import <libgen.h>
 #import <dlfcn.h>
-#import <pthread.h>
+#import "libtitanox.h"
 
 #define RVA_MM_RECEIVEMESSAGE 0x75cce0
 #define RVA_MM_CTOR           0x75bb1c
-#define VT_MM                 0xfd57e8
+
+extern "C" void OXLogC(const char *tag, uint64_t a, uint64_t b) {
+    THLog(@"[C] %s a=0x%llx b=0x%llx", tag, a, b);
+}
 
 static NSString *gImageName = nil;
 static uint64_t gRuntimeAddr = 0;
 static uint64_t gCtorAddr = 0;
-static uint64_t gVtableAddr = 0;
 
-static void *gMMInstance = NULL;
-static void (*orig_receiveMessage)(void *self, void *msg) = nullptr;
-static void (*orig_ctor)(void *self) = nullptr;
-
-extern "C" void OXLogC(const char *tag, uint64_t a, uint64_t b) {
-    NSLog(@"[C] %s a=0x%llx b=0x%llx", tag, a, b);
-}
+static void (*orig_receiveMessage)(void *self, void *msg) = NULL;
+static void (*orig_ctor)(void *self) = NULL;
 
 static NSString *OXDetectGameImageName(void) {
     for (uint32_t i = 0; i < _dyld_image_count(); i++) {
@@ -33,7 +30,6 @@ static NSString *OXDetectGameImageName(void) {
             return [NSString stringWithUTF8String:basename((char *)n)];
         }
     }
-
     for (uint32_t i = 0; i < _dyld_image_count(); i++) {
         const char *n = _dyld_get_image_name(i);
         if (!n) continue;
@@ -43,27 +39,26 @@ static NSString *OXDetectGameImageName(void) {
         if (strstr(n, "/System/")) continue;
         if (strstr(n, "/usr/")) continue;
         if (strstr(n, "/private/preboot/")) continue;
-        if (strstr(n, "/Documents/Tweaks/")) continue;
         if (strstr(n, "/Tweaks/")) continue;
-
-        const struct mach_header_64 *hdr = (const struct mach_header_64 *)_dyld_get_image_header(i);
+        const struct mach_header_64 *hdr =
+            (const struct mach_header_64 *)_dyld_get_image_header(i);
         if (!hdr) continue;
         if (hdr->magic != MH_MAGIC_64 && hdr->magic != MH_CIGAM_64) continue;
-        if (hdr->filetype != MH_EXECUTE) continue;
-
+        if (hdr->filetype != MH_EXECUTE && hdr->filetype != MH_DYLIB) continue;
         return [NSString stringWithUTF8String:basename((char *)n)];
     }
     return nil;
 }
 
-static uint64_t OXResolveRuntimeAddr(NSString *imageName, uint64_t rva) {
+static uint64_t OXResolve(NSString *imageName, uint64_t rva) {
     if (!imageName) return 0;
     const char *target = imageName.UTF8String;
     for (uint32_t i = 0; i < _dyld_image_count(); i++) {
         const char *n = _dyld_get_image_name(i);
         if (!n) continue;
         if (strcmp(basename((char *)n), target) != 0) continue;
-        const struct mach_header_64 *hdr = (const struct mach_header_64 *)_dyld_get_image_header(i);
+        const struct mach_header_64 *hdr =
+            (const struct mach_header_64 *)_dyld_get_image_header(i);
         if (!hdr) continue;
         if (hdr->magic != MH_MAGIC_64 && hdr->magic != MH_CIGAM_64) continue;
         return (uint64_t)hdr + rva;
@@ -71,104 +66,136 @@ static uint64_t OXResolveRuntimeAddr(NSString *imageName, uint64_t rva) {
     return 0;
 }
 
-static BOOL OXSafRead64(uint64_t addr, uint64_t *out) {
-    vm_size_t outSize = 0;
-    kern_return_t kr = vm_read_overwrite(mach_task_self(), (vm_address_t)addr, 8, (vm_address_t)out, &outSize);
-    return (kr == KERN_SUCCESS && outSize == 8);
+static vm_prot_t OXProt(uint64_t addr) {
+    vm_address_t region = (vm_address_t)addr;
+    vm_size_t size = 0;
+    vm_region_basic_info_data_64_t info;
+    mach_msg_type_number_t cnt = VM_REGION_BASIC_INFO_COUNT_64;
+    mach_port_t obj = MACH_PORT_NULL;
+    kern_return_t kr = vm_region_64(mach_task_self(), &region, &size,
+                                     VM_REGION_BASIC_INFO_64,
+                                     (vm_region_info_t)&info, &cnt, &obj);
+    if (kr != KERN_SUCCESS) return 0;
+    return info.protection;
 }
 
-static BOOL OXSafRead32(uint64_t addr, uint32_t *out) {
-    vm_size_t outSize = 0;
-    kern_return_t kr = vm_read_overwrite(mach_task_self(), (vm_address_t)addr, 4, (vm_address_t)out, &outSize);
-    return (kr == KERN_SUCCESS && outSize == 4);
+static BOOL OXIsExecutable(uint64_t addr) {
+    return (OXProt(addr) & VM_PROT_EXECUTE) != 0;
+}
+
+static void OXLogProt(const char *tag, uint64_t addr) {
+    vm_prot_t p = OXProt(addr);
+    THLog(@"[prot] %s 0x%llx = %c%c%c (0x%x)",
+          tag, addr,
+          (p & VM_PROT_READ)    ? 'r' : '-',
+          (p & VM_PROT_WRITE)   ? 'w' : '-',
+          (p & VM_PROT_EXECUTE) ? 'x' : '-',
+          p);
+}
+
+typedef void (*MSHookFunction_t)(void *, void *, void **);
+
+static MSHookFunction_t OXFindMSHook(void) {
+    const char *names[] = {
+        "MSHookFunction",
+        "MSHookFunction_ptr",
+        "_MSHookFunction",
+    };
+    for (int i = 0; i < 3; i++) {
+        void *sym = dlsym(RTLD_DEFAULT, names[i]);
+        if (sym) {
+            THLog(@"[mshook] found %s -> %p", names[i], sym);
+            return (MSHookFunction_t)sym;
+        }
+    }
+
+    const char *libs[] = {
+        "/var/jb/usr/lib/libsubstrate.dylib",
+        "/var/jb/usr/lib/libellekit.dylib",
+        "/usr/lib/libsubstrate.dylib",
+        "/usr/lib/libellekit.dylib",
+        "/var/jb/Library/Frameworks/CydiaSubstrate.framework/CydiaSubstrate",
+        "/Library/Frameworks/CydiaSubstrate.framework/CydiaSubstrate",
+    };
+    for (int i = 0; i < 6; i++) {
+        void *h = dlopen(libs[i], RTLD_NOW | RTLD_NOLOAD);
+        if (!h) continue;
+        void *sym = dlsym(h, "MSHookFunction");
+        if (sym) {
+            THLog(@"[mshook] loaded %s -> %p", libs[i], sym);
+            return (MSHookFunction_t)sym;
+        }
+    }
+
+    THLog(@"[mshook] MSHookFunction NOT FOUND anywhere");
+    return NULL;
 }
 
 static void hook_receiveMessage(void *self, void *msg) {
-    if (msg) {
-        uint32_t vt = 0;
-        if (OXSafRead32((uint64_t)msg, &vt) && vt) {
-            uint64_t getTypeAddr = 0;
-            if (OXSafRead64((uint64_t)vt + 40, &getTypeAddr) && getTypeAddr) {
-                typedef int (*GetTypeFn)(void *);
-                GetTypeFn getType = (GetTypeFn)getTypeAddr;
-                int type = getType(msg);
-                if (type == 20103) {
-                    int subtype = 0;
-                    OXSafRead32((uint64_t)msg + 144, (uint32_t *)&subtype);
-                    if (subtype == 8) {
-                        NSLog(@"[Tale] news popup caught");
-                    }
-                }
-            }
-        }
-    }
+    THLog(@"[Tale] receiveMessage called self=%p msg=%p", self, msg);
     if (orig_receiveMessage) orig_receiveMessage(self, msg);
 }
 
 static void hook_ctor(void *self) {
-    if (!gMMInstance && self) {
-        gMMInstance = self;
-        NSLog(@"[Tale] MessageManager instance = %p", self);
-    }
+    THLog(@"[Tale] MessageManager::ctor called self=%p", self);
     if (orig_ctor) orig_ctor(self);
 }
 
-static void OXDumpVtable(void) {
-    if (!gVtableAddr) return;
-    NSLog(@"=== VTABLE 0x%llx ===", gVtableAddr);
-    for (int i = 0; i < 4; i++) {
-        uint64_t slot = 0;
-        if (OXSafRead64(gVtableAddr + i * 8, &slot)) {
-            NSLog(@"[vt] slot[%d] = 0x%llx", i, slot);
-        } else {
-            NSLog(@"[vt] slot[%d] = <unreadable>", i);
-            break;
-        }
-    }
-}
-
-static void OXInstallHooks(void) {
-    void *sym = dlsym(RTLD_DEFAULT, "MSHookFunction");
-    if (!sym) {
-        NSLog(@"[hook] MSHookFunction not found");
+static void OXHookOne(MSHookFunction_t mshook,
+                      const char *name,
+                      uint64_t addr,
+                      void *hook,
+                      void **orig)
+{
+    THLog(@"[hook] %s addr=0x%llx", name, addr);
+    if (!addr) {
+        THLog(@"[hook] %s SKIP — addr=0", name);
         return;
     }
-    typedef void (*MSHookFunction_t)(void *, void *, void **);
-    MSHookFunction_t mshook = (MSHookFunction_t)sym;
+    OXLogProt(name, addr);
 
-    if (gCtorAddr) {
-        NSLog(@"[hook] hooking ctor at 0x%llx", gCtorAddr);
-        mshook((void *)gCtorAddr, (void *)hook_ctor, (void **)&orig_ctor);
-        NSLog(@"[hook] ctor done");
+    if (!OXIsExecutable(addr)) {
+        THLog(@"[hook] %s SKIP — not executable region", name);
+        return;
     }
-    if (gRuntimeAddr) {
-        NSLog(@"[hook] hooking receiveMessage at 0x%llx", gRuntimeAddr);
-        mshook((void *)gRuntimeAddr, (void *)hook_receiveMessage, (void **)&orig_receiveMessage);
-        NSLog(@"[hook] receiveMessage done");
-    }
+
+    mshook((void *)addr, hook, orig);
+    THLog(@"[hook] %s installed, orig=%p", name, orig ? *orig : NULL);
 }
 
 __attribute__((constructor))
 static void initMod(void) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
+        THLog(@"=== TALE MOD v1 ===");
+
         gImageName = OXDetectGameImageName();
         if (!gImageName) {
-            NSLog(@"[Tale] game image not found");
+            THLog(@"[Tale] image not found");
+            for (uint32_t i = 0; i < _dyld_image_count(); i++) {
+                const char *n = _dyld_get_image_name(i);
+                if (n) THLog(@"[img] %s", n);
+            }
             return;
         }
-        NSLog(@"[Tale] image=%@", gImageName);
+        THLog(@"[Tale] image=%@", gImageName);
 
-        gRuntimeAddr = OXResolveRuntimeAddr(gImageName, RVA_MM_RECEIVEMESSAGE);
-        gCtorAddr    = OXResolveRuntimeAddr(gImageName, RVA_MM_CTOR);
-        gVtableAddr  = OXResolveRuntimeAddr(gImageName, VT_MM);
+        gRuntimeAddr = OXResolve(gImageName, RVA_MM_RECEIVEMESSAGE);
+        gCtorAddr    = OXResolve(gImageName, RVA_MM_CTOR);
 
-        NSLog(@"[Tale] receiveMessage=0x%llx ctor=0x%llx vtable=0x%llx",
-              gRuntimeAddr, gCtorAddr, gVtableAddr);
+        THLog(@"[Tale] rcv=0x%llx ctor=0x%llx", gRuntimeAddr, gCtorAddr);
 
-        OXDumpVtable();
-        OXInstallHooks();
+        MSHookFunction_t mshook = OXFindMSHook();
+        if (!mshook) {
+            THLog(@"[Tale] MSHookFunction not available — cannot hook");
+            return;
+        }
 
-        NSLog(@"[Tale] === Done ===");
+        OXHookOne(mshook, "ctor", gCtorAddr,
+                  (void *)hook_ctor, (void **)&orig_ctor);
+        OXHookOne(mshook, "receiveMessage", gRuntimeAddr,
+                  (void *)hook_receiveMessage, (void **)&orig_receiveMessage);
+
+        THLog(@"[Tale] === Done ===");
     });
 }

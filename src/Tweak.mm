@@ -14,6 +14,10 @@ extern __thread int g_in_hook;
 static intptr_t  gSlide = 0;
 static NSString *gMainBinaryName = nil;
 
+extern "C" void OXLogC(const char *tag, uint64_t a, uint64_t b) {
+    THLog(@"[C] %s a=0x%llx b=0x%llx", tag, a, b);
+}
+
 static NSString *OXDetectMainBinary(void) {
     NSString *exePath = [[NSBundle mainBundle] executablePath];
     if (exePath) {

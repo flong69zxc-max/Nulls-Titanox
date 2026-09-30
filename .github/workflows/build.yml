@@ -25,10 +25,24 @@ jobs:
           brew install ldid dpkg >/dev/null 2>&1 || brew install ldid >/dev/null 2>&1 || true
 
           git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
-          mkdir -p "$THEOS/lib"
+          mkdir -p "$THEOS/lib" "$THEOS/include/Titanox"
 
           git clone --depth 1 https://github.com/flong69zxc-max/Titanox.git libtitanox
           rm -rf libtitanox/.git
+
+      - name: Patch sources
+        run: |
+          set -euo pipefail
+
+          # 1) Duplicate segment name
+          find libtitanox \( -name 'sih.hpp' -o -name 'sih.mm' \) -exec \
+            sed -i '' 's|"__TITANOX_HOOK"|"__TITANOX_DATA"|g' {} +
+
+          # 2) arm64e ptrauth cast fix (unsigned long -> void*)
+          find libtitanox -name 'hook.c' -exec \
+            sed -i '' 's|arm_thread_state64_set_pc_fptr(\*new, hooks\[i\].new)|arm_thread_state64_set_pc_fptr(*new, (void *)hooks[i].new)|g' {} +
+
+          grep -rn "arm_thread_state64_set_pc_fptr" libtitanox | head || true
 
       - name: Build libtitanox
         run: |
@@ -36,25 +50,24 @@ jobs:
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
           CXXINC=$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/include/c++/v1
 
-          find libtitanox \( -name 'sih.hpp' -o -name 'sih.mm' \) -exec \
-            sed -i '' 's|"__TITANOX_HOOK"|"__TITANOX_DATA"|g' {} +
-
           MK=$(find libtitanox -maxdepth 3 -name Makefile | head -1)
+          MK_DIR=$(dirname "$MK")
+          echo "Makefile: $MK"
+
           sed -i '' -e "s|/home/rage/theos|$THEOS|g" \
-                    -e "s|^SYSROOT =.*|SYSROOT = $SDK|" \
-                    -e "s|^ARCHS =.*|ARCHS = arm64 arm64e|" "$MK"
+                    -e "s|^SYSROOT =.*|SYSROOT = $SDK|" "$MK"
           printf '\nADDITIONAL_CFLAGS += -isystem %s\nADDITIONAL_CXXFLAGS += -isystem %s\n' "$CXXINC" "$CXXINC" >> "$MK"
 
-          make -C "$(dirname "$MK")" -j$(sysctl -n hw.ncpu)
+          make -C "$MK_DIR" -j$(sysctl -n hw.ncpu)
 
           DYLIB=$(find libtitanox \( -name 'libtitanox.dylib' -o -name 'Titanox.dylib' \) | head -1)
           test -n "$DYLIB"
+          echo "Built: $DYLIB"
           cp "$DYLIB" "$THEOS/lib/libtitanox.dylib"
           cp "$DYLIB" "$THEOS/lib/Titanox.dylib"
 
-          mkdir -p "$THEOS/include/Titanox"
           (cd libtitanox && find . -name '*.h*' -exec sh -c \
-            'mkdir -p "$THEOS/include/Titanox/$(dirname "${1#./}")"; cp "$1" "$THEOS/include/Titanox/${1#./}"' _ {} \;)
+            'd="$THEOS/include/Titanox/$(dirname "${1#./}")"; mkdir -p "$d"; cp "$1" "$d/"' _ {} \;)
 
       - name: Build tweak
         run: |

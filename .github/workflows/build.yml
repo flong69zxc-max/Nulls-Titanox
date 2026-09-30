@@ -12,7 +12,7 @@ jobs:
     runs-on: macos-14
     timeout-minutes: 90
     steps:
-      - name: Checkout tweak
+      - name: Checkout tweak repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
@@ -34,8 +34,29 @@ jobs:
           fi
           echo "THEOS=$THEOS" >> "$GITHUB_ENV"
 
+      - name: Install Theos SDKs
+        run: |
+          set -euo pipefail
+          if [ ! -d "$THEOS/sdks" ] || [ -z "$(ls -A "$THEOS/sdks" 2>/dev/null)" ]; then
+            rm -rf "$THEOS/sdks"
+            git clone --depth 1 https://github.com/theos/sdks.git "$THEOS/sdks"
+          fi
+          ls "$THEOS/sdks" | head -40
+
       - name: Install ldid
         run: brew install ldid || true
+
+      - name: Patch duplicate segment name
+        run: |
+          set -euo pipefail
+          find libtitanox -name "sih.hpp" -o -name "sih.mm" | while read f; do
+            echo "checking $f"
+            grep -n "HOOK_DATA_SEGMENT\|HOOK_TEXT_SEGMENT" "$f" || true
+            sed -i.bak 's|HOOK_DATA_SEGMENT = "__TITANOX_HOOK"|HOOK_DATA_SEGMENT = "__TITANOX_DATA"|g' "$f"
+            rm -f "$f.bak"
+          done
+          echo "--- after ---"
+          grep -rn "HOOK_DATA_SEGMENT\|HOOK_TEXT_SEGMENT" libtitanox | head || true
 
       - name: Build libtitanox
         env:
@@ -44,12 +65,8 @@ jobs:
           set -euo pipefail
           MK=$(find libtitanox -maxdepth 3 -name Makefile | head -1)
           DIR=$(dirname "$MK")
-          echo "MK=$MK"
-          echo "THEOS=$THEOS"
-          grep -n "theos" "$MK" | head -5
+          echo "MK=$MK DIR=$DIR"
           sed -i.bak "s|/home/rage/theos|$THEOS|g" "$MK"
-          echo "--- after sed ---"
-          grep -n "theos" "$MK" | head -5
           cd "$DIR"
           make clean || true
           make -j4
@@ -75,5 +92,6 @@ jobs:
           path: |
             packages/**
             .theos/obj/**/*.dylib
+            libtitanox/**/*.deb
           retention-days: 30
           if-no-files-found: warn

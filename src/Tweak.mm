@@ -7,17 +7,21 @@
 #import <mach/vm_map.h>
 #import <libgen.h>
 #import <string.h>
+#import <stdio.h>
+#import <stdarg.h>
 
 #define RVA_MM_RECEIVEMESSAGE 0x75cce0
 #define RVA_MM_CTOR           0x75bb1c
+#define HOOK_RECEIVE 1
+#define HOOK_CTOR    0
 
 typedef void (*MSHookFunction_t)(void *symbol, void *hook, void **old);
 static MSHookFunction_t MSHookFunction_p = nullptr;
 
-typedef void (*receiveMessage_t)(void *self, void *msg);
-static receiveMessage_t orig_receiveMessage = NULL;
+typedef void (*recv_t)(void*, void*, void*, void*, void*, void*);
+static recv_t orig_recv = NULL;
 
-typedef void (*ctor_t)(void *self);
+typedef void (*ctor_t)(void*, void*, void*, void*, void*, void*);
 static ctor_t orig_ctor = NULL;
 
 static int g_recv_count = 0;
@@ -26,6 +30,19 @@ static void *g_mm_instance = NULL;
 
 extern "C" void OXLogC(const char *tag, uint64_t a, uint64_t b) {
     NSLog(@"[C] %s a=0x%llx b=0x%llx", tag, a, b);
+}
+
+static void TaleLog(const char *fmt, ...) {
+    const char *path = getenv("TALEMOD_LOG");
+    if (!path) path = "/tmp/talemod.log";
+    FILE *f = fopen(path, "a");
+    if (!f) return;
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(f, fmt, ap);
+    fputc('\n', f);
+    va_end(ap);
+    fclose(f);
 }
 
 static NSString *OXDetectGameImageName(void) {
@@ -70,63 +87,84 @@ static uint64_t OXResolve(NSString *imageName, uint64_t rva) {
     return 0;
 }
 
-static void my_receiveMessage(void *self, void *msg) {
-    g_recv_count++;
-    if (g_recv_count <= 200) {
-        NSLog(@"[TaleMod] recv #%d self=%p msg=%p", g_recv_count, self, msg);
+static void my_recv(void *a, void *b, void *c, void *d, void *e, void *f) {
+    static __thread int guard = 0;
+    if (guard) {
+        if (orig_recv) orig_recv(a, b, c, d, e, f);
+        return;
     }
-    if (orig_receiveMessage) orig_receiveMessage(self, msg);
+    guard = 1;
+
+    if (g_recv_count < 20) {
+        g_recv_count++;
+        TaleLog("[TaleMod] recv #%d self=%p msg=%p", g_recv_count, a, b);
+    }
+
+    if (orig_recv) orig_recv(a, b, c, d, e, f);
+    guard = 0;
 }
 
-static void my_ctor(void *self) {
-    g_ctor_count++;
-    if (!g_mm_instance && self) {
-        g_mm_instance = self;
-        NSLog(@"[TaleMod] MessageManager instance = %p", self);
+static void my_ctor(void *a, void *b, void *c, void *d, void *e, void *f) {
+    static __thread int guard = 0;
+    if (guard) {
+        if (orig_ctor) orig_ctor(a, b, c, d, e, f);
+        return;
     }
-    if (orig_ctor) orig_ctor(self);
+    guard = 1;
+
+    if (!g_mm_instance && a) {
+        g_mm_instance = a;
+        TaleLog("[TaleMod] MessageManager instance = %p", a);
+    }
+
+    if (orig_ctor) orig_ctor(a, b, c, d, e, f);
+    guard = 0;
 }
 
 static void install_hooks(void) {
-    NSLog(@"[TaleMod] === install hooks ===");
+    TaleLog("[TaleMod] === install hooks ===");
 
     MSHookFunction_p = (MSHookFunction_t)dlsym(RTLD_DEFAULT, "MSHookFunction");
     if (!MSHookFunction_p) {
-        NSLog(@"[TaleMod] MSHookFunction not found");
+        TaleLog("[TaleMod] MSHookFunction not found");
         return;
     }
-    NSLog(@"[TaleMod] MSHookFunction = %p", MSHookFunction_p);
+    TaleLog("[TaleMod] MSHookFunction = %p", MSHookFunction_p);
 
     NSString *img = OXDetectGameImageName();
     if (!img) {
-        NSLog(@"[TaleMod] game image not found");
+        TaleLog("[TaleMod] game image not found");
         return;
     }
-    NSLog(@"[TaleMod] image=%@", img);
+    TaleLog("[TaleMod] image=%s", img.UTF8String);
 
     uint64_t recvAddr = OXResolve(img, RVA_MM_RECEIVEMESSAGE);
     uint64_t ctorAddr = OXResolve(img, RVA_MM_CTOR);
-    NSLog(@"[TaleMod] recv=0x%llx ctor=0x%llx", recvAddr, ctorAddr);
+    TaleLog("[TaleMod] recv=0x%llx ctor=0x%llx", recvAddr, ctorAddr);
 
+#if HOOK_RECEIVE
     if (recvAddr) {
-        MSHookFunction_p((void *)recvAddr, (void *)my_receiveMessage, (void **)&orig_receiveMessage);
-        NSLog(@"[TaleMod] recv hooked, orig=%p", orig_receiveMessage);
+        MSHookFunction_p((void *)recvAddr, (void *)my_recv, (void **)&orig_recv);
+        TaleLog("[TaleMod] recv hooked, orig=%p", orig_recv);
     }
+#endif
 
+#if HOOK_CTOR
     if (ctorAddr) {
         MSHookFunction_p((void *)ctorAddr, (void *)my_ctor, (void **)&orig_ctor);
-        NSLog(@"[TaleMod] ctor hooked, orig=%p", orig_ctor);
+        TaleLog("[TaleMod] ctor hooked, orig=%p", orig_ctor);
     }
+#endif
 
-    NSLog(@"[TaleMod] === install done ===");
+    TaleLog("[TaleMod] === install done ===");
 }
 
 __attribute__((constructor))
 static void tweak_init(void) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
-        NSLog(@"[TaleMod] init");
+        TaleLog("[TaleMod] init");
         install_hooks();
-        NSLog(@"[TaleMod] === done ===");
+        TaleLog("[TaleMod] === done ===");
     });
 }

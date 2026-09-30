@@ -72,13 +72,12 @@ static BOOL OXIsRuntimeFunc(uint64_t rt) {
     return rt >= lo && rt < hi;
 }
 
-static uint64_t OXFileFromRuntime(uint64_t rt) { return rt - gSlide; }
-
 static void OXBuildAdrpAddMap(void) {
     gAdrpAddMap = [NSMutableDictionary dictionary];
     uint64_t size = TEXT_FILE_HI - TEXT_FILE_LO;
     const uint64_t CHUNK = 0x100000;
-    uint8_t *buf = malloc(CHUNK);
+    uint8_t *buf = (uint8_t *)malloc(CHUNK);
+    if (!buf) return;
     uint64_t prevPc = 0;
     uint32_t prevRd = 0;
     uint64_t prevPage = 0;
@@ -225,18 +224,17 @@ static void OXScanVtableRunsAndCtors(void) {
     int totalRuns = 0;
     int resolvedCtors = 0;
 
-    for (uint64_t i = 0; i < totalSlots; i++) {
+    for (uint64_t i = 0; i <= totalSlots; i++) {
         uint64_t slotFile = DATA_FILE_LO + i * 8;
-        uint64_t rt = OXReadQword(slotFile);
-        BOOL valid = OXIsRuntimeFunc(rt);
+        uint64_t rt = (i < totalSlots) ? OXReadQword(slotFile) : 0;
+        BOOL valid = (i < totalSlots) && OXIsRuntimeFunc(rt);
         if (valid) {
             if (runLen == 0) { runStart = slotFile; runLen = 1; }
             else if (slotFile == prevSlot + 8) { runLen++; }
             else {
                 if (runLen >= 4) {
                     totalRuns++;
-                    uint64_t vtFile = runStart;
-                    NSArray *refs = gAdrpAddMap[@(vtFile)];
+                    NSArray *refs = gAdrpAddMap[@(runStart)];
                     if (refs && refs.count > 0) {
                         NSMutableSet *uniqCtors = [NSMutableSet set];
                         for (NSNumber *pcNum in refs) {
@@ -249,7 +247,7 @@ static void OXScanVtableRunsAndCtors(void) {
                             if (str) {
                                 resolvedCtors++;
                                 THLog(@"VT 0x%llx slots=%d ctor=0x%llx str=%@",
-                                      vtFile, runLen, func, str);
+                                      runStart, runLen, func, str);
                                 break;
                             }
                         }
@@ -261,8 +259,7 @@ static void OXScanVtableRunsAndCtors(void) {
         } else {
             if (runLen >= 4) {
                 totalRuns++;
-                uint64_t vtFile = runStart;
-                NSArray *refs = gAdrpAddMap[@(vtFile)];
+                NSArray *refs = gAdrpAddMap[@(runStart)];
                 if (refs && refs.count > 0) {
                     NSMutableSet *uniqCtors = [NSMutableSet set];
                     for (NSNumber *pcNum in refs) {
@@ -275,29 +272,13 @@ static void OXScanVtableRunsAndCtors(void) {
                         if (str) {
                             resolvedCtors++;
                             THLog(@"VT 0x%llx slots=%d ctor=0x%llx str=%@",
-                                  vtFile, runLen, func, str);
+                                  runStart, runLen, func, str);
                             break;
                         }
                     }
                 }
             }
             runLen = 0;
-        }
-    }
-    if (runLen >= 4) {
-        totalRuns++;
-        NSArray *refs = gAdrpAddMap[@(runStart)];
-        if (refs && refs.count > 0) {
-            for (NSNumber *pcNum in refs) {
-                uint64_t func = OXFindPrologueBackward([pcNum unsignedLongLongValue]);
-                NSString *str = OXStringInFunc(func, 0x600);
-                if (str) {
-                    resolvedCtors++;
-                    THLog(@"VT 0x%llx slots=%d ctor=0x%llx str=%@",
-                          runStart, runLen, func, str);
-                    break;
-                }
-            }
         }
     }
     THLog(@"[summary] total runs=%d with named ctor=%d", totalRuns, resolvedCtors);

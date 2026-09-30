@@ -14,6 +14,10 @@ extern __thread int g_in_hook;
 static intptr_t  gSlide = 0;
 static NSString *gMainBinaryName = nil;
 
+extern "C" void OXLogC(const char *tag, uint64_t a, uint64_t b) {
+    THLog(@"[C] %s a=0x%llx b=0x%llx", tag, a, b);
+}
+
 static NSString *OXDetectMainBinary(void) {
     NSString *exePath = [[NSBundle mainBundle] executablePath];
     if (exePath) {
@@ -42,6 +46,16 @@ static intptr_t OXFindSlide(NSString *name) {
 
 static uint64_t OXReadPtr(uint64_t runtimeAddr) {
     uint64_t v = 0;
+    vm_size_t outSize = 0;
+    kern_return_t kr = vm_read_overwrite(mach_task_self(),
+                                         (vm_address_t)runtimeAddr,
+                                         sizeof(v), (vm_address_t)&v, &outSize);
+    if (kr != KERN_SUCCESS || outSize != sizeof(v)) return 0;
+    return v;
+}
+
+static uint32_t OXReadU32(uint64_t runtimeAddr) {
+    uint32_t v = 0;
     vm_size_t outSize = 0;
     kern_return_t kr = vm_read_overwrite(mach_task_self(),
                                          (vm_address_t)runtimeAddr,
@@ -143,6 +157,16 @@ static void hook_LogicDataTables_initDataTable(void *self, void *a) {
     g_in_hook = 0;
 }
 
+static void OXProbeFunction(uint64_t off) {
+    uint64_t rt = IMAGE_BASE + off + gSlide;
+    uint32_t w0 = OXReadU32(rt);
+    uint32_t w1 = OXReadU32(rt + 4);
+    uint32_t w2 = OXReadU32(rt + 8);
+    uint32_t w3 = OXReadU32(rt + 12);
+    THLog(@"[probe] 0x%llx rt=0x%llx first bytes: %08x %08x %08x %08x",
+          off, rt, w0, w1, w2, w3);
+}
+
 static void OXInstallHooks(void) {
     THLog(@"=== INSTALLING 6 BRK HOOKS ===");
 
@@ -162,6 +186,18 @@ static void OXInstallHooks(void) {
         (void *)&hook_NativeFont_formatString,
         (void *)&hook_LogicDataTables_initDataTable,
     };
+    const char *names[] = {
+        "GameButton::ctor",
+        "HomePage::ctor",
+        "Character::ctor",
+        "MessageManager::receiveMessage",
+        "NativeFont::formatString",
+        "LogicDataTables::initDataTable",
+    };
+
+    for (int i = 0; i < 6; i++) {
+        OXProbeFunction(offs[i]);
+    }
 
     orig_GameButton_ctor = (orig_GameButton_ctor_t)(IMAGE_BASE + 0x5425b0 + gSlide);
     orig_HomePage_ctor = (orig_HomePage_ctor_t)(IMAGE_BASE + 0x86eb80 + gSlide);
@@ -174,7 +210,8 @@ static void OXInstallHooks(void) {
         uint64_t rt = IMAGE_BASE + offs[i] + gSlide;
         BOOL ok = [TitanoxHook addBreakpointAtAddress:(void *)rt
                                              withHook:hooks[i]];
-        THLog(@"[brk] 0x%llx -> %s", offs[i], ok ? "OK" : "FAIL");
+        THLog(@"[brk] %s 0x%llx rt=0x%llx -> %s",
+              names[i], offs[i], rt, ok ? "OK" : "FAIL");
     }
 
     THLog(@"=== HOOKS INSTALLED ===");

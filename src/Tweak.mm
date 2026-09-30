@@ -4,12 +4,16 @@
 #import <mach-o/dyld.h>
 #import "libtitanox.h"
 
-#define LOG_PATH [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES)[0] stringByAppendingPathComponent:@"TITANOX_TRACE.txt"]
+#define IMAGE_BASE      0x100000000ULL
+#define TEXT_START      0x100004000ULL
+#define TEXT_END        0x100D8AF60ULL
+#define DATA_START      0x100F74000ULL
+#define DATA_END        0x101170000ULL
+#define LOG_PATH        [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES)[0] stringByAppendingPathComponent:@"TITANOX_TRACE.txt"]
 
 static NSMutableString *gLog = nil;
-static NSLock *gLock = nil;
-static TitanoxHook *gHooker = nil;
-static intptr_t gSlide = 0;
+static NSLock         *gLock = nil;
+static intptr_t        gSlide = 0;
 
 static void OXLog(NSString *fmt, ...) {
     va_list args;
@@ -27,27 +31,45 @@ static void OXFlush(void) {
     [gLock unlock];
 }
 
-static uint64_t OXReal(uint64_t vaddr) {
-    return vaddr + gSlide;
+static intptr_t OXFindSlide(void) {
+    const char *hints[] = { "Nulls Brawl", "NullsBrawl", "Brawl", "Nulls" };
+    for (int h = 0; h < 4; h++) {
+        const char *hint = hints[h];
+        for (uint32_t i = 0; i < _dyld_image_count(); i++) {
+            const char *name = _dyld_get_image_name(i);
+            if (name && strstr(name, hint)) {
+                intptr_t s = _dyld_get_image_vmaddr_slide(i);
+                OXLog(@"image[%u] %s slide=0x%lx", i, name, (long)s);
+                return s;
+            }
+        }
+    }
+    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
+        const char *name = _dyld_get_image_name(i);
+        OXLog(@"image[%u] %s", i, name ? name : "?");
+    }
+    return 0;
 }
 
-static uint64_t OXReadPtr(uint64_t vaddr) {
+static uint64_t OXReadPtr(uint64_t fileVaddr) {
+    uint64_t real = fileVaddr + gSlide;
     uint64_t v = 0;
-    [TitanoxHook readMemoryAt:OXReal(vaddr) buffer:(void *)&v size:8];
-    return v;
+    BOOL ok = [TitanoxHook readMemoryAt:real buffer:(void *)&v size:8];
+    return ok ? v : 0;
 }
 
-static NSString *OXReadCString(uint64_t vaddr, int maxLen) {
-    if (!vaddr) return nil;
+static NSString *OXReadCString(uint64_t fileVaddr, int maxLen) {
+    if (!fileVaddr) return nil;
+    uint64_t real = fileVaddr + gSlide;
     char buf[256];
     memset(buf, 0, sizeof(buf));
-    [TitanoxHook readMemoryAt:OXReal(vaddr) buffer:(void *)buf size:maxLen < 255 ? maxLen : 255];
-    if (buf[0] == 0) return nil;
+    BOOL ok = [TitanoxHook readMemoryAt:real buffer:(void *)buf size:(maxLen < 255 ? maxLen : 255)];
+    if (!ok || buf[0] == 0) return nil;
     return [NSString stringWithUTF8String:buf];
 }
 
 static uint64_t OXDecodeFixup(uint64_t raw) {
-    uint64_t t43 = raw & 0x7FFFFFFFFFFULL;
+    uint64_t t43   = raw & 0x7FFFFFFFFFFULL;
     uint64_t high8 = (raw >> 43) & 0xFFULL;
     if (high8) return (high8 << 56) | t43;
     return t43;
@@ -89,11 +111,11 @@ static NSDictionary *OXGetTypeInfo(uint64_t vtVaddr) {
     uint64_t raw = OXReadPtr(vtVaddr - 8);
     if (!raw) return nil;
     uint64_t tiVaddr = OXDecodeFixup(raw);
-    if (!tiVaddr || tiVaddr < 0x100000000ULL) return nil;
+    if (!tiVaddr || tiVaddr < IMAGE_BASE) return nil;
     uint64_t nameRaw = OXReadPtr(tiVaddr + 8);
     if (!nameRaw) return nil;
     uint64_t nameVaddr = OXDecodeFixup(nameRaw);
-    if (!nameVaddr || nameVaddr < 0x100000000ULL) return nil;
+    if (!nameVaddr || nameVaddr < IMAGE_BASE) return nil;
     NSString *rawStr = OXReadCString(nameVaddr, 160);
     if (!rawStr || rawStr.length == 0) return nil;
     NSArray *parts = OXSplitMangled(rawStr);
@@ -101,48 +123,43 @@ static NSDictionary *OXGetTypeInfo(uint64_t vtVaddr) {
     return @{@"class": parts.lastObject, @"raw": rawStr};
 }
 
-static void OXDumpVtable(uint64_t vtVaddr, NSString *label) {
-    NSDictionary *ti = OXGetTypeInfo(vtVaddr);
+static void OXDumpVtable(uint64_t vtFileVaddr, NSString *label) {
+    NSDictionary *ti = OXGetTypeInfo(vtFileVaddr);
     NSString *cls = ti ? ti[@"class"] : @"unknown";
-    OXLog(@"=== VT %@ @ 0x%llx class=%@ ===", label, vtVaddr, cls);
+    OXLog(@"=== VT %@ @ 0x%llx class=%@ ===", label, vtFileVaddr, cls);
     for (int i = 0; i < 256; i++) {
-        uint64_t slotVaddr = vtVaddr + i * 8;
+        uint64_t slotVaddr = vtFileVaddr + i * 8;
         uint64_t raw = OXReadPtr(slotVaddr);
         uint64_t fn = OXDecodeFixup(raw);
-        if (fn < 0x100000000ULL || fn >= 0x100E00000ULL) break;
+        if (fn < TEXT_START || fn >= TEXT_END) break;
         OXLog(@"  [%3d] 0x%llx", i, fn);
     }
 }
 
-static void OXScanVtableRuns(void) {
-    OXLog(@"=== SCAN ALL VTABLE-LIKE RUNS ===");
-    uint64_t dataStart = 0x100F74000ULL;
-    uint64_t dataEnd   = 0x101170000ULL;
-    uint64_t totalSlots = (dataEnd - dataStart) / 8;
-
+static void OXScanDataForVtables(void) {
+    OXLog(@"=== SCAN DATA FOR VTABLE RUNS ===");
+    uint64_t totalSlots = (DATA_END - DATA_START) / 8;
     int runLen = 0;
     uint64_t runStart = 0;
     uint64_t prevSlot = 0;
+    int hits = 0;
 
     for (uint64_t i = 0; i < totalSlots; i++) {
-        uint64_t slot = dataStart + i * 8;
+        uint64_t slot = DATA_START + i * 8;
         uint64_t raw = OXReadPtr(slot);
         uint64_t fn = OXDecodeFixup(raw);
-        BOOL valid = (fn >= 0x100000000ULL && fn < 0x100E00000ULL && (fn & 3) == 0);
+        BOOL valid = (fn >= TEXT_START && fn < TEXT_END && (fn & 3) == 0);
         if (valid) {
-            if (runLen == 0) {
-                runStart = slot;
-                runLen = 1;
-            } else if (slot == prevSlot + 8) {
-                runLen++;
-            } else {
+            if (runLen == 0) { runStart = slot; runLen = 1; }
+            else if (slot == prevSlot + 8) { runLen++; }
+            else {
                 if (runLen >= 4) {
                     NSDictionary *ti = OXGetTypeInfo(runStart);
                     OXLog(@"VT 0x%llx slots=%d class=%@",
                           runStart, runLen, ti ? ti[@"class"] : @"?");
+                    hits++;
                 }
-                runStart = slot;
-                runLen = 1;
+                runStart = slot; runLen = 1;
             }
             prevSlot = slot;
         } else {
@@ -150,6 +167,7 @@ static void OXScanVtableRuns(void) {
                 NSDictionary *ti = OXGetTypeInfo(runStart);
                 OXLog(@"VT 0x%llx slots=%d class=%@",
                       runStart, runLen, ti ? ti[@"class"] : @"?");
+                hits++;
             }
             runLen = 0;
         }
@@ -158,73 +176,67 @@ static void OXScanVtableRuns(void) {
         NSDictionary *ti = OXGetTypeInfo(runStart);
         OXLog(@"VT 0x%llx slots=%d class=%@",
               runStart, runLen, ti ? ti[@"class"] : @"?");
+        hits++;
     }
+    OXLog(@"total vtable-like runs: %d", hits);
 }
 
-/* ============================================================
- *  brk-hooks (до 6 штук). Каждый хук — плоская C-функция.
- *  ВАЖНО: адрес передаётся РЕАЛЬНЫЙ (base+slide+offset),
- *  т.к. addBreakpointAtAddress работает с runtime-адресом.
- * ============================================================ */
-
-static void hook_MessageManager_receiveMessage(void *self, void *msg) {
+static void brk_MessageManager_receiveMessage(void *self, void *msg) {
     OXLog(@"[BRK] MessageManager::receiveMessage self=%p msg=%p", self, msg);
     OXFlush();
 }
 
-static void hook_GameButton_ctor(void *self) {
+static void brk_GameButton_ctor(void *self) {
     OXLog(@"[BRK] GameButton::ctor self=%p", self);
-    uint64_t vt = OXReadPtr((uint64_t)self);
-    OXLog(@"      GameButton vtable runtime=0x%llx  offset=0x%llx",
-          vt, vt - gSlide);
+    uint64_t vt = 0;
+    [TitanoxHook readMemoryAt:(uint64_t)self buffer:&vt size:8];
+    OXLog(@"      self->vtable runtime=0x%llx file=0x%llx", vt, vt - gSlide);
     OXFlush();
 }
 
-static void hook_NativeFont_formatString(void *self, void *str) {
+static void brk_NativeFont_formatString(void *self, void *str) {
     OXLog(@"[BRK] NativeFont::formatString self=%p str=%p", self, str);
     OXFlush();
 }
 
-static void hook_HomePage_ctor(void *self) {
+static void brk_HomePage_ctor(void *self) {
     OXLog(@"[BRK] HomePage::ctor self=%p", self);
     OXFlush();
 }
 
-static void hook_Stage_setViewport(void *self, double x, double y, double w, double h) {
+static void brk_Stage_setViewport(void *self, double x, double y, double w, double h) {
     OXLog(@"[BRK] Stage::setViewport self=%p x=%f y=%f w=%f h=%f", self, x, y, w, h);
     OXFlush();
 }
 
-static void hook_MovieClip_setText(void *self, void *str) {
+static void brk_MovieClip_setText(void *self, void *str) {
     OXLog(@"[BRK] MovieClip::setText self=%p str=%p", self, str);
     OXFlush();
 }
 
-#define INSTALL_BRK_HOOK(offset, funcName) do { \
-    void *target = (void *)(gSlide + (offset)); \
-    if ([TitanoxHook addBreakpointAtAddress:target withHook:(void *)&funcName]) { \
-        OXLog(@"brk-hook installed: %s @ runtime=0x%llx (off=0x%llx)", \
-              #funcName, (uint64_t)target, (uint64_t)(offset)); \
+#define INSTALL_BRK(fileOff, fn) do { \
+    void *real = (void *)(IMAGE_BASE + (fileOff) + gSlide); \
+    if ([TitanoxHook addBreakpointAtAddress:real withHook:(void *)&fn]) { \
+        OXLog(@"brk OK: %s file=0x%llx runtime=%p", #fn, (uint64_t)(fileOff), real); \
     } else { \
-        OXLog(@"brk-hook FAILED: %s @ runtime=0x%llx", \
-              #funcName, (uint64_t)target); \
+        OXLog(@"brk FAIL: %s file=0x%llx", #fn, (uint64_t)(fileOff)); \
     } \
 } while (0)
 
 static void OXInstallBrkHooks(void) {
-    OXLog(@"=== INSTALL BRK HOOKS ===");
-    INSTALL_BRK_HOOK(0x0075CCE0, hook_MessageManager_receiveMessage);
-    INSTALL_BRK_HOOK(0x005425B0, hook_GameButton_ctor);
-    INSTALL_BRK_HOOK(0x00B3FDE8, hook_NativeFont_formatString);
-    INSTALL_BRK_HOOK(0x0086EB80, hook_HomePage_ctor);
-    INSTALL_BRK_HOOK(0x00BA17B8, hook_Stage_setViewport);
-    INSTALL_BRK_HOOK(0x00B5F068, hook_MovieClip_setText);
+    OXLog(@"=== BRK HOOKS (one-shot, max 6) ===");
+    INSTALL_BRK(0x0075CCE0, brk_MessageManager_receiveMessage);
+    INSTALL_BRK(0x005425B0, brk_GameButton_ctor);
+    INSTALL_BRK(0x00B3FDE8, brk_NativeFont_formatString);
+    INSTALL_BRK(0x0086EB80, brk_HomePage_ctor);
+    INSTALL_BRK(0x00BA17B8, brk_Stage_setViewport);
+    INSTALL_BRK(0x00B5F068, brk_MovieClip_setText);
     OXFlush();
 }
 
 static void OXRunTrace(void) {
-    OXLog(@"=== TITANOX TRACE v19 ===");
-    OXLog(@"slide=0x%llx", (uint64_t)gSlide);
+    OXLog(@"=== TITANOX TRACE v19 (Nulls Brawl) ===");
+    OXLog(@"slide=0x%lx (real)", (long)gSlide);
 
     NSArray *vtList = @[
         @{@"name": @"Character",          @"addr": @(0x00FF45C0)},
@@ -239,11 +251,11 @@ static void OXRunTrace(void) {
     ];
 
     for (NSDictionary *vt in vtList) {
-        uint64_t vaddr = [vt[@"addr"] unsignedLongLongValue];
+        uint64_t vaddr = IMAGE_BASE + [vt[@"addr"] unsignedLongLongValue];
         OXDumpVtable(vaddr, vt[@"name"]);
     }
 
-    OXScanVtableRuns();
+    OXScanDataForVtables();
     OXInstallBrkHooks();
 
     OXLog(@"=== TRACE READY ===");
@@ -255,10 +267,10 @@ static void initTitanoxTrace(void) {
     gLog = [NSMutableString new];
     gLock = [NSLock new];
 
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        gSlide = [TitanoxHook getVmAddrSlideOfLibrary:"Brawl Stars"];
-        gHooker = [[TitanoxHook alloc] initWithMachOName:@"Brawl Stars"];
-        OXLog(@"lib=Brawl Stars slide=0x%llx hooker=%@", (uint64_t)gSlide, gHooker ? @"ok" : @"nil");
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        gSlide = OXFindSlide();
+        OXLog(@"slide=0x%lx", (long)gSlide);
         OXRunTrace();
     });
 }

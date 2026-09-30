@@ -25,7 +25,7 @@ jobs:
           path: |
             .theos
             ~/Library/Caches/Homebrew
-          key: theos-${{ runner.os }}-v1
+          key: theos-${{ runner.os }}-v3
 
       - name: Setup
         run: |
@@ -46,9 +46,10 @@ jobs:
             'd="$THEOS/include/Titanox/$(dirname "${1#./}")"; mkdir -p "$d"; cp "$1" "$d/"' _ {} \;)
           find deps/Titanox -name 'libtitanox.h' -exec cp {} "$THEOS/include/Titanox/" \;
 
-          if [ ! -f Titanox.plist ] && [ ! -f Filter.plist ] && [ ! -f layout/Library/MobileSubstrate/DynamicLibraries/Titanox.plist ]; then
-            printf '{\n  Filter = { Bundles = ( "com.apple.springboard" ); };\n}\n' > Titanox.plist
-          fi
+          PLIST="layout/Library/MobileSubstrate/DynamicLibraries/Titanox.plist"
+          test -f "$PLIST"
+          cp "$PLIST" Titanox.plist
+          ls -la Titanox.plist
 
       - name: Build + package
         run: |

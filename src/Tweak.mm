@@ -1,29 +1,28 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
-#import <objc/runtime.h>
 #import <dlfcn.h>
 #import <mach-o/dyld.h>
 #import <mach-o/loader.h>
 #import <mach/mach.h>
 #import <mach/vm_map.h>
 #import <libgen.h>
+#import <string.h>
 
 #define RVA_MM_RECEIVEMESSAGE 0x75cce0
+#define RVA_MM_CTOR           0x75bb1c
 
-typedef void (*MSHookMessageEx_t)(Class _class, SEL message, IMP hook, IMP *old);
-static MSHookMessageEx_t MSHookMessageEx_p = nullptr;
+typedef void (*MSHookFunction_t)(void *symbol, void *hook, void **old);
+static MSHookFunction_t MSHookFunction_p = nullptr;
 
-typedef void (*litehook_hook_function_t)(void *target, void *replacement, void **original);
-static litehook_hook_function_t litehook_hook_function_p = nullptr;
+typedef void (*receiveMessage_t)(void *self, void *msg);
+static receiveMessage_t orig_receiveMessage = NULL;
 
-static int g_receiveMessage_count = 0;
-static IMP g_original_receiveMessage = NULL;
+typedef void (*ctor_t)(void *self);
+static ctor_t orig_ctor = NULL;
 
-static void (*g_original_receiveMessage_cpp)(void *self, void *msg) = NULL;
-static int g_receiveMessage_cpp_count = 0;
-
-static uint64_t gRuntimeAddr = 0;
-static NSString *gImageName = nil;
+static int g_recv_count = 0;
+static int g_ctor_count = 0;
+static void *g_mm_instance = NULL;
 
 extern "C" void OXLogC(const char *tag, uint64_t a, uint64_t b) {
     NSLog(@"[C] %s a=0x%llx b=0x%llx", tag, a, b);
@@ -71,109 +70,52 @@ static uint64_t OXResolve(NSString *imageName, uint64_t rva) {
     return 0;
 }
 
-static void my_receiveMessage_objc(id self, SEL _cmd, id msg) {
-    g_receiveMessage_count++;
-    NSLog(@"[TaleMod] objc receiveMessage #%d self=%p msg=%p",
-          g_receiveMessage_count, self, msg);
-    if (g_original_receiveMessage) {
-        ((void (*)(id, SEL, id))g_original_receiveMessage)(self, _cmd, msg);
+static void my_receiveMessage(void *self, void *msg) {
+    g_recv_count++;
+    if (g_recv_count <= 200) {
+        NSLog(@"[TaleMod] recv #%d self=%p msg=%p", g_recv_count, self, msg);
     }
+    if (orig_receiveMessage) orig_receiveMessage(self, msg);
 }
 
-static void my_receiveMessage_cpp(void *self, void *msg) {
-    g_receiveMessage_cpp_count++;
-    NSLog(@"[TaleMod] cpp receiveMessage #%d self=%p msg=%p",
-          g_receiveMessage_cpp_count, self, msg);
-    if (g_original_receiveMessage_cpp) {
-        g_original_receiveMessage_cpp(self, msg);
+static void my_ctor(void *self) {
+    g_ctor_count++;
+    if (!g_mm_instance && self) {
+        g_mm_instance = self;
+        NSLog(@"[TaleMod] MessageManager instance = %p", self);
     }
-}
-
-static BOOL OXIsExecutable(uint64_t addr) {
-    vm_address_t region = (vm_address_t)addr;
-    vm_size_t size = 0;
-    vm_region_basic_info_data_64_t info;
-    mach_msg_type_number_t cnt = VM_REGION_BASIC_INFO_COUNT_64;
-    mach_port_t obj = MACH_PORT_NULL;
-    kern_return_t kr = vm_region_64(mach_task_self(), &region, &size,
-                                     VM_REGION_BASIC_INFO_64,
-                                     (vm_region_info_t)&info, &cnt, &obj);
-    if (kr != KERN_SUCCESS) return NO;
-    return (info.protection & VM_PROT_EXECUTE) != 0;
-}
-
-static void OXLogProt(const char *tag, uint64_t addr) {
-    vm_address_t region = (vm_address_t)addr;
-    vm_size_t size = 0;
-    vm_region_basic_info_data_64_t info;
-    mach_msg_type_number_t cnt = VM_REGION_BASIC_INFO_COUNT_64;
-    mach_port_t obj = MACH_PORT_NULL;
-    kern_return_t kr = vm_region_64(mach_task_self(), &region, &size,
-                                     VM_REGION_BASIC_INFO_64,
-                                     (vm_region_info_t)&info, &cnt, &obj);
-    if (kr != KERN_SUCCESS) {
-        NSLog(@"[prot] %s 0x%llx = <unreadable>", tag, addr);
-        return;
-    }
-    vm_prot_t p = info.protection;
-    NSLog(@"[prot] %s 0x%llx = %c%c%c (0x%x)",
-          tag, addr,
-          (p & VM_PROT_READ)    ? 'r' : '-',
-          (p & VM_PROT_WRITE)   ? 'w' : '-',
-          (p & VM_PROT_EXECUTE) ? 'x' : '-',
-          p);
+    if (orig_ctor) orig_ctor(self);
 }
 
 static void install_hooks(void) {
     NSLog(@"[TaleMod] === install hooks ===");
 
-    MSHookMessageEx_p = (MSHookMessageEx_t)dlsym(RTLD_DEFAULT, "MSHookMessageEx");
-    if (MSHookMessageEx_p) {
-        NSLog(@"[TaleMod] MSHookMessageEx = %p", MSHookMessageEx_p);
-    } else {
-        NSLog(@"[TaleMod] MSHookMessageEx not found");
+    MSHookFunction_p = (MSHookFunction_t)dlsym(RTLD_DEFAULT, "MSHookFunction");
+    if (!MSHookFunction_p) {
+        NSLog(@"[TaleMod] MSHookFunction not found");
+        return;
     }
+    NSLog(@"[TaleMod] MSHookFunction = %p", MSHookFunction_p);
 
-    litehook_hook_function_p = (litehook_hook_function_t)dlsym(RTLD_DEFAULT, "litehook_hook_function");
-    if (litehook_hook_function_p) {
-        NSLog(@"[TaleMod] litehook_hook_function = %p", litehook_hook_function_p);
-    } else {
-        NSLog(@"[TaleMod] litehook_hook_function not found");
-    }
-
-    gImageName = OXDetectGameImageName();
-    if (!gImageName) {
+    NSString *img = OXDetectGameImageName();
+    if (!img) {
         NSLog(@"[TaleMod] game image not found");
         return;
     }
-    NSLog(@"[TaleMod] image=%@", gImageName);
+    NSLog(@"[TaleMod] image=%@", img);
 
-    gRuntimeAddr = OXResolve(gImageName, RVA_MM_RECEIVEMESSAGE);
-    NSLog(@"[TaleMod] receiveMessage cpp addr = 0x%llx", gRuntimeAddr);
-    OXLogProt("receiveMessage", gRuntimeAddr);
+    uint64_t recvAddr = OXResolve(img, RVA_MM_RECEIVEMESSAGE);
+    uint64_t ctorAddr = OXResolve(img, RVA_MM_CTOR);
+    NSLog(@"[TaleMod] recv=0x%llx ctor=0x%llx", recvAddr, ctorAddr);
 
-    Class messageManagerClass = objc_getClass("MessageManager");
-    if (messageManagerClass && MSHookMessageEx_p) {
-        NSLog(@"[TaleMod] MessageManager ObjC class found, hooking via MSHookMessageEx");
-        MSHookMessageEx_p(messageManagerClass,
-                          @selector(receiveMessage:),
-                          (IMP)my_receiveMessage_objc,
-                          &g_original_receiveMessage);
-        NSLog(@"[TaleMod] objc hook installed");
-    } else {
-        NSLog(@"[TaleMod] MessageManager not an ObjC class, trying C++ path");
-        if (!litehook_hook_function_p) {
-            NSLog(@"[TaleMod] litehook not available, cannot hook C++");
-        } else if (!gRuntimeAddr) {
-            NSLog(@"[TaleMod] runtime addr is 0");
-        } else if (!OXIsExecutable(gRuntimeAddr)) {
-            NSLog(@"[TaleMod] target not in executable region, skip");
-        } else {
-            litehook_hook_function_p((void *)gRuntimeAddr,
-                                     (void *)my_receiveMessage_cpp,
-                                     (void **)&g_original_receiveMessage_cpp);
-            NSLog(@"[TaleMod] cpp hook installed at 0x%llx", gRuntimeAddr);
-        }
+    if (recvAddr) {
+        MSHookFunction_p((void *)recvAddr, (void *)my_receiveMessage, (void **)&orig_receiveMessage);
+        NSLog(@"[TaleMod] recv hooked, orig=%p", orig_receiveMessage);
+    }
+
+    if (ctorAddr) {
+        MSHookFunction_p((void *)ctorAddr, (void *)my_ctor, (void **)&orig_ctor);
+        NSLog(@"[TaleMod] ctor hooked, orig=%p", orig_ctor);
     }
 
     NSLog(@"[TaleMod] === install done ===");

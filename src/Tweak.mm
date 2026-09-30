@@ -40,6 +40,37 @@ static NSString *OXDetectMainBinary(void) {
     return [TitanoxHook findExecInBundle:nil];
 }
 
+static BOOL OXBinaryHasTitanoxSegment(NSString *path) {
+    NSData *data = [NSData dataWithContentsOfFile:path];
+    if (!data || data.length < 32) return NO;
+    const uint8_t *bytes = (const uint8_t *)data.bytes;
+    uint32_t magic = 0;
+    memcpy(&magic, bytes, 4);
+    if (magic != 0xfeedfacf) return NO;
+    uint32_t ncmds = 0, sizeofcmds = 0;
+    memcpy(&ncmds,     bytes + 16, 4);
+    memcpy(&sizeofcmds, bytes + 20, 4);
+    if (sizeofcmds > data.length - 32) return NO;
+    const uint8_t *p = bytes + 32;
+    for (uint32_t i = 0; i < ncmds; i++) {
+        if ((uintptr_t)(p - bytes) + 8 > data.length) break;
+        uint32_t cmd = 0, cmdsize = 0;
+        memcpy(&cmd,     p,     4);
+        memcpy(&cmdsize, p + 4, 4);
+        if (cmdsize < 8) break;
+        if (cmd == 0x19) {
+            if ((uintptr_t)(p - bytes) + 24 <= data.length) {
+                char segname[17];
+                memcpy(segname, p + 8, 16);
+                segname[16] = 0;
+                if (strcmp(segname, "__TITANOX_HOOK") == 0) return YES;
+            }
+        }
+        p += cmdsize;
+    }
+    return NO;
+}
+
 static intptr_t OXFindSlide(NSString *name) {
     const char *target = name.UTF8String;
     for (uint32_t i = 0; i < _dyld_image_count(); i++) {
@@ -168,6 +199,22 @@ static void OXFindCtorsForKnown(void) {
 }
 
 static void OXPreparePatches(void) {
+    NSString *exePath = [[NSBundle mainBundle] executablePath];
+
+    if (exePath && OXBinaryHasTitanoxSegment(exePath)) {
+        THLog(@"[patch] .app binary is ALREADY PATCHED, skip");
+        THLog(@"[patch] to repatch, restore original first");
+        return;
+    }
+
+    NSString *patchedPath = [NSHomeDirectory() stringByAppendingPathComponent:
+                             [NSString stringWithFormat:@"Documents/titanox-hook/%@", gMainBinaryName]];
+    if ([[NSFileManager defaultManager] fileExistsAtPath:patchedPath]) {
+        THLog(@"[patch] output already exists: %@", patchedPath);
+        THLog(@"[patch] sign with zsign and replace in .app");
+        return;
+    }
+
     TitanoxHook *hooker = [[TitanoxHook alloc] initWithMachOName:gMainBinaryName];
     if (!hooker) {
         THLog(@"[patch] hooker init FAILED");
@@ -179,30 +226,11 @@ static void OXPreparePatches(void) {
         uint64_t off = gPatchOffsets[i];
         uint64_t fullAddr = FILE_LO + off;
         NSString *res = [hooker applyPatchAtVaddr:fullAddr patchBytes:@""];
-        THLog(@"[patch] 0x%llx (full 0x%llx) -> %@", off, fullAddr, res ?: @"(nil)");
+        THLog(@"[patch] 0x%llx -> %@", off, res ?: @"(nil)");
     }
     THLog(@"=== PATCH DONE ===");
-    THLog(@"[patch] check Documents/titanox-hook/%@", gMainBinaryName);
-
-    NSString *srcPath = [NSHomeDirectory() stringByAppendingPathComponent:
-                         [NSString stringWithFormat:@"Documents/titanox-hook/%@", gMainBinaryName]];
-    NSString *dstPath = [[NSBundle mainBundle] executablePath];
-
-    if (srcPath && dstPath && [[NSFileManager defaultManager] fileExistsAtPath:srcPath]) {
-        NSString *backupPath = [dstPath stringByAppendingString:@".orig"];
-        NSFileManager *fm = [NSFileManager defaultManager];
-        if (![fm fileExistsAtPath:backupPath]) {
-            [fm copyItemAtPath:dstPath toPath:backupPath error:nil];
-            THLog(@"[copy] backup saved -> %@", backupPath);
-        }
-        NSError *err = nil;
-        [fm removeItemAtPath:dstPath error:&err];
-        err = nil;
-        BOOL ok = [fm copyItemAtPath:srcPath toPath:dstPath error:&err];
-        THLog(@"[copy] %@ -> %@ : %@", srcPath, dstPath, ok ? @"OK" : (err.localizedDescription ?: @"FAIL"));
-    } else {
-        THLog(@"[copy] patched binary not found at %@", srcPath);
-    }
+    THLog(@"[patch] output: %@", patchedPath);
+    THLog(@"[patch] sign manually, then replace in .app");
 }
 
 __attribute__((constructor))

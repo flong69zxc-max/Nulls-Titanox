@@ -114,95 +114,117 @@ static void OXDumpVtable(uint64_t vtVaddr, NSString *label) {
     }
 }
 
+static void OXScanVtableRuns(void) {
+    OXLog(@"=== SCAN ALL VTABLE-LIKE RUNS ===");
+    uint64_t dataStart = 0x100F74000ULL;
+    uint64_t dataEnd   = 0x101170000ULL;
+    uint64_t totalSlots = (dataEnd - dataStart) / 8;
+
+    int runLen = 0;
+    uint64_t runStart = 0;
+    uint64_t prevSlot = 0;
+
+    for (uint64_t i = 0; i < totalSlots; i++) {
+        uint64_t slot = dataStart + i * 8;
+        uint64_t raw = OXReadPtr(slot);
+        uint64_t fn = OXDecodeFixup(raw);
+        BOOL valid = (fn >= 0x100000000ULL && fn < 0x100E00000ULL && (fn & 3) == 0);
+        if (valid) {
+            if (runLen == 0) {
+                runStart = slot;
+                runLen = 1;
+            } else if (slot == prevSlot + 8) {
+                runLen++;
+            } else {
+                if (runLen >= 4) {
+                    NSDictionary *ti = OXGetTypeInfo(runStart);
+                    OXLog(@"VT 0x%llx slots=%d class=%@",
+                          runStart, runLen, ti ? ti[@"class"] : @"?");
+                }
+                runStart = slot;
+                runLen = 1;
+            }
+            prevSlot = slot;
+        } else {
+            if (runLen >= 4) {
+                NSDictionary *ti = OXGetTypeInfo(runStart);
+                OXLog(@"VT 0x%llx slots=%d class=%@",
+                      runStart, runLen, ti ? ti[@"class"] : @"?");
+            }
+            runLen = 0;
+        }
+    }
+    if (runLen >= 4) {
+        NSDictionary *ti = OXGetTypeInfo(runStart);
+        OXLog(@"VT 0x%llx slots=%d class=%@",
+              runStart, runLen, ti ? ti[@"class"] : @"?");
+    }
+}
+
 /* ============================================================
- *  HOOK-обёртки для известных функций (плоские C-функции,
- *  т.к. inline-hook прыгает напрямую на указатель)
+ *  brk-hooks (до 6 штук). Каждый хук — плоская C-функция.
+ *  ВАЖНО: адрес передаётся РЕАЛЬНЫЙ (base+slide+offset),
+ *  т.к. addBreakpointAtAddress работает с runtime-адресом.
  * ============================================================ */
 
-static void (*orig_MessageManager_receiveMessage)(void *self, void *msg) = NULL;
-static void my_MessageManager_receiveMessage(void *self, void *msg) {
-    OXLog(@"CALL MessageManager::receiveMessage self=%p msg=%p", self, msg);
-    if (orig_MessageManager_receiveMessage) orig_MessageManager_receiveMessage(self, msg);
+static void hook_MessageManager_receiveMessage(void *self, void *msg) {
+    OXLog(@"[BRK] MessageManager::receiveMessage self=%p msg=%p", self, msg);
+    OXFlush();
 }
 
-static void (*orig_NativeFont_formatString)(void *self, void *str) = NULL;
-static void my_NativeFont_formatString(void *self, void *str) {
-    OXLog(@"CALL NativeFont::formatString self=%p", self);
-    if (orig_NativeFont_formatString) orig_NativeFont_formatString(self, str);
-}
-
-static void (*orig_GameButton_ctor)(void *self) = NULL;
-static void my_GameButton_ctor(void *self) {
-    OXLog(@"CALL GameButton::ctor self=%p", self);
-    if (orig_GameButton_ctor) orig_GameButton_ctor(self);
+static void hook_GameButton_ctor(void *self) {
+    OXLog(@"[BRK] GameButton::ctor self=%p", self);
     uint64_t vt = OXReadPtr((uint64_t)self);
-    OXLog(@"  GameButton vtable=0x%llx", vt - gSlide);
+    OXLog(@"      GameButton vtable runtime=0x%llx  offset=0x%llx",
+          vt, vt - gSlide);
+    OXFlush();
 }
 
-static void (*orig_HomePage_ctor)(void *self) = NULL;
-static void my_HomePage_ctor(void *self) {
-    OXLog(@"CALL HomePage::ctor self=%p", self);
-    if (orig_HomePage_ctor) orig_HomePage_ctor(self);
+static void hook_NativeFont_formatString(void *self, void *str) {
+    OXLog(@"[BRK] NativeFont::formatString self=%p str=%p", self, str);
+    OXFlush();
 }
 
-static void (*orig_Stage_setViewport)(void *self, double x, double y, double w, double h) = NULL;
-static void my_Stage_setViewport(void *self, double x, double y, double w, double h) {
-    OXLog(@"CALL Stage::setViewport self=%p x=%f y=%f w=%f h=%f", self, x, y, w, h);
-    if (orig_Stage_setViewport) orig_Stage_setViewport(self, x, y, w, h);
+static void hook_HomePage_ctor(void *self) {
+    OXLog(@"[BRK] HomePage::ctor self=%p", self);
+    OXFlush();
 }
 
-static void (*orig_LogicDataTables_initDataTable)(void *self, void *a) = NULL;
-static void my_LogicDataTables_initDataTable(void *self, void *a) {
-    OXLog(@"CALL LogicDataTables::initDataTable self=%p a=%p", self, a);
-    if (orig_LogicDataTables_initDataTable) orig_LogicDataTables_initDataTable(self, a);
+static void hook_Stage_setViewport(void *self, double x, double y, double w, double h) {
+    OXLog(@"[BRK] Stage::setViewport self=%p x=%f y=%f w=%f h=%f", self, x, y, w, h);
+    OXFlush();
 }
 
-static void (*orig_MovieClip_setText)(void *self, void *str) = NULL;
-static void my_MovieClip_setText(void *self, void *str) {
-    OXLog(@"CALL MovieClip::setText self=%p", self);
-    if (orig_MovieClip_setText) orig_MovieClip_setText(self, str);
+static void hook_MovieClip_setText(void *self, void *str) {
+    OXLog(@"[BRK] MovieClip::setText self=%p str=%p", self, str);
+    OXFlush();
 }
 
-static void (*orig_GameButton_setText)(void *self, void *str) = NULL;
-static void my_GameButton_setText(void *self, void *str) {
-    OXLog(@"CALL GameButton::setText self=%p", self);
-    if (orig_GameButton_setText) orig_GameButton_setText(self, str);
-}
-
-static void (*orig_LogicProjectileData_getIntValueFromColumn)(void *self, int col) = NULL;
-static void my_LogicProjectileData_getIntValueFromColumn(void *self, int col) {
-    OXLog(@"CALL LogicProjectileData::getIntValueFromColumn self=%p col=%d", self, col);
-    if (orig_LogicProjectileData_getIntValueFromColumn) orig_LogicProjectileData_getIntValueFromColumn(self, col);
-}
-
-static void (*orig_Character_updateHealthBar)(void *self) = NULL;
-static void my_Character_updateHealthBar(void *self) {
-    OXLog(@"CALL Character::updateHealthBar self=%p", self);
-    if (orig_Character_updateHealthBar) orig_Character_updateHealthBar(self);
-}
-
-#define INSTALL_HOOK(name, vaddr) do { \
-    void *orig = [gHooker hookFunctionAtVaddr:(vaddr) withReplacement:(void *)&my_##name]; \
-    if (orig) { orig_##name = (void *)orig; OXLog(@"hooked %s @ 0x%llx", #name, (uint64_t)(vaddr)); } \
-    else { OXLog(@"FAILED to hook %s @ 0x%llx", #name, (uint64_t)(vaddr)); } \
+#define INSTALL_BRK_HOOK(offset, funcName) do { \
+    void *target = (void *)(gSlide + (offset)); \
+    if ([TitanoxHook addBreakpointAtAddress:target withHook:(void *)&funcName]) { \
+        OXLog(@"brk-hook installed: %s @ runtime=0x%llx (off=0x%llx)", \
+              #funcName, (uint64_t)target, (uint64_t)(offset)); \
+    } else { \
+        OXLog(@"brk-hook FAILED: %s @ runtime=0x%llx", \
+              #funcName, (uint64_t)target); \
+    } \
 } while (0)
 
-static void OXInstallKnownHooks(void) {
-    INSTALL_HOOK(MessageManager_receiveMessage,          0x0075CCE0);
-    INSTALL_HOOK(NativeFont_formatString,                0x00B3FDE8);
-    INSTALL_HOOK(GameButton_ctor,                        0x005425B0);
-    INSTALL_HOOK(HomePage_ctor,                          0x0086EB80);
-    INSTALL_HOOK(Stage_setViewport,                      0x00BA17B8);
-    INSTALL_HOOK(LogicDataTables_initDataTable,          0x009A8F3C);
-    INSTALL_HOOK(MovieClip_setText,                      0x00B5F068);
-    INSTALL_HOOK(GameButton_setText,                     0x005430A4);
-    INSTALL_HOOK(LogicProjectileData_getIntValueFromColumn, 0x009CB098);
-    INSTALL_HOOK(Character_updateHealthBar,              0x009E3100);
+static void OXInstallBrkHooks(void) {
+    OXLog(@"=== INSTALL BRK HOOKS ===");
+    INSTALL_BRK_HOOK(0x0075CCE0, hook_MessageManager_receiveMessage);
+    INSTALL_BRK_HOOK(0x005425B0, hook_GameButton_ctor);
+    INSTALL_BRK_HOOK(0x00B3FDE8, hook_NativeFont_formatString);
+    INSTALL_BRK_HOOK(0x0086EB80, hook_HomePage_ctor);
+    INSTALL_BRK_HOOK(0x00BA17B8, hook_Stage_setViewport);
+    INSTALL_BRK_HOOK(0x00B5F068, hook_MovieClip_setText);
+    OXFlush();
 }
 
 static void OXRunTrace(void) {
     OXLog(@"=== TITANOX TRACE v19 ===");
-    OXLog(@"slide=0x%llx", gSlide);
+    OXLog(@"slide=0x%llx", (uint64_t)gSlide);
 
     NSArray *vtList = @[
         @{@"name": @"Character",          @"addr": @(0x00FF45C0)},
@@ -221,7 +243,8 @@ static void OXRunTrace(void) {
         OXDumpVtable(vaddr, vt[@"name"]);
     }
 
-    OXInstallKnownHooks();
+    OXScanVtableRuns();
+    OXInstallBrkHooks();
 
     OXLog(@"=== TRACE READY ===");
     OXFlush();
@@ -232,10 +255,10 @@ static void initTitanoxTrace(void) {
     gLog = [NSMutableString new];
     gLock = [NSLock new];
 
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         gSlide = [TitanoxHook getVmAddrSlideOfLibrary:"Brawl Stars"];
         gHooker = [[TitanoxHook alloc] initWithMachOName:@"Brawl Stars"];
-        OXLog(@"lib=Brawl Stars slide=0x%llx hooker=%@", gSlide, gHooker);
+        OXLog(@"lib=Brawl Stars slide=0x%llx hooker=%@", (uint64_t)gSlide, gHooker ? @"ok" : @"nil");
         OXRunTrace();
     });
 }

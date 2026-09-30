@@ -246,7 +246,7 @@ intptr_t GetVmAddrSlide(const char* libName) {
 
 - (NSString *)applyPatchAtVaddr:(uint64_t)vaddr patchBytes:(NSString *)patchHex {
     if (!_hooker) return @"<hooker not initialized>";
-    if (!patchHex || [patchHex length] == 0) return @"<invalid patch>";
+    if (!patchHex) return @"<invalid patch>";
     std::string hexStr([patchHex UTF8String]);
     auto result = _hooker->apply_patch(vaddr, hexStr);
     if (result.has_value()) {

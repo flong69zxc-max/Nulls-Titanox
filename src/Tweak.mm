@@ -7,27 +7,18 @@
 #import <libgen.h>
 #import <dlfcn.h>
 #import <pthread.h>
-#import <sys/mman.h>
 
+#define PREF_BASE 0x100000000ULL
 #define RVA_MM_RECEIVEMESSAGE 0x75cce0
 #define RVA_MM_CTOR           0x75bb1c
 #define VT_MM                 0xfd57e8
 
-static intptr_t  gSlide = 0;
-static uint64_t  gRuntimeAddr = 0;
-static uint64_t  gCtorAddr = 0;
-static uint64_t  gVtableAddr = 0;
-static NSString *gMainBinaryName = nil;
-static BOOL      gRWXWorks = NO;
+static NSString *gImageName = nil;
+static uint64_t gRuntimeAddr = 0;
+static uint64_t gCtorAddr = 0;
+static uint64_t gVtableAddr = 0;
 
-static void *gMessageManagerInstance = NULL;
-
-typedef void (*MSHookFunction_t)(void *symbol, void *hook, void **old);
-static MSHookFunction_t MSHookFunction_p = nullptr;
-
-typedef void (*pthread_jit_write_protect_np_t)(int);
-static pthread_jit_write_protect_np_t p_jit_wp = nullptr;
-
+static void *gMMInstance = NULL;
 static void (*orig_receiveMessage)(void *self, void *msg) = nullptr;
 static void (*orig_ctor)(void *self) = nullptr;
 
@@ -35,54 +26,62 @@ extern "C" void OXLogC(const char *tag, uint64_t a, uint64_t b) {
     NSLog(@"[C] %s a=0x%llx b=0x%llx", tag, a, b);
 }
 
-static void hook_receiveMessage(void *self, void *msg) {
-    if (msg) {
-        uint32_t vt = *(uint32_t *)((uintptr_t)msg);
-        if (vt) {
-            typedef int (*GetTypeFn)(void *);
-            GetTypeFn getType = (GetTypeFn)(*(uintptr_t *)vt + 40);
-            if (getType) {
-                int type = getType(msg);
-                if (type == 20103) {
-                    int subtype = *(int *)((uintptr_t)msg + 144);
-                    if (subtype == 8) {
-                        NSLog(@"[Tale] news popup caught");
-                    }
-                }
-            }
-        }
-    }
-    if (orig_receiveMessage) orig_receiveMessage(self, msg);
-}
-
-static void hook_ctor(void *self) {
-    if (!gMessageManagerInstance && self) {
-        gMessageManagerInstance = self;
-        NSLog(@"[Tale] MessageManager instance saved = %p", self);
-    }
-    if (orig_ctor) orig_ctor(self);
-}
-
-static NSString *OXDetectMainBinary(void) {
+static NSString *OXDetectGameImageName(void) {
     NSString *exePath = [[NSBundle mainBundle] executablePath];
-    if (exePath) {
-        NSString *base = [exePath lastPathComponent];
-        if (base.length) return base;
+    NSString *candidate = exePath ? [exePath lastPathComponent] : nil;
+    if (candidate && ![candidate isEqualToString:@"LiveContainer"] && ![candidate isEqualToString:@"SideStore"]) {
+        return candidate;
     }
-    return nil;
+
+    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
+        const char *name = _dyld_get_image_name(i);
+        if (!name) continue;
+        if (strstr(name, "LiveContainer")) continue;
+        if (strstr(name, "SideStore")) continue;
+        if (strstr(name, "/Frameworks/")) continue;
+        if (strstr(name, "/System/")) continue;
+        if (strstr(name, "/usr/")) continue;
+        if (strstr(name, "/private/preboot/")) continue;
+        if (strstr(name, "/Documents/Tweaks/")) continue;
+
+        const struct mach_header_64 *hdr = (const struct mach_header_64 *)_dyld_get_image_header(i);
+        if (!hdr) continue;
+        if (hdr->magic != MH_MAGIC_64 && hdr->magic != MH_CIGAM_64) continue;
+        if (hdr->filetype != MH_EXECUTE) continue;
+
+        NSString *bn = [NSString stringWithUTF8String:basename((char *)name)];
+        NSLog(@"[Tale] game image candidate: %@ (%s)", bn, name);
+        return bn;
+    }
+
+    return candidate;
 }
 
 static uint64_t OXResolveRuntimeAddr(NSString *imageName, uint64_t rva) {
+    if (!imageName) return 0;
     const char *target = imageName.UTF8String;
     for (uint32_t i = 0; i < _dyld_image_count(); i++) {
         const char *n = _dyld_get_image_name(i);
-        if (!n || strcmp(basename((char *)n), target) != 0) continue;
+        if (!n) continue;
+        if (strcmp(basename((char *)n), target) != 0) continue;
         const struct mach_header_64 *hdr = (const struct mach_header_64 *)_dyld_get_image_header(i);
         if (!hdr) continue;
-        intptr_t slide = _dyld_get_image_vmaddr_slide(i);
-        return (uint64_t)hdr + slide + (rva - 0x100000000ULL);
+        if (hdr->magic != MH_MAGIC_64 && hdr->magic != MH_CIGAM_64) continue;
+        return (uint64_t)hdr + rva - PREF_BASE;
     }
     return 0;
+}
+
+static BOOL OXSafRead64(uint64_t addr, uint64_t *out) {
+    vm_size_t outSize = 0;
+    kern_return_t kr = vm_read_overwrite(mach_task_self(), (vm_address_t)addr, 8, (vm_address_t)out, &outSize);
+    return (kr == KERN_SUCCESS && outSize == 8);
+}
+
+static BOOL OXSafRead32(uint64_t addr, uint32_t *out) {
+    vm_size_t outSize = 0;
+    kern_return_t kr = vm_read_overwrite(mach_task_self(), (vm_address_t)addr, 4, (vm_address_t)out, &outSize);
+    return (kr == KERN_SUCCESS && outSize == 4);
 }
 
 static vm_prot_t OXGetProt(uint64_t addr) {
@@ -107,121 +106,68 @@ static void OXLogProt(const char *tag, uint64_t addr) {
     NSLog(@"[prot] %s: %s%s%s (0x%x)", tag, r, w, x, p);
 }
 
-static void OXTestPermissions(void) {
-    uint64_t rt = gRuntimeAddr;
-    NSLog(@"=== PERM TEST rt=0x%llx ===", rt);
-    OXLogProt("initial", rt);
-
-    kern_return_t kr;
-
-    kr = vm_protect(mach_task_self(), (vm_address_t)rt, 4, FALSE,
-                    VM_PROT_READ | VM_PROT_WRITE);
-    NSLog(@"[t1] RW setMax=0 -> 0x%x", kr);
-    OXLogProt("after RW", rt);
-
-    kr = vm_protect(mach_task_self(), (vm_address_t)rt, 4, FALSE,
-                    VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE);
-    NSLog(@"[t2] RWX setMax=0 -> 0x%x", kr);
-    OXLogProt("after RWX", rt);
-
-    kr = vm_protect(mach_task_self(), (vm_address_t)rt, 4, FALSE,
-                    VM_PROT_READ | VM_PROT_EXECUTE);
-    NSLog(@"[t3] RX setMax=0 -> 0x%x", kr);
-    OXLogProt("after RX", rt);
-
-    uint32_t nop = 0xd503201f;
-    uint32_t backup = 0xa9bf7bfd;
-
-    kr = vm_write(mach_task_self(), (vm_address_t)rt, (vm_offset_t)&nop, 4);
-    NSLog(@"[t4] vm_write -> 0x%x", kr);
-
-    uint32_t after = 0;
-    vm_size_t out = 0;
-    vm_read_overwrite(mach_task_self(), (vm_address_t)rt, 4,
-                      (vm_address_t)&after, &out);
-    NSLog(@"[t4] after=%08x want=d503201f", after);
-
-    vm_write(mach_task_self(), (vm_address_t)rt, (vm_offset_t)&backup, 4);
-    vm_protect(mach_task_self(), (vm_address_t)rt, 4, FALSE,
-               VM_PROT_READ | VM_PROT_EXECUTE);
-    OXLogProt("final", rt);
-
-    vm_prot_t p = OXGetProt(rt);
-    gRWXWorks = (p & VM_PROT_EXECUTE) && (p & VM_PROT_WRITE);
-    NSLog(@"=== DONE RWX=%d ===", gRWXWorks);
+static void hook_receiveMessage(void *self, void *msg) {
+    if (msg) {
+        uint32_t vt = 0;
+        if (OXSafRead32((uint64_t)msg, &vt) && vt) {
+            uint64_t getTypeAddr = 0;
+            if (OXSafRead64((uint64_t)vt + 40, &getTypeAddr) && getTypeAddr) {
+                typedef int (*GetTypeFn)(void *);
+                GetTypeFn getType = (GetTypeFn)getTypeAddr;
+                int type = getType(msg);
+                if (type == 20103) {
+                    int subtype = 0;
+                    OXSafRead32((uint64_t)msg + 144, (uint32_t *)&subtype);
+                    if (subtype == 8) {
+                        NSLog(@"[Tale] news popup caught");
+                    }
+                }
+            }
+        }
+    }
+    if (orig_receiveMessage) orig_receiveMessage(self, msg);
 }
 
-static BOOL OXTryPthreadJIT(void) {
-    if (!gRuntimeAddr) return NO;
-
-    if (!p_jit_wp) {
-        p_jit_wp = (pthread_jit_write_protect_np_t)dlsym(RTLD_DEFAULT, "pthread_jit_write_protect_np");
+static void hook_ctor(void *self) {
+    if (!gMMInstance && self) {
+        gMMInstance = self;
+        NSLog(@"[Tale] MessageManager instance = %p", self);
     }
-    if (!p_jit_wp) {
-        NSLog(@"[pthread] symbol not found");
-        return NO;
-    }
-
-    p_jit_wp(0);
-    vm_prot_t p = OXGetProt(gRuntimeAddr);
-    p_jit_wp(1);
-
-    NSLog(@"[pthread] prot=0x%x RW=%d RX=%d",
-          p, (p & VM_PROT_WRITE) ? 1 : 0, (p & VM_PROT_EXECUTE) ? 1 : 0);
-
-    return (p & VM_PROT_WRITE) != 0;
-}
-
-static void OXInstallHooks(void) {
-    if (!gRuntimeAddr || !gCtorAddr) {
-        NSLog(@"[hook] addresses not resolved");
-        return;
-    }
-
-    if (!MSHookFunction_p) {
-        MSHookFunction_p = (MSHookFunction_t)dlsym(RTLD_DEFAULT, "MSHookFunction");
-    }
-    if (!MSHookFunction_p) {
-        NSLog(@"[hook] MSHookFunction not found");
-        return;
-    }
-
-    BOOL useJit = NO;
-    BOOL canWrite = NO;
-
-    if (gRWXWorks) {
-        canWrite = YES;
-    } else if (OXTryPthreadJIT()) {
-        canWrite = YES;
-        useJit = YES;
-    }
-
-    if (!canWrite) {
-        NSLog(@"[hook] no writable+executable path available");
-        return;
-    }
-
-    NSLog(@"[hook] path=%s", useJit ? "pthread_jit" : "RWX");
-
-    if (useJit) {
-        p_jit_wp(0);
-        MSHookFunction_p((void *)gCtorAddr, (void *)hook_ctor, (void **)&orig_ctor);
-        MSHookFunction_p((void *)gRuntimeAddr, (void *)hook_receiveMessage, (void **)&orig_receiveMessage);
-        p_jit_wp(1);
-        NSLog(@"[hook] both done via pthread_jit");
-    } else {
-        MSHookFunction_p((void *)gCtorAddr, (void *)hook_ctor, (void **)&orig_ctor);
-        MSHookFunction_p((void *)gRuntimeAddr, (void *)hook_receiveMessage, (void **)&orig_receiveMessage);
-        NSLog(@"[hook] both done via RWX");
-    }
+    if (orig_ctor) orig_ctor(self);
 }
 
 static void OXDumpVtable(void) {
     if (!gVtableAddr) return;
     NSLog(@"=== VTABLE 0x%llx ===", gVtableAddr);
     for (int i = 0; i < 4; i++) {
-        uint64_t slot = *(uint64_t *)(gVtableAddr + i * 8);
-        NSLog(@"[vt] slot[%d] = 0x%llx", i, slot);
+        uint64_t slot = 0;
+        if (OXSafRead64(gVtableAddr + i * 8, &slot)) {
+            NSLog(@"[vt] slot[%d] = 0x%llx", i, slot);
+        } else {
+            NSLog(@"[vt] slot[%d] = <unreadable>", i);
+            break;
+        }
+    }
+}
+
+static void OXInstallHooks(void) {
+    void *sym = dlsym(RTLD_DEFAULT, "MSHookFunction");
+    if (!sym) {
+        NSLog(@"[hook] MSHookFunction not found");
+        return;
+    }
+    typedef void (*MSHookFunction_t)(void *, void *, void **);
+    MSHookFunction_t mshook = (MSHookFunction_t)sym;
+
+    if (gCtorAddr) {
+        NSLog(@"[hook] hooking ctor at 0x%llx", gCtorAddr);
+        mshook((void *)gCtorAddr, (void *)hook_ctor, (void **)&orig_ctor);
+        NSLog(@"[hook] ctor done");
+    }
+    if (gRuntimeAddr) {
+        NSLog(@"[hook] hooking receiveMessage at 0x%llx", gRuntimeAddr);
+        mshook((void *)gRuntimeAddr, (void *)hook_receiveMessage, (void **)&orig_receiveMessage);
+        NSLog(@"[hook] receiveMessage done");
     }
 }
 
@@ -229,25 +175,26 @@ __attribute__((constructor))
 static void initMod(void) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
-        gMainBinaryName = OXDetectMainBinary();
-        if (!gMainBinaryName) {
-            NSLog(@"[Tale] main binary not detected");
+        gImageName = OXDetectGameImageName();
+        if (!gImageName) {
+            NSLog(@"[Tale] game image not found");
             return;
         }
+        NSLog(@"[Tale] image=%@", gImageName);
 
-        NSLog(@"[Tale] main=%@", gMainBinaryName);
-
-        gRuntimeAddr = OXResolveRuntimeAddr(gMainBinaryName, RVA_MM_RECEIVEMESSAGE);
-        gCtorAddr    = OXResolveRuntimeAddr(gMainBinaryName, RVA_MM_CTOR);
-        gVtableAddr  = OXResolveRuntimeAddr(gMainBinaryName, VT_MM);
+        gRuntimeAddr = OXResolveRuntimeAddr(gImageName, RVA_MM_RECEIVEMESSAGE);
+        gCtorAddr    = OXResolveRuntimeAddr(gImageName, RVA_MM_CTOR);
+        gVtableAddr  = OXResolveRuntimeAddr(gImageName, VT_MM);
 
         NSLog(@"[Tale] receiveMessage=0x%llx ctor=0x%llx vtable=0x%llx",
               gRuntimeAddr, gCtorAddr, gVtableAddr);
 
+        OXLogProt("receiveMessage", gRuntimeAddr);
+        OXLogProt("vtable", gVtableAddr);
+
         OXDumpVtable();
-        OXTestPermissions();
         OXInstallHooks();
 
-        NSLog(@"[Tale] === DONE ===");
+        NSLog(@"[Tale] === Done ===");
     });
 }

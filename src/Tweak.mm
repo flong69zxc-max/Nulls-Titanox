@@ -1,992 +1,342 @@
-#include <mach-o/loader.h>
-#include <mach-o/nlist.h>
-#include <mach-o/dyld.h>
-#include <mach/mach.h>
-#include <objc/runtime.h>
-#include <pthread.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdarg.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <string.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <time.h>
 #import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
+#import "Titanox.h"
+#import "MemX.h"
 
-#include "libtitanox.h"
-#if __has_include("offsets.h")
-#include "offsets.h"
-#elif __has_include("o.h")
-#include "o.h"
-#endif
+#define LOG_PATH [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES)[0] stringByAppendingPathComponent:@"TITANOX_OFFSETS.txt"]
 
-#define OFX_LOG_LIMIT 24
-#define OFX_ALLOW_LOW 0
+static NSMutableString *gLog = nil;
+static NSLock *gLock = nil;
 
-static int g_nresolved;
-static int g_by_src[8];
-
-static char  g_dir[512];
-static FILE *g_log;
-
-static void plog(const char *fmt, ...);
-
-static int ofx_try_dir(const char *d)
-{
-    mkdir(d, 0755);
-    char p[640];
-    snprintf(p, sizeof(p), "%s/.ofx", d);
-    FILE *f = fopen(p, "w");
-    if (!f) return 0;
-    fclose(f);
-    unlink(p);
-    return 1;
+static void OXLog(NSString *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    NSString *s = [[NSString alloc] initWithFormat:fmt arguments:args];
+    va_end(args);
+    [gLock lock];
+    [gLog appendFormat:@"%@\n", s];
+    [gLock unlock];
 }
 
-static const char *ofx_dir(void)
-{
-    if (g_dir[0]) return g_dir;
-    const char *home = getenv("HOME");
-    char p[640];
-    if (home) {
-        snprintf(p, sizeof(p), "%s/Documents", home);
-        if (ofx_try_dir(p)) { strlcpy(g_dir, p, sizeof(g_dir)); return g_dir; }
-        snprintf(p, sizeof(p), "%s/titanox", home);
-        if (ofx_try_dir(p)) { strlcpy(g_dir, p, sizeof(g_dir)); return g_dir; }
+static void OXFlush(void) {
+    [gLock lock];
+    [gLog writeToFile:LOG_PATH atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    [gLock unlock];
+}
+
+static uint64_t gBase = 0;
+static uint64_t gSlide = 0;
+
+static uint64_t OXOff(uint64_t vaddr) {
+    return vaddr;
+}
+
+static uint64_t OXReadPtr(uint64_t addr) {
+    uint64_t v = 0;
+    MemX *mx = [MemX sharedInstance];
+    [mx readMemoryAtAddress:addr intoBuffer:&v size:8];
+    return v;
+}
+
+static void OXWritePtr(uint64_t addr, uint64_t val) {
+    MemX *mx = [MemX sharedInstance];
+    [mx writeMemoryAtAddress:addr fromBuffer:&val size:8];
+}
+
+static uint64_t OXSlideFix(uint64_t raw) {
+    uint64_t t43 = raw & 0x7FFFFFFFFFFULL;
+    uint64_t high8 = (raw >> 43) & 0xFFULL;
+    if (high8) return (high8 << 56) | t43;
+    return t43;
+}
+
+static BOOL OXIsInText(uint64_t addr) {
+    return addr >= 0x100000000ULL && addr < 0x100E00000ULL;
+}
+
+static NSString *OXReadCString(uint64_t addr, int maxLen) {
+    if (!addr) return nil;
+    char buf[256];
+    memset(buf, 0, sizeof(buf));
+    MemX *mx = [MemX sharedInstance];
+    [mx readMemoryAtAddress:addr intoBuffer:buf size:maxLen < 255 ? maxLen : 255];
+    if (buf[0] == 0) return nil;
+    return [NSString stringWithUTF8String:buf];
+}
+
+static NSString *OXDemangleItanium(NSString *s) {
+    if (![s hasPrefix:@"_ZN"]) return nil;
+    NSMutableArray *parts = [NSMutableArray array];
+    NSUInteger i = 3;
+    while (i < s.length) {
+        NSUInteger j = i;
+        while (j < s.length && isdigit([s characterAtIndex:j])) j++;
+        if (j == i) break;
+        int len = [[s substringWithRange:NSMakeRange(i, j - i)] intValue];
+        if (len <= 0 || j + len > s.length) break;
+        [parts addObject:[s substringWithRange:NSMakeRange(j, len)]];
+        i = j + len;
     }
-    if (ofx_try_dir("/var/mobile/Library/Titanox")) {
-        strlcpy(g_dir, "/var/mobile/Library/Titanox", sizeof(g_dir));
-        return g_dir;
-    }
-    strlcpy(g_dir, "/tmp", sizeof(g_dir));
-    return g_dir;
+    if (parts.count >= 2) return [NSString stringWithFormat:@"%@::%@", parts[parts.count - 2], parts[parts.count - 1]];
+    if (parts.count == 1) return parts[0];
+    return nil;
 }
 
-static FILE *ofx_logf(void)
-{
-    if (g_log) return g_log;
-    char p[700];
-    snprintf(p, sizeof(p), "%s/titanox.log", ofx_dir());
-    g_log = fopen(p, "w");
-    return g_log;
-}
-
-static void plog(const char *fmt, ...)
-{
-    FILE *f = ofx_logf();
-    if (!f) return;
-    time_t now = time(NULL);
-    struct tm tmv;
-    localtime_r(&now, &tmv);
-    char ts[16];
-    strftime(ts, sizeof(ts), "%H:%M:%S", &tmv);
-    fprintf(f, "[%s] ", ts);
-    va_list ap;
-    va_start(ap, fmt);
-    vfprintf(f, fmt, ap);
-    va_end(ap);
-    fputc('\n', f);
-    fflush(f);
-}
-
-static void logcap(int *c, const char *fmt, ...)
-{
-    (*c)++;
-    if (*c > OFX_LOG_LIMIT) return;
-    char buf[192];
-    va_list ap;
-    va_start(ap, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, ap);
-    va_end(ap);
-    plog("Titanox: %s", buf);
-}
-
-typedef enum {
-    OFX_K_FUNC   = 0,
-    OFX_K_CTOR   = 1,
-    OFX_K_GLOBAL = 2,
-    OFX_K_VTABLE = 3
-} OfxKind;
-
-typedef enum {
-    OFX_S_NONE = 0,
-    OFX_S_HEADER,
-    OFX_S_SYMTAB,
-    OFX_S_LOGSTR,
-    OFX_S_OBJC,
-    OFX_S_BARESTR,
-    OFX_S_GETINST,
-    OFX_S_VTABLE
-} OfxSource;
-
-typedef enum { OFX_C_LOW = 0, OFX_C_MED = 1, OFX_C_HIGH = 2 } OfxConf;
-
-typedef struct {
-    const char *name;
-    const char *cls;
-    const char *method;
-    uint8_t     kind;
-} OfxTarget;
-
-static const OfxTarget g_targets[] = {
-    { "LogicBattleModeClient_update", "LogicBattleModeClient", "update", OFX_K_FUNC },
-    { "LogicBattleModeClient_getOwnCharacter", "LogicBattleModeClient", "getOwnCharacter", OFX_K_FUNC },
-    { "LogicBattleModeClient_getOwnPlayerTeam", "LogicBattleModeClient", "getOwnPlayerTeam", OFX_K_FUNC },
-    { "LogicBattleModeClient_setClientPredictionMoveTo", "LogicBattleModeClient", "setClientPredictionMoveTo", OFX_K_FUNC },
-    { "LogicBattleModeClient_getOwnPlayerIndex", "LogicBattleModeClient", "getOwnPlayerIndex", OFX_K_FUNC },
-    { "LogicBattleModeClient_getTileMap", "LogicBattleModeClient", "getTileMap", OFX_K_FUNC },
-    { "LogicBattleModeClient_setRandomSeed", "LogicBattleModeClient", "setRandomSeed", OFX_K_FUNC },
-    { "LogicBattleModeClient_setPlayerAvatar", "LogicBattleModeClient", "setPlayerAvatar", OFX_K_FUNC },
-    { "BattleMode_getInstance", "BattleMode", "getInstance", OFX_K_FUNC },
-    { "BattleMode_enter", "BattleMode", "enter", OFX_K_FUNC },
-    { "BattleMode_addResourcesToLoad", "BattleMode", "addResourcesToLoad", OFX_K_FUNC },
-    { "LogicGameObjectClient_getX", "LogicGameObjectClient", "getX", OFX_K_FUNC },
-    { "LogicGameObjectClient_getY", "LogicGameObjectClient", "getY", OFX_K_FUNC },
-    { "LogicGameObjectClient_getZ", "LogicGameObjectClient", "getZ", OFX_K_FUNC },
-    { "LogicGameObjectClient_getGlobalID", "LogicGameObjectClient", "getGlobalID", OFX_K_FUNC },
-    { "LogicGameObjectClient_getData", "LogicGameObjectClient", "getData", OFX_K_FUNC },
-    { "BattleScreen_activateSkill", "BattleScreen", "activateSkill", OFX_K_FUNC },
-    { "BattleScreen_updateCameraParameters", "BattleScreen", "updateCameraParameters", OFX_K_FUNC },
-    { "BattleScreen_stopWithStick", "BattleScreen", "stopWithStick", OFX_K_FUNC },
-    { "BattleScreen_handleTouchReleased", "BattleScreen", "handleTouchReleased", OFX_K_FUNC },
-    { "BattleScreen_updateAutoshoot", "BattleScreen", "updateAutoshoot", OFX_K_FUNC },
-    { "BattleScreen_getClosestTargetForAutoshoot", "BattleScreen", "getClosestTargetForAutoshoot", OFX_K_FUNC },
-    { "BattleScreen_updateMovement", "BattleScreen", "updateMovement", OFX_K_FUNC },
-    { "BattleScreen_tryToActivateSkill", "BattleScreen", "tryToActivateSkill", OFX_K_FUNC },
-    { "BattleScreen_shouldShowAccessoryButton", "BattleScreen", "shouldShowAccessoryButton", OFX_K_FUNC },
-    { "BattleScreen_calculateProjectilePath", "BattleScreen", "calculateProjectilePath", OFX_K_FUNC },
-    { "BattleScreen_joystickToWorld", "BattleScreen", "joystickToWorld", OFX_K_FUNC },
-    { "Gui_showFloaterTextAtDefaultPos", "Gui", "showFloaterTextAtDefaultPos", OFX_K_FUNC },
-    { "GUI_showFloaterTextAt", "GUI", "showFloaterTextAt", OFX_K_FUNC },
-    { "GUI_showPopup", "GUI", "showPopup", OFX_K_FUNC },
-    { "GUI_getDefaultFloaterPos", "GUI", "getDefaultFloaterPos", OFX_K_FUNC },
-    { "Gui_getInstance", "Gui", "getInstance", OFX_K_FUNC },
-    { "PopupBase_ctor", "PopupBase", "PopupBase", OFX_K_CTOR },
-    { "GenericPopup_ctor", "GenericPopup", "GenericPopup", OFX_K_CTOR },
-    { "GenericPopup_addButton", "GenericPopup", "addButton", OFX_K_FUNC },
-    { "GenericPopup_addButton2", "GenericPopup", "addButton2", OFX_K_FUNC },
-    { "GenericPopup_setTitle", "GenericPopup", "setTitle", OFX_K_FUNC },
-    { "GameButton_ctor", "GameButton", "GameButton", OFX_K_CTOR },
-    { "GameButton_buttonPressed", "GameButton", "buttonPressed", OFX_K_FUNC },
-    { "GameButton_setText", "GameButton", "setText", OFX_K_FUNC },
-    { "CustomButton_onButtonPressed", "CustomButton", "onButtonPressed", OFX_K_FUNC },
-    { "Sprite_ctor", "Sprite", "Sprite", OFX_K_CTOR },
-    { "Sprite_addChild", "Sprite", "addChild", OFX_K_FUNC },
-    { "Sprite_addChildAt", "Sprite", "addChildAt", OFX_K_FUNC },
-    { "Sprite_removeChild", "Sprite", "removeChild", OFX_K_FUNC },
-    { "Stage_addChild", "Stage", "addChild", OFX_K_FUNC },
-    { "DisplayObject_setXY", "DisplayObject", "setXY", OFX_K_FUNC },
-    { "DisplayObject_removeFromParent", "DisplayObject", "removeFromParent", OFX_K_FUNC },
-    { "MovieClip_getTextFieldByName", "MovieClip", "getTextFieldByName", OFX_K_FUNC },
-    { "MovieClip_getChildClipByName", "MovieClip", "getChildClipByName", OFX_K_FUNC },
-    { "MovieClip_setChildVisible", "MovieClip", "setChildVisible", OFX_K_FUNC },
-    { "MovieClip_gotoAndStopFrameIndex", "MovieClip", "gotoAndStopFrameIndex", OFX_K_FUNC },
-    { "MovieClipHelper_setTextAndScaleIfNecessary", "MovieClipHelper", "setTextAndScaleIfNecessary", OFX_K_FUNC },
-    { "TextField_setText", "TextField", "setText", OFX_K_FUNC },
-    { "TextField_fetchFont", "TextField", "fetchFont", OFX_K_FUNC },
-    { "String_ctor", "String", "String", OFX_K_CTOR },
-    { "String_format", "String", "format", OFX_K_FUNC },
-    { "Application_copyString", "Application", "copyString", OFX_K_FUNC },
-    { "decoratedTextFieldSetPlayerName", "", "setPlayerName", OFX_K_FUNC },
-    { "Name_setupDecorated", "Name", "setupDecorated", OFX_K_FUNC },
-    { "Name_applyDecoration", "Name", "applyDecoration", OFX_K_FUNC },
-    { "ClientInput_ctor", "ClientInput", "ClientInput", OFX_K_CTOR },
-    { "ClientInputManager_addInput", "ClientInputManager", "addInput", OFX_K_FUNC },
-    { "ClientInputMessage_sendMovement", "ClientInputMessage", "sendMovement", OFX_K_FUNC },
-    { "handleJoystick", "", "handleJoystick", OFX_K_FUNC },
-    { "LogicSkillData_getActiveTime", "LogicSkillData", "getActiveTime", OFX_K_FUNC },
-    { "LogicSkillData_getRechargeTime", "LogicSkillData", "getRechargeTime", OFX_K_FUNC },
-    { "LogicSkillData_getMaxCharge", "LogicSkillData", "getMaxCharge", OFX_K_FUNC },
-    { "LogicSkillData_getMsBetweenAttacks", "LogicSkillData", "getMsBetweenAttacks", OFX_K_FUNC },
-    { "LogicSkillData_getCastingRange", "LogicSkillData", "getCastingRange", OFX_K_FUNC },
-    { "LogicSkillData_getBehaviour", "LogicSkillData", "getBehaviour", OFX_K_FUNC },
-    { "LogicSkillData_getLinkedSkill", "LogicSkillData", "getLinkedSkill", OFX_K_FUNC },
-    { "LogicSkillData_getProjectileData", "LogicSkillData", "getProjectileData", OFX_K_FUNC },
-    { "LogicSkillClient_getData", "LogicSkillClient", "getData", OFX_K_FUNC },
-    { "LogicSkillClient_canActivate", "LogicSkillClient", "canActivate", OFX_K_FUNC },
-    { "LogicCharacterData_getSpeed", "LogicCharacterData", "getSpeed", OFX_K_FUNC },
-    { "LogicCharacterData_getCollisionRadius", "LogicCharacterData", "getCollisionRadius", OFX_K_FUNC },
-    { "LogicProjectileData_getRadius", "LogicProjectileData", "getRadius", OFX_K_FUNC },
-    { "LogicProjectileData_getSpeed", "LogicProjectileData", "getSpeed", OFX_K_FUNC },
-    { "LogicProjectileData_getRendering", "LogicProjectileData", "getRendering", OFX_K_FUNC },
-    { "LogicProjectileData_isBeam", "LogicProjectileData", "isBeam", OFX_K_FUNC },
-    { "LogicProjectileData_getNumEarlyTicks", "LogicProjectileData", "getNumEarlyTicks", OFX_K_FUNC },
-    { "LogicProjectileData_getSpawnAreaEffect", "LogicProjectileData", "getSpawnAreaEffect", OFX_K_FUNC },
-    { "LogicProjectileData_IsOwnTeamProjectile", "LogicProjectileData", "IsOwnTeamProjectile", OFX_K_FUNC },
-    { "LogicTileData_blocksMovement", "LogicTileData", "blocksMovement", OFX_K_FUNC },
-    { "LogicTileData_blocksProjectiles", "LogicTileData", "blocksProjectiles", OFX_K_FUNC },
-    { "LogicTile_setData", "LogicTile", "setData", OFX_K_FUNC },
-    { "LogicTileMap_isPlayerLineOfSightClear", "LogicTileMap", "isPlayerLineOfSightClear", OFX_K_FUNC },
-    { "LogicTileMap_getTile", "LogicTileMap", "getTile", OFX_K_FUNC },
-    { "LogicDataTables_getOpenTileData", "LogicDataTables", "getOpenTileData", OFX_K_FUNC },
-    { "LogicDataTables_getBaseTileData", "LogicDataTables", "getBaseTileData", OFX_K_FUNC },
-    { "LogicDataTables_getSiegeBoltTileData", "LogicDataTables", "getSiegeBoltTileData", OFX_K_FUNC },
-    { "LogicCharacterClient_getCarryableData", "LogicCharacterClient", "getCarryableData", OFX_K_FUNC },
-    { "LogicCharacterClient_getWeaponSkill", "LogicCharacterClient", "getWeaponSkill", OFX_K_FUNC },
-    { "LogicCharacterClient_getLinkedCarryable", "LogicCharacterClient", "getLinkedCarryable", OFX_K_FUNC },
-    { "LogicCharacterClient_getCurrentActiveOrCastingSkill", "LogicCharacterClient", "getCurrentActiveOrCastingSkill", OFX_K_FUNC },
-    { "LogicCharacterClient_getSkillAt", "LogicCharacterClient", "getSkillAt", OFX_K_FUNC },
-    { "LogicCharacterClient_canMoveAndUseThisSkillSimultaneously", "LogicCharacterClient", "canMoveAndUseThisSkillSimultaneously", OFX_K_FUNC },
-    { "LogicCharacterClient_isImmuneOrUntargetable", "LogicCharacterClient", "isImmuneOrUntargetable", OFX_K_FUNC },
-    { "LogicCharacterClientOwn_clientPredictionPauseMovementForSkillCasting", "LogicCharacterClientOwn", "clientPredictionPauseMovementForSkillCasting", OFX_K_FUNC },
-    { "LogicCharacterClientOwn_clientPredictionUpdateAttackDirection", "LogicCharacterClientOwn", "clientPredictionUpdateAttackDirection", OFX_K_FUNC },
-    { "LogicGameObjectManagerClient_getGameObjects", "LogicGameObjectManagerClient", "getGameObjects", OFX_K_FUNC },
-    { "LogicGameObjectManagerClient_findGameObject", "LogicGameObjectManagerClient", "findGameObject", OFX_K_FUNC },
-    { "LogicGameObjectServer_getData", "LogicGameObjectServer", "getData", OFX_K_FUNC },
-    { "LogicProjectileServer_shootProjectile", "LogicProjectileServer", "shootProjectile", OFX_K_FUNC },
-    { "LogicProjectileServer_runEarlyTicks", "LogicProjectileServer", "runEarlyTicks", OFX_K_FUNC },
-    { "LogicProjectileClient_destruct", "LogicProjectileClient", "destruct", OFX_K_FUNC },
-    { "LogicProjectileClient_getData", "LogicProjectileClient", "getData", OFX_K_FUNC },
-    { "LogicProjectileClient_getTargetX", "LogicProjectileClient", "getTargetX", OFX_K_FUNC },
-    { "LogicProjectileClient_getTargetY", "LogicProjectileClient", "getTargetY", OFX_K_FUNC },
-    { "LogicGameModeUtil_isTileOnPoisonArea", "LogicGameModeUtil", "isTileOnPoisonArea", OFX_K_FUNC },
-    { "Projectile_ctor", "Projectile", "Projectile", OFX_K_CTOR },
-    { "Projectile_update", "Projectile", "update", OFX_K_FUNC },
-    { "GameMain_update", "GameMain", "update", OFX_K_FUNC },
-    { "DecalManager_ctor", "DecalManager", "DecalManager", OFX_K_CTOR },
-    { "GameObjectManager_ctor", "GameObjectManager", "GameObjectManager", OFX_K_CTOR },
-    { "RenderSystem_ctor", "RenderSystem", "RenderSystem", OFX_K_CTOR },
-    { "ResourceManager_getCSV", "ResourceManager", "getCSV", OFX_K_FUNC },
-    { "ResourceManager_isResourceLoaded", "ResourceManager", "isResourceLoaded", OFX_K_FUNC },
-    { "StringTable_getMovieClip", "StringTable", "getMovieClip", OFX_K_FUNC },
-    { "FramerateManager_setSegment", "FramerateManager", "setSegment", OFX_K_FUNC },
-    { "FramerateManager_setLimit", "FramerateManager", "setLimit", OFX_K_FUNC },
-    { "MessageManager_receiveMessage", "MessageManager", "receiveMessage", OFX_K_FUNC },
-    { "MessageManager_sendMessage", "MessageManager", "sendMessage", OFX_K_FUNC },
-    { "AllianceManager_startSpectate", "AllianceManager", "startSpectate", OFX_K_FUNC },
-    { "CombatHUD_toggleEditing", "CombatHUD", "toggleEditing", OFX_K_FUNC },
-    { "CombatHUD_setShootStickState", "CombatHUD", "setShootStickState", OFX_K_FUNC },
-    { "CombatHUD_setMoveStickState", "CombatHUD", "setMoveStickState", OFX_K_FUNC },
-    { "CombatHUD_update", "CombatHUD", "update", OFX_K_FUNC },
-    { "CombatHUD_sendPinCommand", "CombatHUD", "sendPinCommand", OFX_K_FUNC },
-    { "CombatHUD_sendSprayCommand", "CombatHUD", "sendSprayCommand", OFX_K_FUNC },
-    { "Character_updateHealthBar", "Character", "updateHealthBar", OFX_K_FUNC },
-    { "GameScreen_getLogicBattle", "GameScreen", "getLogicBattle", OFX_K_FUNC },
-    { "MapEditorScreen_initRenderSystem", "MapEditorScreen", "initRenderSystem", OFX_K_FUNC },
-    { "MapEditorScreen_initItems", "MapEditorScreen", "initItems", OFX_K_FUNC },
-    { "MapEditorScreen_initCharacters", "MapEditorScreen", "initCharacters", OFX_K_FUNC },
-    { "GameSettings_isFixedJoystickEnabled", "GameSettings", "isFixedJoystickEnabled", OFX_K_FUNC },
-    { "GameStateManager_getInstance", "GameStateManager", "getInstance", OFX_K_FUNC },
-    { "GameStateManager_isState", "GameStateManager", "isState", OFX_K_FUNC },
-    { "HomeMode_getInstance", "HomeMode", "getInstance", OFX_K_FUNC },
-    { "GameSliderComponent_ctor", "GameSliderComponent", "GameSliderComponent", OFX_K_CTOR },
-    { "GameSliderComponent_setValueBounds", "GameSliderComponent", "setValueBounds", OFX_K_FUNC },
-    { "DropGUIContainer_ctorFromExport", "DropGUIContainer", "ctorFromExport", OFX_K_FUNC },
-    { "MapEditorModifierItem_ctor", "MapEditorModifierItem", "MapEditorModifierItem", OFX_K_CTOR },
-    { "MapEditorModifierPopup_ctor", "MapEditorModifierPopup", "MapEditorModifierPopup", OFX_K_CTOR },
-    { "MapEditorModifierPopup_addModifierItem", "MapEditorModifierPopup", "addModifierItem", OFX_K_FUNC },
-    { "CSVRow_getIntegerValueAt", "CSVRow", "getIntegerValueAt", OFX_K_FUNC },
-    { "CSVRow_getName", "CSVRow", "getName", OFX_K_FUNC },
-    { "CSVRow_getValueAt", "CSVRow", "getValueAt", OFX_K_FUNC },
-    { "CSVRow_getBooleanValueAt", "CSVRow", "getBooleanValueAt", OFX_K_FUNC },
-    { "CSVTable_getColumnIndexByName", "CSVTable", "getColumnIndexByName", OFX_K_FUNC },
-    { "TeamChatMessage_ctor", "TeamChatMessage", "TeamChatMessage", OFX_K_CTOR },
-    { "TeamSetMemberReadyMessage_ctor", "TeamSetMemberReadyMessage", "TeamSetMemberReadyMessage", OFX_K_CTOR },
-    { "StartSpectateMessage_ctor", "StartSpectateMessage", "StartSpectateMessage", OFX_K_CTOR },
-    { "PiranhaMessage_ctor", "PiranhaMessage", "PiranhaMessage", OFX_K_CTOR },
-    { "HashTagCodeGenerator_ctor", "HashTagCodeGenerator", "HashTagCodeGenerator", OFX_K_CTOR },
-    { "HashTagCodeGenerator_toId", "HashTagCodeGenerator", "toId", OFX_K_FUNC },
-    { "HashTagCodeGenerator_isValid", "HashTagCodeGenerator", "isValid", OFX_K_FUNC },
-    { "LogicLongToCodeConverterUtil_convert", "LogicLongToCodeConverterUtil", "convert", OFX_K_FUNC },
-    { "LogicLongToCodeConverterUtil_toCode", "LogicLongToCodeConverterUtil", "toCode", OFX_K_FUNC },
-    { "LogicRandom_setIteratedRandomSeed", "LogicRandom", "setIteratedRandomSeed", OFX_K_FUNC },
-    { "LogicJSONObject_put", "LogicJSONObject", "put", OFX_K_FUNC },
-    { "Screen_getDpiClass", "Screen", "getDpiClass", OFX_K_FUNC },
-    { "Screen_getHeight", "Screen", "getHeight", OFX_K_FUNC },
-    { "Screen_getWidth", "Screen", "getWidth", OFX_K_FUNC },
-    { "nativeCopyToClipboard", "", "copyToClipboard", OFX_K_FUNC },
-    { "SetClientPrediction", "", "setClientPrediction", OFX_K_FUNC },
-    { "ScrollArea_scrollTo", "ScrollArea", "scrollTo", OFX_K_FUNC },
-    { "ScrollArea_updateBounds", "ScrollArea", "updateBounds", OFX_K_FUNC },
-    { "ScrollArea_addContent", "ScrollArea", "addContent", OFX_K_FUNC },
-    { "ScrollArea_removeAllContent", "ScrollArea", "removeAllContent", OFX_K_FUNC },
-    { "GlobalID_getInstanceID", "GlobalID", "getInstanceID", OFX_K_FUNC },
-    { "LogicPlayerMap_save", "LogicPlayerMap", "save", OFX_K_FUNC },
-    { "LogicPlayerMapUtil_tileDataToTileCode", "LogicPlayerMapUtil", "tileDataToTileCode", OFX_K_FUNC },
-    { "AnalyticEvent_ctor", "AnalyticEvent", "AnalyticEvent", OFX_K_CTOR },
-    { "AnalyticEvent_setString", "AnalyticEvent", "setString", OFX_K_FUNC },
-    { "LogicCompressedString_ctor", "LogicCompressedString", "LogicCompressedString", OFX_K_CTOR },
-    { "ResourceListener_addFile", "ResourceListener", "addFile", OFX_K_FUNC },
-    { "AreaEffectData_getRadius", "AreaEffectData", "getRadius", OFX_K_FUNC },
-    { "AreaEffectData_getActiveTimeMs", "AreaEffectData", "getActiveTimeMs", OFX_K_FUNC },
-    { "LogicData_getName", "LogicData", "getName", OFX_K_FUNC },
-
-    { "MessageManager_instance", "MessageManager", "", OFX_K_GLOBAL },
-    { "AllianceManager_instance", "AllianceManager", "", OFX_K_GLOBAL },
-    { "StageInstanceGlobalPtr", "Stage", "", OFX_K_GLOBAL },
-    { "Screen_widthGlobal", "Screen", "", OFX_K_GLOBAL },
-    { "Screen_heightGlobal", "Screen", "", OFX_K_GLOBAL },
-    { "FramerateManager_targetFps", "FramerateManager", "", OFX_K_GLOBAL },
-    { "LogicDataTables_tableArray", "LogicDataTables", "", OFX_K_GLOBAL },
-    { "VTABLE_PROJECTILE_DATA", "LogicProjectileData", "", OFX_K_VTABLE },
-    { "VTABLE_CHARACTER_DATA", "LogicCharacterData", "", OFX_K_VTABLE },
-    { "VTABLE_TEXT_FIELD", "TextField", "", OFX_K_VTABLE },
-    { "VTABLE_DECORATED_TEXT_FIELD", "DecoratedTextField", "", OFX_K_VTABLE },
-    { "ClientInput_typeConstantTable", "ClientInput", "", OFX_K_GLOBAL },
-    { "SkillCommandTypeTable", "SkillCommand", "", OFX_K_GLOBAL },
-    { "ClientInput_hashInnerMask", "ClientInput", "", OFX_K_GLOBAL },
-    { "ClientInput_hashOuterMask", "ClientInput", "", OFX_K_GLOBAL },
-};
-static const int g_target_count = (int)(sizeof(g_targets) / sizeof(g_targets[0]));
-
-static struct {
-    int      inited;
-    uint64_t base, slide, vmbase;
-    uint64_t text_vm, text_size;
-    uint64_t cstr_vm, cstr_size;
-    uint64_t meth_vm, meth_size;
-    uint64_t clsn_vm, clsn_size;
-    uint64_t const_vm, const_size;
-    uint64_t data_vm, data_size;
-    uint64_t sym_addr; uint32_t nsyms; uint64_t str_addr; uint32_t strsize;
-    uint64_t fs_addr, fs_size;
-    uint64_t *fstarts; int nfstarts;
-    int      ntargets;
-} g;
-
-typedef struct {
-    uint64_t vmaddr, vmsize, fileoff, filesize, initprot;
-    int      is_data_like;
-    char     name[20];
-} OfxSeg;
-static OfxSeg g_segs[64]; static int g_nsegs;
-
-typedef struct { char sect[20], seg[20]; uint64_t vmaddr, size; } OfxSec;
-static OfxSec g_secs[400]; static int g_nsecs;
-
-typedef struct {
-    uint8_t  src, conf;
-    uint64_t rva;
-    uint64_t str_vm;
-    char     ev[120];
-} OfxRes;
-static OfxRes g_res[256];
-static uint64_t g_known[256];
-
-static uint64_t g_slots[256][64];
-static int      g_nslots[256];
-static uint64_t g_vtable[256];
-
-static uint64_t ofx_rva(uint64_t vm) { return vm - g.vmbase; }
-static const uint8_t *ofx_mem(uint64_t vm) { return (const uint8_t *)(uintptr_t)(g.slide + vm); }
-
-static int ofx_is_ident(unsigned char c)
-{
-    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
-}
-
-static int ofx_parse_macho(void)
-{
-    const struct mach_header_64 *mh = (const struct mach_header_64 *)(uintptr_t)g.base;
-    if (mh->magic != MH_MAGIC_64) { plog("Titanox[ofx]: bad magic"); return 0; }
-    uint32_t nimg = _dyld_image_count();
-    for (uint32_t k = 0; k < nimg; k++) {
-        if ((uint64_t)(uintptr_t)_dyld_get_image_header(k) == g.base) {
-            g.slide = (uint64_t)(intptr_t)_dyld_get_image_vmaddr_slide(k);
-            break;
+static NSArray<NSString *> *OXSplitMangled(NSString *raw) {
+    if (!raw || raw.length < 2) return nil;
+    if ([raw hasPrefix:@"N"] && [raw hasSuffix:@"E"]) {
+        NSString *inner = [raw substringWithRange:NSMakeRange(1, raw.length - 2)];
+        NSMutableArray *parts = [NSMutableArray array];
+        NSUInteger i = 0;
+        while (i < inner.length) {
+            NSUInteger j = i;
+            while (j < inner.length && isdigit([inner characterAtIndex:j])) j++;
+            if (j == i) break;
+            int len = [[inner substringWithRange:NSMakeRange(i, j - i)] intValue];
+            if (len <= 0 || j + len > inner.length) break;
+            [parts addObject:[inner substringWithRange:NSMakeRange(j, len)]];
+            i = j + len;
         }
+        if (parts.count) return parts;
     }
-    const uint8_t *p = (const uint8_t *)mh + sizeof(struct mach_header_64);
-    const uint8_t *lend = p + 0x10000;
-    for (uint32_t i = 0; i < mh->ncmds; i++) {
-        if (p + sizeof(struct load_command) > lend) break;
-        const struct load_command *lc = (const struct load_command *)p;
-        if (lc->cmdsize < sizeof(struct load_command)) break;
-        if (p + lc->cmdsize > lend) break;
-        if (lc->cmd == LC_SEGMENT_64) {
-            const struct segment_command_64 *sc = (const struct segment_command_64 *)lc;
-            if (g.vmbase == 0 && sc->filesize) {
-                g.vmbase = sc->vmaddr;
-                if (!g.slide) g.slide = g.base - g.vmbase;
-            }
-            if (g_nsegs < 64) {
-                OfxSeg *s = &g_segs[g_nsegs++];
-                s->vmaddr = sc->vmaddr; s->vmsize = sc->vmsize;
-                s->fileoff = sc->fileoff; s->filesize = sc->filesize; s->initprot = sc->initprot;
-                s->is_data_like = (sc->initprot & VM_PROT_WRITE) && (sc->initprot & VM_PROT_READ);
-                strlcpy(s->name, sc->segname, sizeof(s->name));
-            }
-            const struct section_64 *sec = (const struct section_64 *)((const uint8_t *)sc + sizeof(struct segment_command_64));
-            for (uint32_t j = 0; j < sc->nsects && g_nsecs < 400; j++) {
-                OfxSec *d = &g_secs[g_nsecs++];
-                strlcpy(d->sect, sec[j].sectname, sizeof(d->sect));
-                strlcpy(d->seg, sec[j].segname, sizeof(d->seg));
-                d->vmaddr = sec[j].addr; d->size = sec[j].size;
-            }
-        } else if (lc->cmd == LC_SYMTAB) {
-            const struct symtab_command *st = (const struct symtab_command *)lc;
-            if (st->nsyms) {
-                g.sym_addr = g.slide;
-                g.nsyms = st->nsyms;
-                g.str_addr = g.slide + st->stroff;
-                g.strsize = st->strsize;
-            }
-        } else if (lc->cmd == LC_FUNCTION_STARTS) {
-            const struct linkedit_data_command *ld = (const struct linkedit_data_command *)lc;
-            if (ld->datasize) {
-                g.fs_addr = g.slide + ld->dataoff;
-                g.fs_size = ld->datasize;
-            }
-        }
-        p += lc->cmdsize;
+    NSMutableArray *parts = [NSMutableArray array];
+    NSUInteger i = 0;
+    while (i < raw.length && isdigit([raw characterAtIndex:i])) {
+        NSUInteger j = i;
+        while (j < raw.length && isdigit([raw characterAtIndex:j])) j++;
+        if (j == i) break;
+        int len = [[raw substringWithRange:NSMakeRange(i, j - i)] intValue];
+        if (len <= 0 || j + len > raw.length) break;
+        [parts addObject:[raw substringWithRange:NSMakeRange(j, len)]];
+        i = j + len;
     }
-    g.clsn_vm = 0; g.clsn_size = 0;
-    for (int i = 0; i < g_nsecs; i++) {
-        OfxSec *d = &g_secs[i];
-        if (!strcmp(d->sect, "__text") && d->size > g.text_size) { g.text_vm = d->vmaddr; g.text_size = d->size; }
-        if (!strcmp(d->sect, "__cstring")) { g.cstr_vm = d->vmaddr; g.cstr_size = d->size; }
-        if (!strcmp(d->sect, "__objc_methname")) { g.meth_vm = d->vmaddr; g.meth_size = d->size; }
-        if (!strcmp(d->sect, "__objc_classname")) { g.clsn_vm = d->vmaddr; g.clsn_size = d->size; }
-        if (!strcmp(d->sect, "__const")) { g.const_vm = d->vmaddr; g.const_size = d->size; }
-        if (!strcmp(d->sect, "__data")) { g.data_vm = d->vmaddr; g.data_size = d->size; }
-    }
-    plog("Titanox[ofx]: slide=0x%llx vmbase=0x%llx text=0x%llx/%llu cstr=%llu clsn=%llu meth=%llu const=%llu data=%llu",
-           (unsigned long long)g.slide, (unsigned long long)g.vmbase,
-           (unsigned long long)g.text_vm, (unsigned long long)g.text_size,
-           (unsigned long long)g.cstr_size, (unsigned long long)g.clsn_size,
-           (unsigned long long)g.meth_size, (unsigned long long)g.const_size,
-           (unsigned long long)g.data_size);
-    return (g.text_vm && (g.cstr_vm || g.clsn_vm || g.meth_vm || g.const_vm || g.data_vm));
+    if (parts.count) return parts;
+    return nil;
 }
 
-static uint64_t ofx_find_substr_in(uint64_t vm, uint64_t size, const char *s, int *count)
-{
-    if (!vm || !size) return 0;
-    size_t want = strlen(s);
-    if (!want || want > 200) return 0;
-    const uint8_t *p = (const uint8_t *)ofx_mem(vm);
-    const uint8_t *begin = p;
-    const uint8_t *end = p + size;
-    uint64_t first = 0;
-    while (p + want < end) {
-        if (!memcmp(p, s, want)) {
-            unsigned char prev = (p == begin) ? 0 : p[-1];
-            unsigned char next = p[want];
-            if (!ofx_is_ident(prev) && !ofx_is_ident(next)) {
-                if (count) (*count)++;
-                if (!first) first = vm + (uint64_t)(p - begin);
-            }
-        }
-        p++;
-    }
-    return first;
+static NSDictionary *OXGetTypeInfoForVtable(uint64_t vtStart) {
+    uint64_t raw = OXReadPtr(vtStart - 8);
+    if (!raw) return nil;
+    uint64_t tiCand = OXSlideFix(raw);
+    if (!tiCand || tiCand < 0x100000000ULL) return nil;
+    uint64_t nameRaw = OXReadPtr(tiCand + 8);
+    if (!nameRaw) return nil;
+    uint64_t nameCand = OXSlideFix(nameRaw);
+    if (!nameCand || nameCand < 0x100000000ULL) return nil;
+    NSString *rawStr = OXReadCString(nameCand, 160);
+    if (!rawStr || rawStr.length == 0) return nil;
+    NSArray *parts = OXSplitMangled(rawStr);
+    if (!parts || parts.count == 0) return nil;
+    NSString *cls = parts.lastObject;
+    return @{@"class": cls, @"raw": rawStr, @"ti": @(tiCand), @"name": @(nameCand)};
 }
 
-static uint64_t ofx_find_any(const char *s, int *total_count)
-{
-    int c = 0;
-    uint64_t first = 0;
-    uint64_t r = ofx_find_substr_in(g.cstr_vm, g.cstr_size, s, &c);
-    if (r && !first) first = r;
-    r = ofx_find_substr_in(g.const_vm, g.const_size, s, &c);
-    if (r && !first) first = r;
-    r = ofx_find_substr_in(g.data_vm, g.data_size, s, &c);
-    if (r && !first) first = r;
-    r = ofx_find_substr_in(g.meth_vm, g.meth_size, s, &c);
-    if (r && !first) first = r;
-    if (total_count) *total_count = c;
-    return first;
-}
+static NSArray<NSDictionary *> *OXEnumerateVtables(uint64_t *textStart, uint64_t *textEnd) {
+    NSMutableArray *runs = [NSMutableArray array];
+    uint64_t ts = 0x100004000ULL;
+    uint64_t te = 0x100D8AF60ULL;
+    *textStart = ts;
+    *textEnd = te;
 
-static uint64_t ofx_absptr(uint64_t v)
-{
-    if (v >= g.slide + g.vmbase && v < g.slide + g.vmbase + 0x80000000ULL) return v;
-    if (v >= g.vmbase && v < g.vmbase + 0x80000000ULL) return g.slide + v;
-    uint64_t c1 = v & 0x0000FFFFFFFFFFFFULL;
-    if (c1 >= g.vmbase && c1 < g.vmbase + 0x80000000ULL) return g.slide + c1;
-    uint64_t c2 = v & 0x0000000FFFFFFFFFULL;
-    if (c2 >= g.vmbase && c2 < g.vmbase + 0x80000000ULL) return g.slide + c2;
-    return 0;
-}
+    MemX *mx = [MemX sharedInstance];
+    uint64_t dataStart = 0x100F74000ULL;
+    uint64_t dataEnd = 0x101170000ULL;
+    uint64_t size = dataEnd - dataStart;
+    uint8_t *buf = malloc(size);
+    if (!buf) return runs;
+    [mx readMemoryAtAddress:dataStart intoBuffer:buf size:size];
 
-static uint64_t ofx_find_pointer_to(uint64_t target)
-{
-    uint64_t abs_t = g.slide + target;
-    uint64_t secs[2][2] = { { g.const_vm, g.const_size }, { g.data_vm, g.data_size } };
-    for (int k = 0; k < 2; k++) {
-        if (!secs[k][0] || !secs[k][1]) continue;
-        const uint64_t *p = (const uint64_t *)ofx_mem(secs[k][0]);
-        uint64_t n = secs[k][1] / 8;
-        for (uint64_t i = 0; i < n; i++) {
-            if (p[i] == abs_t || p[i] == target) return secs[k][0] + i * 8;
-        }
-    }
-    return 0;
-}
+    uint64_t runStart = 0;
+    uint64_t prevSlot = 0;
+    int runCount = 0;
 
-static uint64_t ofx_typeinfo_for_name(uint64_t str_vm)
-{
-    return ofx_find_pointer_to(str_vm);
-}
-
-static int ofx_is_code_vm(uint64_t vm) { return vm >= g.text_vm && vm < g.text_vm + g.text_size; }
-
-static uint64_t ofx_find_vtable_for_typeinfo(uint64_t typeinfo_abs)
-{
-    uint64_t secs[2][2] = { { g.const_vm, g.const_size }, { g.data_vm, g.data_size } };
-    for (int k = 0; k < 2; k++) {
-        if (!secs[k][0] || !secs[k][1]) continue;
-        const uint64_t *p = (const uint64_t *)ofx_mem(secs[k][0]);
-        uint64_t n = secs[k][1] / 8;
-        for (uint64_t i = 1; i + 1 < n; i++) {
-            uint64_t abs_v = ofx_absptr(p[i]);
-            if (abs_v == typeinfo_abs) {
-                uint64_t next = ofx_absptr(p[i + 1]);
-                if (next && next - g.slide >= g.text_vm && next - g.slide < g.text_vm + g.text_size)
-                    return secs[k][0] + (i + 1) * 8;
-            }
-        }
-    }
-    return 0;
-}
-
-static void ofx_vtable_scan(int ti)
-{
-    const OfxTarget *t = &g_targets[ti];
-    if (!t->cls[0]) return;
-    int cnt = 0;
-    uint64_t sv = ofx_find_any(t->cls, &cnt);
-    if (!sv) return;
-    if (cnt != 1) {
-        plog("Titanox[ofx][vt]: '%s' found %d times (ambiguous), skip", t->cls, cnt);
-        return;
-    }
-    uint64_t name_slot = ofx_typeinfo_for_name(sv);
-    if (!name_slot) {
-        plog("Titanox[ofx][vt]: '%s' string at 0x%llx, no typeinfo (RTTI stripped)",
-             t->cls, (unsigned long long)(sv - g.vmbase));
-        return;
-    }
-    uint64_t typeinfo = name_slot - 8;
-    uint64_t vtable = ofx_find_vtable_for_typeinfo(g.slide + typeinfo);
-    if (!vtable) {
-        plog("Titanox[ofx][vt]: '%s' typeinfo at 0x%llx, no vtable ref",
-             t->cls, (unsigned long long)(typeinfo - g.vmbase));
-        return;
-    }
-    g_vtable[ti] = vtable;
-    int n = 0;
-    const uint64_t *slots = (const uint64_t *)ofx_mem(vtable);
-    for (int i = 0; i < 64; i++) {
-        uint64_t abs_v = ofx_absptr(slots[i]);
-        if (!abs_v) break;
-        uint64_t rva = abs_v - g.slide;
-        if (rva < g.text_vm || rva >= g.text_vm + g.text_size) break;
-        g_slots[ti][n++] = rva;
-    }
-    g_nslots[ti] = n;
-    plog("Titanox[ofx][vt]: %s vtable=0x%llx slots=%d",
-         t->cls, (unsigned long long)(vtable - g.vmbase), n);
-}
-
-static void ofx_vtable_all(void)
-{
-    for (int i = 0; i < g.ntargets; i++) ofx_vtable_scan(i);
-}
-
-static void ofx_vtable_dump(void)
-{
-    int any = 0;
-    for (int i = 0; i < g.ntargets; i++) if (g_vtable[i]) { any = 1; break; }
-    if (!any) return;
-    char path[700];
-    snprintf(path, sizeof(path), "%s/titanox_vtables.txt", ofx_dir());
-    FILE *f = fopen(path, "w");
-    if (!f) return;
-    for (int i = 0; i < g.ntargets; i++) {
-        if (!g_vtable[i]) continue;
-        fprintf(f, "=== %s (vtable=0x%llx, slots=%d) ===\n",
-                g_targets[i].cls, (unsigned long long)(g_vtable[i] - g.vmbase), g_nslots[i]);
-        for (int k = 0; k < g_nslots[i]; k++)
-            fprintf(f, "  slot[%2d] = 0x%llx\n", k, (unsigned long long)g_slots[i][k]);
-        fprintf(f, "\n");
-    }
-    fclose(f);
-    plog("Titanox[ofx][vt]: dump written %s", path);
-}
-
-static void ofx_ctor_from_vtable(int ti)
-{
-    const OfxTarget *t = &g_targets[ti];
-    if (t->kind != OFX_K_CTOR || !g_vtable[ti]) return;
-    uint64_t vt = g_vtable[ti];
-    uint64_t abs_vt = g.slide + vt;
-    for (int i = 0; i < g_nsegs; i++) {
-        if (!g_segs[i].is_data_like) continue;
-        const uint64_t *p = (const uint64_t *)ofx_mem(g_segs[i].vmaddr);
-        uint64_t n = g_segs[i].vmsize / 8;
-        for (uint64_t k = 0; k < n; k++) {
-            uint64_t v = p[k];
-            if (v != abs_vt) continue;
-            uint64_t ref_vm = g_segs[i].vmaddr + k * 8;
-            const uint32_t *code = (const uint32_t *)ofx_mem(g.text_vm);
-            uint64_t cn = g.text_size / 4;
-            for (uint64_t j = 0; j + 4 < cn; j++) {
-                uint64_t pc = g.text_vm + j * 4;
-                uint64_t page = pc & ~0xFFFULL;
-                uint32_t ins = code[j];
-                if ((ins & 0x9F000000) != 0x90000000) continue;
-                int64_t immlo = (ins >> 29) & 3;
-                int64_t immhi = (ins >> 5) & 0x7FFFF;
-                int64_t imm = (immhi << 2) | immlo;
-                if (imm & (1LL << 20)) imm -= (1LL << 21);
-                uint64_t tgt_page = page + (imm << 12);
-                if ((tgt_page & 0xFFFFF000) != (ref_vm & 0xFFFFF000)) continue;
-                for (int m = 1; m <= 4; m++) {
-                    uint32_t i2 = code[j + m];
-                    if ((i2 & 0xFF000000) == 0x91000000) {
-                        int64_t add = (i2 >> 10) & 0xFFF;
-                        if (i2 & (1 << 22)) add <<= 12;
-                        if (tgt_page + add == ref_vm) {
-                            uint64_t fn = 0;
-                            for (int s = 0; s < g.nfstarts; s++)
-                                if (g.fstarts[s] <= pc) fn = g.fstarts[s];
-                                else break;
-                            if (fn) {
-                                g_res[ti].rva = ofx_rva(fn);
-                                g_res[ti].src = OFX_S_VTABLE;
-                                g_res[ti].conf = OFX_C_HIGH;
-                                snprintf(g_res[ti].ev, sizeof(g_res[ti].ev), "ctor");
-                                return;
-                            }
-                        }
-                    }
+    for (uint64_t off = 0; off + 8 <= size; off += 8) {
+        uint64_t slot = dataStart + off;
+        uint64_t raw = *(uint64_t *)(buf + off);
+        uint64_t tgt = OXSlideFix(raw);
+        BOOL valid = (tgt >= ts && tgt < te && (tgt & 3) == 0);
+        if (valid) {
+            if (runStart == 0) {
+                runStart = slot;
+                runCount = 1;
+            } else if (slot == prevSlot + 8) {
+                runCount++;
+            } else {
+                if (runCount >= 4) {
+                    [runs addObject:@{@"start": @(runStart), @"end": @(prevSlot), @"count": @(runCount)}];
                 }
+                runStart = slot;
+                runCount = 1;
+            }
+            prevSlot = slot;
+        } else {
+            if (runCount >= 4) {
+                [runs addObject:@{@"start": @(runStart), @"end": @(prevSlot), @"count": @(runCount)}];
+            }
+            runStart = 0;
+            runCount = 0;
+        }
+    }
+    if (runCount >= 4) {
+        [runs addObject:@{@"start": @(runStart), @"end": @(prevSlot), @"count": @(runCount)}];
+    }
+    free(buf);
+    return runs;
+}
+
+static void OXDumpAllVtables(void) {
+    uint64_t ts = 0, te = 0;
+    NSArray *runs = OXEnumerateVtables(&ts, &te);
+    OXLog(@"=== VTABLE RUNS: %lu ===", (unsigned long)runs.count);
+
+    for (NSDictionary *r in runs) {
+        uint64_t start = [r[@"start"] unsignedLongLongValue];
+        uint64_t count = [r[@"count"] unsignedLongLongValue];
+        NSDictionary *ti = OXGetTypeInfoForVtable(start);
+        if (ti) {
+            OXLog(@"VT 0x%llx slots=%llu class=%@ raw=%@", start, count, ti[@"class"], ti[@"raw"]);
+            for (uint64_t i = 0; i < count; i++) {
+                uint64_t slot = start + i * 8;
+                uint64_t raw = OXReadPtr(slot);
+                uint64_t tgt = OXSlideFix(raw);
+                OXLog(@"  [%2llu] 0x%llx", i, tgt);
+            }
+        } else {
+            OXLog(@"VT 0x%llx slots=%llu (no typeinfo)", start, count);
+        }
+    }
+}
+
+static void OXHookKnownVtables(void) {
+    NSDictionary *known = @{
+        @"Character":          @(0x00FF45C0),
+        @"GameButton":         @(0x00F9B0F8),
+        @"HomePage":           @(0x00FE4008),
+        @"LogicDataTables":    @(0x00FF2478),
+        @"LogicProjectileData": @(0x00FF3AA0),
+        @"MessageManager":     @(0x00FD57E8),
+        @"MovieClip":          @(0x01006150),
+        @"NativeFont":         @(0x01005858),
+        @"Stage":              @(0x010091B0),
+    };
+
+    Titanox *tx = [Titanox sharedInstance];
+
+    for (NSString *cls in known) {
+        uint64_t vtOff = [known[cls] unsignedLongLongValue];
+        uint64_t vtAddr = gBase + vtOff;
+        OXLog(@"HOOK %@ vt=0x%llx", cls, vtAddr);
+
+        for (int i = 0; i < 128; i++) {
+            uint64_t slot = vtAddr + i * 8;
+            uint64_t raw = OXReadPtr(slot);
+            uint64_t fn = OXSlideFix(raw);
+            if (fn < 0x100000000ULL || fn >= 0x100E00000ULL) continue;
+
+            __block int slotIdx = i;
+            __block NSString *clsName = cls;
+
+            void *orig = [tx hookFunctionAtVaddr:fn - gSlide withReplacement:^(void) {
+                OXLog(@"CALL %@::slot[%d] fn=0x%llx", clsName, slotIdx, fn);
+            }];
+            if (orig) {
+                OXLog(@"  hooked %@ slot[%d] fn=0x%llx", cls, i, fn);
             }
         }
     }
 }
 
-static int ofx_index(const char *name)
-{
-    if (!name) return -1;
-    for (int i = 0; i < g.ntargets; i++)
-        if (!strcmp(g_targets[i].name, name)) return i;
-    return -1;
-}
+static void OXScanAllFunctionPrologues(void) {
+    uint64_t ts = 0x100004000ULL;
+    uint64_t te = 0x100D8AF60ULL;
+    MemX *mx = [MemX sharedInstance];
+    uint64_t size = te - ts;
+    uint8_t *buf = malloc(size);
+    if (!buf) return;
+    [mx readMemoryAtAddress:ts intoBuffer:buf size:size];
 
-static void OfxSetKnown(const char *name, uint64_t rva)
-{
-    int i = ofx_index(name);
-    if (i < 0 || !rva) return;
-    g_known[i] = rva;
-    g_res[i].rva = rva;
-    g_res[i].src = OFX_S_HEADER;
-    g_res[i].conf = OFX_C_HIGH;
-    snprintf(g_res[i].ev, sizeof(g_res[i].ev), "offsets.h");
-}
+    int prologCount = 0;
+    NSMutableArray *prologs = [NSMutableArray array];
 
-static uint64_t OfxAddr(const char *name) { int i = ofx_index(name); return i < 0 || !g_res[i].rva ? 0 : g.base + g_res[i].rva; }
-static OfxSource OfxSourceOf(const char *name) { int i = ofx_index(name); return i < 0 ? OFX_S_NONE : (OfxSource)g_res[i].src; }
-static OfxConf   OfxConfOf(const char *name) { int i = ofx_index(name); return i < 0 ? OFX_C_LOW : (OfxConf)g_res[i].conf; }
-
-static const char *ofx_src_name(uint8_t s)
-{
-    switch (s) {
-    case OFX_S_HEADER:  return "header";
-    case OFX_S_SYMTAB:  return "symtab";
-    case OFX_S_LOGSTR:  return "logstr";
-    case OFX_S_OBJC:    return "objc";
-    case OFX_S_BARESTR: return "bare";
-    case OFX_S_GETINST: return "getinst";
-    case OFX_S_VTABLE:  return "vtable";
-    default:            return "none";
-    }
-}
-
-static void ofx_summary(void)
-{
-    g_nresolved = 0;
-    memset(g_by_src, 0, sizeof(g_by_src));
-    for (int i = 0; i < g.ntargets; i++)
-        if (g_res[i].rva) { g_nresolved++; if (g_res[i].src < 8) g_by_src[g_res[i].src]++; }
-    plog("Titanox[ofx]: === ИТОГО %d/%d === header=%d symtab=%d logstr=%d objc=%d bare=%d getinst=%d vtable=%d",
-           g_nresolved, g.ntargets, g_by_src[OFX_S_HEADER], g_by_src[OFX_S_SYMTAB], g_by_src[OFX_S_LOGSTR],
-           g_by_src[OFX_S_OBJC], g_by_src[OFX_S_BARESTR], g_by_src[OFX_S_GETINST], g_by_src[OFX_S_VTABLE]);
-    for (int i = 0; i < g.ntargets; i++) {
-        if (g_res[i].rva)
-            plog("  %-58s 0x%-9llx %-8s %s", g_targets[i].name,
-                   (unsigned long long)g_res[i].rva, ofx_src_name(g_res[i].src), g_res[i].ev);
-    }
-}
-
-static FILE *ofx_open_out(const char *name)
-{
-    char path[700];
-    snprintf(path, sizeof(path), "%s/%s", ofx_dir(), name);
-    FILE *f = fopen(path, "w");
-    if (f) plog("Titanox[ofx]: пишу %s", path);
-    return f;
-}
-
-static void ofx_dump_diagnostic(void)
-{
-    FILE *d = ofx_open_out("titanox_diagnostic.txt");
-    if (!d) return;
-    fprintf(d, "cstring_vm=0x%llx size=%llu\n", (unsigned long long)g.cstr_vm, (unsigned long long)g.cstr_size);
-    fprintf(d, "const_vm=0x%llx size=%llu\n", (unsigned long long)g.const_vm, (unsigned long long)g.const_size);
-    fprintf(d, "data_vm=0x%llx size=%llu\n", (unsigned long long)g.data_vm, (unsigned long long)g.data_size);
-    fprintf(d, "meth_vm=0x%llx size=%llu\n", (unsigned long long)g.meth_vm, (unsigned long long)g.meth_size);
-    fprintf(d, "\n");
-    for (int i = 0; i < g.ntargets; i++) {
-        if (!g_targets[i].cls[0]) continue;
-        int cnt = 0;
-        uint64_t sv = ofx_find_any(g_targets[i].cls, &cnt);
-        if (cnt == 0) continue;
-        uint64_t name_slot = ofx_typeinfo_for_name(sv);
-        uint64_t typeinfo = name_slot ? name_slot - 8 : 0;
-        uint64_t vtable = typeinfo ? ofx_find_vtable_for_typeinfo(g.slide + typeinfo) : 0;
-        fprintf(d, "%-45s cls='%s' hits=%d rva=0x%llx typeinfo=%s vtable=%s\n",
-                g_targets[i].name, g_targets[i].cls, cnt,
-                (unsigned long long)(sv - g.vmbase),
-                typeinfo ? "yes" : "no",
-                vtable ? "yes" : "no");
-    }
-    fclose(d);
-}
-
-static void ofx_dump(void)
-{
-    if (g_nresolved == 0) {
-        plog("Titanox[ofx]: 0 оффсетов, создаю titanox_diagnostic.txt");
-        ofx_dump_diagnostic();
-        return;
-    }
-    FILE *h = ofx_open_out("titanox_offsets.h");
-    if (h) {
-        fprintf(h, "// titanox_offsets.h\n");
-        fprintf(h, "// всего %d из %d\n", g_nresolved, g.ntargets);
-        for (int i = 0; i < g.ntargets; i++) {
-            char macro[128];
-            size_t k = 0;
-            macro[k++] = 'R'; macro[k++] = 'V'; macro[k++] = 'A'; macro[k++] = '_';
-            for (const char *q = g_targets[i].name; *q && k < sizeof(macro) - 1; q++)
-                macro[k++] = (char)((*q >= 'a' && *q <= 'z') ? *q - 32 : *q);
-            macro[k] = 0;
-            if (g_res[i].rva)
-                fprintf(h, "#define %-70s 0x%llxULL  // %s %s\n", macro,
-                        (unsigned long long)g_res[i].rva, ofx_src_name(g_res[i].src), g_res[i].ev);
-            else
-                fprintf(h, "// #define %-68s ?          // %s\n", macro, g_res[i].ev);
-        }
-        fclose(h);
-    }
-    FILE *t = ofx_open_out("titanox_offsets.txt");
-    if (t) {
-        fprintf(t, "# imageBase=0x%llx slide=0x%llx vmbase=0x%llx\n",
-                (unsigned long long)g.base, (unsigned long long)g.slide, (unsigned long long)g.vmbase);
-        fprintf(t, "# найдено %d / %d\n\n", g_nresolved, g.ntargets);
-        for (int i = 0; i < g.ntargets; i++) {
-            if (g_res[i].rva)
-                fprintf(t, "%s = 0x%llx  # %s %s\n", g_targets[i].name,
-                        (unsigned long long)g_res[i].rva, ofx_src_name(g_res[i].src), g_res[i].ev);
-            else
-                fprintf(t, "%s = NOT_FOUND  # %s\n", g_targets[i].name, g_res[i].ev);
-        }
-        fclose(t);
-    }
-    ofx_dump_diagnostic();
-}
-
-static pthread_once_t g_once = PTHREAD_ONCE_INIT;
-static uint64_t       g_init_base;
-
-static void ofx_once_body(void)
-{
-    memset(g_res, 0, sizeof(g_res));
-    memset(g_known, 0, sizeof(g_known));
-    memset(g_vtable, 0, sizeof(g_vtable));
-    memset(g_nslots, 0, sizeof(g_nslots));
-    g.base = g_init_base;
-    if (!g.base) return;
-    g.ntargets = g_target_count;
-    if (!ofx_parse_macho()) { plog("Titanox[ofx]: parse_macho failed"); return; }
-
-    ofx_vtable_all();
-    ofx_vtable_dump();
-
-    for (int i = 0; i < g.ntargets; i++)
-        if (g_targets[i].kind == OFX_K_CTOR)
-            ofx_ctor_from_vtable(i);
-
-    for (int i = 0; i < g.ntargets; i++) {
-        if (g_known[i] && g_res[i].src != OFX_S_HEADER) {
-            g_res[i].rva = g_known[i];
-            g_res[i].src = OFX_S_HEADER;
-            g_res[i].conf = OFX_C_HIGH;
-            snprintf(g_res[i].ev, sizeof(g_res[i].ev), "offsets.h");
+    for (uint64_t off = 0; off + 4 <= size; off += 4) {
+        uint32_t w = *(uint32_t *)(buf + off);
+        if ((w & 0xFFC07FFF) == 0xA9807BFD) {
+            prologs[@(ts + off)] = @YES;
+            prologCount++;
+        } else if (w == 0xD503237F || w == 0xD503233F || w == 0xD503245F || w == 0xD503249F) {
+            prologs[@(ts + off)] = @YES;
+            prologCount++;
         }
     }
-    g.inited = 1;
-    ofx_summary();
+    free(buf);
+    OXLog(@"=== PROLOGUES: %d ===", prologCount);
 }
 
-static void OfxInit(uint64_t base)
-{
-    g_init_base = base;
-    pthread_once(&g_once, ofx_once_body);
-}
-
-static void OfxDumpReport(void) { if (g.inited) ofx_dump(); }
-
-static bool hook_getBool(void *self, const char *key)
-{
-    static int n;
-    if (key && strlen(key) < 128) {
-        logcap(&n, "getBool(%s)", key);
-        if (strstr(key, "isDev") || strstr(key, "isDeveloper") ||
-            strstr(key, "Disable") || strstr(key, "debug") ||
-            strstr(key, "Debug") || strstr(key, "cheat"))
-            return true;
+static void OXHookMessageManager(void) {
+    Titanox *tx = [Titanox sharedInstance];
+    uint64_t fnAddr = gBase + 0x0075CCE0;
+    OXLog(@"Hooking MessageManager::receiveMessage @ 0x%llx", fnAddr);
+    void *orig = [tx hookFunctionAtVaddr:fnAddr - gSlide withReplacement:^(void *self, void *msg) {
+        OXLog(@"MessageManager::receiveMessage self=%p msg=%p", self, msg);
+    }];
+    if (orig) {
+        OXLog(@"  hooked MessageManager::receiveMessage");
     }
-    return false;
 }
 
-static bool hook_isDev(void *self) { static int n; logcap(&n, "isDev"); return true; }
-static bool hook_isDevBuild(void *self) { static int n; logcap(&n, "isDevBuild"); return true; }
-static bool hook_isDeveloperBuild(void *self) { static int n; logcap(&n, "isDeveloperBuild"); return true; }
-static void hook_GameButton_buttonPressed(void *self, int32_t buttonId) { static int n; logcap(&n, "GameButton_buttonPressed id=%d", buttonId); }
-static void hook_GameButton_setText(void *self) { static int n; logcap(&n, "GameButton_setText"); }
-static void hook_MessageManager_receiveMessage(void *self) { static int n; logcap(&n, "MessageManager_receiveMessage"); }
-static void hook_GenericPopup_setTitle(void *self) { static int n; logcap(&n, "GenericPopup_setTitle"); }
-static void hook_ClientInputManager_addInput(void *self) { static int n; logcap(&n, "ClientInputManager_addInput"); }
-static void hook_LogicTileData_blocksMovement(void *self) { static int n; logcap(&n, "LogicTileData_blocksMovement"); }
-static void hook_Screen_getDpiClass(void *self) { static int n; logcap(&n, "Screen_getDpiClass"); }
-static void hook_GlobalID_getInstanceID(void *self) { static int n; logcap(&n, "GlobalID_getInstanceID"); }
-static void hook_Projectile_ctor(void *self) { static int n; logcap(&n, "Projectile_ctor"); }
-static void hook_AnalyticEvent_ctor(void *self) { static int n; logcap(&n, "AnalyticEvent_ctor"); }
-static void hook_AnalyticEvent_setString(void *self) { static int n; logcap(&n, "AnalyticEvent_setString"); }
-static void hook_String_ctor(void *self) { static int n; logcap(&n, "String_ctor"); }
-
-typedef struct {
-    const char *tag;
-    void *fn;
-    int allow_low;
-} OfxHookSpec;
-
-static const OfxHookSpec g_hooks[] = {
-    { "GameButton_buttonPressed",      (void *)hook_GameButton_buttonPressed,      0 },
-    { "GameButton_setText",            (void *)hook_GameButton_setText,            0 },
-    { "MessageManager_receiveMessage", (void *)hook_MessageManager_receiveMessage, 0 },
-    { "GenericPopup_setTitle",         (void *)hook_GenericPopup_setTitle,         0 },
-    { "ClientInputManager_addInput",   (void *)hook_ClientInputManager_addInput,   0 },
-    { "LogicTileData_blocksMovement",  (void *)hook_LogicTileData_blocksMovement,  0 },
-    { "Screen_getDpiClass",            (void *)hook_Screen_getDpiClass,            0 },
-    { "GlobalID_getInstanceID",        (void *)hook_GlobalID_getInstanceID,        0 },
-    { "Projectile_ctor",               (void *)hook_Projectile_ctor,               1 },
-    { "AnalyticEvent_ctor",            (void *)hook_AnalyticEvent_ctor,            1 },
-    { "AnalyticEvent_setString",       (void *)hook_AnalyticEvent_setString,       0 },
-    { "String_ctor",                   (void *)hook_String_ctor,                   1 },
-    { NULL, NULL, 0 }
-};
-
-static void feed_known(void)
-{
-#ifdef RVA_GAMEBUTTON_SETTEXT
-    OfxSetKnown("GameButton_setText", RVA_GAMEBUTTON_SETTEXT);
-#endif
-#ifdef RVA_MESSAGEMANAGER_RECEIVEMESSAGE
-    OfxSetKnown("MessageManager_receiveMessage", RVA_MESSAGEMANAGER_RECEIVEMESSAGE);
-#endif
-#ifdef RVA_LOGICPLAYERMAP_SAVE
-    OfxSetKnown("LogicPlayerMap_save", RVA_LOGICPLAYERMAP_SAVE);
-#endif
-#ifdef RVA_STRING_FORMAT
-    OfxSetKnown("String_format", RVA_STRING_FORMAT);
-#endif
-#ifdef RVA_SCREEN_WIDTH
-    OfxSetKnown("Screen_widthGlobal", RVA_SCREEN_WIDTH);
-#endif
-#ifdef RVA_STAGE_INSTANCE
-    OfxSetKnown("StageInstanceGlobalPtr", RVA_STAGE_INSTANCE);
-#endif
-#ifdef RVA_ANALYTICEVENT_CTOR
-    OfxSetKnown("AnalyticEvent_ctor", RVA_ANALYTICEVENT_CTOR);
-#endif
-#ifdef RVA_ANALYTICEVENT_SETSTRING
-    OfxSetKnown("AnalyticEvent_setString", RVA_ANALYTICEVENT_SETSTRING);
-#endif
-#ifdef RVA_CLIENTINPUTMANAGER_ADDINPUT
-    OfxSetKnown("ClientInputManager_addInput", RVA_CLIENTINPUTMANAGER_ADDINPUT);
-#endif
-#ifdef RVA_GAMEBUTTON_BUTTONPRESSED
-    OfxSetKnown("GameButton_buttonPressed", RVA_GAMEBUTTON_BUTTONPRESSED);
-#endif
-#ifdef RVA_GENERICPOPUP_SETTITLE
-    OfxSetKnown("GenericPopup_setTitle", RVA_GENERICPOPUP_SETTITLE);
-#endif
-#ifdef RVA_GLOBALID_GETINSTANCEID
-    OfxSetKnown("GlobalID_getInstanceID", RVA_GLOBALID_GETINSTANCEID);
-#endif
-#ifdef RVA_LOGIC_TILEDATA_BLOCKSMOVEMENT
-    OfxSetKnown("LogicTileData_blocksMovement", RVA_LOGIC_TILEDATA_BLOCKSMOVEMENT);
-#endif
-#ifdef RVA_PROJECTILE_CTOR
-    OfxSetKnown("Projectile_ctor", RVA_PROJECTILE_CTOR);
-#endif
-#ifdef RVA_SCREEN_GETDPICLASS
-    OfxSetKnown("Screen_getDpiClass", RVA_SCREEN_GETDPICLASS);
-#endif
-#ifdef RVA_STRING_CTOR
-    OfxSetKnown("String_ctor", RVA_STRING_CTOR);
-#endif
-}
-
-static int install_hooks(const OfxHookSpec *specs)
-{
-    int done = 0;
-    for (int i = 0; specs[i].tag; i++) {
-        uint64_t a = OfxAddr(specs[i].tag);
-        if (!a) { plog("Titanox: %s not found, hook skipped", specs[i].tag); continue; }
-        if (OfxConfOf(specs[i].tag) == OFX_C_LOW && !specs[i].allow_low && !OFX_ALLOW_LOW) {
-            plog("Titanox: %s low confidence, hook skipped", specs[i].tag);
-            continue;
-        }
-        [TitanoxHook addBreakpointAtAddress:(void *)a withHook:specs[i].fn];
-        plog("Titanox: %s 0x%llx %s hooked", specs[i].tag,
-               (unsigned long long)a, ofx_src_name(OfxSourceOf(specs[i].tag)));
-        done++;
+static void OXHookNativeFont(void) {
+    Titanox *tx = [Titanox sharedInstance];
+    uint64_t fnAddr = gBase + 0x00B3FDE8;
+    OXLog(@"Hooking NativeFont::formatString @ 0x%llx", fnAddr);
+    void *orig = [tx hookFunctionAtVaddr:fnAddr - gSlide withReplacement:^(void *self, void *str) {
+        OXLog(@"NativeFont::formatString self=%p str=%p", self, str);
+    }];
+    if (orig) {
+        OXLog(@"  hooked NativeFont::formatString");
     }
-    return done;
 }
 
-static void install_settings(uint64_t base)
-{
-#ifdef RVA_GETBOOL
-    [TitanoxHook addBreakpointAtAddress:(void *)(base + RVA_GETBOOL) withHook:(void *)hook_getBool];
-    plog("Titanox: settings getBool 0x%llx hooked", (unsigned long long)(base + RVA_GETBOOL));
-#endif
-#ifdef RVA_ISDEV
-    [TitanoxHook addBreakpointAtAddress:(void *)(base + RVA_ISDEV) withHook:(void *)hook_isDev];
-    plog("Titanox: settings isDev 0x%llx hooked", (unsigned long long)(base + RVA_ISDEV));
-#endif
-#ifdef RVA_ISDEVBUILD
-    [TitanoxHook addBreakpointAtAddress:(void *)(base + RVA_ISDEVBUILD) withHook:(void *)hook_isDevBuild];
-    plog("Titanox: settings isDevBuild 0x%llx hooked", (unsigned long long)(base + RVA_ISDEVBUILD));
-#endif
-#ifdef RVA_ISDEVELOPERBUILD
-    [TitanoxHook addBreakpointAtAddress:(void *)(base + RVA_ISDEVELOPERBUILD) withHook:(void *)hook_isDeveloperBuild];
-    plog("Titanox: settings isDeveloperBuild 0x%llx hooked", (unsigned long long)(base + RVA_ISDEVELOPERBUILD));
-#endif
+static void OXHookGameButtonCtor(void) {
+    Titanox *tx = [Titanox sharedInstance];
+    uint64_t fnAddr = gBase + 0x005425B0;
+    OXLog(@"Hooking GameButton::ctor @ 0x%llx", fnAddr);
+    void *orig = [tx hookFunctionAtVaddr:fnAddr - gSlide withReplacement:^(void *self) {
+        OXLog(@"GameButton::ctor self=%p", self);
+        uint64_t vt = OXReadPtr((uint64_t)self);
+        OXLog(@"  vtable=0x%llx", vt);
+    }];
+    if (orig) {
+        OXLog(@"  hooked GameButton::ctor");
+    }
+}
+
+static void OXRunDump(void) {
+    OXLog(@"=== TITANOX OFFSETS DUMP v19 ===");
+    OXLog(@"base=0x%llx slide=0x%llx", gBase, gSlide);
+
+    OXScanAllFunctionPrologues();
+    OXDumpAllVtables();
+
+    OXHookMessageManager();
+    OXHookNativeFont();
+    OXHookGameButtonCtor();
+    OXHookKnownVtables();
+
+    OXFlush();
+    OXLog(@"=== DUMP COMPLETE ===");
+    OXFlush();
 }
 
 __attribute__((constructor))
-static void titanox_init(void)
-{
-    @autoreleasepool {
-        uint64_t base = (uint64_t)[TitanoxHook getBaseAddressOfLibrary:"Nulls Brawl"];
-        if (!base) { plog("Titanox: base not found"); return; }
-        plog("Titanox: base=0x%llx", (unsigned long long)base);
+static void initTitanox(void) {
+    gLog = [NSMutableString new];
+    gLock = [NSLock new];
 
-        feed_known();
-        OfxInit(base);
-
-        plog("Titanox: hooks installed %d", install_hooks(g_hooks));
-        install_settings(base);
-
-        OfxDumpReport();
-        plog("Titanox: resolved %d/%d", g_nresolved, g_target_count);
-    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        Titanox *tx = [Titanox sharedInstance];
+        gBase = [tx getBaseAddress];
+        gSlide = [tx getVMAddressSlide];
+        OXLog(@"Titanox ready base=0x%llx slide=0x%llx", gBase, gSlide);
+        OXRunDump();
+    });
 }

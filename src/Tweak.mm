@@ -8,6 +8,8 @@
 
 static NSMutableString *gLog = nil;
 static NSLock *gLock = nil;
+static TitanoxHook *gHooker = nil;
+static intptr_t gSlide = 0;
 
 static void OXLog(NSString *fmt, ...) {
     va_list args;
@@ -25,16 +27,13 @@ static void OXFlush(void) {
     [gLock unlock];
 }
 
-static uint64_t gSlide = 0;
-static NSString *gLibName = @"Brawl Stars";
-
 static uint64_t OXReal(uint64_t vaddr) {
     return vaddr + gSlide;
 }
 
 static uint64_t OXReadPtr(uint64_t vaddr) {
     uint64_t v = 0;
-    [TitanoxHook readMemoryAt:OXReal(vaddr) buffer:(uint8_t *)&v size:8];
+    [TitanoxHook readMemoryAt:OXReal(vaddr) buffer:(void *)&v size:8];
     return v;
 }
 
@@ -42,7 +41,7 @@ static NSString *OXReadCString(uint64_t vaddr, int maxLen) {
     if (!vaddr) return nil;
     char buf[256];
     memset(buf, 0, sizeof(buf));
-    [TitanoxHook readMemoryAt:OXReal(vaddr) buffer:(uint8_t *)buf size:maxLen < 255 ? maxLen : 255];
+    [TitanoxHook readMemoryAt:OXReal(vaddr) buffer:(void *)buf size:maxLen < 255 ? maxLen : 255];
     if (buf[0] == 0) return nil;
     return [NSString stringWithUTF8String:buf];
 }
@@ -102,10 +101,10 @@ static NSDictionary *OXGetTypeInfo(uint64_t vtVaddr) {
     return @{@"class": parts.lastObject, @"raw": rawStr};
 }
 
-static void OXDumpVtable(uint64_t vtVaddr, const char *label) {
+static void OXDumpVtable(uint64_t vtVaddr, NSString *label) {
     NSDictionary *ti = OXGetTypeInfo(vtVaddr);
     NSString *cls = ti ? ti[@"class"] : @"unknown";
-    OXLog(@"=== VT %s @ 0x%llx class=%@ ===", label, vtVaddr, cls);
+    OXLog(@"=== VT %@ @ 0x%llx class=%@ ===", label, vtVaddr, cls);
     for (int i = 0; i < 256; i++) {
         uint64_t slotVaddr = vtVaddr + i * 8;
         uint64_t raw = OXReadPtr(slotVaddr);
@@ -115,55 +114,95 @@ static void OXDumpVtable(uint64_t vtVaddr, const char *label) {
     }
 }
 
-static NSMutableDictionary *gCallCounts = nil;
+/* ============================================================
+ *  HOOK-обёртки для известных функций (плоские C-функции,
+ *  т.к. inline-hook прыгает напрямую на указатель)
+ * ============================================================ */
 
-static void OXInstallVtableTrace(uint64_t vtVaddr, NSString *clsName) {
-    for (int i = 0; i < 256; i++) {
-        uint64_t slotVaddr = vtVaddr + i * 8;
-        uint64_t raw = OXReadPtr(slotVaddr);
-        uint64_t fnVaddr = OXDecodeFixup(raw);
-        if (fnVaddr < 0x100000000ULL || fnVaddr >= 0x100E00000ULL) break;
-
-        __block int slotIdx = i;
-        __block NSString *cls = clsName;
-        __block uint64_t fnAddr = fnVaddr;
-
-        [TitanoxHook hookFunctionAtVaddr:fnVaddr withReplacement:^(void) {
-            NSString *key = [NSString stringWithFormat:@"%@::slot[%d]", cls, slotIdx];
-            @synchronized (gCallCounts) {
-                NSNumber *c = gCallCounts[key] ?: @0;
-                gCallCounts[key] = @(c.intValue + 1);
-            }
-            OXLog(@"CALL %@ fn=0x%llx", key, fnAddr);
-        }];
-    }
+static void (*orig_MessageManager_receiveMessage)(void *self, void *msg) = NULL;
+static void my_MessageManager_receiveMessage(void *self, void *msg) {
+    OXLog(@"CALL MessageManager::receiveMessage self=%p msg=%p", self, msg);
+    if (orig_MessageManager_receiveMessage) orig_MessageManager_receiveMessage(self, msg);
 }
 
-static void OXInstallKnownHooks(void) {
-    NSDictionary *known = @{
-        @"MessageManager::receiveMessage": @(0x0075CCE0),
-        @"NativeFont::formatString":       @(0x00B3FDE8),
-        @"GameButton::ctor":               @(0x005425B0),
-        @"GameButton::setText":            @(0x005430A4),
-        @"HomePage::ctor":                 @(0x0086EB80),
-        @"MovieClip::setText":             @(0x00B5F068),
-        @"Stage::setViewport":             @(0x00BA17B8),
-        @"LogicDataTables::initDataTable": @(0x009A8F3C),
-        @"LogicProjectileData::getIntValueFromColumn": @(0x009CB098),
-        @"Character::updateHealthBar":     @(0x009E3100),
-    };
+static void (*orig_NativeFont_formatString)(void *self, void *str) = NULL;
+static void my_NativeFont_formatString(void *self, void *str) {
+    OXLog(@"CALL NativeFont::formatString self=%p", self);
+    if (orig_NativeFont_formatString) orig_NativeFont_formatString(self, str);
+}
 
-    for (NSString *name in known) {
-        uint64_t vaddr = [known[name] unsignedLongLongValue];
-        [TitanoxHook hookFunctionAtVaddr:vaddr withReplacement:^(void) {
-            OXLog(@"HOOK %@ vaddr=0x%llx", name, vaddr);
-        }];
-        OXLog(@"installed hook %@ @ 0x%llx", name, vaddr);
-    }
+static void (*orig_GameButton_ctor)(void *self) = NULL;
+static void my_GameButton_ctor(void *self) {
+    OXLog(@"CALL GameButton::ctor self=%p", self);
+    if (orig_GameButton_ctor) orig_GameButton_ctor(self);
+    uint64_t vt = OXReadPtr((uint64_t)self);
+    OXLog(@"  GameButton vtable=0x%llx", vt - gSlide);
+}
+
+static void (*orig_HomePage_ctor)(void *self) = NULL;
+static void my_HomePage_ctor(void *self) {
+    OXLog(@"CALL HomePage::ctor self=%p", self);
+    if (orig_HomePage_ctor) orig_HomePage_ctor(self);
+}
+
+static void (*orig_Stage_setViewport)(void *self, double x, double y, double w, double h) = NULL;
+static void my_Stage_setViewport(void *self, double x, double y, double w, double h) {
+    OXLog(@"CALL Stage::setViewport self=%p x=%f y=%f w=%f h=%f", self, x, y, w, h);
+    if (orig_Stage_setViewport) orig_Stage_setViewport(self, x, y, w, h);
+}
+
+static void (*orig_LogicDataTables_initDataTable)(void *self, void *a) = NULL;
+static void my_LogicDataTables_initDataTable(void *self, void *a) {
+    OXLog(@"CALL LogicDataTables::initDataTable self=%p a=%p", self, a);
+    if (orig_LogicDataTables_initDataTable) orig_LogicDataTables_initDataTable(self, a);
+}
+
+static void (*orig_MovieClip_setText)(void *self, void *str) = NULL;
+static void my_MovieClip_setText(void *self, void *str) {
+    OXLog(@"CALL MovieClip::setText self=%p", self);
+    if (orig_MovieClip_setText) orig_MovieClip_setText(self, str);
+}
+
+static void (*orig_GameButton_setText)(void *self, void *str) = NULL;
+static void my_GameButton_setText(void *self, void *str) {
+    OXLog(@"CALL GameButton::setText self=%p", self);
+    if (orig_GameButton_setText) orig_GameButton_setText(self, str);
+}
+
+static void (*orig_LogicProjectileData_getIntValueFromColumn)(void *self, int col) = NULL;
+static void my_LogicProjectileData_getIntValueFromColumn(void *self, int col) {
+    OXLog(@"CALL LogicProjectileData::getIntValueFromColumn self=%p col=%d", self, col);
+    if (orig_LogicProjectileData_getIntValueFromColumn) orig_LogicProjectileData_getIntValueFromColumn(self, col);
+}
+
+static void (*orig_Character_updateHealthBar)(void *self) = NULL;
+static void my_Character_updateHealthBar(void *self) {
+    OXLog(@"CALL Character::updateHealthBar self=%p", self);
+    if (orig_Character_updateHealthBar) orig_Character_updateHealthBar(self);
+}
+
+#define INSTALL_HOOK(name, vaddr) do { \
+    void *orig = [gHooker hookFunctionAtVaddr:(vaddr) withReplacement:(void *)&my_##name]; \
+    if (orig) { orig_##name = (void *)orig; OXLog(@"hooked %s @ 0x%llx", #name, (uint64_t)(vaddr)); } \
+    else { OXLog(@"FAILED to hook %s @ 0x%llx", #name, (uint64_t)(vaddr)); } \
+} while (0)
+
+static void OXInstallKnownHooks(void) {
+    INSTALL_HOOK(MessageManager_receiveMessage,          0x0075CCE0);
+    INSTALL_HOOK(NativeFont_formatString,                0x00B3FDE8);
+    INSTALL_HOOK(GameButton_ctor,                        0x005425B0);
+    INSTALL_HOOK(HomePage_ctor,                          0x0086EB80);
+    INSTALL_HOOK(Stage_setViewport,                      0x00BA17B8);
+    INSTALL_HOOK(LogicDataTables_initDataTable,          0x009A8F3C);
+    INSTALL_HOOK(MovieClip_setText,                      0x00B5F068);
+    INSTALL_HOOK(GameButton_setText,                     0x005430A4);
+    INSTALL_HOOK(LogicProjectileData_getIntValueFromColumn, 0x009CB098);
+    INSTALL_HOOK(Character_updateHealthBar,              0x009E3100);
 }
 
 static void OXRunTrace(void) {
     OXLog(@"=== TITANOX TRACE v19 ===");
+    OXLog(@"slide=0x%llx", gSlide);
 
     NSArray *vtList = @[
         @{@"name": @"Character",          @"addr": @(0x00FF45C0)},
@@ -179,12 +218,7 @@ static void OXRunTrace(void) {
 
     for (NSDictionary *vt in vtList) {
         uint64_t vaddr = [vt[@"addr"] unsignedLongLongValue];
-        OXDumpVtable(vaddr, [vt[@"name"] UTF8String]);
-    }
-
-    for (NSDictionary *vt in vtList) {
-        uint64_t vaddr = [vt[@"addr"] unsignedLongLongValue];
-        OXInstallVtableTrace(vaddr, vt[@"name"]);
+        OXDumpVtable(vaddr, vt[@"name"]);
     }
 
     OXInstallKnownHooks();
@@ -197,11 +231,11 @@ __attribute__((constructor))
 static void initTitanoxTrace(void) {
     gLog = [NSMutableString new];
     gLock = [NSLock new];
-    gCallCounts = [NSMutableDictionary new];
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        gSlide = [TitanoxHook getVmAddrSlideOfLibrary:gLibName];
-        OXLog(@"lib=%@ slide=0x%llx", gLibName, gSlide);
+        gSlide = [TitanoxHook getVmAddrSlideOfLibrary:"Brawl Stars"];
+        gHooker = [[TitanoxHook alloc] initWithMachOName:@"Brawl Stars"];
+        OXLog(@"lib=Brawl Stars slide=0x%llx hooker=%@", gSlide, gHooker);
         OXRunTrace();
     });
 }

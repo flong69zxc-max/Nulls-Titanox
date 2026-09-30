@@ -11,7 +11,6 @@
 #define FILE_HI       0x101170000ULL
 #define TEXT_FILE_LO  0x100004000ULL
 #define TEXT_FILE_HI  0x100D8AF60ULL
-#define DATA_FILE_LO  0x100F74000ULL
 
 static intptr_t  gSlide = 0;
 static NSString *gMainBinaryName = nil;
@@ -57,19 +56,6 @@ static BOOL OXReadBytes(uint64_t fileVaddr, void *buf, size_t size) {
     if (kr == KERN_SUCCESS && outSize == size) return YES;
     memcpy(buf, (void *)runtime, size);
     return YES;
-}
-
-static uint64_t OXReadQword(uint64_t fileVaddr) {
-    uint64_t v = 0;
-    OXReadBytes(fileVaddr, &v, 8);
-    return v;
-}
-
-static BOOL OXIsRuntimeFunc(uint64_t rt) {
-    if (!rt || (rt & 3) != 0) return NO;
-    uint64_t lo = gSlide + TEXT_FILE_LO;
-    uint64_t hi = gSlide + TEXT_FILE_HI;
-    return rt >= lo && rt < hi;
 }
 
 static void OXBuildAdrpAddMap(void) {
@@ -118,7 +104,6 @@ static void OXBuildAdrpAddMap(void) {
         }
     }
     free(buf);
-    THLog(@"[adrp] map entries=%d", (int)gAdrpAddMap.count);
 }
 
 static uint64_t OXFindPrologueBackward(uint64_t pcFile) {
@@ -134,68 +119,23 @@ static uint64_t OXFindPrologueBackward(uint64_t pcFile) {
     return pcFile;
 }
 
-static NSString *OXStringInFunc(uint64_t funcFile, uint64_t maxScan) {
-    uint64_t end = funcFile + maxScan;
-    if (end > TEXT_FILE_HI) end = TEXT_FILE_HI;
-    for (uint64_t pc = funcFile; pc + 8 <= end; pc += 4) {
-        uint32_t w;
-        if (!OXReadBytes(pc, &w, 4)) continue;
-        if ((w & 0x9F000000) != 0x90000000) continue;
-        uint32_t rd = w & 0x1F;
-        uint32_t immlo = (w >> 29) & 3;
-        uint32_t immhi = (w >> 5) & 0x7FFFF;
-        int64_t imm = ((int64_t)immhi << 2) | immlo;
-        if (imm & (1 << 20)) imm -= (1 << 21);
-        uint64_t page = (pc & ~0xFFFULL) + (imm << 12);
-        for (int j = 1; j <= 4 && pc + j * 4 + 4 <= end; j++) {
-            uint32_t w2;
-            if (!OXReadBytes(pc + j * 4, &w2, 4)) break;
-            if ((w2 & 0xFF800000) == 0x91000000) {
-                uint32_t rd2 = w2 & 0x1F;
-                uint32_t rn2 = (w2 >> 5) & 0x1F;
-                uint32_t imm12 = (w2 >> 10) & 0xFFF;
-                uint32_t sh = (w2 >> 22) & 1;
-                if (sh) imm12 <<= 12;
-                if (rd2 == rd && rn2 == rd) {
-                    uint64_t target = page + imm12;
-                    if (target >= FILE_LO && target < FILE_HI) {
-                        char str[96];
-                        memset(str, 0, sizeof(str));
-                        if (!OXReadBytes(target, str, 95)) break;
-                        if (str[0] >= 0x20 && str[0] < 0x7F) {
-                            BOOL printable = YES;
-                            size_t len = strnlen(str, 95);
-                            if (len < 5) break;
-                            for (size_t k = 0; k < len; k++) {
-                                if (str[k] < 0x20 || str[k] > 0x7E) { printable = NO; break; }
-                            }
-                            if (printable) return [NSString stringWithUTF8String:str];
-                        }
-                    }
-                    break;
-                }
-            }
-        }
-    }
-    return nil;
-}
-
 static void OXFindCtorsForKnown(void) {
     NSArray *known = @[
-        @{@"name": @"Character",          @"addr": @(0x00FF45C0)},
-        @{@"name": @"GameButton",         @"addr": @(0x00F9B0F8)},
-        @{@"name": @"HomePage",           @"addr": @(0x00FE4008)},
-        @{@"name": @"LogicDataTables",    @"addr": @(0x00FF2478)},
-        @{@"name": @"LogicProjectileData",@"addr": @(0x00FF3AA0)},
-        @{@"name": @"MessageManager",     @"addr": @(0x00FD57E8)},
-        @{@"name": @"MovieClip",          @"addr": @(0x01006150)},
-        @{@"name": @"NativeFont",         @"addr": @(0x01005858)},
-        @{@"name": @"Stage",              @"addr": @(0x010091B0)},
+        @{@"name": @"Character",          @"vt": @(0x00FF45C0)},
+        @{@"name": @"GameButton",         @"vt": @(0x00F9B0F8)},
+        @{@"name": @"HomePage",           @"vt": @(0x00FE4008)},
+        @{@"name": @"LogicDataTables",    @"vt": @(0x00FF2478)},
+        @{@"name": @"LogicProjectileData",@"vt": @(0x00FF3AA0):
+},
+       - @ **{@"name": @"MessageManager",     @"vt": @(0x005FD57E8)},
+        @{@"name": @"MovieClip",          @"vt": @(0x01006150)},
+        @**{@"name": @"NativeFont",         @"vt": @(0x01005858)},
+        @{ подтвер@"name": @"Stage",              @"vtжд": @(0x010091B0)},
     ];
 
-    THLog(@"=== CTOR SCAN (9 known vtables) ===");
+    THLog(@"=== CTOR SCAN ==ены=");
     for (NSDictionary *vt in known) {
-        uint64_t vaddr = FILE_LO + [vt[@"addr"] unsignedLongLongValue];
+        uint64 (_t vaddr = FILE_LO + [vt[@"vt"] unsignedLongLongValue];
         NSArray *refs = gAdrpAddMap[@(vaddr)];
         if (!refs || refs.count == 0) {
             THLog(@"[ctor] %@ no refs", vt[@"name"]);
@@ -208,80 +148,9 @@ static void OXFindCtorsForKnown(void) {
         }
         for (NSNumber *funcNum in uniqCtors) {
             uint64_t func = [funcNum unsignedLongLongValue];
-            NSString *str = OXStringInFunc(func, 0x800);
-            THLog(@"[ctor] %@ ctor=0x%llx str=%@",
-                  vt[@"name"], func, str ?: @"(none)");
+            THLog(@"[ctor] %@ ctor=0x%llx", vt[@"name"], func);
         }
     }
-}
-
-static void OXScanVtableRunsAndCtors(void) {
-    THLog(@"=== VTABLE RUNS + CTORS ===");
-    uint64_t totalSlots = (FILE_HI - DATA_FILE_LO) / 8;
-    int runLen = 0;
-    uint64_t runStart = 0;
-    uint64_t prevSlot = 0;
-    int totalRuns = 0;
-    int resolvedCtors = 0;
-
-    for (uint64_t i = 0; i <= totalSlots; i++) {
-        uint64_t slotFile = DATA_FILE_LO + i * 8;
-        uint64_t rt = (i < totalSlots) ? OXReadQword(slotFile) : 0;
-        BOOL valid = (i < totalSlots) && OXIsRuntimeFunc(rt);
-        if (valid) {
-            if (runLen == 0) { runStart = slotFile; runLen = 1; }
-            else if (slotFile == prevSlot + 8) { runLen++; }
-            else {
-                if (runLen >= 4) {
-                    totalRuns++;
-                    NSArray *refs = gAdrpAddMap[@(runStart)];
-                    if (refs && refs.count > 0) {
-                        NSMutableSet *uniqCtors = [NSMutableSet set];
-                        for (NSNumber *pcNum in refs) {
-                            uint64_t func = OXFindPrologueBackward([pcNum unsignedLongLongValue]);
-                            [uniqCtors addObject:@(func)];
-                        }
-                        for (NSNumber *funcNum in uniqCtors) {
-                            uint64_t func = [funcNum unsignedLongLongValue];
-                            NSString *str = OXStringInFunc(func, 0x600);
-                            if (str) {
-                                resolvedCtors++;
-                                THLog(@"VT 0x%llx slots=%d ctor=0x%llx str=%@",
-                                      runStart, runLen, func, str);
-                                break;
-                            }
-                        }
-                    }
-                }
-                runStart = slotFile; runLen = 1;
-            }
-            prevSlot = slotFile;
-        } else {
-            if (runLen >= 4) {
-                totalRuns++;
-                NSArray *refs = gAdrpAddMap[@(runStart)];
-                if (refs && refs.count > 0) {
-                    NSMutableSet *uniqCtors = [NSMutableSet set];
-                    for (NSNumber *pcNum in refs) {
-                        uint64_t func = OXFindPrologueBackward([pcNum unsignedLongLongValue]);
-                        [uniqCtors addObject:@(func)];
-                    }
-                    for (NSNumber *funcNum in uniqCtors) {
-                        uint64_t func = [funcNum unsignedLongLongValue];
-                        NSString *str = OXStringInFunc(func, 0x600);
-                        if (str) {
-                            resolvedCtors++;
-                            THLog(@"VT 0x%llx slots=%d ctor=0x%llx str=%@",
-                                  runStart, runLen, func, str);
-                            break;
-                        }
-                    }
-                }
-            }
-            runLen = 0;
-        }
-    }
-    THLog(@"[summary] total runs=%d with named ctor=%d", totalRuns, resolvedCtors);
 }
 
 __attribute__((constructor))
@@ -292,11 +161,8 @@ static void initTitanoxTrace(void) {
         gSlide = OXFindSlide(gMainBinaryName);
         THLog(@"=== TITANOX TRACE v19 ===");
         THLog(@"main=%@ slide=0x%lx", gMainBinaryName, (long)gSlide);
-
         OXBuildAdrpAddMap();
         OXFindCtorsForKnown();
-        OXScanVtableRunsAndCtors();
-
         THLog(@"=== DONE ===");
     });
 }

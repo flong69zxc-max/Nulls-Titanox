@@ -17,7 +17,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Clone Titanox lib repo
+      - name: Clone Titanox repo
         run: |
           set -euo pipefail
           rm -rf libtitanox
@@ -25,16 +25,6 @@ jobs:
           rm -rf libtitanox/.git
           rm -rf libtitanox/.github
           ls -la libtitanox | head
-
-      - name: Patch duplicate segment
-        run: |
-          set -euo pipefail
-          grep -rl 'HOOK_DATA_SEGMENT.*"__TITANOX_HOOK"' libtitanox 2>/dev/null | while read f; do
-            echo "patch $f"
-            sed -i.bak 's/HOOK_DATA_SEGMENT.*"__TITANOX_HOOK"/HOOK_DATA_SEGMENT = "__TITANOX_DATA"/' "$f"
-            rm -f "$f.bak"
-          done
-          grep -rn 'HOOK_TEXT_SEGMENT\|HOOK_DATA_SEGMENT' libtitanox | head || true
 
       - name: Install Theos
         run: |

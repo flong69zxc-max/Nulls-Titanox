@@ -202,7 +202,7 @@ static void OXPreparePatches(void) {
     NSString *exePath = [[NSBundle mainBundle] executablePath];
 
     if (exePath && OXBinaryHasTitanoxSegment(exePath)) {
-        THLog(@"[patch] .app binary is ALREADY PATCHED, skip");
+        THLog(@"[patch] .app binary ALREADY PATCHED (has __TITANOX_HOOK) -> skip");
         THLog(@"[patch] to repatch, restore original first");
         return;
     }

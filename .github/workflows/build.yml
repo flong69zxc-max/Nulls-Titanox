@@ -34,37 +34,29 @@ jobs:
           fi
           echo "THEOS=$THEOS" >> "$GITHUB_ENV"
 
-      - name: Install Theos SDKs
-        run: |
-          set -euo pipefail
-          mkdir -p "$THEOS/sdks"
-          if ! ls "$THEOS/sdks"/iPhoneOS*.sdk >/dev/null 2>&1; then
-            rm -rf /tmp/sdks
-            git clone --depth 1 --recursive https://github.com/theos/sdks.git /tmp/sdks || true
-            if ls /tmp/sdks/iPhoneOS*.sdk >/dev/null 2>&1; then
-              cp -a /tmp/sdks/iPhoneOS*.sdk "$THEOS/sdks/"
-            fi
-          fi
-          ls "$THEOS/sdks" | head -40 || true
-
       - name: Install ldid
         run: brew install ldid || true
 
-      - name: Locate Xcode SDK
-        id: xcodesdk
+      - name: Locate SDKs and toolchain
+        id: paths
         run: |
           set -euo pipefail
           XCSDK=$(xcrun --sdk iphoneos --show-sdk-path)
-          echo "xcode iphoneos SDK: $XCSDK"
+          TOOLCHAIN=$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain
+          CXXINC="$TOOLCHAIN/usr/include/c++/v1"
+          echo "XCSDK=$XCSDK"
+          echo "TOOLCHAIN=$TOOLCHAIN"
+          echo "CXXINC=$CXXINC"
           test -d "$XCSDK"
-          test -d "$XCSDK/usr/include/c++/v1" && echo "has c++ headers: yes" || echo "has c++ headers: no"
-          echo "path=$XCSDK" >> "$GITHUB_OUTPUT"
+          test -d "$CXXINC"
+          ls "$CXXINC" | head -5
+          echo "xcsdk=$XCSDK" >> "$GITHUB_OUTPUT"
+          echo "cxxinc=$CXXINC" >> "$GITHUB_OUTPUT"
 
       - name: Patch duplicate segment name
         run: |
           set -euo pipefail
           find libtitanox \( -name "sih.hpp" -o -name "sih.mm" \) -print | while read f; do
-            echo "checking $f"
             sed -i.bak 's|HOOK_DATA_SEGMENT = "__TITANOX_HOOK"|HOOK_DATA_SEGMENT = "__TITANOX_DATA"|g' "$f"
             rm -f "$f.bak"
           done
@@ -73,7 +65,8 @@ jobs:
       - name: Build libtitanox
         env:
           THEOS: ${{ env.THEOS }}
-          XCSDK: ${{ steps.xcodesdk.outputs.path }}
+          XCSDK: ${{ steps.paths.outputs.xcsdk }}
+          CXXINC: ${{ steps.paths.outputs.cxxinc }}
         run: |
           set -euo pipefail
           MK=$(find libtitanox -maxdepth 3 -name Makefile | head -1)
@@ -82,13 +75,20 @@ jobs:
 
           sed -i.bak "s|/home/rage/theos|$THEOS|g" "$MK"
           sed -i.bak "s|SYSROOT = .*|SYSROOT = $XCSDK|g" "$MK"
+          sed -i.bak "s|^\(.*\)_CFLAGS *= *|\1_CFLAGS = -isystem $CXXINC |" "$MK"
+          echo "" >> "$MK"
+          echo "ADDITIONAL_CFLAGS = -isystem $CXXINC" >> "$MK"
+          echo "ADDITIONAL_CXXFLAGS = -isystem $CXXINC" >> "$MK"
+          echo "CFLAGS += -isystem $CXXINC" >> "$MK"
+          echo "CXXFLAGS += -isystem $CXXINC" >> "$MK"
 
           echo "--- Makefile after patch ---"
-          grep -nE "THEOS|SYSROOT|SDK" "$MK" | head -20 || true
+          cat "$MK"
 
           cd "$DIR"
           make clean || true
-          make -j4
+          make -j4 CFLAGS="-isystem $CXXINC" CXXFLAGS="-isystem $CXXINC"
+
           cd "$GITHUB_WORKSPACE"
           DYLIB=$(find libtitanox \( -name "libtitanox.dylib" -o -name "Titanox.dylib" \) 2>/dev/null | head -1)
           test -n "$DYLIB"
@@ -99,14 +99,16 @@ jobs:
       - name: Build tweak
         env:
           THEOS: ${{ env.THEOS }}
-          XCSDK: ${{ steps.xcodesdk.outputs.path }}
+          XCSDK: ${{ steps.paths.outputs.xcsdk }}
+          CXXINC: ${{ steps.paths.outputs.cxxinc }}
         run: |
           set -euo pipefail
           if [ -f Makefile ]; then
-            sed -i.bak "s|SYSROOT = .*|SYSROOT = $XCSDK|g" Makefile
+            sed -i.bak "s|SYSROOT = .*|SYSROOT = $XCSDK|g" Makefile || true
           fi
           make clean || true
-          make -j4
+          make -j4 CFLAGS="-isystem $CXXINC" CXXFLAGS="-isystem $CXXINC" || \
+            make -j4
 
       - uses: actions/upload-artifact@v4
         if: always()

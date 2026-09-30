@@ -7,6 +7,7 @@
 #import "libtitanox.h"
 
 #define IMAGE_BASE 0x100000000ULL
+#define LOG_LIMIT 5
 
 extern __thread int g_in_hook;
 
@@ -51,64 +52,92 @@ static uint64_t OXReadPtr(uint64_t runtimeAddr) {
 
 typedef void (*orig_GameButton_ctor_t)(void *self);
 static orig_GameButton_ctor_t orig_GameButton_ctor = NULL;
+static int cnt_GameButton_ctor = 0;
 
 static void hook_GameButton_ctor(void *self) {
     g_in_hook = 1;
-    uint64_t vt = self ? OXReadPtr((uint64_t)self) : 0;
-    THLog(@"[BRK] GameButton::ctor self=%p vt=0x%llx file=0x%llx",
-          self, vt, vt ? (vt - gSlide - IMAGE_BASE) : 0);
+    if (cnt_GameButton_ctor < LOG_LIMIT) {
+        cnt_GameButton_ctor++;
+        uint64_t vt = self ? OXReadPtr((uint64_t)self) : 0;
+        THLog(@"[BRK] GameButton::ctor #%d self=%p vt=0x%llx file=0x%llx",
+              cnt_GameButton_ctor, self, vt, vt ? (vt - gSlide - IMAGE_BASE) : 0);
+    }
     if (orig_GameButton_ctor) orig_GameButton_ctor(self);
     g_in_hook = 0;
 }
 
 typedef void (*orig_HomePage_ctor_t)(void *self);
 static orig_HomePage_ctor_t orig_HomePage_ctor = NULL;
+static int cnt_HomePage_ctor = 0;
 
 static void hook_HomePage_ctor(void *self) {
     g_in_hook = 1;
-    uint64_t vt = self ? OXReadPtr((uint64_t)self) : 0;
-    THLog(@"[BRK] HomePage::ctor self=%p vt=0x%llx file=0x%llx",
-          self, vt, vt ? (vt - gSlide - IMAGE_BASE) : 0);
+    if (cnt_HomePage_ctor < LOG_LIMIT) {
+        cnt_HomePage_ctor++;
+        uint64_t vt = self ? OXReadPtr((uint64_t)self) : 0;
+        THLog(@"[BRK] HomePage::ctor #%d self=%p vt=0x%llx file=0x%llx",
+              cnt_HomePage_ctor, self, vt, vt ? (vt - gSlide - IMAGE_BASE) : 0);
+    }
     if (orig_HomePage_ctor) orig_HomePage_ctor(self);
     g_in_hook = 0;
 }
 
 typedef void (*orig_MessageManager_receiveMessage_t)(void *self, void *msg);
 static orig_MessageManager_receiveMessage_t orig_MessageManager_receiveMessage = NULL;
+static int cnt_MessageManager_receiveMessage = 0;
 
 static void hook_MessageManager_receiveMessage(void *self, void *msg) {
     g_in_hook = 1;
-    THLog(@"[BRK] MessageManager::receiveMessage self=%p msg=%p", self, msg);
+    if (cnt_MessageManager_receiveMessage < LOG_LIMIT) {
+        cnt_MessageManager_receiveMessage++;
+        THLog(@"[BRK] MessageManager::receiveMessage #%d self=%p msg=%p",
+              cnt_MessageManager_receiveMessage, self, msg);
+    }
     if (orig_MessageManager_receiveMessage) orig_MessageManager_receiveMessage(self, msg);
     g_in_hook = 0;
 }
 
 typedef void (*orig_NativeFont_formatString_t)(void *self, void *str);
 static orig_NativeFont_formatString_t orig_NativeFont_formatString = NULL;
+static int cnt_NativeFont_formatString = 0;
 
 static void hook_NativeFont_formatString(void *self, void *str) {
     g_in_hook = 1;
-    THLog(@"[BRK] NativeFont::formatString self=%p str=%p", self, str);
+    if (cnt_NativeFont_formatString < LOG_LIMIT) {
+        cnt_NativeFont_formatString++;
+        THLog(@"[BRK] NativeFont::formatString #%d self=%p str=%p",
+              cnt_NativeFont_formatString, self, str);
+    }
     if (orig_NativeFont_formatString) orig_NativeFont_formatString(self, str);
     g_in_hook = 0;
 }
 
 typedef void (*orig_Stage_setViewport_t)(void *self, double x, double y, double w, double h);
 static orig_Stage_setViewport_t orig_Stage_setViewport = NULL;
+static int cnt_Stage_setViewport = 0;
 
 static void hook_Stage_setViewport(void *self, double x, double y, double w, double h) {
     g_in_hook = 1;
-    THLog(@"[BRK] Stage::setViewport self=%p x=%f y=%f w=%f h=%f", self, x, y, w, h);
+    if (cnt_Stage_setViewport < LOG_LIMIT) {
+        cnt_Stage_setViewport++;
+        THLog(@"[BRK] Stage::setViewport #%d self=%p x=%f y=%f w=%f h=%f",
+              cnt_Stage_setViewport, self, x, y, w, h);
+    }
     if (orig_Stage_setViewport) orig_Stage_setViewport(self, x, y, w, h);
     g_in_hook = 0;
 }
 
 typedef int (*orig_LogicProjectileData_getIntValueFromColumn_t)(void *self, int col);
 static orig_LogicProjectileData_getIntValueFromColumn_t orig_LogicProjectileData_getIntValueFromColumn = NULL;
+static int cnt_LogicProjectileData_getIntValueFromColumn = 0;
 
 static int hook_LogicProjectileData_getIntValueFromColumn(void *self, int col) {
     g_in_hook = 1;
-    THLog(@"[BRK] LogicProjectileData::getIntValueFromColumn self=%p col=%d", self, col);
+    if (cnt_LogicProjectileData_getIntValueFromColumn < LOG_LIMIT) {
+        cnt_LogicProjectileData_getIntValueFromColumn++;
+        THLog(@"[BRK] LogicProjectileData::getIntValueFromColumn #%d self=%p col=%d",
+              cnt_LogicProjectileData_getIntValueFromColumn, self, col);
+    }
     int r = 0;
     if (orig_LogicProjectileData_getIntValueFromColumn)
         r = orig_LogicProjectileData_getIntValueFromColumn(self, col);

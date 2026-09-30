@@ -24,7 +24,7 @@ jobs:
           path: |
             .theos
             ~/Library/Caches/ccache
-          key: theos-${{ runner.os }}-${{ hashFiles('Makefile') }}-v1
+          key: theos-${{ runner.os }}-${{ hashFiles('Makefile') }}-v2
 
       - uses: hendrikmuhs/ccache-action@v1
         with:
@@ -33,7 +33,7 @@ jobs:
       - name: Setup
         run: |
           set -euo pipefail
-          brew install make ccache >/dev/null 2>&1 || true
+          brew install ldid make ccache >/dev/null 2>&1 || true
           [ -d "$THEOS" ] || git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
           git clone --depth 1 https://github.com/flong69zxc-max/Titanox.git deps/Titanox
           rm -rf deps/Titanox/.git

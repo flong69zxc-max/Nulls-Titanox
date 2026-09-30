@@ -25,6 +25,9 @@ static void *gMessageManagerInstance = NULL;
 typedef void (*MSHookFunction_t)(void *symbol, void *hook, void **old);
 static MSHookFunction_t MSHookFunction_p = nullptr;
 
+typedef void (*pthread_jit_write_protect_np_t)(int);
+static pthread_jit_write_protect_np_t p_jit_wp = nullptr;
+
 static void (*orig_receiveMessage)(void *self, void *msg) = nullptr;
 static void (*orig_ctor)(void *self) = nullptr;
 
@@ -107,35 +110,36 @@ static void OXTestPermissions(void) {
 
     kern_return_t kr;
 
-    kr = mach_vm_protect(mach_task_self(), rt, 4, TRUE,
-                         VM_PROT_READ | VM_PROT_WRITE);
+    kr = vm_protect(mach_task_self(), (vm_address_t)rt, 4, TRUE,
+                    VM_PROT_READ | VM_PROT_WRITE);
     NSLog(@"[t1] RW setMax=1 -> 0x%x", kr);
     OXLogProt("after RW", rt);
 
-    kr = mach_vm_protect(mach_task_self(), rt, 4, TRUE,
-                         VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE);
+    kr = vm_protect(mach_task_self(), (vm_address_t)rt, 4, TRUE,
+                    VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE);
     NSLog(@"[t2] RWX setMax=1 -> 0x%x", kr);
     OXLogProt("after RWX", rt);
 
-    kr = mach_vm_protect(mach_task_self(), rt, 4, TRUE,
-                         VM_PROT_READ | VM_PROT_EXECUTE);
+    kr = vm_protect(mach_task_self(), (vm_address_t)rt, 4, TRUE,
+                    VM_PROT_READ | VM_PROT_EXECUTE);
     NSLog(@"[t3] RX setMax=1 -> 0x%x", kr);
     OXLogProt("after RX", rt);
 
     uint32_t nop = 0xd503201f;
     uint32_t backup = 0xa9bf7bfd;
 
-    kr = vm_write(mach_task_self(), rt, (vm_offset_t)&nop, 4);
+    kr = vm_write(mach_task_self(), (vm_address_t)rt, (vm_offset_t)&nop, 4);
     NSLog(@"[t4] vm_write -> 0x%x", kr);
 
     uint32_t after = 0;
     vm_size_t out = 0;
-    vm_read_overwrite(mach_task_self(), rt, 4, (vm_address_t)&after, &out);
+    vm_read_overwrite(mach_task_self(), (vm_address_t)rt, 4,
+                      (vm_address_t)&after, &out);
     NSLog(@"[t4] after=%08x want=d503201f", after);
 
-    vm_write(mach_task_self(), rt, (vm_offset_t)&backup, 4);
-    mach_vm_protect(mach_task_self(), rt, 4, TRUE,
-                    VM_PROT_READ | VM_PROT_EXECUTE);
+    vm_write(mach_task_self(), (vm_address_t)rt, (vm_offset_t)&backup, 4);
+    vm_protect(mach_task_self(), (vm_address_t)rt, 4, TRUE,
+               VM_PROT_READ | VM_PROT_EXECUTE);
     OXLogProt("final", rt);
 
     vm_prot_t p = OXGetProt(rt);
@@ -145,12 +149,18 @@ static void OXTestPermissions(void) {
 
 static BOOL OXTryPthreadJIT(void) {
     if (!gRuntimeAddr) return NO;
-    void *fn = (void *)pthread_jit_write_protect_np;
-    if (!fn) return NO;
 
-    pthread_jit_write_protect_np(0);
+    if (!p_jit_wp) {
+        p_jit_wp = (pthread_jit_write_protect_np_t)dlsym(RTLD_DEFAULT, "pthread_jit_write_protect_np");
+    }
+    if (!p_jit_wp) {
+        NSLog(@"[pthread] pthread_jit_write_protect_np not found");
+        return NO;
+    }
+
+    p_jit_wp(0);
     vm_prot_t p = OXGetProt(gRuntimeAddr);
-    pthread_jit_write_protect_np(1);
+    p_jit_wp(1);
 
     NSLog(@"[pthread] prot=0x%x (RW? %d, RX? %d)",
           p, (p & VM_PROT_WRITE) ? 1 : 0, (p & VM_PROT_EXECUTE) ? 1 : 0);
@@ -186,10 +196,10 @@ static void OXInstallHooks(void) {
         MSHookFunction_p((void *)gRuntimeAddr, (void *)hook_receiveMessage, (void **)&orig_receiveMessage);
         NSLog(@"[hook] receiveMessage done");
     } else {
-        pthread_jit_write_protect_np(0);
+        p_jit_wp(0);
         MSHookFunction_p((void *)gCtorAddr, (void *)hook_ctor, (void **)&orig_ctor);
         MSHookFunction_p((void *)gRuntimeAddr, (void *)hook_receiveMessage, (void **)&orig_receiveMessage);
-        pthread_jit_write_protect_np(1);
+        p_jit_wp(1);
         NSLog(@"[hook] both done via pthread_jit");
     }
 }

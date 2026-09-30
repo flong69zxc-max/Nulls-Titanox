@@ -3,30 +3,22 @@
 #import <dlfcn.h>
 #import <mach-o/dyld.h>
 #import <mach-o/loader.h>
-#import <mach/mach.h>
-#import <mach/vm_map.h>
 #import <libgen.h>
 #import <string.h>
 #import <stdio.h>
 #import <stdarg.h>
-
-#define RVA_MM_RECEIVEMESSAGE 0x75cce0
-
-#define BRK_GAME_INTERNAL  0x81f
-#define BRK_JIT_UNIVERSAL  0xf00d
-#define BRK_JIT_LEGACY     0x69
+#import <sys/socket.h>
+#import <netinet/in.h>
+#import <arpa/inet.h>
+#import "fishhook.h"
 
 static FILE *g_logf = NULL;
-
-extern "C" void OXLogC(const char *tag, uint64_t a, uint64_t b) {
-    NSLog(@"[C] %s a=0x%llx b=0x%llx", tag, a, b);
-}
 
 static void TaleLogOpen(void) {
     if (g_logf) return;
     NSString *dir = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents"];
     [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
-    NSString *path = [dir stringByAppendingPathComponent:@"talemod.log"];
+    NSString *path = [dir stringByAppendingPathComponent:@"netlog.log"];
     g_logf = fopen(path.UTF8String, "w");
 }
 
@@ -36,84 +28,78 @@ static void TaleLog(const char *fmt, ...) {
     va_list ap; va_start(ap, fmt); vfprintf(g_logf, fmt, ap); fputc('\n', g_logf); va_end(ap); fflush(g_logf);
 }
 
-static uint32_t readInsn(uint64_t addr) {
-    vm_size_t size = 0;
-    uint32_t insn = 0;
-    kern_return_t kr = vm_read_overwrite(mach_task_self(), (vm_address_t)addr, 4, (vm_address_t)&insn, &size);
-    return (kr == KERN_SUCCESS && size == 4) ? insn : 0;
+extern "C" void OXLogC(const char *tag, uint64_t a, uint64_t b) {
+    NSLog(@"[C] %s a=0x%llx b=0x%llx", tag, a, b);
 }
 
-static BOOL isBrk(uint32_t insn, uint32_t *immOut) {
-    if ((insn & 0xFFE0001F) == 0xD4200000) {
-        *immOut = (insn >> 5) & 0xFFFF;
-        return YES;
+static int (*orig_connect)(int, const struct sockaddr *, socklen_t) = NULL;
+static ssize_t (*orig_sendto)(int, const void *, size_t, int, const struct sockaddr *, socklen_t) = NULL;
+static ssize_t (*orig_recvfrom)(int, void *, size_t, int, struct sockaddr *, socklen_t *) = NULL;
+
+static void log_addr(const char *fn, const struct sockaddr *addr) {
+    if (!addr) return;
+    if (addr->sa_family == AF_INET) {
+        struct sockaddr_in *sin = (struct sockaddr_in *)addr;
+        char ip[INET_ADDRSTRLEN] = {0};
+        inet_ntop(AF_INET, &sin->sin_addr, ip, sizeof(ip));
+        TaleLog("%s AF_INET %s:%d", fn, ip, ntohs(sin->sin_port));
+    } else if (addr->sa_family == AF_INET6) {
+        struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)addr;
+        char ip[INET6_ADDRSTRLEN] = {0};
+        inet_ntop(AF_INET6, &sin6->sin6_addr, ip, sizeof(ip));
+        TaleLog("%s AF_INET6 [%s]:%d", fn, ip, ntohs(sin6->sin6_port));
+    } else {
+        TaleLog("%s family=%d", fn, addr->sa_family);
     }
-    return NO;
 }
 
-static int patchBrkInRange(uint64_t startAddr, uint64_t endAddr) {
-    int count = 0;
-    uint64_t addr = startAddr;
-    while (addr + 4 <= endAddr) {
-        uint32_t insn = readInsn(addr);
-        uint32_t imm = 0;
-        if (isBrk(insn, &imm) && imm == BRK_GAME_INTERNAL) {
-            uint32_t newInsn = 0xD4200000 | (BRK_JIT_UNIVERSAL << 5);
-            kern_return_t kr = vm_write(mach_task_self(), (vm_address_t)addr, (vm_offset_t)&newInsn, 4);
-            if (kr == KERN_SUCCESS) {
-                count++;
-                TaleLog("[BRKPatch] 0x%llx: 0x%08x -> 0x%08x (imm %u -> %u)",
-                        addr, insn, newInsn, imm, BRK_JIT_UNIVERSAL);
-            } else {
-                TaleLog("[BRKPatch] FAIL 0x%llx kr=0x%x", addr, kr);
-            }
-        }
-        addr += 4;
-    }
-    return count;
+static int my_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
+    log_addr("[CONNECT]", addr);
+    return orig_connect(sockfd, addr, addrlen);
 }
 
-static void patchGameBrk(void) {
-    TaleLog("[BRKPatch] === scan BRK #0x%x ===", BRK_GAME_INTERNAL);
-    const char *target = "Nulls Brawl";
-    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
-        const char *n = _dyld_get_image_name(i);
-        if (!n) continue;
-        if (strcmp(basename((char *)n), target) != 0) continue;
-
-        const struct mach_header_64 *hdr = (const struct mach_header_64 *)_dyld_get_image_header(i);
-        if (!hdr) continue;
-        if (hdr->magic != MH_MAGIC_64 && hdr->magic != MH_CIGAM_64) continue;
-
-        uint64_t base = (uint64_t)hdr;
-        TaleLog("[BRKPatch] image base=0x%llx", base);
-
-        const struct load_command *lc = (const struct load_command *)((uint8_t *)hdr + sizeof(struct mach_header_64));
-        for (uint32_t j = 0; j < hdr->ncmds; j++) {
-            if (lc->cmd == LC_SEGMENT_64) {
-                const struct segment_command_64 *seg = (const struct segment_command_64 *)lc;
-                if (strcmp(seg->segname, "__TEXT") == 0) {
-                    uint64_t segStart = base + (seg->vmaddr - 0x100000000ULL);
-                    uint64_t segEnd = segStart + seg->vmsize;
-                    TaleLog("[BRKPatch] __TEXT 0x%llx - 0x%llx", segStart, segEnd);
-                    int patched = patchBrkInRange(segStart, segEnd);
-                    TaleLog("[BRKPatch] total patched=%d", patched);
-                    return;
-                }
-            }
-            lc = (const struct load_command *)((uint8_t *)lc + lc->cmdsize);
-        }
+static ssize_t my_sendto(int sockfd, const void *buf, size_t len, int flags,
+                         const struct sockaddr *dest_addr, socklen_t addrlen) {
+    if (dest_addr) log_addr("[SENDTO]", dest_addr);
+    if (len >= 7 && buf) {
+        const uint8_t *b = (const uint8_t *)buf;
+        uint16_t msg_id = (b[0] << 8) | b[1];
+        TaleLog("  -> msg_id=0x%04x len=%zu", msg_id, len);
     }
-    TaleLog("[BRKPatch] game image not found");
+    return orig_sendto(sockfd, buf, len, flags, dest_addr, addrlen);
+}
+
+static ssize_t my_recvfrom(int sockfd, void *buf, size_t len, int flags,
+                           struct sockaddr *src_addr, socklen_t *addrlen) {
+    ssize_t r = orig_recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
+    if (r > 0 && src_addr) log_addr("[RECVFROM]", src_addr);
+    if (r >= 7 && buf) {
+        const uint8_t *b = (const uint8_t *)buf;
+        uint16_t msg_id = (b[0] << 8) | b[1];
+        TaleLog("  <- msg_id=0x%04x len=%zd", msg_id, r);
+    }
+    return r;
+}
+
+static void install_hooks(void) {
+    TaleLog("[NetLog] === install ===");
+    struct rebinding rb[] = {
+        {"connect",  (void *)my_connect,  (void **)&orig_connect},
+        {"sendto",   (void *)my_sendto,   (void **)&orig_sendto},
+        {"recvfrom", (void *)my_recvfrom, (void **)&orig_recvfrom}
+    };
+    int r = rebind_symbols(rb, 3);
+    TaleLog("[NetLog] rebind_symbols = %d", r);
+    TaleLog("[NetLog] connect=%p sendto=%p recvfrom=%p", orig_connect, orig_sendto, orig_recvfrom);
+    TaleLog("[NetLog] === install done ===");
 }
 
 __attribute__((constructor))
 static void tweak_init(void) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
-        TaleLog("[TaleMod] init");
-        TaleLog("[TaleMod] BRK JIT Helper v1.0");
-        patchGameBrk();
-        TaleLog("[TaleMod] === done ===");
+        TaleLog("[NetLog] init");
+        install_hooks();
+        TaleLog("[NetLog] === done ===");
     });
 }

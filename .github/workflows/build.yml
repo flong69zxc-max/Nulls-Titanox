@@ -45,52 +45,43 @@ jobs:
               cp -a /tmp/sdks/iPhoneOS*.sdk "$THEOS/sdks/"
             fi
           fi
-          if ! ls "$THEOS/sdks"/iPhoneOS*.sdk >/dev/null 2>&1; then
-            echo "no SDK yet, downloading iPhoneOS16.5.sdk"
-            cd "$THEOS/sdks"
-            curl -fL --retry 3 -o sdk.tar.gz \
-              https://github.com/theos/sdks/archive/refs/heads/master.tar.gz || true
-            if [ -f sdk.tar.gz ]; then
-              tar -xzf sdk.tar.gz --strip-components=1 --wildcards '*/iPhoneOS*.sdk' || true
-              rm -f sdk.tar.gz
-            fi
-          fi
-          echo "available SDKs:"
-          ls "$THEOS/sdks" | head -40
+          ls "$THEOS/sdks" | head -40 || true
 
       - name: Install ldid
         run: brew install ldid || true
+
+      - name: Locate Xcode SDK
+        id: xcodesdk
+        run: |
+          set -euo pipefail
+          XCSDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          echo "xcode iphoneos SDK: $XCSDK"
+          test -d "$XCSDK"
+          test -d "$XCSDK/usr/include/c++/v1" && echo "has c++ headers: yes" || echo "has c++ headers: no"
+          echo "path=$XCSDK" >> "$GITHUB_OUTPUT"
 
       - name: Patch duplicate segment name
         run: |
           set -euo pipefail
           find libtitanox \( -name "sih.hpp" -o -name "sih.mm" \) -print | while read f; do
             echo "checking $f"
-            grep -n "HOOK_DATA_SEGMENT\|HOOK_TEXT_SEGMENT" "$f" || true
             sed -i.bak 's|HOOK_DATA_SEGMENT = "__TITANOX_HOOK"|HOOK_DATA_SEGMENT = "__TITANOX_DATA"|g' "$f"
             rm -f "$f.bak"
           done
-          echo "--- after ---"
           grep -rn "HOOK_DATA_SEGMENT\|HOOK_TEXT_SEGMENT" libtitanox | head || true
 
       - name: Build libtitanox
         env:
           THEOS: ${{ env.THEOS }}
+          XCSDK: ${{ steps.xcodesdk.outputs.path }}
         run: |
           set -euo pipefail
-          echo "available SDKs:"
-          ls "$THEOS/sdks" | head -40
-          SDK=$(ls "$THEOS/sdks" | grep -E '^iPhoneOS.*\.sdk$' | sort -V | tail -1 || true)
-          echo "using SDK: $SDK"
-          test -n "$SDK"
-
           MK=$(find libtitanox -maxdepth 3 -name Makefile | head -1)
           DIR=$(dirname "$MK")
           echo "MK=$MK DIR=$DIR"
 
           sed -i.bak "s|/home/rage/theos|$THEOS|g" "$MK"
-          sed -i.bak "s|iPhoneOS13.7.sdk|$SDK|g" "$MK"
-          sed -i.bak "s|iPhoneOS.*\.sdk|$SDK|g" "$MK"
+          sed -i.bak "s|SYSROOT = .*|SYSROOT = $XCSDK|g" "$MK"
 
           echo "--- Makefile after patch ---"
           grep -nE "THEOS|SYSROOT|SDK" "$MK" | head -20 || true
@@ -108,8 +99,12 @@ jobs:
       - name: Build tweak
         env:
           THEOS: ${{ env.THEOS }}
+          XCSDK: ${{ steps.xcodesdk.outputs.path }}
         run: |
           set -euo pipefail
+          if [ -f Makefile ]; then
+            sed -i.bak "s|SYSROOT = .*|SYSROOT = $XCSDK|g" Makefile
+          fi
           make clean || true
           make -j4
 

@@ -38,14 +38,22 @@ jobs:
       - name: Install ldid
         run: brew install ldid || true
 
+      - name: Patch Makefile theos path
+        run: |
+          set -euo pipefail
+          cd libtitanox
+          grep -n "^theos" Makefile || true
+          sed -i.bak "s|^theos[[:space:]]*=.*|theos = $THEOS|" Makefile
+          grep -n "^theos" Makefile
+
       - name: Build libtitanox
         env:
           THEOS: ${{ env.THEOS }}
         run: |
           set -euo pipefail
           cd libtitanox
-          make clean || true
-          make -j4
+          chmod +x build || true
+          ./build
           cd "$GITHUB_WORKSPACE"
           DYLIB=$(find libtitanox -name "libtitanox.dylib" -o -name "Titanox.dylib" 2>/dev/null | head -1)
           echo "dylib=$DYLIB"
@@ -71,5 +79,7 @@ jobs:
             packages/**
             **/*.deb
             .theos/obj/**/*.dylib
+            libtitanox/*.deb
+            libtitanox/packages/**
           retention-days: 30
           if-no-files-found: warn

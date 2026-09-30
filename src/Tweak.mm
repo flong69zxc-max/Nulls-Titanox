@@ -177,11 +177,32 @@ static void OXPreparePatches(void) {
     size_t count = sizeof(gPatchOffsets) / sizeof(gPatchOffsets[0]);
     for (size_t i = 0; i < count; i++) {
         uint64_t off = gPatchOffsets[i];
-        NSString *res = [hooker applyPatchAtVaddr:off patchBytes:@""];
-        THLog(@"[patch] 0x%llx -> %@", off, res ?: @"(nil)");
+        uint64_t fullAddr = FILE_LO + off;
+        NSString *res = [hooker applyPatchAtVaddr:fullAddr patchBytes:@""];
+        THLog(@"[patch] 0x%llx (full 0x%llx) -> %@", off, fullAddr, res ?: @"(nil)");
     }
     THLog(@"=== PATCH DONE ===");
     THLog(@"[patch] check Documents/titanox-hook/%@", gMainBinaryName);
+
+    NSString *srcPath = [NSHomeDirectory() stringByAppendingPathComponent:
+                         [NSString stringWithFormat:@"Documents/titanox-hook/%@", gMainBinaryName]];
+    NSString *dstPath = [[NSBundle mainBundle] executablePath];
+
+    if (srcPath && dstPath && [[NSFileManager defaultManager] fileExistsAtPath:srcPath]) {
+        NSString *backupPath = [dstPath stringByAppendingString:@".orig"];
+        NSFileManager *fm = [NSFileManager defaultManager];
+        if (![fm fileExistsAtPath:backupPath]) {
+            [fm copyItemAtPath:dstPath toPath:backupPath error:nil];
+            THLog(@"[copy] backup saved -> %@", backupPath);
+        }
+        NSError *err = nil;
+        [fm removeItemAtPath:dstPath error:&err];
+        err = nil;
+        BOOL ok = [fm copyItemAtPath:srcPath toPath:dstPath error:&err];
+        THLog(@"[copy] %@ -> %@ : %@", srcPath, dstPath, ok ? @"OK" : (err.localizedDescription ?: @"FAIL"));
+    } else {
+        THLog(@"[copy] patched binary not found at %@", srcPath);
+    }
 }
 
 __attribute__((constructor))

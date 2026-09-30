@@ -21,13 +21,19 @@ jobs:
 
       - uses: actions/cache@v4
         with:
-          path: .theos
-          key: theos-${{ runner.os }}-v8
+          path: |
+            .theos
+            ~/Library/Caches/ccache
+          key: theos-${{ runner.os }}-${{ hashFiles('Makefile') }}-v1
+
+      - uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: ${{ runner.os }}-ccache
 
       - name: Setup
         run: |
           set -euo pipefail
-          brew install ldid make >/dev/null 2>&1 || true
+          brew install make ccache >/dev/null 2>&1 || true
           [ -d "$THEOS" ] || git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
           git clone --depth 1 https://github.com/flong69zxc-max/Titanox.git deps/Titanox
           rm -rf deps/Titanox/.git
@@ -35,7 +41,9 @@ jobs:
       - name: Build
         run: |
           set -euo pipefail
-          gmake -j$(sysctl -n hw.ncpu) ARCHS=arm64
+          export PATH="/opt/homebrew/opt/ccache/libexec:$PATH"
+          gmake -j$(sysctl -n hw.ncpu) ARCHS=arm64 \
+            CC="ccache clang" CXX="ccache clang++"
           find .theos/obj -name '*.dylib' -exec cp {} Titanox.dylib \;
           file Titanox.dylib
 

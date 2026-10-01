@@ -48,9 +48,7 @@ static uintptr_t decode_bl(uintptr_t thunk_addr, uint32_t opcode) {
     if ((opcode & 0xFC000000) != 0x94000000) return 0;
     int32_t imm26 = opcode & 0x03FFFFFF;
     int64_t offset = (int64_t)(imm26 << 2);
-    if (offset & (1LL << 27)) {
-        offset |= ~((1LL << 28) - 1);
-    }
+    if (offset & (1LL << 27)) offset |= ~((1LL << 28) - 1);
     return (uintptr_t)((int64_t)thunk_addr + offset);
 }
 
@@ -63,8 +61,7 @@ static uintptr_t resolve_thunk(uintptr_t base, uint64_t rva, const char *name) {
                   name, (void *)thunk, (void *)real]);
         return real;
     }
-    log_line([NSString stringWithFormat:@"%s rva=0x%llx not a thunk",
-              name, rva]);
+    log_line([NSString stringWithFormat:@"%s rva=0x%llx not a thunk", name, rva]);
     return thunk;
 }
 
@@ -74,14 +71,9 @@ static void log_line(NSString *s) {
         g_log = fopen(p.UTF8String, "a");
     }
     if (!g_log) return;
-
     NSData *d = [s dataUsingEncoding:NSUTF8StringEncoding];
     if (!d.length) return;
-
-    if (g_log_written + (long)d.length > LOG_MAX_BYTES) {
-        return;
-    }
-
+    if (g_log_written + (long)d.length > LOG_MAX_BYTES) return;
     fwrite(d.bytes, 1, d.length, g_log);
     fputc('\n', g_log);
     fflush(g_log);
@@ -108,14 +100,14 @@ static BOOL find_game_image(uintptr_t *out_base, char *out_path, size_t cap) {
     return NO;
 }
 
-static BOOL is_pac_signed(void *ptr) {
+static BOOL is_pac_signed(uintptr_t addr) {
 #if __has_feature(ptrauth_calls)
-    if (!ptr) return NO;
-    uintptr_t raw = (uintptr_t)ptr;
+    if (!addr) return NO;
+    void *ptr = (void *)addr;
     uintptr_t stripped = (uintptr_t)ptrauth_strip(ptr, ptrauth_key_function_pointer);
-    return (raw != stripped);
+    return (addr != stripped);
 #else
-    (void)ptr;
+    (void)addr;
     return NO;
 #endif
 }
@@ -126,7 +118,7 @@ static void log_target_info(const char *name, uintptr_t addr) {
     log_line([NSString stringWithFormat:
               @"%@ addr=%p op0=%08x op1=%08x pac_signed=%d",
               [NSString stringWithUTF8String:name],
-              (void *)addr, op0, op1, is_pac_signed((void *)addr)]);
+              (void *)addr, op0, op1, is_pac_signed(addr)]);
 }
 
 static void manual_arm(void) {
@@ -210,35 +202,61 @@ static void check_bp_ports(void) {
     }
 }
 
+static pid_t (*g_orig_getpid)(void) = NULL;
+static void *(*g_orig_malloc)(size_t) = NULL;
+
+static pid_t h_getpid(void) {
+    g_hits_getpid++;
+    if (g_hits_getpid <= 5 || g_hits_getpid % 1000 == 0) {
+        log_line([NSString stringWithFormat:@"GETPID #%d", g_hits_getpid]);
+    }
+    if (g_orig_getpid) {
+        brk_suspend_self();
+        pid_t r = g_orig_getpid();
+        brk_resume_self();
+        return r;
+    }
+    return 0;
+}
+
+static void *h_malloc(size_t sz) {
+    g_hits_malloc++;
+    if (g_hits_malloc <= 5 || g_hits_malloc % 1000 == 0) {
+        log_line([NSString stringWithFormat:@"MALLOC #%d size=%zu", g_hits_malloc, sz]);
+    }
+    if (g_orig_malloc) {
+        brk_suspend_self();
+        void *r = g_orig_malloc(sz);
+        brk_resume_self();
+        return r;
+    }
+    return NULL;
+}
+
 static void h_stage(void *a, void *b, void *c, void *d) {
     g_hits_stage++;
-    if (g_hits_stage <= 3 || g_hits_stage % 1000 == 0) {
+    if (g_hits_stage <= 3 || g_hits_stage % 1000 == 0)
         log_line([NSString stringWithFormat:@"STAGE #%d", g_hits_stage]);
-    }
 }
 static void h_ldt_init(void *a, int b, void *c) {
     g_hits_ldt_init++;
-    if (g_hits_ldt_init <= 3 || g_hits_ldt_init % 100 == 0) {
+    if (g_hits_ldt_init <= 3 || g_hits_ldt_init % 100 == 0)
         log_line([NSString stringWithFormat:@"LDT_INIT #%d idx=%d", g_hits_ldt_init, b]);
-    }
 }
 static void h_char_ctor(void *a, void *b, void *c, void *d) {
     g_hits_char_ctor++;
-    if (g_hits_char_ctor <= 5 || g_hits_char_ctor % 50 == 0) {
+    if (g_hits_char_ctor <= 5 || g_hits_char_ctor % 50 == 0)
         log_line([NSString stringWithFormat:@"CHAR #%d self=%p", g_hits_char_ctor, a]);
-    }
 }
 static void h_font_fmt(void *a, void *b, void *c) {
     g_hits_font_fmt++;
-    if (g_hits_font_fmt <= 3 || g_hits_font_fmt % 5000 == 0) {
+    if (g_hits_font_fmt <= 3 || g_hits_font_fmt % 5000 == 0)
         log_line([NSString stringWithFormat:@"FMT #%d", g_hits_font_fmt]);
-    }
 }
 static void h_mc_ctor(void *a, void *b) {
     g_hits_mc_ctor++;
-    if (g_hits_mc_ctor <= 3 || g_hits_mc_ctor % 500 == 0) {
+    if (g_hits_mc_ctor <= 3 || g_hits_mc_ctor % 500 == 0)
         log_line([NSString stringWithFormat:@"MC #%d self=%p", g_hits_mc_ctor, a]);
-    }
 }
 static void h_recv(void *self, void *msg, void *a, void *b, void *c, void *d) {
     g_hits_recv++;
@@ -282,6 +300,9 @@ static void setup(void) {
     g_getpid = (uintptr_t)getpid_addr;
     g_malloc = (uintptr_t)malloc_addr;
 
+    g_orig_getpid = (pid_t(*)(void))brk_original_ptr(getpid_addr);
+    g_orig_malloc = (void*(*)(size_t))brk_original_ptr(malloc_addr);
+
     if (g_stage_real)     brk_install((void *)g_stage_real,     (void *)&h_stage);
     if (g_recv_real)      brk_install((void *)g_recv_real,      (void *)&h_recv);
     if (g_ldt_init_real)  brk_install((void *)g_ldt_init_real,  (void *)&h_ldt_init);
@@ -295,4 +316,52 @@ static void setup(void) {
     manual_arm();
     log_line([NSString stringWithFormat:@"armed ok=%d fail=%d", g_arm_ok, g_arm_fail]);
     dump_self_bvr();
+}
+
+static UIViewController *top_vc(void) {
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class]) continue;
+        UIWindow *w = ((UIWindowScene *)scene).keyWindow;
+        if (w.rootViewController) return w.rootViewController;
+    }
+    return nil;
+}
+
+static void show_alert(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIViewController *root = top_vc();
+        if (!root) return;
+        NSString *msg = [NSString stringWithFormat:
+            @"arm: %d/%d\n\n"
+            @"stage:    %d\nrecv:     %d\nldt_init: %d\nchar:     %d\nfmt:      %d\nmc:       %d\n\n"
+            @"getpid:   %d\nmalloc:   %d\n\n"
+            @"log: %ld / %d B\n\n"
+            @"log: Documents/Titanox.log",
+            g_arm_ok, g_arm_fail,
+            g_hits_stage, g_hits_recv, g_hits_ldt_init,
+            g_hits_char_ctor, g_hits_font_fmt, g_hits_mc_ctor,
+            g_hits_getpid, g_hits_malloc,
+            g_log_written, LOG_MAX_BYTES];
+
+        UIAlertController *a = [UIAlertController
+            alertControllerWithTitle:@"Titanox diag" message:msg
+            preferredStyle:UIAlertControllerStyleAlert];
+        [a addAction:[UIAlertAction actionWithTitle:@"OK"
+            style:UIAlertActionStyleDefault handler:nil]];
+        [root presentViewController:a animated:YES completion:nil];
+    });
+}
+
+__attribute__((constructor))
+static void start(void) {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC),
+                   dispatch_get_main_queue(), ^{
+        setup();
+        [NSTimer scheduledTimerWithTimeInterval:0.3 repeats:YES block:^(NSTimer *t) {
+            manual_arm();
+        }];
+        [NSTimer scheduledTimerWithTimeInterval:2.0 repeats:YES block:^(NSTimer *t) {
+            show_alert();
+        }];
+    });
 }

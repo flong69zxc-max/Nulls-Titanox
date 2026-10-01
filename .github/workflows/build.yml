@@ -28,15 +28,13 @@ jobs:
           echo "$HOME/theos/bin" >> "$GITHUB_PATH"
           echo "/opt/homebrew/opt/make/libexec/gnubin" >> "$GITHUB_PATH"
 
-      - name: Fetch libtitanox
+      - name: Fetch libtitanox from Titanox repo
         run: |
           set -euo pipefail
-          rm -rf libtitanox
           git clone --depth 1 https://github.com/flong69zxc-max/Titanox.git /tmp/titanox-src
-          mkdir -p libtitanox
-          cp -R /tmp/titanox-src/libtitanox/. libtitanox/
-          rm -rf libtitanox/.git
-          ls -la libtitanox
+          cp -R /tmp/titanox-src/libtitanox ./libtitanox
+          rm -rf ./libtitanox/.git
+          ls -la ./libtitanox
 
       - name: Build
         run: |

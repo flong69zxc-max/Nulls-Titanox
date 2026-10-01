@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import <dispatch/dispatch.h>
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import <mach/mach.h>
@@ -165,7 +166,7 @@ static NSString *describe_op0(uintptr_t addr) {
     uint32_t w = 0;
     if (!tnx_read_u32(addr, &w)) return @"unreadable";
 
-    if ((w & 0xFFE0001F) == 0xD65F0000) return @"RET";
+    if ((w & 0xFFFFFC1F) == 0xD65F0000) return @"RET";
     if (w == 0xD503201F) return @"NOP";
     if (w == 0xD503237F) return @"PACIBSP";
     if (w == 0xD503233F) return @"PACIASP";
@@ -179,8 +180,8 @@ static NSString *describe_op0(uintptr_t addr) {
     if ((w & 0x3B000000) == 0x18000000) return @"LDR literal";
     if ((w & 0xFFC00000) == 0xB9400000) return @"LDR w";
     if ((w & 0xFFC00000) == 0xF9400000) return @"LDR x";
-    if ((w & 0xFFE0001F) == 0xD61F0000) return @"BR";
-    if ((w & 0xFFE0001F) == 0xD63F0000) return @"BLR";
+    if ((w & 0xFFFFFC1F) == 0xD61F0000) return @"BR";
+    if ((w & 0xFFFFFC1F) == 0xD63F0000) return @"BLR";
     if ((w & 0x7F800000) == 0x52800000) return @"MOVZ w";
     if ((w & 0xFF800000) == 0xAA000000) return @"ORR/MOV";
     return [NSString stringWithFormat:@"raw=0x%08x", w];

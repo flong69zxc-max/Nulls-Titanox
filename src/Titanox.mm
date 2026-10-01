@@ -1903,6 +1903,11 @@ static int tnx_scan_pass(int install) {
             if (writable && (cap == 0 || scanned < cap)) {
                 regions++;
 
+                if ((regions % 64) == 0) {
+                    tlog([NSString stringWithFormat:@"slot scan progress regions=%d scanned=%lluKB at=%p",
+                          regions, scanned / 1024, (void *)addr]);
+                }
+
                 uintptr_t *table = (uintptr_t *)addr;
                 unsigned long long room = cap ? (cap - scanned) : (unsigned long long)size;
                 unsigned long long take = (size < room) ? (unsigned long long)size : room;
@@ -1939,8 +1944,8 @@ static int tnx_scan_pass(int install) {
         addr += size;
     }
 
-    tlog([NSString stringWithFormat:@"slot scan pass install=%d candidates=%d installed=%d regions=%d promoted=%d scanned=%lluKB",
-          install, candidates, installed, regions, promoted, scanned / 1024]);
+    tlog([NSString stringWithFormat:@"slot scan pass install=%d candidates=%d installed=%d regions=%d promoted=%d scanned=%lluKB last=%p",
+          install, candidates, installed, regions, promoted, scanned / 1024, (void *)addr]);
 
     return candidates;
 }

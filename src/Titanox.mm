@@ -16,7 +16,7 @@
 #define LOG_MAX_BYTES (200 * 1024)
 
 #define RVA_MM_RECEIVE_A 0x75cce0
-#define RVA_MM_RECEIVE_B 0x7bace8
+#define RVA_MM_RECEIVE_B 0x75c508
 
 static uintptr_t g_base = 0;
 static FILE *g_log = NULL;

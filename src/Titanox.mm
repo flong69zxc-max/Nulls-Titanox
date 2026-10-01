@@ -42,6 +42,8 @@ static volatile int g_hits_malloc = 0;
 static volatile int g_arm_ok = 0;
 static volatile int g_arm_fail = 0;
 
+static volatile int g_exc_count = 0;
+
 static void log_line(NSString *s);
 
 static uintptr_t decode_bl(uintptr_t thunk_addr, uint32_t opcode) {
@@ -335,12 +337,14 @@ static void show_alert(void) {
             @"arm: %d/%d\n\n"
             @"stage:    %d\nrecv:     %d\nldt_init: %d\nchar:     %d\nfmt:      %d\nmc:       %d\n\n"
             @"getpid:   %d\nmalloc:   %d\n\n"
+            @"exc:      %d\n\n"
             @"log: %ld / %d B\n\n"
             @"log: Documents/Titanox.log",
             g_arm_ok, g_arm_fail,
             g_hits_stage, g_hits_recv, g_hits_ldt_init,
             g_hits_char_ctor, g_hits_font_fmt, g_hits_mc_ctor,
             g_hits_getpid, g_hits_malloc,
+            g_exc_count,
             g_log_written, LOG_MAX_BYTES];
 
         UIAlertController *a = [UIAlertController

@@ -1,7 +1,7 @@
 TARGET := iphone:clang:latest:15.0
 ARCHS := arm64
 
-TITANOX := deps/Titanox/libtitanox
+TITANOX := libtitanox
 
 include $(THEOS)/makefiles/common.mk
 
@@ -10,7 +10,7 @@ TWEAK_NAME = Titanox
 Titanox_FILES = src/Titanox.mm
 Titanox_FILES += $(shell find $(TITANOX) -type f \( -name '*.m' -o -name '*.mm' -o -name '*.c' \) ! -path '*/build/*' 2>/dev/null)
 
-Titanox_CFLAGS = -fobjc-arc \
+Titanox_CFLAGS = -fobjc-arc -std=c++17 \
 	-Iinclude \
 	-I$(TITANOX) \
 	-I$(TITANOX)/libtitanox \
@@ -22,7 +22,8 @@ Titanox_CFLAGS = -fobjc-arc \
 	-I$(TITANOX)/static-inline-hook \
 	-I$(TITANOX)/utils \
 	-I$(TITANOX)/vm_funcs \
-	-Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-everything \
+	-Wno-unused-function -Wno-unused-variable -Wno-unused-parameter \
+	-Wno-everything \
 	-Wl,-undefined,dynamic_lookup
 
 Titanox_FRAMEWORKS = Foundation UIKit

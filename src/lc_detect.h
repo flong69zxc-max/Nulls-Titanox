@@ -331,6 +331,23 @@ static inline BOOL tnx_callable_target(uintptr_t imageBase, uintptr_t address) {
     return tnx_looks_like_function(address);
 }
 
+static inline BOOL tnx_patchable_target(uintptr_t imageBase, uintptr_t address) {
+    if (!imageBase || !address) return NO;
+    if (address & 3) return NO;
+
+    uintptr_t start = 0;
+    uintptr_t end = 0;
+    uint32_t prot = 0;
+
+    if (!tnx_image_segment_contains(imageBase, address, YES, &start, &end, &prot)) return NO;
+    if ((address + 16) > end) return NO;
+
+    uint32_t word = 0;
+    if (!tnx_read_u32(address, &word)) return NO;
+
+    return YES;
+}
+
 static inline BOOL tnx_object_plausible(void *object) {
     if (!object) return NO;
 

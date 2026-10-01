@@ -39,20 +39,27 @@ void brk_diag_log(const char *format, ...);
 bool hook_code_patch_allowed(void);
 int hook_pointer_count(void);
 int hook_pointer_slots(void);
+int hook_probe(uintptr_t target);
 }
 
 #define LOG_MAX_BYTES (512 * 1024)
 
+#define TITANOX_BUILD_TAG "brk-a3 2026-10-02 namemap+probe"
+
 #define RVA_MM_RECEIVEMESSAGE            0x7bace8
 #define RVA_HOMEMODE_GETINSTANCE         0x95f488
-#define RVA_GUI_GETINSTANCE_REPO         0x5914b4
-#define RVA_GUI_GETINSTANCE_SPEC         0x591644
+#define RVA_GAMESTATEMANAGER_GETINSTANCE 0x95dae4
+#define RVA_GAMESTATEMANAGER_ISSTATE     0x95e7c0
+#define RVA_GUI_GETINSTANCE              0x591644
 #define RVA_GUI_SHOWFLOATER_TEXTAT       0x591f28
 #define RVA_GUI_SHOWFLOATER_DEFPOS       0x818cdc
 #define RVA_GUI_GETDEFAULTFLOATERPOS     0x591da0
-#define RVA_GAMESTATEMANAGER_ISSTATE     0x95e7c0
+#define RVA_GUI_SHOWPOPUP                0x592c24
 #define RVA_SPRITE_ADDCHILD              0xc2d8c4
+#define RVA_SPRITE_ADDCHILDAT            0xc2d8cc
+#define RVA_SPRITE_REMOVECHILD           0xc2db9c
 #define RVA_STAGE_ADDCHILD               0xc33690
+#define RVA_TEXTFIELD_SETTEXT            0xc4a978
 
 #define GUI_RETRY_COUNT 3
 #define GUI_RETRY_NS 1000000L
@@ -565,6 +572,49 @@ static BOOL h_isstate(void *self, int state) {
     return result;
 }
 
+static const struct { const char *name; uint32_t rva; } TITANOX_PROBE_LIST[] = {
+    { "Projectile__update",              0x5158f8 },
+    { "Projectile_ctor",                 0x514f88 },
+    { "DisplayObject__removeFromParent", 0xc16ea8 },
+    { "DisplayObject__setXY",            0xc16b4c },
+    { "MovieClip__gotoAndStopFrameIndex",0xc1c90c },
+    { "MovieClip__setChildVisible",      0xc1dd48 },
+    { "MovieClip__getTextFieldByName",   0xc1d550 },
+    { "TextField_setText",               0xc4a978 },
+    { "ScrollArea__scrollTo",            0xbe15e8 },
+    { "BattleScreen__update",            0x56fa80 },
+    { "CombatHUD__update",               0x579fcc },
+    { "Character__updateHealthBar",      0x57647c },
+    { "GameMain__draw",                  0x4b63a0 },
+    { "ClientInputManager_addInput",     0x79bf3c },
+    { "LogicGameObjectClient_getX",      0xae4a1c },
+    { "GUI__showFloaterTextAt",          0x591f28 },
+    { "Gui_showFloaterTextAtDefaultPos", 0x818cdc },
+    { "Sprite__addChild",                0xc2d8c4 },
+    { "Stage_addChild",                  0xc33690 },
+    { "MessageManager__receiveMessage",  0x7bace8 }
+};
+
+static void probe_reference_targets(void) {
+    const unsigned long total = sizeof(TITANOX_PROBE_LIST) / sizeof(TITANOX_PROBE_LIST[0]);
+    int withSlots = 0;
+
+    tlog(@"=== probe: which target addresses appear in writable data ===");
+
+    for (unsigned long i = 0; i < total; i++) {
+        uintptr_t address = g_base + TITANOX_PROBE_LIST[i].rva;
+        int hits = hook_probe(address);
+
+        if (hits > 0) withSlots++;
+
+        tlog([NSString stringWithFormat:@"probe %-34s rva=0x%06x slots=%d",
+              TITANOX_PROBE_LIST[i].name, TITANOX_PROBE_LIST[i].rva, hits]);
+    }
+
+    tlog([NSString stringWithFormat:@"probe done: %d of %lu targets referenced by data",
+          withSlots, total]);
+}
+
 static void dump_objc_inventory(const char *tag) {
     int total = objc_getClassList(NULL, 0);
 
@@ -578,9 +628,27 @@ static void dump_objc_inventory(const char *tag) {
     Class *classes = (Class *)malloc(sizeof(Class) * (size_t)total);
     if (!classes) return;
 
+    static const char *noise[] = {
+        "Sentry", "_TtC6Sentry", "_TtCC6Sentry", "Firebase", "AppsFlyer",
+        "GUL", "Zendesk", "sczendesk", "Helpshift", "laser", "SKAdNetwork",
+        "GAD", "FIR", "nanopb", "GTM", "GSDK", "UI", "NS", "WK", "CA",
+        "CL", "CN", "AV", "MTL", "LS", "__", NULL
+    };
+
+    static const char *gameplay[] = {
+        "Gui", "Home", "Float", "Sprite", "Scene", "Messenger", "Logic",
+        "Fight", "Lobby", "Battle", "Card", "Player", "Unit", "Menu",
+        "Render", "Node", "View", "Screen", "Popup", "Dialog", "Resource",
+        "Game", "State", "Mode", "Widget", "Button", "Label", "Text",
+        NULL
+    };
+
     int count = objc_getClassList(classes, total);
     int inGame = 0;
-    int dumped = 0;
+    int listed = 0;
+    int detailed = 0;
+
+    tlog([NSString stringWithFormat:@"objc[%s] ===== class name map =====", tag ? tag : "?"]);
 
     for (int i = 0; i < count; i++) {
         const char *name = class_getName(classes[i]);
@@ -592,31 +660,50 @@ static void dump_objc_inventory(const char *tag) {
 
         inGame++;
 
-        if (dumped >= 120) continue;
-        dumped++;
+        BOOL skip = NO;
+        for (int n = 0; noise[n]; n++) {
+            if (strncmp(name, noise[n], strlen(noise[n])) == 0) { skip = YES; break; }
+        }
+        if (skip) continue;
+
+        if (listed < 700) {
+            tlog([NSString stringWithFormat:@"objc[%s] cls %s", tag ? tag : "?", name]);
+            listed++;
+        }
+
+        BOOL interesting = NO;
+        for (int g = 0; gameplay[g]; g++) {
+            if (strstr(name, gameplay[g])) { interesting = YES; break; }
+        }
+
+        if (!interesting || detailed >= 60) continue;
+
+        detailed++;
 
         unsigned mcount = 0;
         Method *methods = class_copyMethodList(classes[i], &mcount);
 
-        tlog([NSString stringWithFormat:@"objc[%s] %s methods=%u",
+        tlog([NSString stringWithFormat:@"objc[%s] == %s methods=%u",
               tag ? tag : "?", name, mcount]);
 
         if (methods) {
-            for (unsigned m = 0; m < mcount && m < 12; m++) {
+            for (unsigned m = 0; m < mcount && m < 24; m++) {
                 const char *sel = sel_getName(method_getName(methods[m]));
-                tlog([NSString stringWithFormat:@"     -[%s %s]", name, sel ? sel : "?"]);
+                const char *types = method_getTypeEncoding(methods[m]);
+                tlog([NSString stringWithFormat:@"objc[%s]     -[%s %s] %s",
+                      tag ? tag : "?", name, sel ? sel : "?", types ? types : "?"]);
             }
 
-            if (mcount > 12) {
-                tlog([NSString stringWithFormat:@"     ... %u more", mcount - 12]);
+            if (mcount > 24) {
+                tlog([NSString stringWithFormat:@"objc[%s]     ... %u more", tag ? tag : "?", mcount - 24]);
             }
 
             free(methods);
         }
     }
 
-    tlog([NSString stringWithFormat:@"objc[%s]: %d classes, %d in game image, %d listed",
-          tag ? tag : "?", count, inGame, dumped]);
+    tlog([NSString stringWithFormat:@"objc[%s]: %d classes, %d in game image, %d named, %d detailed",
+          tag ? tag : "?", count, inGame, listed, detailed]);
 
     free(classes);
 }
@@ -652,31 +739,24 @@ static BOOL arm_target(const char *label, uintptr_t address, void *replacement, 
 }
 
 static void resolve_gui_getters(void) {
-    uintptr_t primary = g_base + RVA_GUI_GETINSTANCE_REPO;
-    uintptr_t alternate = g_base + RVA_GUI_GETINSTANCE_SPEC;
+    uintptr_t address = g_base + RVA_GUI_GETINSTANCE;
 
-    if (tnx_callable_target(g_base, primary)) {
-        g_addr_gui_get_primary = primary;
-        tlog([NSString stringWithFormat:@"gui_get primary=%p rva=0x%x desc=%@",
-              (void *)primary, RVA_GUI_GETINSTANCE_REPO, describe_op0(primary)]);
+    if (tnx_patchable_target(g_base, address)) {
+        g_addr_gui_get_primary = address;
+        tlog([NSString stringWithFormat:@"gui_get=%p rva=0x%x desc=%@",
+              (void *)address, RVA_GUI_GETINSTANCE, describe_op0(address)]);
     } else {
-        tlog([NSString stringWithFormat:@"gui_get primary rejected rva=0x%x", RVA_GUI_GETINSTANCE_REPO]);
+        tlog([NSString stringWithFormat:@"gui_get rejected rva=0x%x desc=%@",
+              RVA_GUI_GETINSTANCE, describe_op0(address)]);
     }
 
-    if (alternate != primary && tnx_callable_target(g_base, alternate)) {
-        g_addr_gui_get_alt = alternate;
-        tlog([NSString stringWithFormat:@"gui_get alternate=%p rva=0x%x desc=%@",
-              (void *)alternate, RVA_GUI_GETINSTANCE_SPEC, describe_op0(alternate)]);
-    } else {
-        tlog([NSString stringWithFormat:@"gui_get alternate rejected rva=0x%x", RVA_GUI_GETINSTANCE_SPEC]);
-    }
-
-    g_valid_gui = (g_addr_gui_get_primary || g_addr_gui_get_alt) ? 1 : 0;
+    g_valid_gui = g_addr_gui_get_primary ? 1 : 0;
 }
 
 static void setup(void) {
     tlog(@"");
     tlog(@"=== setup ===");
+    tlog([NSString stringWithFormat:@"build=%s", TITANOX_BUILD_TAG]);
     tlog([NSString stringWithFormat:@"host=%@ aggressive=%d",
           tnx_host_description(), g_aggressive ? 1 : 0]);
 
@@ -732,6 +812,8 @@ static void setup(void) {
     if (!arm_target("floaterD", g_addr_floater_def, (void *)&h_floater_def, (void **)&g_orig_floater_def)) ok = NO;
     if (!arm_target("spriteAdd", g_addr_sprite_add, (void *)&h_sprite, (void **)&g_orig_sprite)) ok = NO;
     if (!arm_target("isState", g_addr_isstate, (void *)&h_isstate, (void **)&g_orig_isstate)) ok = NO;
+
+    probe_reference_targets();
 
     tlog([NSString stringWithFormat:@"slots=%d live=%d selftest=%d installed=%d",
           brk_slot_limit(), brk_active_count(), g_selftest_ok ? 1 : 0, ok ? 1 : 0]);
@@ -841,6 +923,7 @@ static void start(void) {
 
     dispatch_async(dispatch_get_main_queue(), ^{
         tlog(@"=== titanox start ===");
+        tlog([NSString stringWithFormat:@"build=%s", TITANOX_BUILD_TAG]);
         tlog([NSString stringWithFormat:@"host=%@ aggressive=%d",
               tnx_host_description(), g_aggressive ? 1 : 0]);
         poll_for_game(0);

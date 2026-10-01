@@ -35,10 +35,8 @@ jobs:
           mkdir -p deps
           git clone --depth 1 https://github.com/flong69zxc-max/Titanox.git deps/Titanox
           rm -rf deps/Titanox/.git
-          echo "--- deps tree ---"
-          find deps -maxdepth 3 -type d | sort
-          echo "--- libtitanox.h location ---"
-          find deps -name 'libtitanox.h'
+          echo "--- hook.h check ---"
+          grep -n "new\[\]" deps/Titanox/libtitanox/brk_hook/Hook/hook.h && echo "STILL BROKEN" || echo "hook.h clean"
 
       - name: Build
         run: |

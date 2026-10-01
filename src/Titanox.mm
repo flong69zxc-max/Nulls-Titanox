@@ -147,6 +147,9 @@ static __thread BOOL g_inside_hook = NO;
 #define TNX_SNAPSHOT_OBJECTS 12
 #define TNX_SNAPSHOT_BYTES 0x140
 #define TNX_SNAPSHOT_DELAY 1.2
+#define TNX_VOTESCAN_INTERVAL 1.0
+#define TNX_VOTESCAN_ATTEMPTS 30
+#define TNX_HEAP_CHUNK (8u * 1024u * 1024u)
 
 static uintptr_t g_mode_object = 0;
 static uintptr_t g_mode_source = 0;
@@ -155,6 +158,8 @@ static BOOL g_mode_scanned = NO;
 static int g_mode_relaxed = 0;
 static int g_mode_strict_logs = 0;
 static int g_mode_relaxed_logs = 0;
+static int g_votescan_attempts = 0;
+static double g_votescan_last = 0.0;
 static BOOL g_snapshot_first = NO;
 static BOOL g_snapshot_second = NO;
 static double g_snapshot_start = 0.0;
@@ -1195,14 +1200,16 @@ static void tnx_dump_mode_objects(const char *tag);
 static void tnx_run_workload(void) {
     tnx_locate_battle_mode();
 
-    if (!g_snapshot_first) {
-        g_snapshot_first = YES;
-        g_snapshot_start = CFAbsoluteTimeGetCurrent();
-        tnx_dump_mode_objects("a");
-    } else if (!g_snapshot_second) {
-        if (CFAbsoluteTimeGetCurrent() > (g_snapshot_start + TNX_SNAPSHOT_DELAY)) {
-            g_snapshot_second = YES;
-            tnx_dump_mode_objects("b");
+    if (g_mode_object) {
+        if (!g_snapshot_first) {
+            g_snapshot_first = YES;
+            g_snapshot_start = CFAbsoluteTimeGetCurrent();
+            tnx_dump_mode_objects("a");
+        } else if (!g_snapshot_second) {
+            if (CFAbsoluteTimeGetCurrent() > (g_snapshot_start + TNX_SNAPSHOT_DELAY)) {
+                g_snapshot_second = YES;
+                tnx_dump_mode_objects("b");
+            }
         }
     }
 
@@ -1607,8 +1614,10 @@ static BOOL tnx_mode_shape(uintptr_t mode) {
 }
 
 static const uintptr_t g_mode_vtables[] = {
-    0x10015e8, 0x10016e0, 0x10017d8, 0x1001908, 0x10019d0, 0x1001ac8, 0x1001bc0, 0x1001cb8,
-    0x1001d80, 0x1001e48, 0x1001f10, 0x10022f0, 0x10023b8, 0x1002480, 0x1002548, 0x1002610,
+    0xfd6958, 0xfd6ee8, 0xfd7250, 0xfd7dc8, 0x10012c8, 0x1001318, 0x1001368, 0x10013b8,
+    0x1001408, 0x1001458, 0x10014a8, 0x10014f8, 0x1001548, 0x1001598, 0x10015e8, 0x10016e0,
+    0x10017d8, 0x10018c0, 0x1001908, 0x10019d0, 0x1001ac8, 0x1001bc0, 0x1001cb8, 0x1001d80,
+    0x1001e48, 0x1001f10, 0x1001fd8, 0x10022f0, 0x10023b8, 0x1002480, 0x1002548, 0x1002610,
     0x10026d8, 0x10027a0, 0x1002868, 0x1002930, 0x10029f8, 0x1002ac0, 0x1002b88, 0x1002d18,
     0,
 };
@@ -1746,12 +1755,18 @@ static void tnx_scan_heap_for_mode(void) {
 
         regions++;
 
-        if ((info.protection & VM_PROT_WRITE) != 0 && size >= 0x1000 && size <= (24u * 1024u * 1024u)) {
-            uint8_t *buffer = (uint8_t *)malloc((size_t)size);
+        if ((info.protection & VM_PROT_WRITE) != 0 && size >= 0x1000) {
+            uint64_t remaining = (uint64_t)size;
+            uintptr_t cursor = (uintptr_t)address;
 
-            if (buffer) {
-                if (tnx_copy((uintptr_t)address, buffer, (size_t)size)) {
-                    for (size_t offset = 0; offset + sizeof(uintptr_t) <= (size_t)size; offset += sizeof(uintptr_t)) {
+            while (remaining >= 16 && scanned < (512ull * 1024ull * 1024ull)) {
+                size_t chunk = (size_t)(remaining < TNX_HEAP_CHUNK ? remaining : (uint64_t)TNX_HEAP_CHUNK);
+                uint8_t *buffer = (uint8_t *)malloc(chunk);
+
+                if (!buffer) break;
+
+                if (tnx_copy(cursor, buffer, chunk)) {
+                    for (size_t offset = 0; offset + sizeof(uintptr_t) <= chunk; offset += sizeof(uintptr_t)) {
                         uintptr_t vtable = 0;
 
                         memcpy(&vtable, buffer + offset, sizeof(vtable));
@@ -1761,19 +1776,25 @@ static void tnx_scan_heap_for_mode(void) {
                         hits++;
                         g_mode_matches++;
 
-                        if (g_mode_relaxed_logs < 10) {
+                        if (g_mode_relaxed_logs < 8) {
                             g_mode_relaxed_logs++;
-                            tnx_report_mode_hit("heap", 0, (uintptr_t)address + offset);
+                            tnx_report_mode_hit("heap", 0, cursor + offset);
                         }
 
-                        if (!g_mode_object) g_mode_object = (uintptr_t)address + offset;
+                        if (!g_mode_object) g_mode_object = cursor + offset;
                     }
                 }
 
                 free(buffer);
-            }
 
-            scanned += (size_t)size;
+                size_t step = chunk - sizeof(uintptr_t);
+
+                if (step == 0) break;
+
+                scanned += step;
+                cursor += step;
+                remaining -= step;
+            }
         }
 
         uintptr_t next = (uintptr_t)address + (uintptr_t)size;
@@ -1786,17 +1807,31 @@ static void tnx_scan_heap_for_mode(void) {
 }
 
 static void tnx_locate_battle_mode(void) {
-    if (g_mode_scanned) return;
-    g_mode_scanned = YES;
+    if (g_mode_object) return;
+    if (g_votescan_attempts >= TNX_VOTESCAN_ATTEMPTS) return;
 
-    tnx_logf("votescan candidates=%d", (int)(sizeof(g_mode_vtables) / sizeof(g_mode_vtables[0]) - 1));
+    double now = CFAbsoluteTimeGetCurrent();
+
+    if (g_votescan_last > 0.0 && (now - g_votescan_last) < TNX_VOTESCAN_INTERVAL) return;
+
+    g_votescan_last = now;
+    g_votescan_attempts++;
+
+    if (g_votescan_attempts == 1) {
+        tnx_logf("votescan candidates=%d interval=%.1f attempts=%d",
+                 (int)(sizeof(g_mode_vtables) / sizeof(g_mode_vtables[0]) - 1),
+                 (double)TNX_VOTESCAN_INTERVAL, TNX_VOTESCAN_ATTEMPTS);
+    }
 
     tnx_scan_globals_for_mode("__DATA");
 
     if (!g_mode_object) tnx_scan_globals_for_mode("__DATA_CONST");
-    if (!g_mode_object) tnx_scan_heap_for_mode();
+    if (!g_mode_object && (g_votescan_attempts % 5) == 1) tnx_scan_heap_for_mode();
 
-    tnx_logf("votescan total hits=%d object=%p global=%p", g_mode_matches, (void *)g_mode_object, (void *)g_mode_source);
+    tnx_logf("votescan attempt=%d hits=%d object=%p global=%p",
+             g_votescan_attempts, g_mode_matches, (void *)g_mode_object, (void *)g_mode_source);
+
+    if (g_mode_object) tnx_report_mode_hit("found", g_mode_source, g_mode_object);
 }
 
 static uintptr_t tnx_vtable_rva(void *object) {

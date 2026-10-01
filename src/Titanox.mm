@@ -157,9 +157,17 @@ static __thread BOOL g_inside_hook = NO;
 #define TNX_VOTESCAN_HEARTBEAT 30
 #define TNX_HEAP_CHUNK (8u * 1024u * 1024u)
 
-/* Engine vtables live in __DATA_CONST (__const), never in __DATA: verified offline,
-   all 35 candidates sit at 0x10012c8-0x1002d18 which is inside __DATA_CONST. */
+/* Engine vtables live in const data. The 35 candidates sit at 0x10012c8-0x1002d18
+   inside __DATA_CONST, but the mode family is identified by vtable RVA, not by segment,
+   so __DATA is accepted too -- otherwise an object whose table was placed in __DATA is
+   dropped before its entry count is ever looked at, and maxObj would lie. */
 #define TNX_VTABLE_SEGMENT "__DATA_CONST"
+#define TNX_VTABLE_SEGMENT_ALT "__DATA"
+
+/* Verified offline: this vtable (33 slots, methods in 0xad4xxx/0xad5xxx) holds a method
+   that does [this+0x20]->addGameObject(obj), i.e. the object at [this+0x20] is the
+   game-object manager. That makes it a battle-mode class table. */
+#define TNX_MODE_VTABLE_PRIMARY 0x1002548ULL
 
 static uintptr_t g_mode_object = 0;
 static BOOL g_mode_strong = NO;
@@ -1626,7 +1634,10 @@ static BOOL tnx_vtable_shaped(uintptr_t value) {
     if (!segment) return NO;
     if (value % 8) return NO;
 
-    return strcmp(segment, TNX_VTABLE_SEGMENT) == 0;
+    if (strcmp(segment, TNX_VTABLE_SEGMENT) == 0) return YES;
+    if (strcmp(segment, TNX_VTABLE_SEGMENT_ALT) == 0) return YES;
+
+    return NO;
 }
 
 /* A real engine instance is heap allocated: its address can never be inside a
@@ -1813,10 +1824,11 @@ static void tnx_report_mode_hit(const char *tag, uintptr_t slot, uintptr_t objec
     tnx_read_ptr((uintptr_t)array, &entry);
     tnx_read_bytes(object, words, sizeof(words));
 
-    tnx_logf("modehit[%s] slot=%p mode=%p mdSeg=%s vt=%p vtSeg=%s vtOff=%#llx inList=%d score=%d var=%d mgr=%p mgr0Rva=%#llx mgrShape=%d array=%p entry0=%p count=%d",
+    tnx_logf("modehit[%s] slot=%p mode=%p mdSeg=%s vt=%p vtSeg=%s vtOff=%#llx inList=%d primary=%d score=%d var=%d mgr=%p mgr0Rva=%#llx mgrShape=%d array=%p entry0=%p count=%d",
              tag, (void *)slot, (void *)object, modeSeg ? modeSeg : "-",
              vtable, vtableSeg ? vtableSeg : "-", (unsigned long long)vtableOff,
              tnx_is_mode_vtable((uintptr_t)vtable, NULL) ? 1 : 0,
+             vtableOff == TNX_MODE_VTABLE_PRIMARY ? 1 : 0,
              score, variation,
              manager, (unsigned long long)managerVtableRva,
              tnx_manager_shape((uintptr_t)manager) ? 1 : 0, array, entry, count);

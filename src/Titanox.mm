@@ -44,7 +44,7 @@ int hook_probe(uintptr_t target);
 
 #define LOG_MAX_BYTES (512 * 1024)
 
-#define TITANOX_BUILD_TAG "brk-a5 2026-10-02 objcargs+floaterdemo"
+#define TITANOX_BUILD_TAG "brk-a6 2026-10-02 entrycheck+overlay"
 
 #define RVA_MM_RECEIVEMESSAGE            0x7bace8
 #define RVA_HOMEMODE_GETINSTANCE         0x95f488
@@ -237,6 +237,71 @@ static NSString *dump_target(uintptr_t addr) {
         (void*)addr, w[0], w[1], w[2], w[3], describe_op0(addr)];
 }
 
+static BOOL tnx_op_is_strong_prologue(uint32_t word) {
+    if (word == 0xD503233F) return YES;
+    if (word == 0xD503237F) return YES;
+    if ((word & 0xFFFFFF1F) == 0xD503241F) return YES;
+
+    uint32_t pairBase = word & 0xFFC00000u;
+
+    if ((pairBase == 0xA9800000u || pairBase == 0xA9000000u || pairBase == 0xA8C00000u) &&
+        (word & 0x7C00u) == 0x7800u &&
+        (word & 0x1Fu) == 29u) {
+        return YES;
+    }
+
+    if ((word & 0xFF8003FFu) == 0xD10003FFu) return YES;
+
+    return NO;
+}
+
+static uintptr_t tnx_function_entry(uintptr_t address, uintptr_t *outDelta) {
+    if (outDelta) *outDelta = 0;
+    if (!address) return 0;
+
+    uint32_t word = 0;
+
+    if (!tnx_read_u32(address, &word)) return 0;
+    if (tnx_op_is_strong_prologue(word)) return address;
+
+    uintptr_t limit = (address > 0x800) ? (address - 0x800) : 0;
+
+    for (uintptr_t probe = address - 4; probe > limit; probe -= 4) {
+        uint32_t candidate = 0;
+
+        if (!tnx_read_u32(probe, &candidate)) break;
+        if (!tnx_op_is_strong_prologue(candidate)) continue;
+
+        if (outDelta) *outDelta = address - probe;
+
+        return probe;
+    }
+
+    return 0;
+}
+
+static BOOL tnx_addr_is_entry(uintptr_t address) {
+    uintptr_t delta = 0;
+
+    if (!address) return NO;
+
+    return tnx_function_entry(address, &delta) == address;
+}
+
+static void tnx_report_entry(const char *label, uintptr_t address) {
+    uintptr_t delta = 0;
+    uintptr_t entry = tnx_function_entry(address, &delta);
+
+    tlog([NSString stringWithFormat:
+          @"rva %-10s addr=%p entry=%p delta=0x%llx exact=%d desc=%@",
+          label,
+          (void *)address,
+          (void *)entry,
+          (unsigned long long)delta,
+          (entry == address) ? 1 : 0,
+          describe_op0(address)]);
+}
+
 static void log_gui_sample(void *gui) {
     int index = g_gui_logged;
     if (index >= GUI_LOG_LIMIT) return;
@@ -349,6 +414,7 @@ static void *gui_acquire(int *outAttempts, int *outWhich, NSString **outReason) 
 
 static BOOL gui_default_position(void *gui, float *outX, float *outY) {
     if (!g_addr_gui_pos) return NO;
+    if (!tnx_addr_is_entry(g_addr_gui_pos)) return NO;
 
     tnx_vec2_t value = { 0.0f, 0.0f };
 
@@ -398,9 +464,18 @@ static void show_floater_default(const char *text, float duration) {
     tlog([NSString stringWithFormat:@"FLOATER_DEF try: '%s' dur=%.1f", text, duration]);
 
     fn_gui_def_t call = g_orig_floater_def;
-    if (!call) call = (fn_gui_def_t)g_addr_floater_def;
 
-    if (!call) { tlog(@"  fail: floater_def address unresolved"); g_floater_fail++; return; }
+    if (!call) {
+        if (!tnx_addr_is_entry(g_addr_floater_def)) {
+            tlog([NSString stringWithFormat:
+                  @"  fail: floater_def rva=0x%x is not a function entry desc=%@",
+                  RVA_GUI_SHOWFLOATER_DEFPOS, describe_op0(g_addr_floater_def)]);
+            g_floater_fail++;
+            return;
+        }
+
+        call = (fn_gui_def_t)g_addr_floater_def;
+    }
 
     int attempts = 0;
     NSString *reason = nil;
@@ -436,9 +511,18 @@ static void show_floater_at_default_pos(const char *text) {
     tlog([NSString stringWithFormat:@"FLOATER_AT try: '%s' at native default position", text]);
 
     fn_gui_at_t call = g_orig_floater;
-    if (!call) call = (fn_gui_at_t)g_addr_floater;
 
-    if (!call) { tlog(@"  fail: floater address unresolved"); g_floater_fail++; return; }
+    if (!call) {
+        if (!tnx_addr_is_entry(g_addr_floater)) {
+            tlog([NSString stringWithFormat:
+                  @"  fail: floater rva=0x%x is not a function entry desc=%@",
+                  RVA_GUI_SHOWFLOATER_TEXTAT, describe_op0(g_addr_floater)]);
+            g_floater_fail++;
+            return;
+        }
+
+        call = (fn_gui_at_t)g_addr_floater;
+    }
 
     int attempts = 0;
     NSString *reason = nil;
@@ -500,10 +584,15 @@ static void floater_demo_tick(int attempt);
 static void floater_demo_tick(int attempt) {
     if (!g_aggressive) { tlog(@"floater demo disabled"); return; }
     if (g_floater_success > 0) { tlog(@"floater demo done"); return; }
-    if (attempt >= 8) { tlog(@"floater demo gave up"); return; }
 
     if (g_setup_done != 2) {
         tlog([NSString stringWithFormat:@"floater demo waiting: setup=%d", g_setup_done]);
+    } else if (!g_addr_gui_get_primary) {
+        tlog(@"floater demo skipped: Gui::getInstance rva is not a callable function entry");
+        return;
+    } else if (attempt >= 8) {
+        tlog(@"floater demo gave up");
+        return;
     } else {
         tlog([NSString stringWithFormat:@"floater demo attempt %d gui_ok=%d",
               attempt + 1, g_gui_ok]);
@@ -646,12 +735,15 @@ static void probe_reference_targets(void) {
 
     for (unsigned long i = 0; i < total; i++) {
         uintptr_t address = g_base + TITANOX_PROBE_LIST[i].rva;
-        int hits = hook_probe(address);
+        BOOL entry = tnx_addr_is_entry(address);
+        int hits = entry ? hook_probe(address) : 0;
+
+        tnx_report_entry(TITANOX_PROBE_LIST[i].name, address);
 
         if (hits > 0) withSlots++;
 
-        tlog([NSString stringWithFormat:@"probe %-34s rva=0x%06x slots=%d",
-              TITANOX_PROBE_LIST[i].name, TITANOX_PROBE_LIST[i].rva, hits]);
+        tlog([NSString stringWithFormat:@"probe %-34s rva=0x%06x entry=%d slots=%d",
+              TITANOX_PROBE_LIST[i].name, TITANOX_PROBE_LIST[i].rva, entry ? 1 : 0, hits]);
     }
 
     tlog([NSString stringWithFormat:@"probe done: %d of %lu targets referenced by data",
@@ -1070,6 +1162,17 @@ static BOOL arm_target(const char *label, uintptr_t address, void *replacement, 
         return NO;
     }
 
+    if (!tnx_addr_is_entry(address)) {
+        uintptr_t delta = 0;
+        uintptr_t entry = tnx_function_entry(address, &delta);
+
+        tlog([NSString stringWithFormat:
+              @"install %-10s rejected: not a function entry addr=%p candidate=%p delta=0x%llx desc=%@",
+              label, (void *)address, (void *)entry, (unsigned long long)delta, describe_op0(address)]);
+
+        return NO;
+    }
+
     BOOL ok = brk_install((void *)address, replacement) ? YES : NO;
     void *tramp = ok ? brk_original_ptr((void *)address) : NULL;
 
@@ -1088,14 +1191,23 @@ static BOOL arm_target(const char *label, uintptr_t address, void *replacement, 
 
 static void resolve_gui_getters(void) {
     uintptr_t address = g_base + RVA_GUI_GETINSTANCE;
+    uintptr_t delta = 0;
+    uintptr_t entry = tnx_function_entry(address, &delta);
 
-    if (tnx_patchable_target(g_base, address)) {
+    tnx_report_entry("gui_get", address);
+
+    if (tnx_patchable_target(g_base, address) && entry == address) {
         g_addr_gui_get_primary = address;
-        tlog([NSString stringWithFormat:@"gui_get=%p rva=0x%x desc=%@",
-              (void *)address, RVA_GUI_GETINSTANCE, describe_op0(address)]);
+        tlog([NSString stringWithFormat:@"gui_get accepted rva=0x%x exact entry", RVA_GUI_GETINSTANCE]);
     } else {
-        tlog([NSString stringWithFormat:@"gui_get rejected rva=0x%x desc=%@",
-              RVA_GUI_GETINSTANCE, describe_op0(address)]);
+        tlog([NSString stringWithFormat:
+              @"gui_get NOT callable rva=0x%x candidate=%p delta=0x%llx (calling it would jump mid-function)",
+              RVA_GUI_GETINSTANCE, (void *)entry, (unsigned long long)delta]);
+    }
+
+    if (g_addr_gui_pos && !tnx_addr_is_entry(g_addr_gui_pos)) {
+        tlog([NSString stringWithFormat:@"guiPos NOT callable rva=0x%x", RVA_GUI_GETDEFAULTFLOATERPOS]);
+        g_addr_gui_pos = 0;
     }
 
     g_valid_gui = g_addr_gui_get_primary ? 1 : 0;
@@ -1139,6 +1251,15 @@ static void setup(void) {
     tlog([NSString stringWithFormat:@"spriteAdd  %@", dump_target(g_addr_sprite_add)]);
     tlog([NSString stringWithFormat:@"stageAdd   %@", dump_target(g_addr_stage_add)]);
     tlog([NSString stringWithFormat:@"isState    %@", dump_target(g_addr_isstate)]);
+
+    tnx_report_entry("recv", g_addr_recv);
+    tnx_report_entry("home", g_addr_home);
+    tnx_report_entry("floater", g_addr_floater);
+    tnx_report_entry("floaterD", g_addr_floater_def);
+    tnx_report_entry("guiPos", g_addr_gui_pos);
+    tnx_report_entry("spriteAdd", g_addr_sprite_add);
+    tnx_report_entry("stageAdd", g_addr_stage_add);
+    tnx_report_entry("isState", g_addr_isstate);
 
     hook_log_prot("region recv", g_addr_recv);
     hook_log_prot("region home", g_addr_home);
@@ -1229,6 +1350,87 @@ static void show_stats(NSString *title) {
     });
 }
 
+static int tnx_objc_hits_prefix(const char *prefix) {
+    size_t length = prefix ? strlen(prefix) : 0;
+    int total = 0;
+
+    if (!length) return 0;
+
+    for (int i = 0; i < OBJC_HOOK_MAX; i++) {
+        if (!g_objc_hooks[i].used) continue;
+        if (strncmp(g_objc_hooks[i].selName, prefix, length) != 0) continue;
+
+        total += g_objc_hooks[i].hits;
+    }
+
+    return total;
+}
+
+static UILabel *g_overlay = nil;
+
+static void overlay_tick(int attempt);
+
+static void overlay_tick(int attempt) {
+    if (attempt > 90) return;
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!g_overlay) {
+            UIViewController *root = top_vc();
+
+            if (!root || !root.view) {
+                if ((attempt % 5) == 0) tlog(@"overlay: no root view yet");
+                return;
+            }
+
+            UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(8.0, 60.0, 10.0, 10.0)];
+
+            label.textColor = UIColor.whiteColor;
+            label.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.6];
+            label.font = [UIFont monospacedSystemFontOfSize:10.0 weight:UIFontWeightRegular];
+            label.numberOfLines = 0;
+            label.textAlignment = NSTextAlignmentLeft;
+            label.userInteractionEnabled = NO;
+
+            UIView *host = root.view.window ? root.view.window : root.view;
+
+            [host addSubview:label];
+
+            g_overlay = label;
+
+            tlog([NSString stringWithFormat:@"overlay created on %@ host=%@ frame=%@",
+                  NSStringFromClass(root.class),
+                  NSStringFromClass(host.class),
+                  NSStringFromCGRect(host.bounds)]);
+        }
+
+        g_overlay.text = [NSString stringWithFormat:
+            @"Titanox %s\n"
+            @"objc armed=%d hits=%d\n"
+            @"render=%d proc=%d\n"
+            @"touch=%d press=%d\n"
+            @"ptr slots=%d/%d stage=%d\n"
+            @"gui=%d floater=%d/%d",
+            TITANOX_BUILD_TAG,
+            g_objc_armed, g_objc_hits_total,
+            tnx_objc_hits_prefix("render"), tnx_objc_hits_prefix("processInput"),
+            tnx_objc_hits_prefix("touches"), tnx_objc_hits_prefix("presses"),
+            hook_pointer_slots(), hook_pointer_count(), g_hits_stage,
+            g_gui_ok, g_floater_success, g_floater_attempts];
+
+        [g_overlay sizeToFit];
+
+        CGRect frame = g_overlay.frame;
+        frame.origin.x = 8.0;
+        frame.origin.y = 60.0;
+        g_overlay.frame = frame;
+    });
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        overlay_tick(attempt + 1);
+    });
+}
+
 static void tnx_objc_report(const char *tag) {
     int armed = 0;
     int live = 0;
@@ -1310,6 +1512,11 @@ static void start(void) {
         tlog([NSString stringWithFormat:@"host=%@ aggressive=%d",
               tnx_host_description(), g_aggressive ? 1 : 0]);
         poll_for_game(0);
+    });
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        overlay_tick(0);
     });
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10 * NSEC_PER_SEC)),

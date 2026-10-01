@@ -28,8 +28,12 @@ static void log_line(NSString *s) {
         g_log = fopen(p.UTF8String, "a");
     }
     if (!g_log) return;
-    fprintf(g_log, "%s\n", s.UTF8String);
-    fflush(g_log);
+    NSData *d = [s dataUsingEncoding:NSUTF8StringEncoding];
+    if (d.length) {
+        fwrite(d.bytes, 1, d.length, g_log);
+        fputc('\n', g_log);
+        fflush(g_log);
+    }
 }
 
 static int read_msg_id(void *msg) {
@@ -41,39 +45,44 @@ static int read_msg_id(void *msg) {
     return ((vfunc_id_t)fn)(msg);
 }
 
-static void patch_msg(void *msg) {
-    if (!msg) return;
-
-    int id = read_msg_id(msg);
-    if (id != 20103) return;
-
-    int sub = *(int *)((uint8_t *)msg + 144);
-    if (sub != 8) return;
-
-    g_matches++;
-
-    void *title = strdup("Join t.me/talebrawl for new Tale Stars update!");
-    void *link  = strdup("t.me/talebrawl");
-
-    *(void **)((uint8_t *)msg + 192) = title;
-    *(void **)((uint8_t *)msg + 184) = link;
-
-    log_line([NSString stringWithFormat:
-        @"patched msg=%p id=%d sub=%d title=%p link=%p",
-        msg, id, sub, title, link]);
+static NSString *hex_dump(void *p, int len) {
+    if (!p) return @"null";
+    const uint8_t *b = (const uint8_t *)p;
+    NSMutableString *s = [NSMutableString string];
+    for (int i = 0; i < len; i++) {
+        [s appendFormat:@"%02x ", b[i]];
+        if ((i + 1) % 16 == 0) [s appendString:@"\n                "];
+    }
+    return s;
 }
 
 static void recv_hook(void *self, void *msg, void *a, void *b, void *c, void *d) {
     g_hits++;
 
-    if (g_hits <= 5 || (g_hits % 100 == 0)) {
-        int id = read_msg_id(msg);
-        int sub = msg ? *(int *)((uint8_t *)msg + 144) : 0;
-        log_line([NSString stringWithFormat:
-            @"recv #%d msg=%p id=%d sub=%d", g_hits, msg, id, sub]);
+    int id = read_msg_id(msg);
+    int sub = msg ? *(int *)((uint8_t *)msg + 144) : -1;
+
+    NSMutableString *line = [NSMutableString string];
+    [line appendFormat:@"#%d msg=%p id=%d sub=%d", g_hits, msg, id, sub];
+
+    if (msg) {
+        [line appendFormat:@"\n  head: %@", hex_dump(msg, 32)];
     }
 
-    patch_msg(msg);
+    log_line(line);
+
+    if (id == 20103 && sub == 8) {
+        g_matches++;
+
+        void *title = strdup("Join t.me/talebrawl for new Tale Stars update!");
+        void *link  = strdup("t.me/talebrawl");
+
+        *(void **)((uint8_t *)msg + 192) = title;
+        *(void **)((uint8_t *)msg + 184) = link;
+
+        log_line([NSString stringWithFormat:@"PATCHED msg=%p id=%d sub=%d",
+                  msg, id, sub]);
+    }
 
     if (g_orig) {
         brk_suspend_self();
@@ -123,7 +132,7 @@ static NSString *arm_hook(void) {
     NSMutableString *out = [NSMutableString string];
 
     [out appendFormat:@"slots: %d\n", brk_slot_limit()];
-    [out appendFormat:@"selftest: %s\n", brk_selftest() ? "pass" : "fail"];
+    [out appendFormat:@"selftest: %@\n", brk_selftest() ? @"pass" : @"fail"];
 
     g_base = image_for_rva(RVA_MESSAGEMANAGER_RECEIVEMESSAGE);
     if (!g_base) {
@@ -137,7 +146,7 @@ static NSString *arm_hook(void) {
     g_orig = (recv_fn)brk_original_ptr((void *)g_target);
 
     bool ok = brk_install((void *)g_target, (void *)&recv_hook);
-    [out appendFormat:@"install: %s\n", ok ? @"OK" : @"FAIL"];
+    [out appendFormat:@"install: %@\n", ok ? @"OK" : @"FAIL"];
     [out appendString:ok ? @"waiting for msgs" : @"no slots"];
 
     log_line([NSString stringWithFormat:@"=== armed ===\n%@", out]);

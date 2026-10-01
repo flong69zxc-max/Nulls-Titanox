@@ -20,7 +20,6 @@
 #define RVA_GUI_GETINSTANCE          0x5914b4
 #define RVA_GUI_SHOWFLOATER_TEXTAT   0x591f28
 #define RVA_GUI_SHOWFLOATER_DEFPOS   0x818cdc
-#define RVA_GUI_GETFLOATER_DEFPOS    0x591d34
 #define RVA_SPRITE_ADDCHILD          0xc2d8c4
 #define RVA_STAGE_ADDCHILD           0xc33690
 
@@ -32,9 +31,7 @@ static volatile int g_hits_recv = 0;
 static volatile int g_hits_home = 0;
 static volatile int g_hits_floater = 0;
 static volatile int g_hits_floater_def = 0;
-static volatile int g_hits_floater_pos = 0;
 static volatile int g_hits_sprite = 0;
-static volatile int g_hits_stage = 0;
 static volatile int g_lobby_welcome_done = 0;
 static volatile int g_floater_attempts = 0;
 static volatile int g_floater_success = 0;
@@ -45,7 +42,6 @@ static uintptr_t g_addr_home = 0;
 static uintptr_t g_addr_gui_get = 0;
 static uintptr_t g_addr_floater = 0;
 static uintptr_t g_addr_floater_def = 0;
-static uintptr_t g_addr_floater_pos = 0;
 static uintptr_t g_addr_sprite_add = 0;
 static uintptr_t g_addr_stage_add = 0;
 
@@ -55,12 +51,10 @@ static void* (*g_orig_home)(void) = NULL;
 typedef void* (*gui_get_t)(void);
 typedef void  (*gui_floater_t)(void*, void*, float, float);
 typedef void  (*gui_floater_def_t)(void*, float);
-typedef void* (*gui_defpos_t)(void*);
 
 static gui_get_t          g_fn_gui_get = NULL;
 static gui_floater_t      g_fn_floater = NULL;
 static gui_floater_def_t  g_fn_floater_def = NULL;
-static gui_defpos_t       g_fn_floater_pos = NULL;
 
 static void tlog_raw(const char *s) {
     if (!g_log) {
@@ -157,14 +151,21 @@ static int read_msg_id(void *msg) {
     return ((msgid_fn_t)fn)(msg);
 }
 
+// Правильное создание SC-строки (как в Tale Stars StringUtils.createNewStringObject)
 static void* make_sc_string(const char *utf8) {
     if (!utf8) return NULL;
     size_t blen = strlen(utf8);
-    uint8_t *buf = (uint8_t*)malloc(40);
+    // В Tale Stars используется malloc(16) для объекта строки
+    uint8_t *buf = (uint8_t*)malloc(16);
     if (!buf) return NULL;
-    memset(buf, 0, 40);
+    memset(buf, 0, 16);
+
+    // offset 0: длина в символах (u32)
     *(uint32_t*)(buf + 0) = (uint32_t)blen;
+    // offset 4: длина в байтах (u32)
     *(uint32_t*)(buf + 4) = (uint32_t)blen;
+
+    // offset 8: данные строки
     if (blen > 7) {
         uint8_t *data = (uint8_t*)malloc(blen + 1);
         if (!data) { free(buf); return NULL; }
@@ -192,14 +193,17 @@ static void show_floater_at(const char *text, float x, float y) {
 
     void *sc = make_sc_string(text);
     tlog([NSString stringWithFormat:@"  sc = %p", sc]);
-    if (!sc) { tlog(@"  fail: sc NULL");  g_floater_fail++; return; }
+    if (sc) {
+        tlog([NSString stringWithFormat:@"  sc bytes: %@", hexdump((uintptr_t)sc, 24)]);
+    }
+    if (!sc) { tlog(@"  fail: sc NULL"); g_floater_fail++; return; }
 
-    @try2 {
-        g_fn_floater(gui, * sc, x, y);
-        tlog(@" NS  called (gui, sc, x, yEC)");
+    @try {
+        g_fn_floater(gui, sc, x, y);
+        tlog(@"  called (gui, sc, x, y)");
         g_floater_success++;
     } @catch (NSException *e) {
-        tlog([NSString stringWithFormat:@"  EXCEPTION: %@_PER", e.reason]);
+        tlog([NSString stringWithFormat:@"  EXCEPTION: %@", e.reason]);
         g_floater_fail++;
     }
 }
@@ -214,6 +218,9 @@ static void show_floater_default(const char *text, float duration) {
 
     void *sc = make_sc_string(text);
     tlog([NSString stringWithFormat:@"  sc = %p", sc]);
+    if (sc) {
+        tlog([NSString stringWithFormat:@"  sc bytes: %@", hexdump((uintptr_t)sc, 24)]);
+    }
     if (!sc) { tlog(@"  fail: sc NULL"); g_floater_fail++; return; }
 
     @try {
@@ -231,19 +238,19 @@ static void try_all_floater_variants(const char *text) {
     tlog(@"variant A: showFloaterTextAt(gui, text, 0, 0)");
     show_floater_at(text, 0.0f, 0.0f);
 
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,_SEC),
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
         tlog(@"variant B: showFloaterTextAt(gui, text, -1, -1)");
         show_floater_at(text, -1.0f, -1.0f);
     });
 
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 4 * NSEC_PER_SEC),
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(4 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
         tlog(@"variant C: showFloaterTextAtDefaultPos(text, -1)");
         show_floater_default(text, -1.0f);
     });
 
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 6 * NSEC_PER_SEC),
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(6 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
         tlog(@"variant D: showFloaterTextAtDefaultPos(text, 3.0)");
         show_floater_default(text, 3.0f);
@@ -279,7 +286,7 @@ static void* h_home(void) {
     if (!g_lobby_welcome_done) {
         g_lobby_welcome_done = 1;
         tlog(@"lobby detected, firing floater test");
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC),
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
             try_all_floater_variants("Tale Stars iOS test");
         });
@@ -301,24 +308,10 @@ static void h_floater_def(void) {
     }
 }
 
-static void h_floater_pos(void) {
-    g_hits_floater_pos++;
-    if (g_hits_floater_pos <= 10) {
-        tlog([NSString stringWithFormat:@"FLOATER_POS_CALL #%d", g_hits_floater_pos]);
-    }
-}
-
 static void h_sprite(void) {
     g_hits_sprite++;
     if (g_hits_sprite <= 10) {
         tlog([NSString stringWithFormat:@"SPRITE_ADDCHILD #%d", g_hits_sprite]);
-    }
-}
-
-static void h_stage(void) {
-    g_hits_stage++;
-    if (g_hits_stage <= 10) {
-        tlog([NSString stringWithFormat:@"STAGE_ADDCHILD #%d", g_hits_stage]);
     }
 }
 
@@ -339,18 +332,14 @@ static void setup(void) {
     g_addr_gui_get      = g_base + RVA_GUI_GETINSTANCE;
     g_addr_floater      = g_base + RVA_GUI_SHOWFLOATER_TEXTAT;
     g_addr_floater_def  = g_base + RVA_GUI_SHOWFLOATER_DEFPOS;
-    g_addr_floater_pos  = g_base + RVA_GUI_GETFLOATER_DEFPOS;
     g_addr_sprite_add   = g_base + RVA_SPRITE_ADDCHILD;
-    g_addr_stage_add    = g_base + RVA_STAGE_ADDCHILD;
 
     tlog([NSString stringWithFormat:@"recv       %@", dump_target(g_addr_recv)]);
     tlog([NSString stringWithFormat:@"home       %@", dump_target(g_addr_home)]);
     tlog([NSString stringWithFormat:@"gui_get    %@", dump_target(g_addr_gui_get)]);
     tlog([NSString stringWithFormat:@"floater    %@", dump_target(g_addr_floater)]);
     tlog([NSString stringWithFormat:@"floaterD   %@", dump_target(g_addr_floater_def)]);
-    tlog([NSString stringWithFormat:@"floaterPos %@", dump_target(g_addr_floater_pos)]);
     tlog([NSString stringWithFormat:@"spriteAdd  %@", dump_target(g_addr_sprite_add)]);
-    tlog([NSString stringWithFormat:@"stageAdd   %@", dump_target(g_addr_stage_add)]);
 
     tlog(@"hexdump recv:");
     tlog(hexdump(g_addr_recv, 32));
@@ -364,7 +353,6 @@ static void setup(void) {
     g_fn_gui_get      = (gui_get_t)g_addr_gui_get;
     g_fn_floater      = (gui_floater_t)g_addr_floater;
     g_fn_floater_def  = (gui_floater_def_t)g_addr_floater_def;
-    g_fn_floater_pos  = (gui_defpos_t)g_addr_floater_pos;
 
     g_orig_recv = (void (*)(void*, void*))brk_original_ptr((void *)g_addr_recv);
     bool ok1 = brk_install((void *)g_addr_recv, (void *)&h_recv);
@@ -400,13 +388,12 @@ static void show_stats(NSString *title) {
         UIViewController *root = top_vc();
         if (!root) return;
         NSString *msg = [NSString stringWithFormat:
-            @"base=%p\nrecv=%d home=%d\nfloater=%d floaterD=%d pos=%d\n"
-            @"sprite=%d stage=%d\n"
+            @"base=%p\nrecv=%d home=%d\nfloater=%d floaterD=%d\nsprite=%d\n"
             @"floater tries=%d ok=%d fail=%d\nslots=%d",
             (void *)g_base,
             g_hits_recv, g_hits_home,
-            g_hits_floater, g_hits_floater_def, g_hits_floater_pos,
-            g_hits_sprite, g_hits_stage,
+            g_hits_floater, g_hits_floater_def,
+            g_hits_sprite,
             g_floater_attempts, g_floater_success, g_floater_fail,
             brk_slot_limit()];
         UIAlertController *a = [UIAlertController
@@ -420,25 +407,25 @@ static void show_stats(NSString *title) {
 
 __attribute__((constructor))
 static void start(void) {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC),
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
         setup();
         show_stats(@"armed");
     });
 
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 15 * NSEC_PER_SEC),
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
         show_stats(@"stats @10s");
     });
 
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC),
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
         tlog(@"forced variant test at 25s");
         try_all_floater_variants("Forced Test");
         show_stats(@"stats @25s");
     });
 
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 60 * NSEC_PER_SEC),
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(60 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
         show_stats(@"stats @55s");
     });

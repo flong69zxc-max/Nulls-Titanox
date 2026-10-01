@@ -2,7 +2,6 @@
 #include "hook.h"
 
 #include <mach/mach.h>
-#include <mach/mach_vm.h>
 #include <mach-o/dyld.h>
 #include <mach-o/nlist.h>
 #include <dlfcn.h>
@@ -45,12 +44,12 @@ static bool read_memory(uintptr_t address, void *out, size_t size)
     if (!size) return true;
     if (address > UINTPTR_MAX - size) return false;
 
-    mach_vm_size_t copied = 0;
-    kern_return_t kr = mach_vm_read_overwrite(
+    vm_size_t copied = 0;
+    kern_return_t kr = vm_read_overwrite(
         mach_task_self(),
-        (mach_vm_address_t)address,
-        (mach_vm_size_t)size,
-        (mach_vm_address_t)out,
+        (vm_address_t)address,
+        (vm_size_t)size,
+        (vm_address_t)out,
         &copied
     );
 

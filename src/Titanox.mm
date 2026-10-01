@@ -42,8 +42,6 @@ static volatile int g_hits_malloc = 0;
 static volatile int g_arm_ok = 0;
 static volatile int g_arm_fail = 0;
 
-static volatile int g_exc_count = 0;
-
 static void log_line(NSString *s);
 
 static uintptr_t decode_bl(uintptr_t thunk_addr, uint32_t opcode) {
@@ -75,7 +73,7 @@ static void log_line(NSString *s) {
     if (!g_log) return;
     NSData *d = [s dataUsingEncoding:NSUTF8StringEncoding];
     if (!d.length) return;
-    if (g_log_written + (long)d.length > LOG_MAX_BYTES) return;
+    if (g_log_written >= LOG_MAX_BYTES) return;
     fwrite(d.bytes, 1, d.length, g_log);
     fputc('\n', g_log);
     fflush(g_log);
@@ -121,6 +119,32 @@ static void log_target_info(const char *name, uintptr_t addr) {
               @"%@ addr=%p op0=%08x op1=%08x pac_signed=%d",
               [NSString stringWithUTF8String:name],
               (void *)addr, op0, op1, is_pac_signed(addr)]);
+}
+
+static void check_bp_ports(void) {
+    mach_port_t ports[EXC_TYPES_COUNT];
+    mach_msg_type_number_t cnt = EXC_TYPES_COUNT;
+    exception_mask_t masks[EXC_TYPES_COUNT];
+    exception_behavior_t behaviors[EXC_TYPES_COUNT];
+    thread_state_flavor_t flavors[EXC_TYPES_COUNT];
+    memset(ports, 0, sizeof(ports));
+
+    kern_return_t kr = task_get_exception_ports(mach_task_self(),
+        EXC_MASK_BREAKPOINT, masks, &cnt, ports, behaviors, flavors);
+
+    log_line([NSString stringWithFormat:
+        @"--- EXC_MASK_BREAKPOINT: kr=%d count=%u ---", kr, cnt]);
+
+    for (uint32_t i = 0; i < cnt; i++) {
+        Dl_info di = {0};
+        const char *owner = "?";
+        if (dladdr((void *)(uintptr_t)ports[i], &di) && di.dli_fname) {
+            owner = basename((char *)di.dli_fname);
+        }
+        log_line([NSString stringWithFormat:
+            @"  port[%u]=%u behavior=0x%x owner=%s",
+            i, ports[i], behaviors[i], owner]);
+    }
 }
 
 static void manual_arm(void) {
@@ -178,40 +202,12 @@ static void dump_self_bvr(void) {
     mach_port_deallocate(mach_task_self(), self);
 }
 
-static void check_bp_ports(void) {
-    mach_port_t ports[EXC_TYPES_COUNT];
-    mach_msg_type_number_t cnt = EXC_TYPES_COUNT;
-    exception_mask_t masks[EXC_TYPES_COUNT];
-    exception_behavior_t behaviors[EXC_TYPES_COUNT];
-    thread_state_flavor_t flavors[EXC_TYPES_COUNT];
-    memset(ports, 0, sizeof(ports));
-
-    kern_return_t kr = task_get_exception_ports(mach_task_self(),
-        EXC_MASK_BREAKPOINT, masks, &cnt, ports, behaviors, flavors);
-
-    log_line([NSString stringWithFormat:
-        @"--- EXC_MASK_BREAKPOINT: kr=%d count=%u ---", kr, cnt]);
-
-    for (uint32_t i = 0; i < cnt; i++) {
-        Dl_info di = {0};
-        const char *owner = "?";
-        if (dladdr((void *)(uintptr_t)ports[i], &di) && di.dli_fname) {
-            owner = basename((char *)di.dli_fname);
-        }
-        log_line([NSString stringWithFormat:
-            @"  port[%u]=%u behavior=0x%x owner=%s",
-            i, ports[i], behaviors[i], owner]);
-    }
-}
-
 static pid_t (*g_orig_getpid)(void) = NULL;
 static void *(*g_orig_malloc)(size_t) = NULL;
 
 static pid_t h_getpid(void) {
     g_hits_getpid++;
-    if (g_hits_getpid <= 5 || g_hits_getpid % 1000 == 0) {
-        log_line([NSString stringWithFormat:@"GETPID #%d", g_hits_getpid]);
-    }
+    log_line([NSString stringWithFormat:@"GETPID #%d", g_hits_getpid]);
     if (g_orig_getpid) {
         brk_suspend_self();
         pid_t r = g_orig_getpid();
@@ -223,9 +219,7 @@ static pid_t h_getpid(void) {
 
 static void *h_malloc(size_t sz) {
     g_hits_malloc++;
-    if (g_hits_malloc <= 5 || g_hits_malloc % 1000 == 0) {
-        log_line([NSString stringWithFormat:@"MALLOC #%d size=%zu", g_hits_malloc, sz]);
-    }
+    log_line([NSString stringWithFormat:@"MALLOC #%d size=%zu", g_hits_malloc, sz]);
     if (g_orig_malloc) {
         brk_suspend_self();
         void *r = g_orig_malloc(sz);
@@ -237,37 +231,30 @@ static void *h_malloc(size_t sz) {
 
 static void h_stage(void *a, void *b, void *c, void *d) {
     g_hits_stage++;
-    if (g_hits_stage <= 3 || g_hits_stage % 1000 == 0)
-        log_line([NSString stringWithFormat:@"STAGE #%d", g_hits_stage]);
+    log_line([NSString stringWithFormat:@"STAGE #%d self=%p", g_hits_stage, a]);
 }
 static void h_ldt_init(void *a, int b, void *c) {
     g_hits_ldt_init++;
-    if (g_hits_ldt_init <= 3 || g_hits_ldt_init % 100 == 0)
-        log_line([NSString stringWithFormat:@"LDT_INIT #%d idx=%d", g_hits_ldt_init, b]);
+    log_line([NSString stringWithFormat:@"LDT_INIT #%d idx=%d", g_hits_ldt_init, b]);
 }
 static void h_char_ctor(void *a, void *b, void *c, void *d) {
     g_hits_char_ctor++;
-    if (g_hits_char_ctor <= 5 || g_hits_char_ctor % 50 == 0)
-        log_line([NSString stringWithFormat:@"CHAR #%d self=%p", g_hits_char_ctor, a]);
+    log_line([NSString stringWithFormat:@"CHAR #%d self=%p", g_hits_char_ctor, a]);
 }
 static void h_font_fmt(void *a, void *b, void *c) {
     g_hits_font_fmt++;
-    if (g_hits_font_fmt <= 3 || g_hits_font_fmt % 5000 == 0)
-        log_line([NSString stringWithFormat:@"FMT #%d", g_hits_font_fmt]);
+    log_line([NSString stringWithFormat:@"FMT #%d self=%p", g_hits_font_fmt, a]);
 }
 static void h_mc_ctor(void *a, void *b) {
     g_hits_mc_ctor++;
-    if (g_hits_mc_ctor <= 3 || g_hits_mc_ctor % 500 == 0)
-        log_line([NSString stringWithFormat:@"MC #%d self=%p", g_hits_mc_ctor, a]);
+    log_line([NSString stringWithFormat:@"MC #%d self=%p", g_hits_mc_ctor, a]);
 }
 static void h_recv(void *self, void *msg, void *a, void *b, void *c, void *d) {
     g_hits_recv++;
-    if (g_hits_recv <= 20 || g_hits_recv % 200 == 0) {
-        uint32_t msgId = 0;
-        if (msg) memcpy(&msgId, msg, 4);
-        log_line([NSString stringWithFormat:@"RECV #%d msg=%p id=0x%x",
-                  g_hits_recv, msg, msgId]);
-    }
+    uint32_t msgId = 0;
+    if (msg) memcpy(&msgId, msg, 4);
+    log_line([NSString stringWithFormat:@"RECV #%d msg=%p id=0x%x",
+              g_hits_recv, msg, msgId]);
 }
 
 static void setup(void) {
@@ -337,14 +324,12 @@ static void show_alert(void) {
             @"arm: %d/%d\n\n"
             @"stage:    %d\nrecv:     %d\nldt_init: %d\nchar:     %d\nfmt:      %d\nmc:       %d\n\n"
             @"getpid:   %d\nmalloc:   %d\n\n"
-            @"exc:      %d\n\n"
             @"log: %ld / %d B\n\n"
             @"log: Documents/Titanox.log",
             g_arm_ok, g_arm_fail,
             g_hits_stage, g_hits_recv, g_hits_ldt_init,
             g_hits_char_ctor, g_hits_font_fmt, g_hits_mc_ctor,
             g_hits_getpid, g_hits_malloc,
-            g_exc_count,
             g_log_written, LOG_MAX_BYTES];
 
         UIAlertController *a = [UIAlertController

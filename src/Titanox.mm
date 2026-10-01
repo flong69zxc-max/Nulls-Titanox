@@ -325,6 +325,74 @@ static uintptr_t tnx_pick(uintptr_t rvaA, uintptr_t rvaB) {
     return tnx_callable(rvaB);
 }
 
+static const char *tnx_prologue_rule(uintptr_t address) {
+    uint32_t first = 0;
+
+    if (!tnx_read_u32(address, &first)) return "unreadable";
+
+    if (first == 0xD503233F) return "paciasp";
+    if (first == 0xD503237F) return "pacibsp";
+    if ((first & 0xFFFFFF1F) == 0xD503241F) return "hint";
+
+    uint32_t pairBase = first & 0xFFC00000u;
+
+    if ((pairBase == 0xA9800000u || pairBase == 0xA9000000u || pairBase == 0xA8C00000u) &&
+        (first & 0x7C00u) == 0x7800u &&
+        (first & 0x1Fu) == 29u) {
+        return "stpfp";
+    }
+
+    if ((first & 0xFF8003FFu) == 0xD10003FFu) return "subsp";
+
+    if (address >= 4) {
+        uint32_t previous = 0;
+        if (tnx_read_u32(address - 4, &previous) && previous == 0xD65F03C0) return "afterret";
+    }
+
+    return "none";
+}
+
+static void tnx_log_words(uintptr_t address, uint32_t *out, size_t count) {
+    if (!out || !count) return;
+
+    size_t bytes = count * sizeof(uint32_t);
+
+    if (!tnx_addr_readable(address, bytes)) {
+        memset(out, 0, bytes);
+        return;
+    }
+
+    memcpy(out, (const void *)address, bytes);
+}
+
+static uintptr_t tnx_resolve_named(const char *cls, const char *meth, uintptr_t rva) {
+    uintptr_t address = tnx_callable(rva);
+
+    if (address) return address;
+    if (!g_base || !cls || !meth) return 0;
+
+    image_ref_t ref;
+    ref.base = g_base;
+    ref.hdr = (const struct mach_header_64 *)g_base;
+
+    uintptr_t resolved = rt_resolve_method(ref, cls, meth, NULL, 0, NULL);
+
+    if (!resolved) return 0;
+    if (!tnx_addr_executable(resolved)) return 0;
+
+    tnx_logf("named %s::%s rva=0x%08llx -> %p", cls, meth, (unsigned long long)rva, (void *)resolved);
+
+    return resolved;
+}
+
+static uintptr_t tnx_pick_named(uintptr_t rvaA, uintptr_t rvaB, const char *cls, const char *meth) {
+    uintptr_t address = tnx_pick(rvaA, rvaB);
+
+    if (address) return address;
+
+    return tnx_resolve_named(cls, meth, rvaA);
+}
+
 static BOOL tnx_valid_header(uintptr_t base) {
     if (!base) return NO;
     if (!tnx_addr_readable(base, sizeof(struct mach_header_64))) return NO;
@@ -950,6 +1018,16 @@ static int tnx_objc_arm(const char *clsName, const char *selName) {
         tlog([NSString stringWithFormat:@"objc hook %s -%s armed via %s sig=%s orig=%p repl=%p",
               clsName, selName, class_getName(owner), types, (void *)previous, (void *)replacement]);
 
+        uintptr_t originalRaw = tnx_strip_imp(previous);
+
+        rt_dump_target(clsName, originalRaw);
+
+        tnx_logf("origCheck %s prologue=%s exec=%d text=%d",
+                 clsName,
+                 tnx_prologue_rule(originalRaw),
+                 tnx_addr_executable(originalRaw) ? 1 : 0,
+                 tnx_image_text_contains(g_base, originalRaw) ? 1 : 0);
+
         return 1;
     }
 
@@ -959,19 +1037,19 @@ static int tnx_objc_arm(const char *clsName, const char *selName) {
 static void tnx_resolve_addresses(void) {
     if (!g_base) return;
 
-    g_addr_getinstance = tnx_callable(RVA_BATTLEMODE_GETINSTANCE);
-    g_addr_getownchar = tnx_callable(RVA_LOGICBATTLEMODECLIENT_GETOWNCHARACTER);
-    g_addr_getteam = tnx_callable(RVA_LOGICBATTLEMODECLIENT_GETOWNPLAYERTEAM);
-    g_addr_getx = tnx_callable(RVA_LOGICGAMEOBJECTCLIENT_GETX);
-    g_addr_gety = tnx_callable(RVA_LOGICGAMEOBJECTCLIENT_GETY);
-    g_addr_setprediction = tnx_callable(RVA_LOGICBATTLEMODECLIENT_SETCLIENTPREDICTIONMOVETO);
-    g_addr_sendmovement = tnx_callable(RVA_CLIENTINPUTMESSAGE_SENDMOVEMENT);
-    g_addr_getclip = tnx_callable(RVA_STRINGTABLE_GETMOVIECLIP);
-    g_addr_addchild = tnx_callable(RVA_STAGE_ADDCHILD);
+    g_addr_getinstance = tnx_resolve_named("BattleMode", "getInstance", RVA_BATTLEMODE_GETINSTANCE);
+    g_addr_getownchar = tnx_resolve_named("LogicBattleModeClient", "getOwnCharacter", RVA_LOGICBATTLEMODECLIENT_GETOWNCHARACTER);
+    g_addr_getteam = tnx_resolve_named("LogicBattleModeClient", "getOwnPlayerTeam", RVA_LOGICBATTLEMODECLIENT_GETOWNPLAYERTEAM);
+    g_addr_getx = tnx_resolve_named("LogicGameObjectClient", "getX", RVA_LOGICGAMEOBJECTCLIENT_GETX);
+    g_addr_gety = tnx_resolve_named("LogicGameObjectClient", "getY", RVA_LOGICGAMEOBJECTCLIENT_GETY);
+    g_addr_setprediction = tnx_resolve_named("LogicBattleModeClient", "setClientPredictionMoveTo", RVA_LOGICBATTLEMODECLIENT_SETCLIENTPREDICTIONMOVETO);
+    g_addr_sendmovement = tnx_resolve_named("ClientInputMessage", "sendMovement", RVA_CLIENTINPUTMESSAGE_SENDMOVEMENT);
+    g_addr_getclip = tnx_resolve_named("StringTable", "getMovieClip", RVA_STRINGTABLE_GETMOVIECLIP);
+    g_addr_addchild = tnx_resolve_named("Stage", "addChild", RVA_STAGE_ADDCHILD);
 
-    g_addr_gettf = tnx_pick(TNX_RVA_GETTEXTFIELDBYNAME_A, TNX_RVA_GETTEXTFIELDBYNAME_B);
-    g_addr_settext = tnx_pick(TNX_RVA_SETTEXT_A, TNX_RVA_SETTEXT_B);
-    g_addr_setxy = tnx_pick(TNX_RVA_SETXY_A, TNX_RVA_SETXY_B);
+    g_addr_gettf = tnx_pick_named(TNX_RVA_GETTEXTFIELDBYNAME_A, TNX_RVA_GETTEXTFIELDBYNAME_B, "MovieClip", "getTextFieldByName");
+    g_addr_settext = tnx_pick_named(TNX_RVA_SETTEXT_A, TNX_RVA_SETTEXT_B, "MovieClipHelper", "setText");
+    g_addr_setxy = tnx_pick_named(TNX_RVA_SETXY_A, TNX_RVA_SETXY_B, "DisplayObject", "setXY");
 
     g_addr_battlescreen = g_base + RVA_BATTLESCREEN__BATTLESCREEN;
     if (!tnx_addr_readable(g_addr_battlescreen, sizeof(void *))) g_addr_battlescreen = 0;
@@ -994,18 +1072,23 @@ static void tnx_dump_rvas(void) {
         uintptr_t address = g_base + g_rvas[i].rva;
         vm_prot_t protection = 0;
         mach_vm_size_t size = 0;
+        uint32_t words[4] = {0, 0, 0, 0};
 
         BOOL region = tnx_query_region(address, &protection, NULL, &size, NULL);
+        BOOL text = tnx_image_text_contains(g_base, address);
 
-        tnx_logf("rva %-48s off=0x%08llx addr=%p callable=%d prot=%d read=%d write=%d exec=%d",
+        tnx_log_words(address, words, 4);
+
+        tnx_logf("rva %-48s off=0x%08llx addr=%p exec=%d text=%d prologue=%-10s callable=%d prot=%d words=%08x %08x %08x %08x",
                  g_rvas[i].name,
                  (unsigned long long)g_rvas[i].rva,
                  (void *)address,
+                 tnx_addr_executable(address) ? 1 : 0,
+                 text ? 1 : 0,
+                 tnx_prologue_rule(address),
                  tnx_callable_target(g_base, address) ? 1 : 0,
                  region ? (int)protection : -1,
-                 (region && (protection & VM_PROT_READ)) ? 1 : 0,
-                 (region && (protection & VM_PROT_WRITE)) ? 1 : 0,
-                 (region && (protection & VM_PROT_EXECUTE)) ? 1 : 0);
+                 words[0], words[1], words[2], words[3]);
     }
 }
 
@@ -1039,6 +1122,12 @@ static void setup(void) {
     g_setup_done = YES;
 
     tlog([NSString stringWithFormat:@"setup base=%p", (void *)g_base]);
+
+    image_ref_t ref;
+    ref.base = g_base;
+    ref.hdr = (const struct mach_header_64 *)g_base;
+
+    rt_dump_image(ref);
 
     tnx_resolve_addresses();
     tnx_dump_rvas();

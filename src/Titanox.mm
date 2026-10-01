@@ -30,6 +30,7 @@ int brk_active_count(void);
 void brk_log_state(void);
 void hook_note_hit(void *target);
 bool hook_verify_encryption(void *image);
+void hook_log_prot(const char *label, uintptr_t address);
 void hook_set_error(const char *format, ...);
 const char *hook_last_error(void);
 bool brk_host_is_livecontainer(void);
@@ -561,6 +562,70 @@ static BOOL h_isstate(void *self, int state) {
     return result;
 }
 
+static void dump_objc_inventory(void) {
+    int total = objc_getClassList(NULL, 0);
+
+    if (total <= 0) {
+        tlog(@"objc: no classes visible");
+        return;
+    }
+
+    if (total > 60000) total = 60000;
+
+    Class *classes = (Class *)malloc(sizeof(Class) * (size_t)total);
+    if (!classes) return;
+
+    int count = objc_getClassList(classes, total);
+
+    static const char *wanted[] = {
+        "Gui", "HomeMode", "GameState", "Sprite", "Messenger",
+        "Logic", "Floater", "Scene", "Fight", "Lobby", NULL
+    };
+
+    int dumped = 0;
+
+    for (int i = 0; i < count && dumped < 12; i++) {
+        const char *name = class_getName(classes[i]);
+        if (!name) continue;
+
+        BOOL match = NO;
+        for (int w = 0; wanted[w]; w++) {
+            if (strstr(name, wanted[w])) { match = YES; break; }
+        }
+        if (!match) continue;
+
+        uintptr_t cls = (uintptr_t)classes[i];
+
+        tlog([NSString stringWithFormat:@"objc class %s image=%@",
+              name, tnx_image_owns_address(g_base, cls) ? @"game" : @"other"]);
+
+        unsigned mcount = 0;
+        Method *methods = class_copyMethodList(classes[i], &mcount);
+
+        if (methods) {
+            for (unsigned m = 0; m < mcount && m < 40; m++) {
+                const char *sel = sel_getName(method_getName(methods[m]));
+                const char *types = method_getTypeEncoding(methods[m]);
+                tlog([NSString stringWithFormat:@"   -[%s %s] types=%s",
+                      name, sel ? sel : "?", types ? types : "?"]);
+            }
+
+            if (mcount > 40) {
+                tlog([NSString stringWithFormat:@"   ... %u more", mcount - 40]);
+            }
+
+            free(methods);
+        }
+
+        dumped++;
+    }
+
+    tlog([NSString stringWithFormat:@"objc: %d classes total, %d candidates dumped",
+          count, dumped]);
+
+    free(classes);
+}
+
 static BOOL arm_target(const char *label, uintptr_t address, void *replacement, void **outOriginal) {
     if (outOriginal) *outOriginal = NULL;
 
@@ -651,6 +716,13 @@ static void setup(void) {
     tlog([NSString stringWithFormat:@"spriteAdd  %@", dump_target(g_addr_sprite_add)]);
     tlog([NSString stringWithFormat:@"isState    %@", dump_target(g_addr_isstate)]);
 
+    hook_log_prot("region recv", g_addr_recv);
+    hook_log_prot("region home", g_addr_home);
+    hook_log_prot("region floaterD", g_addr_floater_def);
+    hook_log_prot("region spriteAdd", g_addr_sprite_add);
+
+    dump_objc_inventory();
+
     resolve_gui_getters();
 
     BOOL ok = YES;
@@ -668,6 +740,8 @@ static void setup(void) {
 
     tlog([NSString stringWithFormat:@"slots=%d live=%d selftest=%d installed=%d",
           brk_slot_limit(), brk_active_count(), g_selftest_ok ? 1 : 0, ok ? 1 : 0]);
+
+    tlog([NSString stringWithFormat:@"last error: %s", hook_last_error()]);
 
     brk_log_state();
 

@@ -28,6 +28,7 @@ jobs:
 
       - name: Get Titanox
         run: |
+          rm -rf deps/Titanox
           git clone --depth 1 https://github.com/flong69zxc-max/Titanox.git deps/Titanox
           rm -rf deps/Titanox/.git
 

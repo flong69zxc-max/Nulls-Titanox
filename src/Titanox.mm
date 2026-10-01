@@ -2064,114 +2064,83 @@ static int d_find_marker(uint8_t *base, size_t size) {
     return 0;
 }
 
-static void tnx_disk_stage_run(void) {
-    const char *path = _dyld_get_image_name(0);
-    if (!path) { tlog(@"tnx disk: no main image path"); return; }
-
-    const int full = getenv("TNX_DISK_PATCH") ? 1 : 0;
-
-    FILE *f = fopen(path, "rb");
-    if (!f) {
-        tlog([NSString stringWithFormat:@"tnx disk: open failed errno=%d %s", errno, strerror(errno)]);
-        return;
-    }
-
-    fseek(f, 0, SEEK_END);
-    long n = ftell(f);
-    fseek(f, 0, SEEK_SET);
-
-    if (n < 0x1000) { fclose(f); tlog(@"tnx disk: file too small"); return; }
-
-    uint8_t *pristine = malloc((size_t)n);
-    uint8_t *buf = malloc((size_t)n);
-    if (!pristine || !buf) {
-        fclose(f);
-        free(pristine);
-        free(buf);
-        tlog(@"tnx disk: oom");
-        return;
-    }
-
-    if (fread(pristine, 1, (size_t)n, f) != (size_t)n) {
-        fclose(f);
-        free(pristine);
-        free(buf);
-        tlog(@"tnx disk: short read");
-        return;
-    }
-    fclose(f);
-    memcpy(buf, pristine, (size_t)n);
-
-    tlog([NSString stringWithFormat:@"tnx disk: path=%s size=%ld full=%d", path, n, full]);
-
+static int tnx_disk_apply(const char *path, uint8_t *pristine, uint8_t *buf, size_t n, int full) {
     if (d_rd32(buf) != 0xfeedfacfu) {
         tlog([NSString stringWithFormat:@"tnx disk: not thin arm64 mach-o magic=%08x", d_rd32(buf)]);
-        goto out;
+        return 0;
     }
 
-    if (d_find_marker(buf, (size_t)n)) {
+    if (d_find_marker(buf, n)) {
         tlog(@"tnx disk: marker already present in file, skip");
-        goto out;
+        return 0;
     }
 
-    uint64_t t_vm = 0, t_off = 0, t_fs = 0;
-    uint64_t d_vm = 0, d_off = 0, d_fs = 0, d_vsz = 0;
     uint32_t ncmds = d_rd32(buf + 16);
     uint32_t szcmds = d_rd32(buf + 20);
 
-    if ((uint64_t)32 + szcmds > (uint64_t)n) {
+    if ((size_t)32 + (size_t)szcmds > n) {
         tlog(@"tnx disk: load commands exceed file");
-        goto out;
+        return 0;
     }
 
+    uint64_t t_vm = 0, t_off = 0, t_fs = 0;
+    uint64_t d_vm = 0, d_off = 0, d_fs = 0;
     const uint8_t *p = buf + 32;
 
     for (uint32_t i = 0; i < ncmds; i++) {
         uint32_t cmd = d_rd32(p);
         uint32_t cs = d_rd32(p + 4);
-        if (cs < 8 || (uint64_t)(p - buf) + cs > (uint64_t)n) break;
+
+        if (cs < 8 || (size_t)(p - buf) + (size_t)cs > n) break;
 
         if (cmd == 0x19u && cs >= 72) {
             const char *seg = (const char *)(p + 8);
-            uint64_t vm = d_rd64(p + 24);
-            uint64_t vsz = d_rd64(p + 32);
-            uint64_t off = d_rd64(p + 40);
-            uint64_t fs = d_rd64(p + 48);
 
-            if (!strcmp(seg, "__TEXT")) { t_vm = vm; t_off = off; t_fs = fs; }
-            if (!strcmp(seg, "__DATA")) { d_vm = vm; d_off = off; d_fs = fs; d_vsz = vsz; }
+            if (!strcmp(seg, "__TEXT")) {
+                t_vm = d_rd64(p + 24);
+                t_off = d_rd64(p + 40);
+                t_fs = d_rd64(p + 48);
+            } else if (!strcmp(seg, "__DATA")) {
+                d_vm = d_rd64(p + 24);
+                d_off = d_rd64(p + 40);
+                d_fs = d_rd64(p + 48);
+            }
         }
+
         p += cs;
     }
 
-    tlog([NSString stringWithFormat:@"tnx disk: TEXT vm=%#llx off=%#llx fs=%#llx DATA vm=%#llx off=%#llx fs=%#llx vsz=%#llx",
+    tlog([NSString stringWithFormat:@"tnx disk: TEXT vm=%#llx off=%#llx fs=%#llx DATA vm=%#llx off=%#llx fs=%#llx",
           (unsigned long long)t_vm, (unsigned long long)t_off, (unsigned long long)t_fs,
-          (unsigned long long)d_vm, (unsigned long long)d_off, (unsigned long long)d_fs,
-          (unsigned long long)d_vsz]);
+          (unsigned long long)d_vm, (unsigned long long)d_off, (unsigned long long)d_fs]);
 
     if (!t_fs || !d_fs || t_off + t_fs > (uint64_t)n || d_off + d_fs > (uint64_t)n) {
         tlog(@"tnx disk: segment ranges inconsistent, abort");
-        goto out;
+        return 0;
     }
 
     size_t need_rec = (size_t)g_disk_n * 24 + 64;
-    uint64_t rec_vm = d_find_slot(buf, (size_t)n, d_vm, d_off, d_fs, need_rec);
+    uint64_t rec_vm = d_find_slot(buf, n, d_vm, d_off, d_fs, need_rec);
 
     if (!rec_vm) {
         tlog([NSString stringWithFormat:@"tnx disk: no file-backed zero run of %zu bytes in __DATA", need_rec]);
-        goto out;
+        return 0;
     }
 
     uint64_t cave_vm = 0;
+
     if (full) {
         cave_vm = d_find_cave(buf, t_vm, t_off, t_fs, (size_t)g_disk_n * 32 + 64, g_disk_rva, g_disk_n);
+
         if (!cave_vm) {
             tlog(@"tnx disk: no __TEXT cave, abort");
-            goto out;
+            return 0;
         }
-        tlog([NSString stringWithFormat:@"tnx disk: cave=%#llx record=%#llx", (unsigned long long)cave_vm, (unsigned long long)rec_vm]);
+
+        tlog([NSString stringWithFormat:@"tnx disk: full patch cave=%#llx record=%#llx",
+              (unsigned long long)cave_vm, (unsigned long long)rec_vm]);
     } else {
-        tlog([NSString stringWithFormat:@"tnx disk: marker mode, record=%#llx", (unsigned long long)rec_vm]);
+        tlog([NSString stringWithFormat:@"tnx disk: marker mode record=%#llx", (unsigned long long)rec_vm]);
     }
 
     uint64_t cursor = cave_vm;
@@ -2206,9 +2175,7 @@ static void tnx_disk_stage_run(void) {
         d_wr32(buf + t_off + (stub_b - t_vm) + 0, stolen);
         d_wr32(buf + t_off + (stub_b - t_vm) + 4,
                d_enc_b((int64_t)(t_vm + rva + 4) - (int64_t)(stub_b + 4)));
-
         d_wr32(tp, d_enc_b((int64_t)stub_a - (int64_t)(t_vm + rva)));
-
         d_wr32(rec + 8, (uint32_t)(stub_b - t_vm));
 
         cursor = stub_a + 16;
@@ -2222,44 +2189,116 @@ static void tnx_disk_stage_run(void) {
     snprintf(bak, sizeof(bak), "%s.tnxbak", path);
 
     FILE *b = fopen(bak, "wb");
+
     if (!b) {
         tlog([NSString stringWithFormat:@"tnx disk: backup write failed errno=%d %s", errno, strerror(errno)]);
-        goto out;
+        return 0;
     }
-    if (fwrite(pristine, 1, (size_t)n, b) != (size_t)n || fclose(b) != 0) {
+
+    if (fwrite(pristine, 1, n, b) != n || fclose(b) != 0) {
         tlog(@"tnx disk: backup incomplete");
-        goto out;
+        return 0;
     }
 
     FILE *w = fopen(path, "wb");
+
     if (!w) {
         tlog([NSString stringWithFormat:@"tnx disk: write failed errno=%d %s", errno, strerror(errno)]);
         tlog(@"tnx disk: bundle is NOT writable from this process");
-        goto out;
+        return 0;
     }
 
-    if (fwrite(buf, 1, (size_t)n, w) != (size_t)n || fclose(w) != 0) {
+    if (fwrite(buf, 1, n, w) != n || fclose(w) != 0) {
         tlog([NSString stringWithFormat:@"tnx disk: short write errno=%d %s", errno, strerror(errno)]);
-        goto out;
+        return 0;
     }
 
-    tlog([NSString stringWithFormat:@"tnx disk: wrote %ld bytes, backup=%s", n, bak]);
+    tlog([NSString stringWithFormat:@"tnx disk: wrote %zu bytes backup=%s", n, bak]);
 
     FILE *v = fopen(path, "rb");
-    if (v) {
-        uint8_t *back = malloc((size_t)n);
-        if (back && fread(back, 1, (size_t)n, v) == (size_t)n) {
-            int same = (memcmp(back, buf, (size_t)n) == 0);
-            int marker = d_find_marker(back, (size_t)n);
-            tlog([NSString stringWithFormat:@"tnx disk: readback identical=%d marker=%d", same, marker]);
-        }
-        free(back);
-        fclose(v);
+
+    if (!v) {
+        tlog(@"tnx disk: reopen for verify failed");
+        return 0;
     }
+
+    uint8_t *back = (uint8_t *)malloc(n);
+
+    if (!back) {
+        fclose(v);
+        tlog(@"tnx disk: verify oom");
+        return 0;
+    }
+
+    if (fread(back, 1, n, v) == n) {
+        tlog([NSString stringWithFormat:@"tnx disk: readback identical=%d marker=%d",
+              memcmp(back, buf, n) == 0, d_find_marker(back, n)]);
+    } else {
+        tlog(@"tnx disk: verify read failed");
+    }
+
+    free(back);
+    fclose(v);
 
     tlog(@"tnx disk: NEXT -> re-sign this app in LiveContainer (or reinstall), then relaunch and check for the marker");
 
-out:
+    return 1;
+}
+
+static void tnx_disk_stage_run(void) {
+    const char *path = _dyld_get_image_name(0);
+
+    if (!path) {
+        tlog(@"tnx disk: no main image path");
+        return;
+    }
+
+    int full = getenv("TNX_DISK_PATCH") ? 1 : 0;
+
+    FILE *f = fopen(path, "rb");
+
+    if (!f) {
+        tlog([NSString stringWithFormat:@"tnx disk: open failed errno=%d %s", errno, strerror(errno)]);
+        return;
+    }
+
+    fseek(f, 0, SEEK_END);
+    long ln = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    if (ln < 0x1000) {
+        fclose(f);
+        tlog(@"tnx disk: file too small");
+        return;
+    }
+
+    size_t n = (size_t)ln;
+    uint8_t *pristine = (uint8_t *)malloc(n);
+    uint8_t *buf = (uint8_t *)malloc(n);
+
+    if (!pristine || !buf) {
+        fclose(f);
+        free(pristine);
+        free(buf);
+        tlog(@"tnx disk: oom");
+        return;
+    }
+
+    if (fread(pristine, 1, n, f) != n) {
+        fclose(f);
+        free(pristine);
+        free(buf);
+        tlog(@"tnx disk: short read");
+        return;
+    }
+
+    fclose(f);
+    memcpy(buf, pristine, n);
+
+    tlog([NSString stringWithFormat:@"tnx disk: path=%s size=%zu full=%d", path, n, full]);
+
+    tnx_disk_apply(path, pristine, buf, n, full);
+
     free(pristine);
     free(buf);
 }

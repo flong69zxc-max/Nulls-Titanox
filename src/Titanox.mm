@@ -44,7 +44,7 @@ int hook_probe(uintptr_t target);
 
 #define LOG_MAX_BYTES (512 * 1024)
 
-#define TITANOX_BUILD_TAG "brk-a3 2026-10-02 namemap+probe"
+#define TITANOX_BUILD_TAG "brk-a4 2026-10-02 ptrwide+pac+objchooks"
 
 #define RVA_MM_RECEIVEMESSAGE            0x7bace8
 #define RVA_HOMEMODE_GETINSTANCE         0x95f488
@@ -86,6 +86,7 @@ static volatile int g_hits_home = 0;
 static volatile int g_hits_floater = 0;
 static volatile int g_hits_floater_def = 0;
 static volatile int g_hits_sprite = 0;
+static volatile int g_hits_stage = 0;
 static volatile int g_hits_isstate = 0;
 static volatile int g_lobby_welcome_done = 0;
 static volatile int g_floater_attempts = 0;
@@ -113,6 +114,7 @@ static fn_void_ret_t g_orig_home = NULL;
 static fn_gui_at_t   g_orig_floater = NULL;
 static fn_gui_def_t  g_orig_floater_def = NULL;
 static fn_sprite_t   g_orig_sprite = NULL;
+static fn_sprite_t   g_orig_stage = NULL;
 static fn_isstate_t  g_orig_isstate = NULL;
 
 static BOOL g_lc = NO;
@@ -393,7 +395,10 @@ static void show_floater_default(const char *text, float duration) {
     g_floater_attempts++;
     tlog([NSString stringWithFormat:@"FLOATER_DEF try: '%s' dur=%.1f", text, duration]);
 
-    if (!g_orig_floater_def) { tlog(@"  fail: floater_def signal not installed"); g_floater_fail++; return; }
+    fn_gui_def_t call = g_orig_floater_def;
+    if (!call) call = (fn_gui_def_t)g_addr_floater_def;
+
+    if (!call) { tlog(@"  fail: floater_def address unresolved"); g_floater_fail++; return; }
 
     int attempts = 0;
     NSString *reason = nil;
@@ -411,7 +416,7 @@ static void show_floater_default(const char *text, float duration) {
     if (!sc) { tlog(@"  fail: sc NULL"); g_floater_fail++; return; }
 
     @try {
-        g_orig_floater_def(gui, sc, duration);
+        call(gui, sc, duration);
         tlog([NSString stringWithFormat:@"  called defaultPos(gui, sc, %.1f) attempts=%d", duration, attempts]);
         g_floater_success++;
     } @catch (NSException *e) {
@@ -428,7 +433,10 @@ static void show_floater_at_default_pos(const char *text) {
     g_floater_attempts++;
     tlog([NSString stringWithFormat:@"FLOATER_AT try: '%s' at native default position", text]);
 
-    if (!g_orig_floater) { tlog(@"  fail: floater signal not installed"); g_floater_fail++; return; }
+    fn_gui_at_t call = g_orig_floater;
+    if (!call) call = (fn_gui_at_t)g_addr_floater;
+
+    if (!call) { tlog(@"  fail: floater address unresolved"); g_floater_fail++; return; }
 
     int attempts = 0;
     NSString *reason = nil;
@@ -455,7 +463,7 @@ static void show_floater_at_default_pos(const char *text) {
     if (!sc) { tlog(@"  fail: sc NULL"); g_floater_fail++; return; }
 
     @try {
-        g_orig_floater(gui, sc, x, y);
+        call(gui, sc, x, y);
         tlog([NSString stringWithFormat:@"  called showFloaterTextAt(gui, sc, %.1f, %.1f) attempts=%d", x, y, attempts]);
         g_floater_success++;
     } @catch (NSException *e) {
@@ -553,6 +561,18 @@ static void h_sprite(void *self, void *child) {
     }
 
     if (g_orig_sprite) g_orig_sprite(self, child);
+}
+
+static void h_stage(void *self, void *child) {
+    g_hits_stage++;
+    hook_note_hit((void *)g_addr_stage_add);
+
+    if (g_hits_stage <= 10) {
+        tlog([NSString stringWithFormat:@"STAGE_ADDCHILD #%d self=%p child=%p",
+              g_hits_stage, self, child]);
+    }
+
+    if (g_orig_stage) g_orig_stage(self, child);
 }
 
 static BOOL h_isstate(void *self, int state) {
@@ -708,6 +728,193 @@ static void dump_objc_inventory(const char *tag) {
     free(classes);
 }
 
+#define OBJC_HOOK_MAX 24
+
+typedef struct {
+    Class cls;
+    SEL sel;
+    IMP original;
+    const char *clsName;
+    const char *selName;
+    volatile int hits;
+    bool used;
+} tnx_objc_hook_t;
+
+static tnx_objc_hook_t g_objc_hooks[OBJC_HOOK_MAX];
+static volatile int g_objc_armed = 0;
+static volatile int g_objc_hits_total = 0;
+
+static const char *TITANOX_OBJC_CLASSES[] = {
+    "AppController",
+    "GameViewController",
+    "RootViewController",
+    "MainViewController",
+    "WebViewController",
+    "MetalView",
+    "NullView",
+    "KeyboardNativeTextfield",
+    "scWKWebView",
+    NULL
+};
+
+static const char *TITANOX_OBJC_SELECTORS[] = {
+    "viewDidLoad",
+    "viewWillAppear:",
+    "viewDidAppear:",
+    "viewWillDisappear:",
+    "viewDidDisappear:",
+    "viewWillLayoutSubviews",
+    "viewDidLayoutSubviews",
+    "didMoveToWindow",
+    "layoutSubviews",
+    "applicationDidBecomeActive:",
+    "applicationWillResignActive:",
+    "applicationDidEnterBackground:",
+    "applicationWillEnterForeground:",
+    NULL
+};
+
+static BOOL tnx_encoding_void_noargs(const char *types) {
+    if (!types) return NO;
+    if (types[0] != 'v') return NO;
+
+    int i = 1;
+    int digitsBefore = 0;
+    int digitsAfter = 0;
+
+    while (types[i] >= '0' && types[i] <= '9') { i++; digitsBefore++; }
+    if (types[i] != '@') return NO;
+    i++;
+    while (types[i] >= '0' && types[i] <= '9') i++;
+    if (types[i] != ':') return NO;
+    i++;
+    while (types[i] >= '0' && types[i] <= '9') { i++; digitsAfter++; }
+    if (types[i] != 0) return NO;
+    if (digitsBefore == 0 && digitsAfter == 0) return YES;
+    if (digitsBefore > 0 && digitsAfter > 0) return YES;
+
+    return NO;
+}
+
+static BOOL tnx_class_owns_method(Class cls, SEL sel) {
+    if (!cls || !sel) return NO;
+
+    unsigned count = 0;
+    Method *list = class_copyMethodList(cls, &count);
+
+    if (!list) return NO;
+
+    BOOL found = NO;
+
+    for (unsigned i = 0; i < count; i++) {
+        if (method_getName(list[i]) == sel) { found = YES; break; }
+    }
+
+    free(list);
+
+    return found;
+}
+
+static tnx_objc_hook_t *tnx_objc_lookup(id self, SEL _cmd) {
+    Class start = object_getClass(self);
+
+    if (!start) return NULL;
+
+    for (int i = 0; i < OBJC_HOOK_MAX; i++) {
+        tnx_objc_hook_t *hook = &g_objc_hooks[i];
+
+        if (!hook->used || hook->sel != _cmd) continue;
+
+        for (Class c = start; c; c = class_getSuperclass(c)) {
+            if (c == hook->cls) return hook;
+        }
+    }
+
+    return NULL;
+}
+
+static id tnx_objc_replacement(id self, SEL _cmd, ...) {
+    tnx_objc_hook_t *hook = tnx_objc_lookup(self, _cmd);
+
+    if (hook) {
+        hook->hits++;
+        g_objc_hits_total++;
+
+        if (hook->hits <= 8) {
+            tlog([NSString stringWithFormat:@"OBJC_HIT -[%s %s] #%d self=%p",
+                  hook->clsName, hook->selName, hook->hits, self]);
+        }
+    }
+
+    if (hook && hook->original) {
+        IMP original = hook->original;
+        original(self, _cmd);
+    }
+
+    return nil;
+}
+
+static int tnx_objc_arm(const char *clsName, const char *selName) {
+    Class cls = objc_getClass(clsName);
+
+    if (!cls) return 0;
+    if (!tnx_image_owns_address(g_base, (uintptr_t)cls)) return 0;
+
+    SEL sel = sel_registerName(selName);
+
+    if (!tnx_class_owns_method(cls, sel)) return 0;
+
+    Method method = class_getInstanceMethod(cls, sel);
+
+    if (!method) return 0;
+
+    if (!tnx_encoding_void_noargs(method_getTypeEncoding(method))) return 0;
+
+    for (int i = 0; i < OBJC_HOOK_MAX; i++) {
+        if (!g_objc_hooks[i].used) continue;
+        if (g_objc_hooks[i].cls == cls && g_objc_hooks[i].sel == sel) return 0;
+    }
+
+    for (int i = 0; i < OBJC_HOOK_MAX; i++) {
+        if (g_objc_hooks[i].used) continue;
+
+        IMP previous = method_setImplementation(method, tnx_objc_replacement);
+
+        if (!previous) return 0;
+
+        g_objc_hooks[i].used = true;
+        g_objc_hooks[i].cls = cls;
+        g_objc_hooks[i].sel = sel;
+        g_objc_hooks[i].original = previous;
+        g_objc_hooks[i].clsName = clsName;
+        g_objc_hooks[i].selName = selName;
+
+        g_objc_armed++;
+
+        tlog([NSString stringWithFormat:@"objc hook %s -%s orig=%p status=1",
+              clsName, selName, (void *)previous]);
+
+        return 1;
+    }
+
+    return 0;
+}
+
+static void tnx_objc_install_all(void) {
+    int tried = 0;
+
+    tlog(@"=== objc hooks ===");
+
+    for (int c = 0; TITANOX_OBJC_CLASSES[c]; c++) {
+        for (int s = 0; TITANOX_OBJC_SELECTORS[s]; s++) {
+            tried++;
+            tnx_objc_arm(TITANOX_OBJC_CLASSES[c], TITANOX_OBJC_SELECTORS[s]);
+        }
+    }
+
+    tlog([NSString stringWithFormat:@"objc hooks armed=%d tried=%d", g_objc_armed, tried]);
+}
+
 static BOOL arm_target(const char *label, uintptr_t address, void *replacement, void **outOriginal) {
     if (outOriginal) *outOriginal = NULL;
 
@@ -789,6 +996,7 @@ static void setup(void) {
     tlog([NSString stringWithFormat:@"floaterD   %@", dump_target(g_addr_floater_def)]);
     tlog([NSString stringWithFormat:@"guiPos     %@", dump_target(g_addr_gui_pos)]);
     tlog([NSString stringWithFormat:@"spriteAdd  %@", dump_target(g_addr_sprite_add)]);
+    tlog([NSString stringWithFormat:@"stageAdd   %@", dump_target(g_addr_stage_add)]);
     tlog([NSString stringWithFormat:@"isState    %@", dump_target(g_addr_isstate)]);
 
     hook_log_prot("region recv", g_addr_recv);
@@ -797,6 +1005,8 @@ static void setup(void) {
     hook_log_prot("region spriteAdd", g_addr_sprite_add);
 
     dump_objc_inventory("early");
+
+    tnx_objc_install_all();
 
     resolve_gui_getters();
 
@@ -811,6 +1021,7 @@ static void setup(void) {
     if (!arm_target("floater", g_addr_floater, (void *)&h_floater, (void **)&g_orig_floater)) ok = NO;
     if (!arm_target("floaterD", g_addr_floater_def, (void *)&h_floater_def, (void **)&g_orig_floater_def)) ok = NO;
     if (!arm_target("spriteAdd", g_addr_sprite_add, (void *)&h_sprite, (void **)&g_orig_sprite)) ok = NO;
+    if (!arm_target("stageAdd", g_addr_stage_add, (void *)&h_stage, (void **)&g_orig_stage)) ok = NO;
     if (!arm_target("isState", g_addr_isstate, (void *)&h_isstate, (void **)&g_orig_isstate)) ok = NO;
 
     probe_reference_targets();
@@ -820,6 +1031,8 @@ static void setup(void) {
 
     tlog([NSString stringWithFormat:@"mode: code_patch=%d ptr_hooks=%d ptr_slots=%d",
           hook_code_patch_allowed() ? 1 : 0, hook_pointer_count(), hook_pointer_slots()]);
+
+    tlog([NSString stringWithFormat:@"objc: armed=%d hits=%d", g_objc_armed, g_objc_hits_total]);
 
     tlog([NSString stringWithFormat:@"last error: %s", hook_last_error()]);
 
@@ -840,15 +1053,18 @@ static UIViewController *top_vc(void) {
 
 static void show_stats(NSString *title) {
     NSString *msg = [NSString stringWithFormat:
-        @"host=%@ base=%p\nrecv=%d home=%d\nfloater=%d floaterD=%d\nisState=%d sprite=%d\n"
-        @"floater tries=%d ok=%d fail=%d\nslots=%d live=%d selftest=%d\nimages=%u",
+        @"host=%@ base=%p\nrecv=%d home=%d\nfloater=%d floaterD=%d\nisState=%d sprite=%d stage=%d\n"
+        @"floater tries=%d ok=%d fail=%d\nslots=%d live=%d selftest=%d\n"
+        @"objc armed=%d hits=%d\nptr hooks=%d slots=%d\nimages=%u",
         tnx_host_description(),
         (void *)g_base,
         g_hits_recv, g_hits_home,
         g_hits_floater, g_hits_floater_def,
-        g_hits_isstate, g_hits_sprite,
+        g_hits_isstate, g_hits_sprite, g_hits_stage,
         g_floater_attempts, g_floater_success, g_floater_fail,
         brk_slot_limit(), brk_active_count(), g_selftest_ok,
+        g_objc_armed, g_objc_hits_total,
+        hook_pointer_count(), hook_pointer_slots(),
         (unsigned)_dyld_image_count()];
 
     tlog([NSString stringWithFormat:@"STATS %@ | %@",
@@ -915,7 +1131,7 @@ static void start(void) {
     const char *aggressive = getenv("TITANOX_AGGRESSIVE");
 
     g_lc = tnx_host_is_livecontainer();
-    g_aggressive = g_lc ? NO : YES;
+    g_aggressive = YES;
 
     if (aggressive) {
         g_aggressive = (aggressive[0] == '1') ? YES : NO;

@@ -26,9 +26,13 @@ static volatile int g_hits_stage = 0;
 static volatile int g_hits_recv = 0;
 static volatile int g_hits_fmt = 0;
 
-static uintptr_t g_addr_stage = 0;
-static uintptr_t g_addr_recv = 0;
-static uintptr_t g_addr_fmt = 0;
+static uintptr_t g_target_stage = 0;
+static uintptr_t g_target_recv = 0;
+static uintptr_t g_target_fmt = 0;
+
+static void (*g_orig_stage)(void *) = NULL;
+static void (*g_orig_recv)(void *, void *) = NULL;
+static void *(*g_orig_fmt)(void *, void *, void *) = NULL;
 
 static void tlog_raw(const char *s) {
     if (!g_log) {
@@ -68,24 +72,45 @@ static BOOL find_game_image(uintptr_t *out_base) {
     return NO;
 }
 
-static void h_stage(void *a, void *b, void *c, void *d) {
+static void h_stage(void *self) {
     g_hits_stage++;
-    tlog([NSString stringWithFormat:@"STAGE #%d self=%p", g_hits_stage, a]);
+    if (g_hits_stage <= 3 || g_hits_stage % 1000 == 0) {
+        tlog([NSString stringWithFormat:@"STAGE #%d self=%p", g_hits_stage, self]);
+    }
+    if (g_orig_stage) {
+        brk_suspend_self();
+        g_orig_stage(self);
+        brk_resume_self();
+    }
 }
 
-static void h_recv(void *self, void *msg, void *a, void *b, void *c, void *d) {
+static void h_recv(void *self, void *msg) {
     g_hits_recv++;
     uint32_t msgId = 0;
     if (msg) memcpy(&msgId, msg, 4);
-    tlog([NSString stringWithFormat:@"RECV #%d msg=%p id=0x%x",
-          g_hits_recv, msg, msgId]);
+    if (g_hits_recv <= 20 || g_hits_recv % 200 == 0) {
+        tlog([NSString stringWithFormat:@"RECV #%d msg=%p id=0x%x",
+              g_hits_recv, msg, msgId]);
+    }
+    if (g_orig_recv) {
+        brk_suspend_self();
+        g_orig_recv(self, msg);
+        brk_resume_self();
+    }
 }
 
-static void h_fmt(void *a, void *b, void *c) {
+static void *h_fmt(void *self, void *a, void *b) {
     g_hits_fmt++;
     if (g_hits_fmt <= 3 || g_hits_fmt % 5000 == 0) {
-        tlog([NSString stringWithFormat:@"FMT #%d", g_hits_fmt]);
+        tlog([NSString stringWithFormat:@"FMT #%d self=%p", g_hits_fmt, self]);
     }
+    if (g_orig_fmt) {
+        brk_suspend_self();
+        void *r = g_orig_fmt(self, a, b);
+        brk_resume_self();
+        return r;
+    }
+    return NULL;
 }
 
 static void setup(void) {
@@ -102,23 +127,26 @@ static void setup(void) {
     image_ref_t img = { .base = g_base, .hdr = (const struct mach_header_64 *)g_base };
     uintptr_t xref = 0;
 
-    g_addr_stage = rt_resolve_method(img, "Stage", "setViewport", NULL, 0, &xref);
-    g_addr_recv  = rt_resolve_method(img, "MessageManager", "receiveMessage", NULL, 0, &xref);
-    g_addr_fmt   = rt_resolve_method(img, "NativeFont", "formatString", NULL, 0, &xref);
+    g_target_stage = rt_resolve_method(img, "Stage", "setViewport", NULL, 0, &xref);
+    g_target_recv  = rt_resolve_method(img, "MessageManager", "receiveMessage", NULL, 0, &xref);
+    g_target_fmt   = rt_resolve_method(img, "NativeFont", "formatString", NULL, 0, &xref);
 
     tlog([NSString stringWithFormat:@"resolved stage=%p recv=%p fmt=%p",
-          (void *)g_addr_stage, (void *)g_addr_recv, (void *)g_addr_fmt]);
+          (void *)g_target_stage, (void *)g_target_recv, (void *)g_target_fmt]);
 
-    if (g_addr_stage) {
-        brk_install((void *)g_addr_stage, (void *)&h_stage);
+    if (g_target_stage) {
+        g_orig_stage = (void (*)(void *))g_target_stage;
+        brk_install((void *)g_target_stage, (void *)&h_stage);
         tlog(@"installed STAGE");
     }
-    if (g_addr_recv) {
-        brk_install((void *)g_addr_recv, (void *)&h_recv);
+    if (g_target_recv) {
+        g_orig_recv = (void (*)(void *, void *))g_target_recv;
+        brk_install((void *)g_target_recv, (void *)&h_recv);
         tlog(@"installed RECV");
     }
-    if (g_addr_fmt) {
-        brk_install((void *)g_addr_fmt, (void *)&h_fmt);
+    if (g_target_fmt) {
+        g_orig_fmt = (void *(*)(void *, void *, void *))g_target_fmt;
+        brk_install((void *)g_target_fmt, (void *)&h_fmt);
         tlog(@"installed FMT");
     }
 
@@ -142,12 +170,11 @@ static void show_alert(void) {
             @"slots=%d\n\n"
             @"stage:  %d\nrecv:   %d\nfmt:    %d\n\n"
             @"stage=%p\nrecv=%p\nfmt=%p\n\n"
-            @"log: %ld / %d B\n"
-            @"Documents/Titanox.log",
+            @"log: %ld / %d B",
             brk_slot_limit(),
             g_hits_stage, g_hits_recv, g_hits_fmt,
-            (void *)g_addr_stage, (void *)g_addr_recv,
-            (void *)g_addr_fmt,
+            (void *)g_target_stage, (void *)g_target_recv,
+            (void *)g_target_fmt,
             g_log_written, LOG_MAX_BYTES];
 
         UIAlertController *a = [UIAlertController

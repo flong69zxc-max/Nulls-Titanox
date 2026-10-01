@@ -12,7 +12,11 @@
 #import <libgen.h>
 #import <ptrauth.h>
 #import <pthread.h>
+
+extern "C" {
 #import "mach_excServer.h"
+}
+
 #import "libtitanox.h"
 #import "offsets.h"
 
@@ -30,8 +34,6 @@ static uintptr_t g_ldt_init_real = 0;
 static uintptr_t g_char_ctor_real = 0;
 static uintptr_t g_font_fmt_real = 0;
 static uintptr_t g_mc_ctor_real = 0;
-static uintptr_t g_getpid = 0;
-static uintptr_t g_malloc = 0;
 
 static volatile int g_hits_stage = 0;
 static volatile int g_hits_recv = 0;
@@ -209,19 +211,9 @@ kern_return_t catch_mach_exception_raise_state(
     g_exc_forwarded++;
 
     if (g_orig_bp_port != MACH_PORT_NULL) {
-        exception_behavior_t behaviors[EXC_TYPES_COUNT];
-        thread_state_flavor_t flavors[EXC_TYPES_COUNT];
-        exception_mask_t masks[EXC_TYPES_COUNT];
-        mach_msg_type_number_t c = EXC_TYPES_COUNT;
-        mach_port_t ports[EXC_TYPES_COUNT];
-        task_get_exception_ports(mach_task_self(), EXC_MASK_BREAKPOINT,
-                                 masks, &c, ports, behaviors, flavors);
-
-        if (c > 0 && behaviors[0] == (EXCEPTION_STATE | MACH_EXCEPTION_CODES)) {
-            return mach_msg_server(mach_exc_server,
-                                   sizeof(union __RequestUnion__catch_mach_exc_subsystem),
-                                   g_orig_bp_port, MACH_MSG_OPTION_NONE);
-        }
+        return mach_msg_server(mach_exc_server,
+                               sizeof(union __RequestUnion__catch_mach_exc_subsystem),
+                               g_orig_bp_port, MACH_MSG_OPTION_NONE);
     }
     return KERN_FAILURE;
 }
@@ -351,16 +343,6 @@ static void dump_self_bvr(void) {
     mach_port_deallocate(mach_task_self(), self);
 }
 
-static void add_entry(uintptr_t target, uintptr_t replacement, const char *name) {
-    if (g_entry_count >= 8) return;
-    pthread_mutex_lock(&g_lock);
-    g_entries[g_entry_count].target = target;
-    g_entries[g_entry_count].replacement = replacement;
-    g_entries[g_entry_count].name = name;
-    g_entry_count++;
-    pthread_mutex_unlock(&g_lock);
-}
-
 static pid_t (*g_orig_getpid)(void) = NULL;
 static void *(*g_orig_malloc)(size_t) = NULL;
 
@@ -446,18 +428,19 @@ static void setup(void) {
 
     void *getpid_addr = dlsym(RTLD_DEFAULT, "getpid");
     void *malloc_addr = dlsym(RTLD_DEFAULT, "malloc");
-    g_getpid = (uintptr_t)getpid_addr;
-    g_malloc = (uintptr_t)malloc_addr;
 
     g_orig_getpid = (pid_t(*)(void))brk_original_ptr(getpid_addr);
     g_orig_malloc = (void*(*)(size_t))brk_original_ptr(malloc_addr);
 
-    add_entry(g_stage_real, (uintptr_t)&h_stage, "stage");
-    add_entry(g_recv_real, (uintptr_t)&h_recv, "recv");
-    add_entry(g_ldt_init_real, (uintptr_t)&h_ldt_init, "ldt_init");
-    add_entry(g_char_ctor_real, (uintptr_t)&h_char_ctor, "char_ctor");
-    add_entry(g_font_fmt_real, (uintptr_t)&h_font_fmt, "font_fmt");
-    add_entry(g_mc_ctor_real, (uintptr_t)&h_mc_ctor, "mc_ctor");
+    pthread_mutex_lock(&g_lock);
+    g_entries[0] = (bp_entry_t){g_stage_real, (uintptr_t)&h_stage, "stage"};
+    g_entries[1] = (bp_entry_t){g_recv_real, (uintptr_t)&h_recv, "recv"};
+    g_entries[2] = (bp_entry_t){g_ldt_init_real, (uintptr_t)&h_ldt_init, "ldt_init"};
+    g_entries[3] = (bp_entry_t){g_char_ctor_real, (uintptr_t)&h_char_ctor, "char_ctor"};
+    g_entries[4] = (bp_entry_t){g_font_fmt_real, (uintptr_t)&h_font_fmt, "font_fmt"};
+    g_entries[5] = (bp_entry_t){g_mc_ctor_real, (uintptr_t)&h_mc_ctor, "mc_ctor"};
+    g_entry_count = 6;
+    pthread_mutex_unlock(&g_lock);
 
     if (g_stage_real)     brk_install((void *)g_stage_real,     (void *)&h_stage);
     if (g_recv_real)      brk_install((void *)g_recv_real,      (void *)&h_recv);

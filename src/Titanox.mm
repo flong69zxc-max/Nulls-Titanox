@@ -13,10 +13,8 @@
 #import "libtitanox.h"
 #import "offsets.h"
 
-extern uintptr_t rt_resolve_method(image_ref_t, const char *, const char *,
-                                    uintptr_t *, size_t, uintptr_t *);
-
 #define LOG_MAX_BYTES (100 * 1024)
+#define RVA_MESSAGEMANAGER_RECEIVEMESSAGE 0x7bace8
 
 static uintptr_t g_base = 0;
 static FILE *g_log = NULL;
@@ -91,18 +89,18 @@ static void setup(void) {
     }
     tlog([NSString stringWithFormat:@"base=%p", (void *)g_base]);
 
-    image_ref_t img = { .base = g_base, .hdr = (const struct mach_header_64 *)g_base };
-    uintptr_t xref_out = 0;
+    g_addr_recv = g_base + RVA_MESSAGEMANAGER_RECEIVEMESSAGE;
 
-    g_addr_recv = rt_resolve_method(img, "MessageManager", "receiveMessage", NULL, 0, &xref_out);
-
-    tlog([NSString stringWithFormat:@"recv=%p xref=%p",
-          (void *)g_addr_recv, (void *)xref_out]);
+    uint32_t w[4] = {0};
+    memcpy(w, (void *)g_addr_recv, sizeof(w));
+    tlog([NSString stringWithFormat:@"recv=%p prologue=%08x %08x %08x %08x",
+          (void *)g_addr_recv, w[0], w[1], w[2], w[3]]);
 
     if (g_addr_recv) {
-        g_orig_recv = (void (*)(void *, void *))g_addr_recv;
-        brk_install((void *)g_addr_recv, (void *)&h_recv);
-        tlog(@"installed RECV");
+        g_orig_recv = (void (*)(void *, void *))brk_original_ptr((void *)g_addr_recv);
+        bool ok = brk_install((void *)g_addr_recv, (void *)&h_recv);
+        tlog([NSString stringWithFormat:@"installed RECV ok=%d orig=%p",
+              ok ? 1 : 0, (void *)g_orig_recv]);
     }
 
     tlog(@"setup done");

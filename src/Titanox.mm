@@ -1,260 +1,176 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import <mach/mach.h>
+#import <mach/arm/thread_status.h>
+#import <mach-o/dyld.h>
+#import <mach-o/loader.h>
+#import <dlfcn.h>
+#import <string.h>
+#import <stdlib.h>
+#import <stdio.h>
+#import <unistd.h>
+#import <libgen.h>
+#import "libtitanox.h"
+#import "offsets.h"
 
-#include <mach-o/dyld.h>
-#include <mach-o/loader.h>
-#include <dlfcn.h>
-#include <pthread.h>
-#include <unistd.h>
-#include <string.h>
+typedef struct {
+    uintptr_t base;
+    const struct mach_header_64 *hdr;
+} image_ref_t;
 
-#include "hook.h"
-#include "offsets.h"
+extern uintptr_t rt_resolve_method(image_ref_t, const char *, const char *,
+                                    uintptr_t *, size_t, uintptr_t *);
 
-typedef pid_t (*getpid_fn_t)(void);
+#define LOG_MAX_BYTES (100 * 1024)
 
-static image_ref_t g_image = {};
-static uintptr_t g_targets[4] = {};
-static uintptr_t g_xrefs[4] = {};
+static uintptr_t g_base = 0;
+static FILE *g_log = NULL;
+static long g_log_written = 0;
 
-static const char *g_classes[4] = {
-    "Stage",
-    "MessageManager",
-    "NativeFont",
-    "MovieClip"
-};
+static volatile int g_hits_stage = 0;
+static volatile int g_hits_recv = 0;
+static volatile int g_hits_fmt = 0;
 
-static const char *g_methods[4] = {
-    "setViewport",
-    "receiveMessage",
-    "formatString",
-    "MovieClip"
-};
+static uintptr_t g_addr_stage = 0;
+static uintptr_t g_addr_recv = 0;
+static uintptr_t g_addr_fmt = 0;
 
-static getpid_fn_t g_getpid = nullptr;
+static void tlog_raw(const char *s) {
+    if (!g_log) {
+        NSString *p = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/Titanox.log"];
+        g_log = fopen(p.UTF8String, "a");
+    }
+    if (!g_log) return;
+    if (g_log_written >= LOG_MAX_BYTES) return;
+    size_t len = strlen(s);
+    fwrite(s, 1, len, g_log);
+    fputc('\n', g_log);
+    fflush(g_log);
+    g_log_written += (long)len + 1;
+}
 
-static bool find_game_image(image_ref_t *out)
-{
-    NSString *executable = NSBundle.mainBundle.executablePath;
+static void tlog(NSString *s) {
+    if (!s) return;
+    tlog_raw(s.UTF8String);
+}
 
-    brk_diag_log(
-        "bundle executable=%s bundle=%s",
-        executable.UTF8String ?: "?",
-        NSBundle.mainBundle.bundleIdentifier.UTF8String ?: "?"
-    );
-
-    const char *wanted = executable.UTF8String;
-
-    for (uint32_t i = 0; i < _dyld_image_count(); ++i) {
+static BOOL find_game_image(uintptr_t *out_base) {
+    uint32_t n = _dyld_image_count();
+    for (uint32_t i = 0; i < n; i++) {
         const char *path = _dyld_get_image_name(i);
-        const mach_header *header = _dyld_get_image_header(i);
-
-        if (!path || !header || header->magic != MH_MAGIC_64) continue;
-
-        if (strstr(path, ".app/")) {
-            brk_diag_log(
-                "image_candidate path=%s header=%p slide=0x%llx",
-                path,
-                header,
-                (unsigned long long)(uintptr_t)
-                    _dyld_get_image_vmaddr_slide(i)
-            );
-        }
-
-        if (wanted && strcmp(path, wanted) == 0) {
-            out->base = (uintptr_t)header;
-            out->hdr = (const mach_header_64 *)header;
-            return true;
-        }
+        const struct mach_header_64 *hdr = (const struct mach_header_64 *)_dyld_get_image_header(i);
+        if (!path || !hdr || hdr->magic != MH_MAGIC_64) continue;
+        if (strstr(path, "/System/")) continue;
+        if (strstr(path, "LiveContainer")) continue;
+        if (strstr(path, "TweakLoader")) continue;
+        if (strstr(path, "CydiaSubstrate")) continue;
+        if (strstr(path, "libellekit")) continue;
+        NSString *ns = [NSString stringWithUTF8String:path];
+        if (![ns containsString:@".app/"]) continue;
+        *out_base = (uintptr_t)hdr;
+        return YES;
     }
-
-    brk_diag_log("game_image_exact_match_missing");
-
-    return false;
+    return NO;
 }
 
-static void *getpid_worker(void *arg)
-{
-    usleep(350000);
-
-    pid_t value = g_getpid();
-
-    brk_diag_log(
-        "getpid_test thread=worker result=%d hits=%llu",
-        value,
-        (unsigned long long)brk_hits((void *)g_getpid)
-    );
-
-    return nullptr;
+static void h_stage(void *a, void *b, void *c, void *d) {
+    g_hits_stage++;
+    tlog([NSString stringWithFormat:@"STAGE #%d self=%p", g_hits_stage, a]);
 }
 
-static void test_getpid(void)
-{
-    g_getpid = (getpid_fn_t)dlsym(RTLD_DEFAULT, "getpid");
+static void h_recv(void *self, void *msg, void *a, void *b, void *c, void *d) {
+    g_hits_recv++;
+    uint32_t msgId = 0;
+    if (msg) memcpy(&msgId, msg, 4);
+    tlog([NSString stringWithFormat:@"RECV #%d msg=%p id=0x%x",
+          g_hits_recv, msg, msgId]);
+}
 
-    if (!g_getpid) {
-        brk_diag_log("getpid_dlsym_failed");
+static void h_fmt(void *a, void *b, void *c) {
+    g_hits_fmt++;
+    if (g_hits_fmt <= 3 || g_hits_fmt % 5000 == 0) {
+        tlog([NSString stringWithFormat:@"FMT #%d", g_hits_fmt]);
+    }
+}
+
+static void setup(void) {
+    tlog(@"=== setup ===");
+    tlog([NSString stringWithFormat:@"slots=%d selftest=%d",
+          brk_slot_limit(), brk_selftest()]);
+
+    if (!find_game_image(&g_base)) {
+        tlog(@"game not found");
         return;
     }
+    tlog([NSString stringWithFormat:@"base=%p", (void *)g_base]);
 
-    rt_dump_target("getpid", (uintptr_t)g_getpid);
+    image_ref_t img = { .base = g_base, .hdr = (const struct mach_header_64 *)g_base };
+    uintptr_t xref = 0;
 
-    bool installed = brk_observe((void *)g_getpid);
+    g_addr_stage = rt_resolve_method(img, "Stage", "setViewport", NULL, 0, &xref);
+    g_addr_recv  = rt_resolve_method(img, "MessageManager", "receiveMessage", NULL, 0, &xref);
+    g_addr_fmt   = rt_resolve_method(img, "NativeFont", "formatString", NULL, 0, &xref);
 
-    brk_diag_log(
-        "getpid_test thread=main installed=%d",
-        installed
-    );
+    tlog([NSString stringWithFormat:@"resolved stage=%p recv=%p fmt=%p",
+          (void *)g_addr_stage, (void *)g_addr_recv, (void *)g_addr_fmt]);
 
-    if (installed) {
-        pid_t value = g_getpid();
-
-        brk_diag_log(
-            "getpid_test thread=main result=%d hits=%llu",
-            value,
-            (unsigned long long)brk_hits((void *)g_getpid)
-        );
-
-        brk_remove((void *)g_getpid);
+    if (g_addr_stage) {
+        brk_install((void *)g_addr_stage, (void *)&h_stage);
+        tlog(@"installed STAGE");
+    }
+    if (g_addr_recv) {
+        brk_install((void *)g_addr_recv, (void *)&h_recv);
+        tlog(@"installed RECV");
+    }
+    if (g_addr_fmt) {
+        brk_install((void *)g_addr_fmt, (void *)&h_fmt);
+        tlog(@"installed FMT");
     }
 
-    installed = brk_observe((void *)g_getpid);
-
-    brk_diag_log(
-        "getpid_test thread=worker installed=%d",
-        installed
-    );
-
-    if (installed) {
-        pthread_t worker;
-
-        if (pthread_create(&worker, nullptr, getpid_worker, nullptr) == 0) {
-            pthread_join(worker, nullptr);
-        } else {
-            brk_diag_log("getpid_worker_create_failed");
-        }
-
-        brk_remove((void *)g_getpid);
-    }
+    tlog(@"setup done");
 }
 
-static void arm_game_targets(void)
-{
-    if (!find_game_image(&g_image)) return;
-
-    rt_dump_image(g_image);
-
-    for (size_t i = 0; i < 4; ++i) {
-        g_targets[i] = rt_resolve_method(
-            g_image,
-            g_classes[i],
-            g_methods[i],
-            nullptr,
-            0,
-            &g_xrefs[i]
-        );
-
-        brk_diag_log(
-            "game_target class=%s method=%s target=%p xref=%p",
-            g_classes[i],
-            g_methods[i],
-            (void *)g_targets[i],
-            (void *)g_xrefs[i]
-        );
-
-        if (!g_targets[i]) continue;
-
-        if (!rt_is_code(g_image, g_targets[i])) {
-            brk_diag_log(
-                "game_target_rejected class=%s method=%s reason=not_code",
-                g_classes[i],
-                g_methods[i]
-            );
-
-            continue;
-        }
-
-        rt_dump_target(g_methods[i], g_targets[i]);
-
-        bool installed = brk_observe((void *)g_targets[i]);
-
-        brk_diag_log(
-            "game_observation class=%s method=%s installed=%d",
-            g_classes[i],
-            g_methods[i],
-            installed
-        );
+static UIViewController *top_vc(void) {
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class]) continue;
+        UIWindow *w = ((UIWindowScene *)scene).keyWindow;
+        if (w.rootViewController) return w.rootViewController;
     }
-
-    brk_log_state();
+    return nil;
 }
 
-static void setup(void)
-{
-    brk_diag_log("setup begin");
+static void show_alert(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIViewController *root = top_vc();
+        if (!root) return;
+        NSString *msg = [NSString stringWithFormat:
+            @"slots=%d\n\n"
+            @"stage:  %d\nrecv:   %d\nfmt:    %d\n\n"
+            @"stage=%p\nrecv=%p\nfmt=%p\n\n"
+            @"log: %ld / %d B\n"
+            @"Documents/Titanox.log",
+            brk_slot_limit(),
+            g_hits_stage, g_hits_recv, g_hits_fmt,
+            (void *)g_addr_stage, (void *)g_addr_recv,
+            (void *)g_addr_fmt,
+            g_log_written, LOG_MAX_BYTES];
 
-    bool calibrated = brk_calibrate_slots();
-    bool selftest = calibrated && brk_selftest();
-
-    brk_diag_log(
-        "setup calibrated=%d live_slots=%d selftest=%d",
-        calibrated,
-        brk_live_slot_count(),
-        selftest
-    );
-
-    if (!selftest) {
-        brk_log_state();
-        brk_diag_log("setup aborted");
-        return;
-    }
-
-    test_getpid();
-    arm_game_targets();
-
-    static dispatch_source_t timer;
-
-    timer = dispatch_source_create(
-        DISPATCH_SOURCE_TYPE_TIMER,
-        0,
-        0,
-        dispatch_get_main_queue()
-    );
-
-    dispatch_source_set_timer(
-        timer,
-        dispatch_time(DISPATCH_TIME_NOW, 5LL * NSEC_PER_SEC),
-        5ULL * NSEC_PER_SEC,
-        100ULL * NSEC_PER_MSEC
-    );
-
-    dispatch_source_set_event_handler(timer, ^{
-        for (size_t i = 0; i < 4; ++i) {
-            brk_diag_log(
-                "game_hits class=%s method=%s target=%p hits=%llu",
-                g_classes[i],
-                g_methods[i],
-                (void *)g_targets[i],
-                (unsigned long long)brk_hits((void *)g_targets[i])
-            );
-        }
-
-        brk_log_state();
+        UIAlertController *a = [UIAlertController
+            alertControllerWithTitle:@"Titanox diag" message:msg
+            preferredStyle:UIAlertControllerStyleAlert];
+        [a addAction:[UIAlertAction actionWithTitle:@"OK"
+            style:UIAlertActionStyleDefault handler:nil]];
+        [root presentViewController:a animated:YES completion:nil];
     });
-
-    dispatch_resume(timer);
-
-    brk_diag_log("setup complete");
 }
 
 __attribute__((constructor))
-static void start(void)
-{
-    dispatch_after(
-        dispatch_time(DISPATCH_TIME_NOW, 5LL * NSEC_PER_SEC),
-        dispatch_get_main_queue(),
-        ^{
-            setup();
-        }
-    );
+static void start(void) {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC),
+                   dispatch_get_main_queue(), ^{
+        setup();
+        [NSTimer scheduledTimerWithTimeInterval:2.0 repeats:YES block:^(NSTimer *t) {
+            show_alert();
+        }];
+    });
 }

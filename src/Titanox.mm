@@ -152,6 +152,9 @@ static uintptr_t g_mode_object = 0;
 static uintptr_t g_mode_source = 0;
 static int g_mode_matches = 0;
 static BOOL g_mode_scanned = NO;
+static int g_mode_relaxed = 0;
+static int g_mode_strict_logs = 0;
+static int g_mode_relaxed_logs = 0;
 static BOOL g_snapshot_first = NO;
 static BOOL g_snapshot_second = NO;
 static double g_snapshot_start = 0.0;
@@ -1522,20 +1525,70 @@ static BOOL tnx_segment_range(const char *name, uintptr_t *lo, uintptr_t *hi) {
     return NO;
 }
 
+static BOOL tnx_image_contains(uintptr_t value) {
+    if (!g_base || !value) return NO;
+    if (!tnx_addr_readable(g_base, sizeof(struct mach_header_64))) return NO;
+
+    const struct mach_header_64 *header = (const struct mach_header_64 *)g_base;
+
+    if (header->magic != MH_MAGIC_64) return NO;
+
+    const uint8_t *cursor = (const uint8_t *)(header + 1);
+    const uint8_t *limit = cursor + header->sizeofcmds;
+    uintptr_t slide = tnx_image_slide(g_base);
+
+    for (uint32_t i = 0; i < header->ncmds; i++) {
+        if (cursor + sizeof(struct load_command) > limit) return NO;
+
+        const struct load_command *command = (const struct load_command *)cursor;
+
+        if (command->cmdsize < sizeof(struct load_command)) return NO;
+        if (cursor + command->cmdsize > limit) return NO;
+
+        if (command->cmd == LC_SEGMENT_64 && command->cmdsize >= sizeof(struct segment_command_64)) {
+            const struct segment_command_64 *segment = (const struct segment_command_64 *)command;
+
+            if (segment->vmsize) {
+                uintptr_t start = slide + (uintptr_t)segment->vmaddr;
+
+                if (value >= start && value < (start + (uintptr_t)segment->vmsize)) return YES;
+            }
+        }
+
+        cursor += command->cmdsize;
+    }
+
+    return NO;
+}
+
+static BOOL tnx_object_shaped(uintptr_t object) {
+    void *vtable = NULL;
+
+    if (!tnx_pointer_plausible(object)) return NO;
+    if (!tnx_read_ptr(object, &vtable)) return NO;
+    if (!vtable) return NO;
+
+    return tnx_image_contains((uintptr_t)vtable);
+}
+
 static BOOL tnx_manager_shape(uintptr_t manager) {
     void *array = NULL;
     void *probe = NULL;
     int32_t count = 0;
 
-    if (!tnx_pointer_plausible(manager)) return NO;
+    if (!tnx_object_shaped(manager)) return NO;
     if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array)) return NO;
     if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) return NO;
-    if (count < 0 || count > 4096) return NO;
+    if (count < 0 || count > 512) return NO;
 
     if (count > 0) {
         if (!tnx_pointer_plausible((uintptr_t)array)) return NO;
         if (!tnx_read_ptr((uintptr_t)array, &probe)) return NO;
-        if (count > 1 && !tnx_read_ptr((uintptr_t)array + (uintptr_t)(count - 1) * sizeof(void *), &probe)) return NO;
+        if (!tnx_pointer_plausible((uintptr_t)probe)) return NO;
+        if (count > 1) {
+            if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)(count - 1) * sizeof(void *), &probe)) return NO;
+            if (!tnx_pointer_plausible((uintptr_t)probe)) return NO;
+        }
     }
 
     return YES;
@@ -1545,7 +1598,7 @@ static BOOL tnx_mode_shape(uintptr_t mode) {
     int32_t variation = 0;
     void *manager = NULL;
 
-    if (!tnx_pointer_plausible(mode)) return NO;
+    if (!tnx_object_shaped(mode)) return NO;
     if (!tnx_read_i32(mode + TNX_MODE_MODEVAR_OFF, &variation)) return NO;
     if (variation <= 0 || variation > 400) return NO;
     if (!tnx_read_ptr(mode + TNX_MODE_MANAGER_OFF, &manager)) return NO;
@@ -1553,56 +1606,197 @@ static BOOL tnx_mode_shape(uintptr_t mode) {
     return tnx_manager_shape((uintptr_t)manager);
 }
 
-static void tnx_locate_battle_mode(void) {
-    if (g_mode_scanned) return;
-    g_mode_scanned = YES;
+static const uintptr_t g_mode_vtables[] = {
+    0x10015e8, 0x10016e0, 0x10017d8, 0x1001908, 0x10019d0, 0x1001ac8, 0x1001bc0, 0x1001cb8,
+    0x1001d80, 0x1001e48, 0x1001f10, 0x10022f0, 0x10023b8, 0x1002480, 0x1002548, 0x1002610,
+    0x10026d8, 0x10027a0, 0x1002868, 0x1002930, 0x10029f8, 0x1002ac0, 0x1002b88, 0x1002d18,
+    0,
+};
 
+static BOOL tnx_is_mode_vtable(uintptr_t value, uintptr_t *rvaOut) {
+    if (!g_base || !value) return NO;
+
+    for (int i = 0; g_mode_vtables[i]; i++) {
+        if (value != (g_base + g_mode_vtables[i])) continue;
+
+        if (rvaOut) *rvaOut = g_mode_vtables[i];
+
+        return YES;
+    }
+
+    return NO;
+}
+
+static void tnx_report_mode_hit(const char *tag, uintptr_t slot, uintptr_t object) {
+    uint32_t words[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    uintptr_t vtableRva = 0;
+    uintptr_t managerVtableRva = 0;
+    void *manager = NULL;
+    void *managerVtable = NULL;
+    void *array = NULL;
+    void *entry = NULL;
+    int32_t variation = 0;
+    int32_t count = 0;
+
+    tnx_read_i32(object + TNX_MODE_MODEVAR_OFF, &variation);
+    tnx_read_ptr(object + TNX_MODE_MANAGER_OFF, &manager);
+    tnx_read_ptr((uintptr_t)manager, &managerVtable);
+    tnx_is_mode_vtable((uintptr_t)managerVtable, &managerVtableRva);
+    tnx_read_i32((uintptr_t)manager + TNX_MGR_COUNT_OFF, &count);
+    tnx_read_ptr((uintptr_t)manager + TNX_MGR_ARRAY_OFF, &array);
+    tnx_read_ptr((uintptr_t)array, &entry);
+    tnx_read_bytes(object, words, sizeof(words));
+
+    tnx_logf("modehit[%s] slot=%p mode=%p vtRva=%#llx shape=%d var=%d mgr=%p mgrVtRva=%#llx mgrShape=%d array=%p entry0=%p count=%d",
+             tag, (void *)slot, (void *)object, (unsigned long long)vtableRva,
+             tnx_mode_shape(object) ? 1 : 0, variation,
+             manager, (unsigned long long)managerVtableRva,
+             tnx_manager_shape((uintptr_t)manager) ? 1 : 0, array, entry, count);
+
+    for (int i = 0; i < 2; i++) {
+        tnx_logf("modehit[%s] +%02x %08x %08x %08x %08x", tag, i * 16,
+                 words[i * 4], words[i * 4 + 1], words[i * 4 + 2], words[i * 4 + 3]);
+    }
+}
+
+static void tnx_scan_globals_for_mode(const char *name) {
     uintptr_t lo = 0;
     uintptr_t hi = 0;
 
-    if (!tnx_segment_range("__DATA", &lo, &hi)) {
-        tnx_logf("mode scan no __DATA");
+    if (!tnx_segment_range(name, &lo, &hi)) {
+        tnx_logf("votescan %s missing", name);
         return;
     }
 
     size_t span = (size_t)(hi - lo);
+
     if (span < 0x1000 || span > (16u * 1024u * 1024u)) {
-        tnx_logf("mode scan bad span=%zu", span);
+        tnx_logf("votescan %s bad span=%zu", name, span);
         return;
     }
 
     uint8_t *bytes = (uint8_t *)malloc(span);
 
     if (!bytes) {
-        tnx_logf("mode scan alloc failed");
+        tnx_logf("votescan %s alloc failed", name);
         return;
     }
 
     if (!tnx_copy(lo, bytes, span)) {
         free(bytes);
-        tnx_logf("mode scan read failed");
+        tnx_logf("votescan %s read failed", name);
         return;
     }
 
+    int hits = 0;
+
     for (size_t offset = 0; offset + sizeof(void *) <= span; offset += sizeof(void *)) {
-        uintptr_t candidate = 0;
+        uintptr_t object = 0;
+        void *vtable = NULL;
 
-        memcpy(&candidate, bytes + offset, sizeof(candidate));
+        memcpy(&object, bytes + offset, sizeof(object));
 
-        if (!tnx_pointer_plausible(candidate)) continue;
-        if (!tnx_mode_shape(candidate)) continue;
+        if (!tnx_pointer_plausible(object)) continue;
+        if (!tnx_read_ptr(object, &vtable)) continue;
+        if (!tnx_is_mode_vtable((uintptr_t)vtable, NULL)) continue;
 
+        hits++;
         g_mode_matches++;
 
+        if (g_mode_strict_logs < 6) {
+            g_mode_strict_logs++;
+            tnx_report_mode_hit("globals", lo + offset, object);
+        }
+
         if (!g_mode_object) {
-            g_mode_object = candidate;
+            g_mode_object = object;
             g_mode_source = lo + offset;
         }
     }
 
     free(bytes);
 
-    tnx_logf("mode scan matches=%d object=%p global=%p", g_mode_matches, (void *)g_mode_object, (void *)g_mode_source);
+    tnx_logf("votescan %s hits=%d", name, hits);
+}
+
+static void tnx_scan_heap_for_mode(void) {
+    vm_address_t address = 0;
+    size_t scanned = 0;
+    int regions = 0;
+    int hits = 0;
+
+    while (regions < 8192 && scanned < (512ull * 1024ull * 1024ull)) {
+        vm_size_t size = 0;
+        vm_region_basic_info_data_64_t info;
+        mach_msg_type_number_t infoCount = VM_REGION_BASIC_INFO_COUNT_64;
+        mach_port_t objectName = MACH_PORT_NULL;
+
+        kern_return_t result = vm_region_64(
+            mach_task_self(),
+            &address,
+            &size,
+            VM_REGION_BASIC_INFO_64,
+            (vm_region_info_t)&info,
+            &infoCount,
+            &objectName
+        );
+
+        if (objectName != MACH_PORT_NULL) mach_port_deallocate(mach_task_self(), objectName);
+        if (result != KERN_SUCCESS || size == 0) break;
+
+        regions++;
+
+        if ((info.protection & VM_PROT_WRITE) != 0 && size >= 0x1000 && size <= (24u * 1024u * 1024u)) {
+            uint8_t *buffer = (uint8_t *)malloc((size_t)size);
+
+            if (buffer) {
+                if (tnx_copy((uintptr_t)address, buffer, (size_t)size)) {
+                    for (size_t offset = 0; offset + sizeof(uintptr_t) <= (size_t)size; offset += sizeof(uintptr_t)) {
+                        uintptr_t vtable = 0;
+
+                        memcpy(&vtable, buffer + offset, sizeof(vtable));
+
+                        if (!tnx_is_mode_vtable(vtable, NULL)) continue;
+
+                        hits++;
+                        g_mode_matches++;
+
+                        if (g_mode_relaxed_logs < 10) {
+                            g_mode_relaxed_logs++;
+                            tnx_report_mode_hit("heap", 0, (uintptr_t)address + offset);
+                        }
+
+                        if (!g_mode_object) g_mode_object = (uintptr_t)address + offset;
+                    }
+                }
+
+                free(buffer);
+            }
+
+            scanned += (size_t)size;
+        }
+
+        uintptr_t next = (uintptr_t)address + (uintptr_t)size;
+        if (next <= (uintptr_t)address) break;
+
+        address = (vm_address_t)next;
+    }
+
+    tnx_logf("votescan heap scanned=%zu regions=%d hits=%d", scanned, regions, hits);
+}
+
+static void tnx_locate_battle_mode(void) {
+    if (g_mode_scanned) return;
+    g_mode_scanned = YES;
+
+    tnx_logf("votescan candidates=%d", (int)(sizeof(g_mode_vtables) / sizeof(g_mode_vtables[0]) - 1));
+
+    tnx_scan_globals_for_mode("__DATA");
+
+    if (!g_mode_object) tnx_scan_globals_for_mode("__DATA_CONST");
+    if (!g_mode_object) tnx_scan_heap_for_mode();
+
+    tnx_logf("votescan total hits=%d object=%p global=%p", g_mode_matches, (void *)g_mode_object, (void *)g_mode_source);
 }
 
 static uintptr_t tnx_vtable_rva(void *object) {
@@ -1814,7 +2008,6 @@ static void setup(void) {
     tnx_dump_verified();
     tnx_dump_rvas();
     tnx_probe_classes();
-    tnx_dump_objc_inventory("inventory");
 
     tnx_objc_arm("MetalView", "render");
     tnx_objc_arm("NullView", "render");

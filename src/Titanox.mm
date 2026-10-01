@@ -13,11 +13,6 @@
 #import "libtitanox.h"
 #import "offsets.h"
 
-typedef struct {
-    uintptr_t base;
-    const struct mach_header_64 *hdr;
-} image_ref_t;
-
 extern uintptr_t rt_resolve_method(image_ref_t, const char *, const char *,
                                     uintptr_t *, size_t, uintptr_t *);
 

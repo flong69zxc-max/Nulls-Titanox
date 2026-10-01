@@ -1,30 +1,60 @@
 #ifndef OFFSETS_H
 #define OFFSETS_H
 
-#define RVA_NATIVEFONT_FORMATSTRING 0xb3fde8
-#define RVA_MESSAGEMANAGER_RECEIVEMESSAGE 0x75cce0
-#define RVA_LOGICDATATABLES_INITDATATABLE 0x9a8f3c
-#define RVA_LOGICPROJECTILEDATA_GETINTVALUEFROMCOLUMN 0x9cb098
-#define RVA_STAGE_SETVIEWPORT 0xba17b8
+#include <stddef.h>
+#include <stdint.h>
+#include <mach-o/loader.h>
 
-#define RVA_GAMEBUTTON_CTOR 0x5425b0
-#define RVA_HOMEPAGE_CTOR 0x86eb80
-#define RVA_CHARACTER_CTOR 0x9e3100
-#define RVA_LOGICDATATABLES_CTOR 0x9a4cbc
-#define RVA_LOGICPROJECTILEDATA_CTOR 0x9cb098
-#define RVA_MESSAGEMANAGER_CTOR 0x75bb1c
-#define RVA_MOVIECLIP_CTOR 0xb5f028
-#define RVA_NATIVEFONT_CTOR 0xb3ec50
-#define RVA_STAGE_CTOR 0xb9ee6c
+#define RVA_NATIVEFONT_FORMATSTRING 0ULL
+#define RVA_MESSAGEMANAGER_RECEIVEMESSAGE 0ULL
+#define RVA_LOGICDATATABLES_INITDATATABLE 0ULL
+#define RVA_LOGICPROJECTILEDATA_GETINTVALUEFROMCOLUMN 0ULL
+#define RVA_STAGE_SETVIEWPORT 0ULL
 
-#define VT_GAMEBUTTON 0xf9b0f8
-#define VT_HOMEPAGE 0xfe4008
-#define VT_CHARACTER 0xff45c0
-#define VT_LOGICDATATABLES 0xff2478
-#define VT_LOGICPROJECTILEDATA 0xff3aa0
-#define VT_MESSAGEMANAGER 0xfd57e8
-#define VT_MOVIECLIP 0x1006150
-#define VT_NATIVEFONT 0x1005858
-#define VT_STAGE 0x10091b0
+#define RVA_GAMEBUTTON_CTOR 0ULL
+#define RVA_HOMEPAGE_CTOR 0ULL
+#define RVA_CHARACTER_CTOR 0ULL
+#define RVA_LOGICDATATABLES_CTOR 0ULL
+#define RVA_LOGICPROJECTILEDATA_CTOR 0ULL
+#define RVA_MESSAGEMANAGER_CTOR 0ULL
+#define RVA_MOVIECLIP_CTOR 0ULL
+#define RVA_NATIVEFONT_CTOR 0ULL
+#define RVA_STAGE_CTOR 0ULL
+
+#define VT_GAMEBUTTON 0ULL
+#define VT_HOMEPAGE 0ULL
+#define VT_CHARACTER 0ULL
+#define VT_LOGICDATATABLES 0ULL
+#define VT_LOGICPROJECTILEDATA 0ULL
+#define VT_MESSAGEMANAGER 0ULL
+#define VT_MOVIECLIP 0ULL
+#define VT_NATIVEFONT 0ULL
+#define VT_STAGE 0ULL
+
+typedef struct {
+    uintptr_t base;
+    const struct mach_header_64 *hdr;
+} image_ref_t;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+uintptr_t rt_resolve_method(
+    image_ref_t img,
+    const char *cls,
+    const char *meth,
+    uintptr_t *func_starts,
+    size_t starts_n,
+    uintptr_t *xref_pc_out
+);
+
+void rt_dump_image(image_ref_t img);
+void rt_dump_target(const char *name, uintptr_t target);
+int rt_is_code(image_ref_t img, uintptr_t target);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

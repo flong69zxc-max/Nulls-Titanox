@@ -97,6 +97,13 @@ static const tnx_rva_entry_t g_rvas[] = {
     { "RVA_MOVIECLIP__GETTEXTFIELDBYNAME", RVA_MOVIECLIP__GETTEXTFIELDBYNAME },
     { "RVA_TEXTFIELD_SETTEXT", RVA_TEXTFIELD_SETTEXT },
     { "RVA_DISPLAYOBJECT__SETXY", RVA_DISPLAYOBJECT__SETXY },
+    { "RVA_LOGICGAMEOBJECTMANAGERCLIENT__GETGAMEOBJECTS", RVA_LOGICGAMEOBJECTMANAGERCLIENT__GETGAMEOBJECTS },
+    { "RVA_BATTLESCREEN_FIREWRAPPERFN", RVA_BATTLESCREEN_FIREWRAPPERFN },
+    { "RVA_BATTLESCREEN_ACTIVATESKILL", RVA_BATTLESCREEN_ACTIVATESKILL },
+    { "RVA_LOGICCHARACTERDATA_GETCOLLISIONRADIUS", RVA_LOGICCHARACTERDATA_GETCOLLISIONRADIUS },
+    { "RVA_MESSAGEMANAGER__RECEIVEMESSAGE", RVA_MESSAGEMANAGER__RECEIVEMESSAGE },
+    { "RVA_COMBATHUD__SETMOVESTICKSTATE", RVA_COMBATHUD__SETMOVESTICKSTATE },
+    { "RVA_COMBATHUD__SETSHOOTSTICKSTATE", RVA_COMBATHUD__SETSHOOTSTICKSTATE },
     { NULL, 0 }
 };
 
@@ -465,65 +472,130 @@ static BOOL tnx_read_uleb(const uint8_t *bytes, size_t size, size_t *offset, uin
     return NO;
 }
 
-static void tnx_load_function_starts(void) {
-    if (g_starts || !g_base) return;
-    if (!tnx_addr_readable(g_base, sizeof(struct mach_header_64))) return;
+static BOOL tnx_copy(uintptr_t source, void *destination, size_t length) {
+    if (!source || !destination || !length) return NO;
+    if (!tnx_addr_readable(source, length)) return NO;
+
+    mach_vm_size_t copied = 0;
+
+    kern_return_t result = vm_read_overwrite(
+        mach_task_self(),
+        (mach_vm_address_t)source,
+        (mach_vm_size_t)length,
+        (mach_vm_address_t)(uintptr_t)destination,
+        &copied
+    );
+
+    return result == KERN_SUCCESS && copied == (mach_vm_size_t)length;
+}
+
+static BOOL tnx_text_section(uintptr_t *address, uint64_t *size) {
+    if (!g_base) return NO;
+    if (!tnx_addr_readable(g_base, sizeof(struct mach_header_64))) return NO;
 
     const struct mach_header_64 *header = (const struct mach_header_64 *)g_base;
 
-    if (header->magic != MH_MAGIC_64) return;
+    if (header->magic != MH_MAGIC_64) return NO;
 
     const uint8_t *cursor = (const uint8_t *)(header + 1);
     const uint8_t *limit = cursor + header->sizeofcmds;
-
-    uint32_t dataoff = 0;
-    uint32_t datasize = 0;
-    BOOL found = NO;
+    uintptr_t slide = tnx_image_slide(g_base);
 
     for (uint32_t i = 0; i < header->ncmds; i++) {
-        if (cursor + sizeof(struct load_command) > limit) return;
+        if (cursor + sizeof(struct load_command) > limit) return NO;
 
         const struct load_command *command = (const struct load_command *)cursor;
 
-        if (command->cmdsize < sizeof(struct load_command)) return;
-        if (cursor + command->cmdsize > limit) return;
+        if (command->cmdsize < sizeof(struct load_command)) return NO;
+        if (cursor + command->cmdsize > limit) return NO;
 
-        if (command->cmd == LC_FUNCTION_STARTS && command->cmdsize >= sizeof(struct linkedit_data_command)) {
-            const struct linkedit_data_command *data = (const struct linkedit_data_command *)command;
+        if (command->cmd == LC_SEGMENT_64 && command->cmdsize >= sizeof(struct segment_command_64)) {
+            const struct segment_command_64 *segment = (const struct segment_command_64 *)command;
 
-            dataoff = data->dataoff;
-            datasize = data->datasize;
-            found = YES;
-            break;
+            if (strcmp(segment->segname, "__TEXT") == 0) {
+                uint64_t room = (uint64_t)command->cmdsize - sizeof(struct segment_command_64);
+                uint64_t count = room / sizeof(struct section_64);
+
+                if (count > segment->nsects) count = segment->nsects;
+
+                const struct section_64 *sections = (const struct section_64 *)(segment + 1);
+
+                for (uint64_t s = 0; s < count; s++) {
+                    if (strcmp(sections[s].sectname, "__text") != 0) continue;
+                    if (!sections[s].size) continue;
+
+                    if (address) *address = slide + (uintptr_t)sections[s].addr;
+                    if (size) *size = sections[s].size;
+
+                    return YES;
+                }
+            }
         }
 
         cursor += command->cmdsize;
     }
 
-    if (!found || !datasize) {
-        tnx_logf("starts missing");
+    return NO;
+}
+
+static BOOL tnx_start_word(uint32_t word) {
+    if (word == 0xD503233F || word == 0xD503237F) return YES;
+    if ((word & 0xFFFFFF1Fu) == 0xD503241Fu) return YES;
+    if ((word & 0xFF800000u) == 0xA9800000u && ((word >> 5) & 31u) == 31u) return YES;
+    if ((word & 0xFF8003FFu) == 0xD10003FFu) return YES;
+
+    return NO;
+}
+
+static BOOL tnx_start_boundary(const uint8_t *bytes, size_t offset) {
+    if (offset < 4) return NO;
+
+    for (size_t back = 4, seen = 0; back <= offset && seen < 8; back += 4, seen++) {
+        uint32_t word = 0;
+
+        memcpy(&word, bytes + offset - back, 4);
+
+        if (word == 0xD65F03C0) return YES;
+
+        if (word == 0xD503201F) continue;
+        if ((word & 0xFFFFFF1Fu) == 0xD503241Fu) continue;
+
+        return NO;
+    }
+
+    return NO;
+}
+
+static void tnx_load_function_starts(void) {
+    if (g_starts || !g_base) return;
+
+    uintptr_t textAddress = 0;
+    uint64_t textSize = 0;
+
+    if (!tnx_text_section(&textAddress, &textSize)) {
+        tnx_logf("starts no text section");
         return;
     }
 
-    if (datasize > 16u * 1024u * 1024u) {
-        tnx_logf("starts too large size=%u", datasize);
+    if (textSize < 64 || textSize > (64ull * 1024ull * 1024ull)) {
+        tnx_logf("starts bad text size=%llu", (unsigned long long)textSize);
         return;
     }
 
-    uintptr_t source = tnx_linkedit(dataoff, datasize);
+    uint8_t *bytes = (uint8_t *)malloc((size_t)textSize);
 
-    if (!source || !tnx_addr_readable(source, datasize)) {
-        tnx_logf("starts source invalid off=0x%08x size=%u", dataoff, datasize);
+    if (!bytes) {
+        tnx_logf("starts alloc failed size=%llu", (unsigned long long)textSize);
         return;
     }
 
-    uint8_t *bytes = (uint8_t *)malloc(datasize);
+    if (!tnx_copy(textAddress, bytes, (size_t)textSize)) {
+        free(bytes);
+        tnx_logf("starts read failed");
+        return;
+    }
 
-    if (!bytes) return;
-
-    memcpy(bytes, (const void *)source, datasize);
-
-    size_t capacity = 65536;
+    size_t capacity = 32768;
     uintptr_t *starts = (uintptr_t *)malloc(capacity * sizeof(uintptr_t));
 
     if (!starts) {
@@ -532,21 +604,14 @@ static void tnx_load_function_starts(void) {
     }
 
     size_t count = 0;
-    size_t offset = 0;
-    uint64_t cumulative = 0;
-    BOOL terminated = NO;
 
-    while (offset < datasize) {
-        uint64_t delta = 0;
+    for (size_t offset = 4; offset + 4 <= (size_t)textSize; offset += 4) {
+        uint32_t word = 0;
 
-        if (!tnx_read_uleb(bytes, datasize, &offset, &delta)) break;
+        memcpy(&word, bytes + offset, 4);
 
-        if (!delta) {
-            terminated = YES;
-            break;
-        }
-
-        cumulative += delta;
+        if (!tnx_start_word(word)) continue;
+        if (!tnx_start_boundary(bytes, offset)) continue;
 
         if (count >= capacity) {
             size_t grown = capacity * 2;
@@ -558,21 +623,23 @@ static void tnx_load_function_starts(void) {
             capacity = grown;
         }
 
-        starts[count++] = g_base + (uintptr_t)cumulative;
+        starts[count++] = textAddress + offset;
     }
 
     free(bytes);
 
-    if (!terminated || !count) {
+    if (!count) {
         free(starts);
-        tnx_logf("starts parse failed terminated=%d count=%zu", terminated ? 1 : 0, count);
+        tnx_logf("starts scan empty");
         return;
     }
 
     g_starts = starts;
     g_starts_count = count;
 
-    tnx_logf("starts loaded=%zu first=%p last=%p", count, (void *)starts[0], (void *)starts[count - 1]);
+    tnx_logf("starts scanned=%zu text=%p size=%llu first=%p last=%p",
+             count, (void *)textAddress, (unsigned long long)textSize,
+             (void *)starts[0], (void *)starts[count - 1]);
 }
 
 static BOOL tnx_valid_header(uintptr_t base) {
@@ -1310,6 +1377,137 @@ static void tnx_probe_classes(void) {
     }
 }
 
+static const tnx_rva_entry_t g_verified[] = {
+    { "-[MetalView render]", 0xd5646c },
+    { "MessageManager::receiveMessage", 0x75d20c },
+    { "LogicGameObjectManager::addGameObject", 0xa278a8 },
+    { "LogicGameObjectManager::generateGameObjectGlobalID", 0xa27b98 },
+    { "LogicBattleModeClient::getTeamStars", 0xac3cfc },
+    { "LogicProjectileData::getColumnValue", 0x9cd5e0 },
+    { "TABLE_RVA_MESSAGEMANAGER__RECEIVEMESSAGE", 0x7bace8 },
+    { NULL, 0 }
+};
+
+static void tnx_dump_verified(void) {
+    if (!g_base) return;
+
+    tnx_logf("verified anchors image=%p", (void *)g_base);
+
+    for (int i = 0; g_verified[i].name; i++) {
+        uintptr_t address = g_base + g_verified[i].rva;
+        uint32_t words[4] = {0, 0, 0, 0};
+        BOOL exact = NO;
+
+        tnx_start_index(address, &exact);
+        tnx_log_words(address, words, 4);
+
+        tnx_logf("verified %-52s off=0x%08llx start=%d prologue=%-8s callable=%d words=%08x %08x %08x %08x",
+                 g_verified[i].name,
+                 (unsigned long long)g_verified[i].rva,
+                 exact ? 1 : 0,
+                 tnx_prologue_rule(address),
+                 tnx_callable_target(g_base, address) ? 1 : 0,
+                 words[0], words[1], words[2], words[3]);
+    }
+}
+
+static void tnx_dump_objc_inventory(const char *tag) {
+    int total = objc_getClassList(NULL, 0);
+
+    if (total <= 0) {
+        tnx_logf("objc[%s] no classes", tag ? tag : "?");
+        return;
+    }
+
+    if (total > 200000) total = 200000;
+
+    Class *classes = (Class *)malloc(sizeof(Class) * (size_t)total);
+
+    if (!classes) return;
+
+    static const char *noise[] = {
+        "Sentry", "Firebase", "AppsFlyer", "GUL", "Zendesk", "sczendesk", "Helpshift",
+        "SKAdNetwork", "GAD", "FIR", "nanopb", "GTM", "GSDK", "UI", "NS", "WK", "CA",
+        "CL", "CN", "AV", "MTL", "LS", "__", NULL
+    };
+
+    static const char *gameplay[] = {
+        "Joy", "Stick", "Input", "Touch", "Aim", "Target", "Fire", "Shoot", "Move",
+        "Character", "Object", "Manager", "Battle", "Logic", "Player", "Unit",
+        "Hud", "HUD", "Screen", "View", "Render", "Stage", "Sprite", "Scene",
+        "Mode", "Game", "State", "Resource", "Text", "Label", "Button", "Node", NULL
+    };
+
+    int count = objc_getClassList(classes, total);
+    int inImage = 0;
+    int named = 0;
+    int detailed = 0;
+
+    tnx_logf("objc[%s] classes=%d", tag ? tag : "?", count);
+
+    for (int i = 0; i < count; i++) {
+        const char *name = class_getName(classes[i]);
+
+        if (!name) continue;
+        if (!tnx_image_owns_address(g_base, (uintptr_t)classes[i])) continue;
+
+        inImage++;
+
+        BOOL skip = NO;
+
+        for (int n = 0; noise[n]; n++) {
+            if (strncmp(name, noise[n], strlen(noise[n])) == 0) {
+                skip = YES;
+                break;
+            }
+        }
+
+        if (skip) continue;
+
+        if (named < 800) {
+            tnx_logf("objc[%s] cls %s", tag ? tag : "?", name);
+            named++;
+        }
+
+        BOOL interesting = NO;
+
+        for (int g = 0; gameplay[g]; g++) {
+            if (strstr(name, gameplay[g])) {
+                interesting = YES;
+                break;
+            }
+        }
+
+        if (!interesting || detailed >= 80) continue;
+
+        detailed++;
+
+        unsigned mcount = 0;
+        Method *methods = class_copyMethodList(classes[i], &mcount);
+
+        tnx_logf("objc[%s] == %s methods=%u", tag ? tag : "?", name, mcount);
+
+        if (methods) {
+            for (unsigned m = 0; m < mcount && m < 24; m++) {
+                const char *sel = sel_getName(method_getName(methods[m]));
+                const char *types = method_getTypeEncoding(methods[m]);
+
+                tnx_logf("objc[%s]    -[%s %s] %s",
+                         tag ? tag : "?", name, sel ? sel : "?", types ? types : "?");
+            }
+
+            if (mcount > 24) tnx_logf("objc[%s]    ... %u more", tag ? tag : "?", mcount - 24);
+
+            free(methods);
+        }
+    }
+
+    tnx_logf("objc[%s] total=%d inImage=%d named=%d detailed=%d",
+             tag ? tag : "?", count, inImage, named, detailed);
+
+    free(classes);
+}
+
 static void setup(void) {
     if (g_setup_done) return;
     g_setup_done = YES;
@@ -1325,8 +1523,10 @@ static void setup(void) {
     tnx_load_function_starts();
 
     tnx_resolve_addresses();
+    tnx_dump_verified();
     tnx_dump_rvas();
     tnx_probe_classes();
+    tnx_dump_objc_inventory("inventory");
 
     tnx_objc_arm("MetalView", "render");
     tnx_objc_arm("NullView", "render");

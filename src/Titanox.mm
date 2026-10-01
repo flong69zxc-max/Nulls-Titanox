@@ -19,28 +19,49 @@ static uintptr_t g_base = 0;
 static char g_path[512] = {0};
 static FILE *g_log = NULL;
 
-static uintptr_t g_t_stage_real = 0;
-static uintptr_t g_t_stage_thunk = 0;
-static uintptr_t g_t_gb = 0;
-static uintptr_t g_t_recv = 0;
-static uintptr_t g_t_getpid = 0;
-static uintptr_t g_t_malloc = 0;
+static uintptr_t g_stage_real = 0;
+static uintptr_t g_recv_real = 0;
+static uintptr_t g_ldt_init_real = 0;
+static uintptr_t g_char_ctor_real = 0;
+static uintptr_t g_font_fmt_real = 0;
+static uintptr_t g_mc_ctor_real = 0;
+static uintptr_t g_getpid = 0;
+static uintptr_t g_malloc = 0;
 
-static volatile int g_hits_stage_real = 0;
-static volatile int g_hits_stage_thunk = 0;
-static volatile int g_hits_gb = 0;
+static volatile int g_hits_stage = 0;
 static volatile int g_hits_recv = 0;
+static volatile int g_hits_ldt_init = 0;
+static volatile int g_hits_char_ctor = 0;
+static volatile int g_hits_font_fmt = 0;
+static volatile int g_hits_mc_ctor = 0;
 static volatile int g_hits_getpid = 0;
 static volatile int g_hits_malloc = 0;
 static volatile int g_arm_ok = 0;
 static volatile int g_arm_fail = 0;
 
-typedef void (*recv_fn)(void *, void *, void *, void *, void *, void *);
-typedef pid_t (*getpid_fn)(void);
-typedef void *(*malloc_fn)(size_t);
-static recv_fn g_orig_recv = NULL;
-static getpid_fn g_orig_getpid = NULL;
-static malloc_fn g_orig_malloc = NULL;
+static uintptr_t decode_bl(uintptr_t thunk_addr, uint32_t opcode) {
+    if ((opcode & 0xFC000000) != 0x94000000) return 0;
+    int32_t imm26 = opcode & 0x03FFFFFF;
+    int64_t offset = (int64_t)(imm26 << 2);
+    if (offset & (1LL << 27)) {
+        offset |= ~((1LL << 28) - 1);
+    }
+    return (uintptr_t)((int64_t)thunk_addr + offset);
+}
+
+static uintptr_t resolve_thunk(uintptr_t base, uint64_t rva, const char *name) {
+    uintptr_t thunk = base + rva;
+    uint32_t op2 = *(volatile uint32_t *)(thunk + 8);
+    uintptr_t real = decode_bl(thunk + 8, op2);
+    if (real) {
+        log_line([NSString stringWithFormat:@"%s thunk=%p real=%p",
+                  name, (void *)thunk, (void *)real]);
+        return real;
+    }
+    log_line([NSString stringWithFormat:@"%s rva=0x%llx not a thunk, using direct",
+              name, rva]);
+    return thunk;
+}
 
 static void log_line(NSString *s) {
     if (!g_log) {
@@ -89,12 +110,17 @@ static void manual_arm(void) {
         memset(&st, 0, sizeof(st));
 
         int slot = 0;
-        if (g_t_stage_real)  { st.__bvr[slot] = g_t_stage_real;  st.__bcr[slot] = (uint32_t)BCR_ON; slot++; }
-        if (g_t_stage_thunk) { st.__bvr[slot] = g_t_stage_thunk; st.__bcr[slot] = (uint32_t)BCR_ON; slot++; }
-        if (g_t_recv)        { st.__bvr[slot] = g_t_recv;        st.__bcr[slot] = (uint32_t)BCR_ON; slot++; }
-        if (g_t_getpid)      { st.__bvr[slot] = g_t_getpid;      st.__bcr[slot] = (uint32_t)BCR_ON; slot++; }
-        if (g_t_malloc)      { st.__bvr[slot] = g_t_malloc;      st.__bcr[slot] = (uint32_t)BCR_ON; slot++; }
-        if (slot >= 6) break;
+        uintptr_t targets[6] = {
+            g_stage_real, g_recv_real, g_ldt_init_real,
+            g_char_ctor_real, g_font_fmt_real, g_mc_ctor_real
+        };
+        for (int s = 0; s < 6 && slot < 6; s++) {
+            if (targets[s]) {
+                st.__bvr[slot] = targets[s];
+                st.__bcr[slot] = (uint32_t)BCR_ON;
+                slot++;
+            }
+        }
 
         kern_return_t kr = thread_set_state(threads[i], ARM_DEBUG_STATE64,
                                             (thread_state_t)&st, cnt);
@@ -109,82 +135,17 @@ static void manual_arm(void) {
     g_arm_fail = fail;
 }
 
-static uintptr_t decode_bl(uintptr_t thunk_addr, uint32_t opcode) {
-    if ((opcode & 0xFC000000) != 0x94000000) return 0;
-    int32_t imm26 = opcode & 0x03FFFFFF;
-    int64_t offset = (int64_t)(imm26 << 2);
-    if (offset & (1LL << 27)) {
-        offset |= ~((1LL << 28) - 1);
-    }
-    return (uintptr_t)((int64_t)thunk_addr + offset);
-}
+static void h_stage(void *a, void *b, void *c, void *d) { g_hits_stage++; }
+static void h_ldt_init(void *a, int b, void *c) { g_hits_ldt_init++; }
+static void h_char_ctor(void *a, void *b, void *c, void *d) { g_hits_char_ctor++; }
+static void h_font_fmt(void *a, void *b, void *c) { g_hits_font_fmt++; }
+static void h_mc_ctor(void *a, void *b) { g_hits_mc_ctor++; }
 
-static void log_thunk_analysis(const char *name, uintptr_t thunk_addr) {
-    uint32_t op0 = *(volatile uint32_t *)thunk_addr;
-    uint32_t op1 = *(volatile uint32_t *)(thunk_addr + 4);
-    uint32_t op2 = *(volatile uint32_t *)(thunk_addr + 8);
-    uint32_t op3 = *(volatile uint32_t *)(thunk_addr + 12);
-
-    log_line([NSString stringWithFormat:
-        @"%@ thunk=%p ops: %08x %08x %08x %08x",
-        [NSString stringWithUTF8String:name],
-        (void *)thunk_addr, op0, op1, op2, op3]);
-
-    uintptr_t real = decode_bl(thunk_addr + 8, op2);
-    if (real) {
-        uint32_t r0 = *(volatile uint32_t *)real;
-        uint32_t r1 = *(volatile uint32_t *)(real + 4);
-        log_line([NSString stringWithFormat:
-            @"%@ REAL target=%p ops: %08x %08x",
-            [NSString stringWithUTF8String:name],
-            (void *)real, r0, r1]);
-    }
-}
-
-static void stage_real_hook(void *self, void *a2, void *a3, void *a4) {
-    g_hits_stage_real++;
-}
-static void stage_thunk_hook(void *self, void *a2, void *a3, void *a4) {
-    g_hits_stage_thunk++;
-}
-static void gb_hook(void *self, void *a2) { g_hits_gb++; }
-
-static void recv_hook(void *self, void *msg, void *a, void *b, void *c, void *d) {
+static void h_recv(void *self, void *msg, void *a, void *b, void *c, void *d) {
     g_hits_recv++;
-    if (g_hits_recv <= 5) log_line([NSString stringWithFormat:@"RECV #%d", g_hits_recv]);
-    if (g_orig_recv) {
-        brk_suspend_self();
-        g_orig_recv(self, msg, a, b, c, d);
-        brk_resume_self();
+    if (g_hits_recv <= 10) {
+        log_line([NSString stringWithFormat:@"RECV #%d msg=%p", g_hits_recv, msg]);
     }
-}
-
-static pid_t getpid_hook(void) {
-    g_hits_getpid++;
-    if (g_hits_getpid <= 5 || (g_hits_getpid % 500 == 0)) {
-        log_line([NSString stringWithFormat:@"GETPID #%d", g_hits_getpid]);
-    }
-    if (g_orig_getpid) {
-        brk_suspend_self();
-        pid_t r = g_orig_getpid();
-        brk_resume_self();
-        return r;
-    }
-    return 0;
-}
-
-static void *malloc_hook(size_t sz) {
-    g_hits_malloc++;
-    if (g_hits_malloc <= 5 || (g_hits_malloc % 500 == 0)) {
-        log_line([NSString stringWithFormat:@"MALLOC #%d size=%zu", g_hits_malloc, sz]);
-    }
-    if (g_orig_malloc) {
-        brk_suspend_self();
-        void *r = g_orig_malloc(sz);
-        brk_resume_self();
-        return r;
-    }
-    return NULL;
 }
 
 static void setup(void) {
@@ -198,38 +159,31 @@ static void setup(void) {
     }
     log_line([NSString stringWithFormat:@"base=%p path=%s", (void *)g_base, g_path]);
 
-    g_t_stage_thunk = g_base + RVA_STAGE_SETVIEWPORT;
-    g_t_gb          = g_base + RVA_GAMEBUTTON_CTOR;
-    g_t_recv        = g_base + RVA_MESSAGEMANAGER_RECEIVEMESSAGE;
-
-    log_thunk_analysis("stage", g_t_stage_thunk);
-    log_thunk_analysis("gb",    g_t_gb);
-    log_thunk_analysis("recv",  g_t_recv);
-
-    uint32_t stage_op2 = *(volatile uint32_t *)(g_t_stage_thunk + 8);
-    g_t_stage_real = decode_bl(g_t_stage_thunk + 8, stage_op2);
+    g_stage_real     = resolve_thunk(g_base, RVA_STAGE_SETVIEWPORT, "stage");
+    g_recv_real      = resolve_thunk(g_base, RVA_MESSAGEMANAGER_RECEIVEMESSAGE, "recv");
+    g_ldt_init_real  = resolve_thunk(g_base, RVA_LOGICDATATABLES_INITDATATABLE, "ldt_init");
+    g_char_ctor_real = resolve_thunk(g_base, RVA_CHARACTER_CTOR, "char_ctor");
+    g_font_fmt_real  = resolve_thunk(g_base, RVA_NATIVEFONT_FORMATSTRING, "font_fmt");
+    g_mc_ctor_real   = resolve_thunk(g_base, RVA_MOVIECLIP_CTOR, "mc_ctor");
 
     void *getpid_addr = dlsym(RTLD_DEFAULT, "getpid");
     void *malloc_addr = dlsym(RTLD_DEFAULT, "malloc");
-    g_t_getpid = (uintptr_t)getpid_addr;
-    g_t_malloc = (uintptr_t)malloc_addr;
+    g_getpid = (uintptr_t)getpid_addr;
+    g_malloc = (uintptr_t)malloc_addr;
 
-    g_orig_recv   = (recv_fn)brk_original_ptr((void *)g_t_recv);
-    g_orig_getpid = (getpid_fn)brk_original_ptr(getpid_addr);
-    g_orig_malloc = (malloc_fn)brk_original_ptr(malloc_addr);
-
-    if (g_t_stage_real) brk_install((void *)g_t_stage_real, (void *)&stage_real_hook);
-    brk_install((void *)g_t_stage_thunk, (void *)&stage_thunk_hook);
-    brk_install((void *)g_t_recv,        (void *)&recv_hook);
-    brk_install(getpid_addr,             (void *)&getpid_hook);
-    brk_install(malloc_addr,             (void *)&malloc_hook);
+    if (g_stage_real)     brk_install((void *)g_stage_real,     (void *)&h_stage);
+    if (g_recv_real)      brk_install((void *)g_recv_real,      (void *)&h_recv);
+    if (g_ldt_init_real)  brk_install((void *)g_ldt_init_real,  (void *)&h_ldt_init);
+    if (g_char_ctor_real) brk_install((void *)g_char_ctor_real, (void *)&h_char_ctor);
+    if (g_font_fmt_real)  brk_install((void *)g_font_fmt_real,  (void *)&h_font_fmt);
+    if (g_mc_ctor_real)   brk_install((void *)g_mc_ctor_real,   (void *)&h_mc_ctor);
 
     manual_arm();
 
     log_line([NSString stringWithFormat:
-        @"stage_thunk=%p stage_real=%p recv=%p getpid=%p malloc=%p arm ok=%d fail=%d",
-        (void *)g_t_stage_thunk, (void *)g_t_stage_real,
-        (void *)g_t_recv, getpid_addr, malloc_addr,
+        @"real: stage=%p recv=%p ldt=%p char=%p fmt=%p mc=%p arm=%d/%d",
+        (void *)g_stage_real, (void *)g_recv_real, (void *)g_ldt_init_real,
+        (void *)g_char_ctor_real, (void *)g_font_fmt_real, (void *)g_mc_ctor_real,
         g_arm_ok, g_arm_fail]);
 }
 
@@ -248,15 +202,12 @@ static void show_alert(void) {
         if (!root) return;
 
         NSString *msg = [NSString stringWithFormat:
-            @"arm: %d ok / %d fail\n\n"
-            @"getpid: %d\nmalloc: %d\n\n"
-            @"stage_real:  %d\nstage_thunk: %d\ngb:          %d\nrecv:        %d\n\n"
-            @"real=%p\n\nlog: Documents/Titanox.log",
+            @"arm: %d/%d\n\n"
+            @"stage:   %d\nrecv:    %d\nldt_init:%d\nchar:    %d\nfmt:     %d\nmc:      %d\n\n"
+            @"log: Documents/Titanox.log",
             g_arm_ok, g_arm_fail,
-            g_hits_getpid, g_hits_malloc,
-            g_hits_stage_real, g_hits_stage_thunk,
-            g_hits_gb, g_hits_recv,
-            (void *)g_t_stage_real];
+            g_hits_stage, g_hits_recv, g_hits_ldt_init,
+            g_hits_char_ctor, g_hits_font_fmt, g_hits_mc_ctor];
 
         UIAlertController *a = [UIAlertController
             alertControllerWithTitle:@"Titanox diag" message:msg

@@ -16,7 +16,8 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout tweak repo
+        uses: actions/checkout@v4
 
       - name: Install Theos
         run: |
@@ -26,6 +27,16 @@ jobs:
           echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
           echo "$HOME/theos/bin" >> "$GITHUB_PATH"
           echo "/opt/homebrew/opt/make/libexec/gnubin" >> "$GITHUB_PATH"
+
+      - name: Fetch libtitanox
+        run: |
+          set -euo pipefail
+          rm -rf libtitanox
+          git clone --depth 1 https://github.com/flong69zxc-max/Titanox.git /tmp/titanox-src
+          mkdir -p libtitanox
+          cp -R /tmp/titanox-src/libtitanox/. libtitanox/
+          rm -rf libtitanox/.git
+          ls -la libtitanox
 
       - name: Build
         run: |
@@ -37,7 +48,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p out
-          find .theos/obj -name '*.dylib' -exec cp {} out/Titanox.dylib \;
+          DYLIB=$(find .theos/obj -name '*.dylib' | head -n1)
+          if [ -z "$DYLIB" ]; then
+            echo "no dylib produced"
+            exit 1
+          fi
+          cp "$DYLIB" out/Titanox.dylib
           file out/Titanox.dylib
           ls -la out/
 

@@ -11,12 +11,6 @@
 #import <unistd.h>
 #import <libgen.h>
 #import <ptrauth.h>
-#import <pthread.h>
-
-extern "C" {
-#import "mach_excServer.h"
-}
-
 #import "libtitanox.h"
 #import "offsets.h"
 
@@ -45,24 +39,25 @@ static volatile int g_hits_getpid = 0;
 static volatile int g_hits_malloc = 0;
 static volatile int g_arm_ok = 0;
 static volatile int g_arm_fail = 0;
-static volatile int g_exc_seen = 0;
-static volatile int g_exc_forwarded = 0;
 
-static mach_port_t g_orig_bp_port = MACH_PORT_NULL;
-static mach_port_t g_my_bp_port = MACH_PORT_NULL;
+static void log_raw(const char *s) {
+    if (!g_log) {
+        NSString *p = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/Titanox.log"];
+        g_log = fopen(p.UTF8String, "a");
+    }
+    if (!g_log) return;
+    if (g_log_written >= LOG_MAX_BYTES) return;
+    size_t len = strlen(s);
+    fwrite(s, 1, len, g_log);
+    fputc('\n', g_log);
+    fflush(g_log);
+    g_log_written += (long)len + 1;
+}
 
-typedef struct {
-    uintptr_t target;
-    uintptr_t replacement;
-    const char *name;
-} bp_entry_t;
-
-static bp_entry_t g_entries[8];
-static int g_entry_count = 0;
-static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
-
-static void log_line(NSString *s);
-static void log_raw(const char *s);
+static void log_line(NSString *s) {
+    if (!s) return;
+    log_raw(s.UTF8String);
+}
 
 static uintptr_t decode_bl(uintptr_t thunk_addr, uint32_t opcode) {
     if ((opcode & 0xFC000000) != 0x94000000) return 0;
@@ -83,25 +78,6 @@ static uintptr_t resolve_thunk(uintptr_t base, uint64_t rva, const char *name) {
     }
     log_line([NSString stringWithFormat:@"%s rva=0x%llx not a thunk", name, rva]);
     return thunk;
-}
-
-static void log_raw(const char *s) {
-    if (!g_log) {
-        NSString *p = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/Titanox.log"];
-        g_log = fopen(p.UTF8String, "a");
-    }
-    if (!g_log) return;
-    if (g_log_written >= LOG_MAX_BYTES) return;
-    size_t len = strlen(s);
-    fwrite(s, 1, len, g_log);
-    fputc('\n', g_log);
-    fflush(g_log);
-    g_log_written += (long)len + 1;
-}
-
-static void log_line(NSString *s) {
-    if (!s) return;
-    log_raw(s.UTF8String);
 }
 
 static BOOL find_game_image(uintptr_t *out_base, char *out_path, size_t cap) {
@@ -145,142 +121,21 @@ static void log_target_info(const char *name, uintptr_t addr) {
               (void *)addr, op0, op1, is_pac_signed(addr)]);
 }
 
-static void check_bp_ports(void) {
-    mach_port_t ports[EXC_TYPES_COUNT];
-    mach_msg_type_number_t cnt = EXC_TYPES_COUNT;
-    exception_mask_t masks[EXC_TYPES_COUNT];
-    exception_behavior_t behaviors[EXC_TYPES_COUNT];
-    thread_state_flavor_t flavors[EXC_TYPES_COUNT];
-    memset(ports, 0, sizeof(ports));
+static void dump_self_bvr(void) {
+    thread_t self = mach_thread_self();
+    arm_debug_state64_t st;
+    mach_msg_type_number_t cnt = ARM_DEBUG_STATE64_COUNT;
+    memset(&st, 0, sizeof(st));
 
-    kern_return_t kr = task_get_exception_ports(mach_task_self(),
-        EXC_MASK_BREAKPOINT, masks, &cnt, ports, behaviors, flavors);
-
-    log_line([NSString stringWithFormat:
-        @"--- EXC_MASK_BREAKPOINT: kr=%d count=%u ---", kr, cnt]);
-
-    for (uint32_t i = 0; i < cnt; i++) {
-        Dl_info di = {0};
-        const char *owner = "?";
-        if (dladdr((void *)(uintptr_t)ports[i], &di) && di.dli_fname) {
-            owner = basename((char *)di.dli_fname);
-        }
+    kern_return_t kr = thread_get_state(self, ARM_DEBUG_STATE64,
+                                        (thread_state_t)&st, &cnt);
+    log_line([NSString stringWithFormat:@"--- self BVR (kr=%d) ---", kr]);
+    for (int k = 0; k < 6; k++) {
         log_line([NSString stringWithFormat:
-            @"  port[%u]=%u behavior=0x%x owner=%s",
-            i, ports[i], behaviors[i], owner]);
+                  @"  bvr[%d]=%p bcr=0x%x", k,
+                  (void *)st.__bvr[k], st.__bcr[k]]);
     }
-}
-
-static uintptr_t lookup_target(uintptr_t pc) {
-    uintptr_t found = 0;
-    pthread_mutex_lock(&g_lock);
-    for (int i = 0; i < g_entry_count; i++) {
-        if (g_entries[i].target == pc) {
-            found = g_entries[i].replacement;
-            break;
-        }
-    }
-    pthread_mutex_unlock(&g_lock);
-    return found;
-}
-
-kern_return_t catch_mach_exception_raise_state(
-    mach_port_t exception_port, exception_type_t exception,
-    const mach_exception_data_t code, mach_msg_type_number_t codeCnt,
-    int *flavor, const thread_state_t old_state,
-    mach_msg_type_number_t old_stateCnt, thread_state_t new_state,
-    mach_msg_type_number_t *new_stateCnt) {
-
-    (void)exception_port; (void)exception; (void)code; (void)codeCnt; (void)flavor;
-
-    g_exc_seen++;
-
-    arm_thread_state64_t *oldSt = (arm_thread_state64_t *)old_state;
-    arm_thread_state64_t *newSt = (arm_thread_state64_t *)new_state;
-
-    uint64_t pc = arm_thread_state64_get_pc(*oldSt);
-    uintptr_t repl = lookup_target((uintptr_t)pc);
-
-    if (repl) {
-        *newSt = *oldSt;
-        *new_stateCnt = old_stateCnt;
-        arm_thread_state64_set_pc_fptr(*newSt, (void *)repl);
-        return KERN_SUCCESS;
-    }
-
-    g_exc_forwarded++;
-
-    if (g_orig_bp_port != MACH_PORT_NULL) {
-        return mach_msg_server(mach_exc_server,
-                               sizeof(union __RequestUnion__catch_mach_exc_subsystem),
-                               g_orig_bp_port, MACH_MSG_OPTION_NONE);
-    }
-    return KERN_FAILURE;
-}
-
-kern_return_t catch_mach_exception_raise(
-    mach_port_t exception_port, mach_port_t thread, mach_port_t task,
-    exception_type_t exception, mach_exception_data_t code,
-    mach_msg_type_number_t codeCnt) {
-    (void)exception_port; (void)thread; (void)task; (void)exception;
-    (void)code; (void)codeCnt;
-    return KERN_FAILURE;
-}
-
-kern_return_t catch_mach_exception_raise_state_identity(
-    mach_port_t exception_port, mach_port_t thread, mach_port_t task,
-    exception_type_t exception, mach_exception_data_t code,
-    mach_msg_type_number_t codeCnt, int *flavor,
-    thread_state_t old_state, mach_msg_type_number_t old_stateCnt,
-    thread_state_t new_state, mach_msg_type_number_t *new_stateCnt) {
-    (void)exception_port; (void)thread; (void)task; (void)exception;
-    (void)code; (void)codeCnt; (void)flavor; (void)old_state;
-    (void)old_stateCnt; (void)new_state; (void)new_stateCnt;
-    return KERN_FAILURE;
-}
-
-static void *exception_thread(void *unused) {
-    (void)unused;
-    for (;;) {
-        mach_msg_server(mach_exc_server,
-                        sizeof(union __RequestUnion__catch_mach_exc_subsystem),
-                        g_my_bp_port, MACH_MSG_OPTION_NONE);
-    }
-    return NULL;
-}
-
-static void setup_exception_port(void) {
-    mach_port_t ports[EXC_TYPES_COUNT];
-    mach_msg_type_number_t cnt = EXC_TYPES_COUNT;
-    exception_mask_t masks[EXC_TYPES_COUNT];
-    exception_behavior_t behaviors[EXC_TYPES_COUNT];
-    thread_state_flavor_t flavors[EXC_TYPES_COUNT];
-    memset(ports, 0, sizeof(ports));
-
-    if (task_get_exception_ports(mach_task_self(), EXC_MASK_BREAKPOINT,
-                                 masks, &cnt, ports, behaviors, flavors) == KERN_SUCCESS
-        && cnt > 0) {
-        g_orig_bp_port = ports[0];
-        log_line([NSString stringWithFormat:@"original bp port=%u", g_orig_bp_port]);
-    } else {
-        log_line(@"no original bp port found");
-    }
-
-    mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &g_my_bp_port);
-    mach_port_insert_right(mach_task_self(), g_my_bp_port, g_my_bp_port,
-                           MACH_MSG_TYPE_MAKE_SEND);
-
-    kern_return_t kr = task_set_exception_ports(mach_task_self(), EXC_MASK_BREAKPOINT,
-                                                g_my_bp_port,
-                                                EXCEPTION_STATE | MACH_EXCEPTION_CODES,
-                                                ARM_THREAD_STATE64);
-    log_line([NSString stringWithFormat:@"task_set_exception_ports kr=%d", kr]);
-
-    pthread_t th;
-    pthread_create(&th, NULL, exception_thread, NULL);
-    pthread_detach(th);
-
-    log_line(@"exception port captured");
+    mach_port_deallocate(mach_task_self(), self);
 }
 
 static void manual_arm(void) {
@@ -324,23 +179,6 @@ static void manual_arm(void) {
     }
     g_arm_ok = ok;
     g_arm_fail = fail;
-}
-
-static void dump_self_bvr(void) {
-    thread_t self = mach_thread_self();
-    arm_debug_state64_t st;
-    mach_msg_type_number_t cnt = ARM_DEBUG_STATE64_COUNT;
-    memset(&st, 0, sizeof(st));
-
-    kern_return_t kr = thread_get_state(self, ARM_DEBUG_STATE64,
-                                        (thread_state_t)&st, &cnt);
-    log_line([NSString stringWithFormat:@"--- self BVR (kr=%d) ---", kr]);
-    for (int k = 0; k < 6; k++) {
-        log_line([NSString stringWithFormat:
-                  @"  bvr[%d]=%p bcr=0x%x", k,
-                  (void *)st.__bvr[k], st.__bcr[k]]);
-    }
-    mach_port_deallocate(mach_task_self(), self);
 }
 
 static pid_t (*g_orig_getpid)(void) = NULL;
@@ -409,9 +247,6 @@ static void setup(void) {
     }
     log_line([NSString stringWithFormat:@"base=%p path=%s", (void *)g_base, g_path]);
 
-    setup_exception_port();
-    check_bp_ports();
-
     g_stage_real     = resolve_thunk(g_base, RVA_STAGE_SETVIEWPORT, "stage");
     g_recv_real      = resolve_thunk(g_base, RVA_MESSAGEMANAGER_RECEIVEMESSAGE, "recv");
     g_ldt_init_real  = resolve_thunk(g_base, RVA_LOGICDATATABLES_INITDATATABLE, "ldt_init");
@@ -432,26 +267,16 @@ static void setup(void) {
     g_orig_getpid = (pid_t(*)(void))brk_original_ptr(getpid_addr);
     g_orig_malloc = (void*(*)(size_t))brk_original_ptr(malloc_addr);
 
-    pthread_mutex_lock(&g_lock);
-    g_entries[0] = (bp_entry_t){g_stage_real, (uintptr_t)&h_stage, "stage"};
-    g_entries[1] = (bp_entry_t){g_recv_real, (uintptr_t)&h_recv, "recv"};
-    g_entries[2] = (bp_entry_t){g_ldt_init_real, (uintptr_t)&h_ldt_init, "ldt_init"};
-    g_entries[3] = (bp_entry_t){g_char_ctor_real, (uintptr_t)&h_char_ctor, "char_ctor"};
-    g_entries[4] = (bp_entry_t){g_font_fmt_real, (uintptr_t)&h_font_fmt, "font_fmt"};
-    g_entries[5] = (bp_entry_t){g_mc_ctor_real, (uintptr_t)&h_mc_ctor, "mc_ctor"};
-    g_entry_count = 6;
-    pthread_mutex_unlock(&g_lock);
+    brk_install((void *)g_stage_real,     (void *)&h_stage);
+    brk_install((void *)g_recv_real,      (void *)&h_recv);
+    brk_install((void *)g_ldt_init_real,  (void *)&h_ldt_init);
+    brk_install((void *)g_char_ctor_real, (void *)&h_char_ctor);
+    brk_install((void *)g_font_fmt_real,  (void *)&h_font_fmt);
+    brk_install((void *)g_mc_ctor_real,   (void *)&h_mc_ctor);
+    brk_install(getpid_addr,              (void *)&h_getpid);
+    brk_install(malloc_addr,              (void *)&h_malloc);
 
-    if (g_stage_real)     brk_install((void *)g_stage_real,     (void *)&h_stage);
-    if (g_recv_real)      brk_install((void *)g_recv_real,      (void *)&h_recv);
-    if (g_ldt_init_real)  brk_install((void *)g_ldt_init_real,  (void *)&h_ldt_init);
-    if (g_char_ctor_real) brk_install((void *)g_char_ctor_real, (void *)&h_char_ctor);
-    if (g_font_fmt_real)  brk_install((void *)g_font_fmt_real,  (void *)&h_font_fmt);
-    if (g_mc_ctor_real)   brk_install((void *)g_mc_ctor_real,   (void *)&h_mc_ctor);
-
-    brk_install(getpid_addr, (void *)&h_getpid);
-    brk_install(malloc_addr, (void *)&h_malloc);
-
+    log_line(@"installed via Titanox");
     manual_arm();
     dump_self_bvr();
     log_line(@"setup done");
@@ -471,15 +296,12 @@ static void show_alert(void) {
         UIViewController *root = top_vc();
         if (!root) return;
         NSString *msg = [NSString stringWithFormat:
-            @"arm: %d/%d\n"
-            @"exc seen: %d\n"
-            @"exc fwd:  %d\n\n"
+            @"arm: %d/%d\n\n"
             @"getpid:  %d\nmalloc:  %d\n\n"
             @"stage:    %d\nrecv:     %d\nldt_init: %d\nchar:     %d\nfmt:      %d\nmc:       %d\n\n"
             @"log: %ld / %d B\n\n"
             @"log: Documents/Titanox.log",
             g_arm_ok, g_arm_fail,
-            g_exc_seen, g_exc_forwarded,
             g_hits_getpid, g_hits_malloc,
             g_hits_stage, g_hits_recv, g_hits_ldt_init,
             g_hits_char_ctor, g_hits_font_fmt, g_hits_mc_ctor,

@@ -1,202 +1,211 @@
-#import <Foundation/Foundation.h>
-#import <mach-o/loader.h>
-#import <mach-o/dyld.h>
-#import <mach/mach.h>
-#include <string.h>
-#include <stdint.h>
-#include <stdio.h>
+#include "offsets.h"
+#include "hook.h"
 
-typedef struct {
-    uintptr_t base;
-    const struct mach_header_64 *hdr;
-} image_ref_t;
+#include <mach/mach.h>
+#include <mach/mach_vm.h>
+#include <mach-o/dyld.h>
+#include <mach-o/nlist.h>
+#include <dlfcn.h>
+#include <cxxabi.h>
 
-static const struct segment_command_64 *seg_find(const struct mach_header_64 *hdr,
-                                                const char *name)
+#include <algorithm>
+#include <cstdlib>
+#include <cstring>
+#include <limits>
+#include <set>
+#include <string>
+#include <vector>
+
+namespace {
+
+struct Range {
+    uintptr_t addr;
+    size_t size;
+    bool code;
+    bool strings;
+};
+
+struct Image {
+    image_ref_t ref{};
+    intptr_t slide = 0;
+    uintptr_t text = 0;
+    std::vector<uint8_t> commands;
+    std::vector<Range> ranges;
+    std::vector<segment_command_64> segments;
+    linkedit_data_command starts{};
+    symtab_command symtab{};
+    bool hasStarts = false;
+    bool hasSymbols = false;
+    uint8_t uuid[16]{};
+    bool hasUUID = false;
+};
+
+static bool read_memory(uintptr_t address, void *out, size_t size)
 {
-    const uint8_t *p = (const uint8_t *)hdr + sizeof(*hdr);
-    for (uint32_t i = 0; i < hdr->ncmds; i++) {
-        const struct load_command *lc = (const struct load_command *)p;
-        if (lc->cmd == LC_SEGMENT_64) {
-            const struct segment_command_64 *sg = (const struct segment_command_64 *)lc;
-            if (strncmp(sg->segname, name, 16) == 0) {
-                return sg;
-            }
-        }
-        p += lc->cmdsize;
-    }
-    return NULL;
+    if (!size) return true;
+    if (address > UINTPTR_MAX - size) return false;
+
+    mach_vm_size_t copied = 0;
+    kern_return_t kr = mach_vm_read_overwrite(
+        mach_task_self(),
+        (mach_vm_address_t)address,
+        (mach_vm_size_t)size,
+        (mach_vm_address_t)out,
+        &copied
+    );
+
+    return kr == KERN_SUCCESS && copied == size;
 }
 
-static uintptr_t seg_scan(const struct segment_command_64 *sg, uintptr_t slide,
-                          const void *needle, size_t nlen)
+static bool add_slide(uint64_t value, intptr_t slide, uintptr_t &out)
 {
-    const uint8_t *begin = (const uint8_t *)(sg->vmaddr + slide);
-    const uint8_t *end = begin + sg->vmsize;
-    if (nlen == 0) {
-        return 0;
+    if (value > UINTPTR_MAX) return false;
+
+    uintptr_t v = (uintptr_t)value;
+
+    if (slide >= 0) {
+        uintptr_t s = (uintptr_t)slide;
+        if (v > UINTPTR_MAX - s) return false;
+        out = v + s;
+    } else {
+        uintptr_t s = (uintptr_t)(-(slide + 1)) + 1;
+        if (v < s) return false;
+        out = v - s;
     }
-    for (const uint8_t *p = begin; p + nlen <= end; p++) {
-        if (p[0] == ((const uint8_t *)needle)[0] && memcmp(p, needle, nlen) == 0) {
-            return (uintptr_t)p;
-        }
-    }
-    return 0;
+
+    return true;
 }
 
-uintptr_t rt_find_method_string(image_ref_t img, const char *cls, const char *meth,
-                               uintptr_t *declared_pc)
+static bool contains(const Range &r, uintptr_t address, size_t size)
 {
-    char needle[256];
-    snprintf(needle, sizeof(needle), "%s::%s", cls, meth);
-    size_t nlen = strlen(needle);
-
-    static const char *segs[] = { "__TEXT", "__DATA", "__DATA_CONST", "__RODATA" };
-    for (int i = 0; i < 4; i++) {
-        const struct segment_command_64 *sg = seg_find(img.hdr, segs[i]);
-        if (!sg) {
-            continue;
-        }
-        uintptr_t hit = seg_scan(sg, img.base - (uintptr_t)img.hdr, needle, nlen);
-        if (hit) {
-            return hit;
-        }
-    }
-    (void)declared_pc;
-    return 0;
+    if (address < r.addr) return false;
+    uintptr_t delta = address - r.addr;
+    return delta <= r.size && size <= r.size - delta;
 }
 
-static uintptr_t find_first_xref(image_ref_t img, uintptr_t str_addr, uintptr_t *out_pc)
+static bool code_address(const Image &img, uintptr_t address)
 {
-    static const char *segs[] = { "__TEXT", "__TEXT_EXEC" };
+    if (address & 3) return false;
 
-    for (int s = 0; s < 2; s++) {
-        const struct segment_command_64 *sg = seg_find(img.hdr, segs[s]);
-        if (!sg) {
-            continue;
+    for (const auto &r : img.ranges) {
+        if (r.code && contains(r, address, 4)) return true;
+    }
+
+    return false;
+}
+
+static bool load_image(image_ref_t ref, Image &img)
+{
+    mach_header_64 header{};
+
+    if (!ref.hdr || ref.base != (uintptr_t)ref.hdr) return false;
+    if (!read_memory(ref.base, &header, sizeof(header))) return false;
+    if (header.magic != MH_MAGIC_64) return false;
+    if (header.sizeofcmds > 4U * 1024U * 1024U) return false;
+    if (ref.base > UINTPTR_MAX - sizeof(header)) return false;
+
+    bool found = false;
+
+    for (uint32_t i = 0; i < _dyld_image_count(); ++i) {
+        if (_dyld_get_image_header(i) == (const mach_header *)ref.hdr) {
+            img.slide = _dyld_get_image_vmaddr_slide(i);
+            found = true;
+            break;
         }
-        uintptr_t slide = img.base - (uintptr_t)img.hdr;
-        const uint32_t *code = (const uint32_t *)(sg->vmaddr + slide);
-        uint64_t nwords = sg->vmsize / 4;
+    }
 
-        for (uint64_t i = 0; i + 1 < nwords; i++) {
-            uint32_t op = code[i];
-            if ((op & 0x9F000000u) != 0x90000000u) {
-                continue;
-            }
-            uint32_t rd = op & 0x1Fu;
-            int64_t immhi = (int64_t)((op >> 5) & 0x7FFFF);
-            int64_t immlo = (int64_t)((op >> 29) & 0x3);
-            int64_t imm = (immhi << 2) | immlo;
-            if (imm & (1LL << 20)) {
-                imm |= ~((1LL << 21) - 1);
-            }
-            uintptr_t pc = (uintptr_t)&code[i];
-            uintptr_t page = (pc & ~0xFFFULL) + ((uintptr_t)imm << 12);
+    if (!found) return false;
 
-            uint32_t op2 = code[i + 1];
-            if ((op2 & 0xFF800000u) != 0x91000000u) {
-                continue;
+    img.ref = ref;
+    img.commands.resize(header.sizeofcmds);
+
+    if (!read_memory(
+            ref.base + sizeof(header),
+            img.commands.data(),
+            img.commands.size())) return false;
+
+    size_t offset = 0;
+
+    for (uint32_t i = 0; i < header.ncmds; ++i) {
+        if (offset > img.commands.size()) return false;
+        if (img.commands.size() - offset < sizeof(load_command)) return false;
+
+        load_command lc{};
+        memcpy(&lc, img.commands.data() + offset, sizeof(lc));
+
+        if (lc.cmdsize < sizeof(lc)) return false;
+        if (lc.cmdsize > img.commands.size() - offset) return false;
+
+        const uint8_t *p = img.commands.data() + offset;
+
+        if (lc.cmd == LC_SEGMENT_64) {
+            if (lc.cmdsize < sizeof(segment_command_64)) return false;
+
+            segment_command_64 sg{};
+            memcpy(&sg, p, sizeof(sg));
+
+            size_t available = lc.cmdsize - sizeof(sg);
+
+            if (sg.nsects > available / sizeof(section_64)) return false;
+
+            img.segments.push_back(sg);
+
+            if (strncmp(sg.segname, "__TEXT", 16) == 0) {
+                if (!add_slide(sg.vmaddr, img.slide, img.text)) return false;
             }
-            if (((op2 >> 5) & 0x1Fu) != rd) {
-                continue;
-            }
-            uint32_t sh = (op2 >> 22) & 0x3u;
-            uint32_t imm12 = (op2 >> 10) & 0xFFFu;
-            if (sh == 1u) {
-                imm12 <<= 12;
-            } else if (sh != 0u) {
-                continue;
-            }
-            if (page + imm12 == str_addr) {
-                if (out_pc) {
-                    *out_pc = pc;
+
+            for (uint32_t j = 0; j < sg.nsects; ++j) {
+                section_64 sc{};
+
+                memcpy(
+                    &sc,
+                    p + sizeof(sg) + j * sizeof(sc),
+                    sizeof(sc)
+                );
+
+                if (sc.addr < sg.vmaddr) return false;
+
+                uint64_t delta = sc.addr - sg.vmaddr;
+
+                if (delta > sg.vmsize || sc.size > sg.vmsize - delta) {
+                    return false;
                 }
-                return pc;
+
+                if (!(sg.initprot & VM_PROT_READ)) continue;
+                if (sc.size > SIZE_MAX) return false;
+
+                uintptr_t runtime = 0;
+
+                if (!add_slide(sc.addr, img.slide, runtime)) return false;
+                if (runtime > UINTPTR_MAX - (size_t)sc.size) return false;
+
+                bool executable = (sg.initprot & VM_PROT_EXECUTE) != 0;
+                bool instructions = (sc.flags &
+                    (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS)) != 0;
+
+                bool code = executable && instructions &&
+                    strncmp(sc.sectname, "__text", 16) == 0;
+
+                bool strings = (sc.flags & SECTION_TYPE) == S_CSTRING_LITERALS;
+
+                if (code || strings) {
+                    img.ranges.push_back({
+                        runtime,
+                        (size_t)sc.size,
+                        code,
+                        strings
+                    });
+                }
             }
-        }
-    }
-    return 0;
-}
+        } else if (lc.cmd == LC_FUNCTION_STARTS) {
+            if (lc.cmdsize < sizeof(linkedit_data_command)) return false;
+            memcpy(&img.starts, p, sizeof(img.starts));
+            img.hasStarts = true;
+        } else if (lc.cmd == LC_SYMTAB) {
+            if (lc.cmdsize < sizeof(symtab_command)) return false;
+            memcpy(&img.symtab, p, sizeof(img.symtab));
+            img.hasSymbols = true;
+        } else if (lc.cmd == LC_UUID) {
+            if (lc.cmdsize < sizeof(uuid_command)) return false;
 
-static uintptr_t func_start_from_starts(image_ref_t img, uintptr_t pc, uintptr_t *table, size_t n)
-{
-    uintptr_t best = 0;
-    for (size_t i = 0; i < n; i++) {
-        if (table[i] <= pc && table[i] > best) {
-            best = table[i];
-        }
-    }
-    return best;
-}
-
-static inline int arm64_is_prologue(uint32_t w)
-{
-    if (w == 0xD503233Fu) {
-        return 1;
-    }
-    if ((w & 0xFFC003E0u) == 0xA98003E0u) {
-        return 1;
-    }
-    if ((w & 0xFFC003FFu) == 0xD10003FFu) {
-        return 1;
-    }
-    if ((w & 0xFF8003FFu) == 0x910003FDu) {
-        return 1;
-    }
-    return 0;
-}
-
-static inline int arm64_is_boundary(uint32_t w)
-{
-    return w == 0xD65F03C0u ||
-           w == 0xD503201Fu ||
-           w == 0xD4200000u;
-}
-
-static uintptr_t func_start_by_prologue(image_ref_t img, uintptr_t pc)
-{
-    static const char *segs[] = { "__TEXT", "__TEXT_EXEC" };
-    for (int s = 0; s < 2; s++) {
-        const struct segment_command_64 *sg = seg_find(img.hdr, segs[s]);
-        if (!sg) {
-            continue;
-        }
-        uintptr_t slide = img.base - (uintptr_t)img.hdr;
-        uintptr_t lo = sg->vmaddr + slide;
-        uintptr_t hi = lo + sg->vmsize;
-        if (pc < lo + 4 || pc >= hi) {
-            continue;
-        }
-        for (uintptr_t p = pc; p >= lo + 4; p -= 4) {
-            if (arm64_is_prologue(*(const uint32_t *)p) &&
-                arm64_is_boundary(*(const uint32_t *)(p - 4))) {
-                return p;
-            }
-            if (p == lo + 4) {
-                break;
-            }
-        }
-    }
-    return 0;
-}
-
-uintptr_t rt_resolve_method(image_ref_t img, const char *cls, const char *meth,
-                           uintptr_t func_starts[], size_t starts_n,
-                           uintptr_t *xref_pc_out)
-{
-    uintptr_t str_addr = rt_find_method_string(img, cls, meth, NULL);
-    if (!str_addr) {
-        return 0;
-    }
-    uintptr_t xref = find_first_xref(img, str_addr, xref_pc_out);
-    if (!xref) {
-        return 0;
-    }
-    uintptr_t fs = starts_n ? func_start_from_starts(img, xref, func_starts, starts_n)
-                            : 0;
-    if (!fs) {
-        fs = func_start_by_prologue(img, xref);
-    }
-    return fs;
-}
+            uuid_command uc{};

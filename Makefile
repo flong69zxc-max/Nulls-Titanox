@@ -1,7 +1,7 @@
 TARGET := iphone:clang:latest:15.0
 ARCHS := arm64
 
-TITANOX := libtitanox
+TITANOX := deps/Titanox/libtitanox
 
 include $(THEOS)/makefiles/common.mk
 

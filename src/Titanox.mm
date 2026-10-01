@@ -1,245 +1,192 @@
 #import <Foundation/Foundation.h>
-#import <mach-o/loader.h>
-#import <mach-o/dyld.h>
+#import <UIKit/UIKit.h>
 #import <mach/mach.h>
-#include <string.h>
-#include <stdint.h>
-#include <stdio.h>
-
-static FILE *g_rt_log = NULL;
-static long g_rt_log_written = 0;
-#define RT_LOG_MAX (100 * 1024)
-
-static void rt_log(const char *fmt, ...) {
-    if (!g_rt_log) {
-        NSString *p = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/RtResolve.log"];
-        g_rt_log = fopen(p.UTF8String, "a");
-    }
-    if (!g_rt_log) return;
-    if (g_rt_log_written >= RT_LOG_MAX) return;
-
-    char buf[512];
-    va_list ap;
-    va_start(ap, fmt);
-    int n = vsnprintf(buf, sizeof(buf), fmt, ap);
-    va_end(ap);
-    if (n <= 0) return;
-
-    fwrite(buf, 1, n, g_rt_log);
-    fputc('\n', g_rt_log);
-    fflush(g_rt_log);
-    g_rt_log_written += n + 1;
-}
+#import <mach/arm/thread_status.h>
+#import <mach-o/dyld.h>
+#import <mach-o/loader.h>
+#import <dlfcn.h>
+#import <string.h>
+#import <stdlib.h>
+#import <stdio.h>
+#import <unistd.h>
+#import <libgen.h>
+#import "libtitanox.h"
+#import "offsets.h"
 
 typedef struct {
     uintptr_t base;
     const struct mach_header_64 *hdr;
 } image_ref_t;
 
-static const struct segment_command_64 *seg_find(const struct mach_header_64 *hdr,
-                                                const char *name)
-{
-    const uint8_t *p = (const uint8_t *)hdr + sizeof(*hdr);
-    for (uint32_t i = 0; i < hdr->ncmds; i++) {
-        const struct load_command *lc = (const struct load_command *)p;
-        if (lc->cmd == LC_SEGMENT_64) {
-            const struct segment_command_64 *sg = (const struct segment_command_64 *)lc;
-            if (strncmp(sg->segname, name, 16) == 0) {
-                rt_log("seg_find: %s vmaddr=%p vmsize=0x%llx",
-                       name, (void *)sg->vmaddr, sg->vmsize);
-                return sg;
-            }
-        }
-        p += lc->cmdsize;
+extern uintptr_t rt_resolve_method(image_ref_t, const char *, const char *,
+                                    uintptr_t *, size_t, uintptr_t *);
+
+#define LOG_MAX_BYTES (100 * 1024)
+
+static uintptr_t g_base = 0;
+static FILE *g_log = NULL;
+static long g_log_written = 0;
+
+static volatile int g_hits_stage = 0;
+static volatile int g_hits_recv = 0;
+static volatile int g_hits_fmt = 0;
+static volatile int g_hits_mc = 0;
+static volatile int g_hits_getpid = 0;
+
+static uintptr_t g_addr_stage = 0;
+static uintptr_t g_addr_recv = 0;
+static uintptr_t g_addr_fmt = 0;
+static uintptr_t g_addr_mc = 0;
+
+static void tlog_raw(const char *s) {
+    if (!g_log) {
+        NSString *p = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/Titanox.log"];
+        g_log = fopen(p.UTF8String, "a");
     }
-    rt_log("seg_find: %s NOT FOUND", name);
-    return NULL;
+    if (!g_log) return;
+    if (g_log_written >= LOG_MAX_BYTES) return;
+    size_t len = strlen(s);
+    fwrite(s, 1, len, g_log);
+    fputc('\n', g_log);
+    fflush(g_log);
+    g_log_written += (long)len + 1;
 }
 
-static uintptr_t seg_scan(const struct segment_command_64 *sg, uintptr_t slide,
-                          const void *needle, size_t nlen)
-{
-    const uint8_t *begin = (const uint8_t *)(sg->vmaddr + slide);
-    const uint8_t *end = begin + sg->vmsize;
-    if (nlen == 0) return 0;
-
-    for (const uint8_t *p = begin; p + nlen <= end; p++) {
-        if (p[0] == ((const uint8_t *)needle)[0] && memcmp(p, needle, nlen) == 0) {
-            rt_log("seg_scan: found '%.*s' at %p (seg %s)",
-                   (int)nlen, (const char *)needle, (void *)p, sg->segname);
-            return (uintptr_t)p;
-        }
-    }
-    return 0;
+static void tlog(NSString *s) {
+    if (!s) return;
+    tlog_raw(s.UTF8String);
 }
 
-uintptr_t rt_find_method_string(image_ref_t img, const char *cls, const char *meth,
-                               uintptr_t *declared_pc)
-{
-    char needle[256];
-    snprintf(needle, sizeof(needle), "%s::%s", cls, meth);
-    size_t nlen = strlen(needle);
-
-    rt_log("=== rt_find_method_string: %s ===", needle);
-
-    static const char *segs[] = { "__TEXT", "__DATA", "__DATA_CONST", "__RODATA" };
-    for (int i = 0; i < 4; i++) {
-        const struct segment_command_64 *sg = seg_find(img.hdr, segs[i]);
-        if (!sg) continue;
-        uintptr_t hit = seg_scan(sg, img.base - (uintptr_t)img.hdr, needle, nlen);
-        if (hit) {
-            rt_log("rt_find_method_string: hit=%p in %s", (void *)hit, segs[i]);
-            return hit;
-        }
+static BOOL find_game_image(uintptr_t *out_base) {
+    uint32_t n = _dyld_image_count();
+    for (uint32_t i = 0; i < n; i++) {
+        const char *path = _dyld_get_image_name(i);
+        const struct mach_header_64 *hdr = (const struct mach_header_64 *)_dyld_get_image_header(i);
+        if (!path || !hdr || hdr->magic != MH_MAGIC_64) continue;
+        if (strstr(path, "/System/")) continue;
+        if (strstr(path, "LiveContainer")) continue;
+        if (strstr(path, "TweakLoader")) continue;
+        if (strstr(path, "CydiaSubstrate")) continue;
+        if (strstr(path, "libellekit")) continue;
+        NSString *ns = [NSString stringWithUTF8String:path];
+        if (![ns containsString:@".app/"]) continue;
+        *out_base = (uintptr_t)hdr;
+        return YES;
     }
-    rt_log("rt_find_method_string: '%s' NOT FOUND in any segment", needle);
-    (void)declared_pc;
-    return 0;
+    return NO;
 }
 
-static uintptr_t find_first_xref(image_ref_t img, uintptr_t str_addr, uintptr_t *out_pc)
-{
-    static const char *segs[] = { "__TEXT", "__TEXT_EXEC" };
-
-    rt_log("find_first_xref: searching xref to %p", (void *)str_addr);
-
-    for (int s = 0; s < 2; s++) {
-        const struct segment_command_64 *sg = seg_find(img.hdr, segs[s]);
-        if (!sg) continue;
-        uintptr_t slide = img.base - (uintptr_t)img.hdr;
-        const uint32_t *code = (const uint32_t *)(sg->vmaddr + slide);
-        uint64_t nwords = sg->vmsize / 4;
-
-        rt_log("find_first_xref: scanning %s, %llu words", segs[s], nwords);
-
-        int hits_logged = 0;
-        for (uint64_t i = 0; i + 1 < nwords; i++) {
-            uint32_t op = code[i];
-            if ((op & 0x9F000000u) != 0x90000000u) continue;
-
-            uint32_t rd = op & 0x1Fu;
-            int64_t immhi = (int64_t)((op >> 5) & 0x7FFFF);
-            int64_t immlo = (int64_t)((op >> 29) & 0x3);
-            int64_t imm = (immhi << 2) | immlo;
-            if (imm & (1LL << 20)) imm |= ~((1LL << 21) - 1);
-
-            uintptr_t pc = (uintptr_t)&code[i];
-            uintptr_t page = (pc & ~0xFFFULL) + ((uintptr_t)imm << 12);
-
-            uint32_t op2 = code[i + 1];
-            if ((op2 & 0xFF800000u) != 0x91000000u) continue;
-            if (((op2 >> 5) & 0x1Fu) != rd) continue;
-
-            uint32_t sh = (op2 >> 22) & 0x3u;
-            uint32_t imm12 = (op2 >> 10) & 0xFFFu;
-            if (sh == 1u) imm12 <<= 12;
-            else if (sh != 0u) continue;
-
-            uintptr_t resolved = page + imm12;
-            if (resolved == str_addr) {
-                rt_log("find_first_xref: HIT at pc=%p (seg %s)", (void *)pc, segs[s]);
-                if (out_pc) *out_pc = pc;
-                return pc;
-            }
-            if (resolved > str_addr - 0x200 && resolved < str_addr + 0x200 && hits_logged < 5) {
-                rt_log("find_first_xref: near-miss pc=%p resolved=%p (target %p, diff %ld)",
-                       (void *)pc, (void *)resolved, (void *)str_addr,
-                       (long)(resolved - str_addr));
-                hits_logged++;
-            }
-        }
+static void h_getpid(void) {
+    g_hits_getpid++;
+    if (g_hits_getpid <= 3 || g_hits_getpid % 5000 == 0) {
+        tlog([NSString stringWithFormat:@"GETPID #%d", g_hits_getpid]);
     }
-    rt_log("find_first_xref: NO xref found to %p", (void *)str_addr);
-    return 0;
 }
 
-static uintptr_t func_start_from_starts(image_ref_t img, uintptr_t pc, uintptr_t *table, size_t n)
-{
-    uintptr_t best = 0;
-    for (size_t i = 0; i < n; i++) {
-        if (table[i] <= pc && table[i] > best) best = table[i];
-    }
-    if (best) rt_log("func_start_from_starts: pc=%p -> start=%p", (void *)pc, (void *)best);
-    else rt_log("func_start_from_starts: no match for pc=%p", (void *)pc);
-    return best;
+static void h_stage(void *a, void *b, void *c, void *d) {
+    g_hits_stage++;
+    tlog([NSString stringWithFormat:@"STAGE #%d self=%p", g_hits_stage, a]);
 }
 
-static inline int arm64_is_prologue(uint32_t w)
-{
-    if (w == 0xD503233Fu) return 1;
-    if ((w & 0xFFC003E0u) == 0xA98003E0u) return 1;
-    if ((w & 0xFFC003FFu) == 0xD10003FFu) return 1;
-    if ((w & 0xFF8003FFu) == 0x910003FDu) return 1;
-    return 0;
+static void h_recv(void *self, void *msg, void *a, void *b, void *c, void *d) {
+    g_hits_recv++;
+    uint32_t msgId = 0;
+    if (msg) memcpy(&msgId, msg, 4);
+    tlog([NSString stringWithFormat:@"RECV #%d msg=%p id=0x%x",
+          g_hits_recv, msg, msgId]);
 }
 
-static inline int arm64_is_boundary(uint32_t w)
-{
-    return w == 0xD65F03C0u || w == 0xD503201Fu || w == 0xD4200000u;
+static void h_fmt(void *a, void *b, void *c) {
+    g_hits_fmt++;
+    if (g_hits_fmt <= 3 || g_hits_fmt % 5000 == 0) {
+        tlog([NSString stringWithFormat:@"FMT #%d", g_hits_fmt]);
+    }
 }
 
-static uintptr_t func_start_by_prologue(image_ref_t img, uintptr_t pc)
-{
-    static const char *segs[] = { "__TEXT", "__TEXT_EXEC" };
-    rt_log("func_start_by_prologue: pc=%p", (void *)pc);
-
-    for (int s = 0; s < 2; s++) {
-        const struct segment_command_64 *sg = seg_find(img.hdr, segs[s]);
-        if (!sg) continue;
-        uintptr_t slide = img.base - (uintptr_t)img.hdr;
-        uintptr_t lo = sg->vmaddr + slide;
-        uintptr_t hi = lo + sg->vmsize;
-        if (pc < lo + 4 || pc >= hi) continue;
-
-        int steps = 0;
-        for (uintptr_t p = pc; p >= lo + 4; p -= 4) {
-            uint32_t w = *(const uint32_t *)p;
-            steps++;
-            if (steps > 4096) {
-                rt_log("func_start_by_prologue: gave up after 4096 steps (pc=%p)", (void *)pc);
-                break;
-            }
-            if (arm64_is_prologue(w) && arm64_is_boundary(*(const uint32_t *)(p - 4))) {
-                rt_log("func_start_by_prologue: found start=%p (steps=%d, seg=%s)",
-                       (void *)p, steps, segs[s]);
-                return p;
-            }
-            if (p == lo + 4) break;
-        }
-        rt_log("func_start_by_prologue: no prologue found in %s", segs[s]);
+static void h_mc(void *a, void *b) {
+    g_hits_mc++;
+    if (g_hits_mc <= 3 || g_hits_mc % 500 == 0) {
+        tlog([NSString stringWithFormat:@"MC #%d", g_hits_mc]);
     }
-    rt_log("func_start_by_prologue: FAILED for pc=%p", (void *)pc);
-    return 0;
 }
 
-uintptr_t rt_resolve_method(image_ref_t img, const char *cls, const char *meth,
-                           uintptr_t func_starts[], size_t starts_n,
-                           uintptr_t *xref_pc_out)
-{
-    rt_log("=== rt_resolve_method: %s::%s ===", cls, meth);
+static void setup(void) {
+    tlog(@"=== setup ===");
+    tlog([NSString stringWithFormat:@"slots=%d selftest=%d",
+          brk_slot_limit(), brk_selftest()]);
 
-    uintptr_t str_addr = rt_find_method_string(img, cls, meth, NULL);
-    if (!str_addr) {
-        rt_log("rt_resolve_method: string not found");
-        return 0;
+    if (!find_game_image(&g_base)) {
+        tlog(@"game not found");
+        return;
     }
-    rt_log("rt_resolve_method: string at %p", (void *)str_addr);
+    tlog([NSString stringWithFormat:@"base=%p", (void *)g_base]);
 
-    uintptr_t xref = find_first_xref(img, str_addr, xref_pc_out);
-    if (!xref) {
-        rt_log("rt_resolve_method: xref not found");
-        return 0;
+    image_ref_t img = { .base = g_base, .hdr = (const struct mach_header_64 *)g_base };
+    uintptr_t xref = 0;
+
+    g_addr_stage = rt_resolve_method(img, "Stage", "setViewport", NULL, 0, &xref);
+    g_addr_recv  = rt_resolve_method(img, "MessageManager", "receiveMessage", NULL, 0, &xref);
+    g_addr_fmt   = rt_resolve_method(img, "NativeFont", "formatString", NULL, 0, &xref);
+    g_addr_mc    = rt_resolve_method(img, "MovieClip", "MovieClip", NULL, 0, &xref);
+
+    tlog([NSString stringWithFormat:@"resolved stage=%p recv=%p fmt=%p mc=%p",
+          (void *)g_addr_stage, (void *)g_addr_recv,
+          (void *)g_addr_fmt, (void *)g_addr_mc]);
+
+    void *getpid_addr = dlsym(RTLD_DEFAULT, "getpid");
+
+    if (g_addr_stage) brk_install((void *)g_addr_stage, (void *)&h_stage);
+    if (g_addr_recv)  brk_install((void *)g_addr_recv,  (void *)&h_recv);
+    if (g_addr_fmt)   brk_install((void *)g_addr_fmt,   (void *)&h_fmt);
+    if (g_addr_mc)    brk_install((void *)g_addr_mc,    (void *)&h_mc);
+    if (getpid_addr)  brk_install(getpid_addr,          (void *)&h_getpid);
+
+    tlog(@"setup done");
+}
+
+static UIViewController *top_vc(void) {
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class]) continue;
+        UIWindow *w = ((UIWindowScene *)scene).keyWindow;
+        if (w.rootViewController) return w.rootViewController;
     }
-    rt_log("rt_resolve_method: xref at %p", (void *)xref);
+    return nil;
+}
 
-    uintptr_t fs = starts_n ? func_start_from_starts(img, xref, func_starts, starts_n) : 0;
-    if (!fs) {
-        rt_log("rt_resolve_method: fallback to prologue scan");
-        fs = func_start_by_prologue(img, xref);
-    }
+static void show_alert(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIViewController *root = top_vc();
+        if (!root) return;
+        NSString *msg = [NSString stringWithFormat:
+            @"slots=%d\n\n"
+            @"getpid: %d\n"
+            @"stage:  %d\nrecv:   %d\nfmt:    %d\nmc:     %d\n\n"
+            @"stage=%p\nrecv=%p\nfmt=%p\nmc=%p\n\n"
+            @"log: %ld / %d B\n"
+            @"Documents/Titanox.log",
+            brk_slot_limit(),
+            g_hits_getpid,
+            g_hits_stage, g_hits_recv, g_hits_fmt, g_hits_mc,
+            (void *)g_addr_stage, (void *)g_addr_recv,
+            (void *)g_addr_fmt, (void *)g_addr_mc,
+            g_log_written, LOG_MAX_BYTES];
 
-    if (fs) rt_log("rt_resolve_method: RESOLVED %s::%s -> %p", cls, meth, (void *)fs);
-    else rt_log("rt_resolve_method: FAILED to resolve %s::%s", cls, meth);
+        UIAlertController *a = [UIAlertController
+            alertControllerWithTitle:@"Titanox diag" message:msg
+            preferredStyle:UIAlertControllerStyleAlert];
+        [a addAction:[UIAlertAction actionWithTitle:@"OK"
+            style:UIAlertActionStyleDefault handler:nil]];
+        [root presentViewController:a animated:YES completion:nil];
+    });
+}
 
-    return fs;
+__attribute__((constructor))
+static void start(void) {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC),
+                   dispatch_get_main_queue(), ^{
+        setup();
+        [NSTimer scheduledTimerWithTimeInterval:2.0 repeats:YES block:^(NSTimer *t) {
+            show_alert();
+        }];
+    });
 }

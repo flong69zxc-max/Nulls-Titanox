@@ -11,6 +11,7 @@
 #import <unistd.h>
 #import <libgen.h>
 #import <ptrauth.h>
+#import "mach_excServer.h"
 #import "libtitanox.h"
 #import "offsets.h"
 
@@ -28,8 +29,6 @@ static uintptr_t g_ldt_init_real = 0;
 static uintptr_t g_char_ctor_real = 0;
 static uintptr_t g_font_fmt_real = 0;
 static uintptr_t g_mc_ctor_real = 0;
-static uintptr_t g_getpid = 0;
-static uintptr_t g_malloc = 0;
 
 static volatile int g_hits_stage = 0;
 static volatile int g_hits_recv = 0;
@@ -37,10 +36,18 @@ static volatile int g_hits_ldt_init = 0;
 static volatile int g_hits_char_ctor = 0;
 static volatile int g_hits_font_fmt = 0;
 static volatile int g_hits_mc_ctor = 0;
-static volatile int g_hits_getpid = 0;
-static volatile int g_hits_malloc = 0;
-static volatile int g_arm_ok = 0;
-static volatile int g_arm_fail = 0;
+
+static mach_port_t g_orig_bp_port = MACH_PORT_NULL;
+static mach_port_t g_my_bp_port = MACH_PORT_NULL;
+
+typedef struct {
+    uintptr_t target;
+    uintptr_t replacement;
+} bp_entry_t;
+
+static bp_entry_t g_entries[6];
+static int g_entry_count = 0;
+static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static void log_line(NSString *s);
 
@@ -100,28 +107,81 @@ static BOOL find_game_image(uintptr_t *out_base, char *out_path, size_t cap) {
     return NO;
 }
 
-static BOOL is_pac_signed(uintptr_t addr) {
-#if __has_feature(ptrauth_calls)
-    if (!addr) return NO;
-    void *ptr = (void *)addr;
-    uintptr_t stripped = (uintptr_t)ptrauth_strip(ptr, ptrauth_key_function_pointer);
-    return (addr != stripped);
-#else
-    (void)addr;
-    return NO;
-#endif
+// --- Обработчик исключений ---
+
+static uintptr_t lookup_target(uintptr_t pc) {
+    pthread_mutex_lock(&g_lock);
+    for (int i = 0; i < g_entry_count; i++) {
+        if (g_entries[i].target == pc) {
+            uintptr_t repl = g_entries[i].replacement;
+            pthread_mutex_unlock(&g_lock);
+            return repl;
+        }
+    }
+    pthread_mutex_unlock(&g_lock);
+    return 0;
 }
 
-static void log_target_info(const char *name, uintptr_t addr) {
-    uint32_t op0 = *(volatile uint32_t *)addr;
-    uint32_t op1 = *(volatile uint32_t *)(addr + 4);
-    log_line([NSString stringWithFormat:
-              @"%@ addr=%p op0=%08x op1=%08x pac_signed=%d",
-              [NSString stringWithUTF8String:name],
-              (void *)addr, op0, op1, is_pac_signed(addr)]);
+kern_return_t catch_mach_exception_raise_state(
+    mach_port_t exception_port, exception_type_t exception,
+    const mach_exception_data_t code, mach_msg_type_number_t codeCnt,
+    int *flavor, const thread_state_t old_state,
+    mach_msg_type_number_t old_stateCnt, thread_state_t new_state,
+    mach_msg_type_number_t *new_stateCnt) {
+
+    arm_thread_state64_t *old = (arm_thread_state64_t *)old_state;
+    arm_thread_state64_t *new = (arm_thread_state64_t *)new_state;
+
+    uint64_t pc = arm_thread_state64_get_pc(*old);
+    uintptr_t repl = lookup_target((uintptr_t)pc);
+
+    if (repl) {
+        *new = *old;
+        *new_stateCnt = old_stateCnt;
+        arm_thread_state64_set_pc_fptr(*new, (void *)repl);
+        return KERN_SUCCESS;
+    }
+
+    // Неизвестный breakpoint — форвардим в оригинальный порт
+    if (g_orig_bp_port != MACH_PORT_NULL) {
+        return mach_msg_server(mach_exc_server,
+                               sizeof(union __RequestUnion__catch_mach_exc_subsystem),
+                               g_orig_bp_port, MACH_MSG_OPTION_NONE);
+    }
+    return KERN_FAILURE;
 }
 
-static void check_bp_ports(void) {
+kern_return_t catch_mach_exception_raise(
+    mach_port_t exception_port, mach_port_t thread, mach_port_t task,
+    exception_type_t exception, mach_exception_data_t code,
+    mach_msg_type_number_t codeCnt) {
+    (void)exception_port; (void)thread; (void)task; (void)exception;
+    (void)code; (void)codeCnt;
+    return KERN_FAILURE;
+}
+
+kern_return_t catch_mach_exception_raise_state_identity(
+    mach_port_t exception_port, mach_port_t thread, mach_port_t task,
+    exception_type_t exception, mach_exception_data_t code,
+    mach_msg_type_number_t codeCnt, int *flavor,
+    thread_state_t old_state, mach_msg_type_number_t old_stateCnt,
+    thread_state_t new_state, mach_msg_type_number_t *new_stateCnt) {
+    (void)exception_port; (void)thread; (void)task; (void)exception;
+    (void)code; (void)codeCnt; (void)flavor; (void)old_state;
+    (void)old_stateCnt; (void)new_state; (void)new_stateCnt;
+    return KERN_FAILURE;
+}
+
+static void *exception_thread(void *unused) {
+    (void)unused;
+    mach_msg_server(mach_exc_server,
+                    sizeof(union __RequestUnion__catch_mach_exc_subsystem),
+                    g_my_bp_port, MACH_MSG_OPTION_NONE);
+    return NULL;
+}
+
+static void setup_exception_port(void) {
+    // Сохраняем оригинальный порт
     mach_port_t ports[EXC_TYPES_COUNT];
     mach_msg_type_number_t cnt = EXC_TYPES_COUNT;
     exception_mask_t masks[EXC_TYPES_COUNT];
@@ -129,22 +189,29 @@ static void check_bp_ports(void) {
     thread_state_flavor_t flavors[EXC_TYPES_COUNT];
     memset(ports, 0, sizeof(ports));
 
-    kern_return_t kr = task_get_exception_ports(mach_task_self(),
-        EXC_MASK_BREAKPOINT, masks, &cnt, ports, behaviors, flavors);
-
-    log_line([NSString stringWithFormat:
-        @"--- EXC_MASK_BREAKPOINT: kr=%d count=%u ---", kr, cnt]);
-
-    for (uint32_t i = 0; i < cnt; i++) {
-        Dl_info di = {0};
-        const char *owner = "?";
-        if (dladdr((void *)(uintptr_t)ports[i], &di) && di.dli_fname) {
-            owner = basename((char *)di.dli_fname);
-        }
-        log_line([NSString stringWithFormat:
-            @"  port[%u]=%u behavior=0x%x owner=%s",
-            i, ports[i], behaviors[i], owner]);
+    if (task_get_exception_ports(mach_task_self(), EXC_MASK_BREAKPOINT,
+                                 masks, &cnt, ports, behaviors, flavors) == KERN_SUCCESS
+        && cnt > 0) {
+        g_orig_bp_port = ports[0];
+        log_line([NSString stringWithFormat:@"original bp port=%u", g_orig_bp_port]);
     }
+
+    // Создаём свой порт
+    mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &g_my_bp_port);
+    mach_port_insert_right(mach_task_self(), g_my_bp_port, g_my_bp_port,
+                           MACH_MSG_TYPE_MAKE_SEND);
+
+    // Перехватываем порт
+    task_set_exception_ports(mach_task_self(), EXC_MASK_BREAKPOINT, g_my_bp_port,
+                             EXCEPTION_STATE | MACH_EXCEPTION_CODES,
+                             ARM_THREAD_STATE64);
+
+    // Запускаем обработчик
+    pthread_t th;
+    pthread_create(&th, NULL, exception_thread, NULL);
+    pthread_detach(th);
+
+    log_line(@"exception port captured");
 }
 
 static void manual_arm(void) {
@@ -181,53 +248,17 @@ static void manual_arm(void) {
     }
     vm_deallocate(task, (vm_address_t)threads, count * sizeof(thread_act_t));
 
-    g_arm_ok = ok;
-    g_arm_fail = fail;
-}
-
-static void dump_self_bvr(void) {
-    thread_t self = mach_thread_self();
-    arm_debug_state64_t st;
-    mach_msg_type_number_t cnt = ARM_DEBUG_STATE64_COUNT;
-    memset(&st, 0, sizeof(st));
-
-    kern_return_t kr = thread_get_state(self, ARM_DEBUG_STATE64,
-                                        (thread_state_t)&st, &cnt);
-    log_line([NSString stringWithFormat:@"--- self BVR (kr=%d) ---", kr]);
-    for (int k = 0; k < 6; k++) {
-        log_line([NSString stringWithFormat:
-                  @"  bvr[%d]=%p bcr=0x%x", k,
-                  (void *)st.__bvr[k], st.__bcr[k]]);
+    if (ok + fail > 0) {
+        // Не логируем каждый раз, только при изменении
+        static int last_ok = -1;
+        if (ok != last_ok) {
+            log_line([NSString stringWithFormat:@"armed ok=%d fail=%d", ok, fail]);
+            last_ok = ok;
+        }
     }
-    mach_port_deallocate(mach_task_self(), self);
 }
 
-static pid_t (*g_orig_getpid)(void) = NULL;
-static void *(*g_orig_malloc)(size_t) = NULL;
-
-static pid_t h_getpid(void) {
-    g_hits_getpid++;
-    log_line([NSString stringWithFormat:@"GETPID #%d", g_hits_getpid]);
-    if (g_orig_getpid) {
-        brk_suspend_self();
-        pid_t r = g_orig_getpid();
-        brk_resume_self();
-        return r;
-    }
-    return 0;
-}
-
-static void *h_malloc(size_t sz) {
-    g_hits_malloc++;
-    log_line([NSString stringWithFormat:@"MALLOC #%d size=%zu", g_hits_malloc, sz]);
-    if (g_orig_malloc) {
-        brk_suspend_self();
-        void *r = g_orig_malloc(sz);
-        brk_resume_self();
-        return r;
-    }
-    return NULL;
-}
+// --- Хуки ---
 
 static void h_stage(void *a, void *b, void *c, void *d) {
     g_hits_stage++;
@@ -257,6 +288,15 @@ static void h_recv(void *self, void *msg, void *a, void *b, void *c, void *d) {
               g_hits_recv, msg, msgId]);
 }
 
+static void add_entry(uintptr_t target, uintptr_t replacement) {
+    if (g_entry_count >= 6) return;
+    pthread_mutex_lock(&g_lock);
+    g_entries[g_entry_count].target = target;
+    g_entries[g_entry_count].replacement = replacement;
+    g_entry_count++;
+    pthread_mutex_unlock(&g_lock);
+}
+
 static void setup(void) {
     log_line(@"=== setup ===");
     log_line([NSString stringWithFormat:@"slots=%d selftest=%d",
@@ -268,7 +308,8 @@ static void setup(void) {
     }
     log_line([NSString stringWithFormat:@"base=%p path=%s", (void *)g_base, g_path]);
 
-    check_bp_ports();
+    // Перехватываем порт исключений
+    setup_exception_port();
 
     g_stage_real     = resolve_thunk(g_base, RVA_STAGE_SETVIEWPORT, "stage");
     g_recv_real      = resolve_thunk(g_base, RVA_MESSAGEMANAGER_RECEIVEMESSAGE, "recv");
@@ -277,34 +318,14 @@ static void setup(void) {
     g_font_fmt_real  = resolve_thunk(g_base, RVA_NATIVEFONT_FORMATSTRING, "font_fmt");
     g_mc_ctor_real   = resolve_thunk(g_base, RVA_MOVIECLIP_CTOR, "mc_ctor");
 
-    log_target_info("stage", g_stage_real);
-    log_target_info("recv", g_recv_real);
-    log_target_info("ldt_init", g_ldt_init_real);
-    log_target_info("char_ctor", g_char_ctor_real);
-    log_target_info("font_fmt", g_font_fmt_real);
-    log_target_info("mc_ctor", g_mc_ctor_real);
-
-    void *getpid_addr = dlsym(RTLD_DEFAULT, "getpid");
-    void *malloc_addr = dlsym(RTLD_DEFAULT, "malloc");
-    g_getpid = (uintptr_t)getpid_addr;
-    g_malloc = (uintptr_t)malloc_addr;
-
-    g_orig_getpid = (pid_t(*)(void))brk_original_ptr(getpid_addr);
-    g_orig_malloc = (void*(*)(size_t))brk_original_ptr(malloc_addr);
-
-    if (g_stage_real)     brk_install((void *)g_stage_real,     (void *)&h_stage);
-    if (g_recv_real)      brk_install((void *)g_recv_real,      (void *)&h_recv);
-    if (g_ldt_init_real)  brk_install((void *)g_ldt_init_real,  (void *)&h_ldt_init);
-    if (g_char_ctor_real) brk_install((void *)g_char_ctor_real, (void *)&h_char_ctor);
-    if (g_font_fmt_real)  brk_install((void *)g_font_fmt_real,  (void *)&h_font_fmt);
-    if (g_mc_ctor_real)   brk_install((void *)g_mc_ctor_real,   (void *)&h_mc_ctor);
-
-    brk_install(getpid_addr, (void *)&h_getpid);
-    brk_install(malloc_addr, (void *)&h_malloc);
+    add_entry(g_stage_real, (uintptr_t)&h_stage);
+    add_entry(g_recv_real, (uintptr_t)&h_recv);
+    add_entry(g_ldt_init_real, (uintptr_t)&h_ldt_init);
+    add_entry(g_char_ctor_real, (uintptr_t)&h_char_ctor);
+    add_entry(g_font_fmt_real, (uintptr_t)&h_font_fmt);
+    add_entry(g_mc_ctor_real, (uintptr_t)&h_mc_ctor);
 
     manual_arm();
-    log_line([NSString stringWithFormat:@"armed ok=%d fail=%d", g_arm_ok, g_arm_fail]);
-    dump_self_bvr();
 }
 
 static UIViewController *top_vc(void) {
@@ -321,16 +342,10 @@ static void show_alert(void) {
         UIViewController *root = top_vc();
         if (!root) return;
         NSString *msg = [NSString stringWithFormat:
-            @"arm: %d/%d\n\n"
             @"stage:    %d\nrecv:     %d\nldt_init: %d\nchar:     %d\nfmt:      %d\nmc:       %d\n\n"
-            @"getpid:   %d\nmalloc:   %d\n\n"
-            @"log: %ld / %d B\n\n"
             @"log: Documents/Titanox.log",
-            g_arm_ok, g_arm_fail,
             g_hits_stage, g_hits_recv, g_hits_ldt_init,
-            g_hits_char_ctor, g_hits_font_fmt, g_hits_mc_ctor,
-            g_hits_getpid, g_hits_malloc,
-            g_log_written, LOG_MAX_BYTES];
+            g_hits_char_ctor, g_hits_font_fmt, g_hits_mc_ctor];
 
         UIAlertController *a = [UIAlertController
             alertControllerWithTitle:@"Titanox diag" message:msg

@@ -1,5 +1,7 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import <mach/mach.h>
+#import <mach/arm/thread_status.h>
 #import <mach-o/dyld.h>
 #import <mach-o/loader.h>
 #import <dlfcn.h>
@@ -7,24 +9,25 @@
 #import <stdlib.h>
 #import <stdio.h>
 #import <libgen.h>
+#import <ptrauth.h>
 #import "libtitanox.h"
 #import "offsets.h"
+
+#define BCR_ON  0x1e5ULL
 
 static uintptr_t g_base = 0;
 static char g_path[512] = {0};
 static FILE *g_log = NULL;
 
-static volatile int g_hits_stage = 0;
-static volatile int g_hits_gb = 0;
-static volatile int g_hits_font = 0;
-static volatile int g_hits_fmt = 0;
-static volatile int g_hits_recv = 0;
-
 static uintptr_t g_t_stage = 0;
 static uintptr_t g_t_gb = 0;
-static uintptr_t g_t_font = 0;
-static uintptr_t g_t_fmt = 0;
 static uintptr_t g_t_recv = 0;
+
+static volatile int g_hits_stage = 0;
+static volatile int g_hits_gb = 0;
+static volatile int g_hits_recv = 0;
+static volatile int g_arm_count = 0;
+static volatile int g_arm_fail = 0;
 
 typedef void (*recv_fn)(void *, void *, void *, void *, void *, void *);
 static recv_fn g_orig_recv = NULL;
@@ -54,10 +57,8 @@ static BOOL find_game_image(uintptr_t *out_base, char *out_path, size_t cap) {
         if (strstr(path, "TweakLoader")) continue;
         if (strstr(path, "CydiaSubstrate")) continue;
         if (strstr(path, "libellekit")) continue;
-
         NSString *ns = [NSString stringWithUTF8String:path];
         if (![ns containsString:@".app/"]) continue;
-
         *out_base = (uintptr_t)hdr;
         strncpy(out_path, path, cap - 1);
         return YES;
@@ -65,41 +66,42 @@ static BOOL find_game_image(uintptr_t *out_base, char *out_path, size_t cap) {
     return NO;
 }
 
-static uint64_t text_vmaddr(uintptr_t base) {
-    const struct mach_header_64 *h = (const struct mach_header_64 *)base;
-    uint32_t nc = h->ncmds > 1024 ? 1024 : h->ncmds;
-    const struct load_command *cmd =
-        (const struct load_command *)((const uint8_t *)h + sizeof(struct mach_header_64));
-    for (uint32_t c = 0; c < nc; c++) {
-        if (cmd->cmdsize < sizeof(struct load_command)) break;
-        if (cmd->cmd == LC_SEGMENT_64) {
-            const struct segment_command_64 *seg = (const struct segment_command_64 *)cmd;
-            if (strcmp(seg->segname, "__TEXT") == 0) return seg->vmaddr;
-        }
-        cmd = (const struct load_command *)((const uint8_t *)cmd + cmd->cmdsize);
-    }
-    return 0;
+static uintptr_t strip_pac(void *p) {
+    if (!p) return 0;
+    return (uintptr_t)ptrauth_strip(p, ptrauth_key_function_pointer);
 }
 
-static void dump_segments(uintptr_t base) {
-    const struct mach_header_64 *h = (const struct mach_header_64 *)base;
-    uint32_t nc = h->ncmds > 1024 ? 1024 : h->ncmds;
-    const struct load_command *cmd =
-        (const struct load_command *)((const uint8_t *)h + sizeof(struct mach_header_64));
-    for (uint32_t c = 0; c < nc; c++) {
-        if (cmd->cmdsize < sizeof(struct load_command)) break;
-        if (cmd->cmd == LC_SEGMENT_64) {
-            const struct segment_command_64 *seg = (const struct segment_command_64 *)cmd;
-            log_line([NSString stringWithFormat:
-                @"seg %-16s vmaddr=0x%llx vmsize=0x%llx prot=%c%c%c",
-                seg->segname,
-                seg->vmaddr, seg->vmsize,
-                (seg->initprot & VM_PROT_READ) ? 'r' : '-',
-                (seg->initprot & VM_PROT_WRITE) ? 'w' : '-',
-                (seg->initprot & VM_PROT_EXECUTE) ? 'x' : '-']);
-        }
-        cmd = (const struct load_command *)((const uint8_t *)cmd + cmd->cmdsize);
+static void manual_arm_all_threads(void) {
+    task_t task = mach_task_self();
+    thread_act_array_t threads = NULL;
+    mach_msg_type_number_t count = 0;
+    if (task_threads(task, &threads, &count) != KERN_SUCCESS) return;
+
+    int ok = 0, fail = 0;
+
+    for (mach_msg_type_number_t i = 0; i < count; i++) {
+        arm_debug_state64_t st;
+        mach_msg_type_number_t cnt = ARM_DEBUG_STATE64_COUNT;
+        memset(&st, 0, sizeof(st));
+
+        st.__bvr[0] = (uint64_t)g_t_stage;
+        st.__bcr[0] = (uint32_t)BCR_ON;
+        st.__bvr[1] = (uint64_t)g_t_gb;
+        st.__bcr[1] = (uint32_t)BCR_ON;
+        st.__bvr[2] = (uint64_t)g_t_recv;
+        st.__bcr[2] = (uint32_t)BCR_ON;
+
+        kern_return_t kr = thread_set_state(threads[i], ARM_DEBUG_STATE64,
+                                            (thread_state_t)&st, cnt);
+        if (kr == KERN_SUCCESS) ok++;
+        else fail++;
+
+        mach_port_deallocate(task, threads[i]);
     }
+    vm_deallocate(task, (vm_address_t)threads, count * sizeof(thread_act_t));
+
+    g_arm_count = ok;
+    g_arm_fail = fail;
 }
 
 static void stage_hook(void *self, void *a2, void *a3, void *a4) {
@@ -116,23 +118,9 @@ static void gb_hook(void *self, void *a2) {
     }
 }
 
-static void font_hook(void *self, void *a2) {
-    g_hits_font++;
-    if (g_hits_font <= 3 || (g_hits_font % 100 == 0)) {
-        log_line([NSString stringWithFormat:@"FONT #%d self=%p", g_hits_font, self]);
-    }
-}
-
-static void fmt_hook(void *self, void *out, void *fmt) {
-    g_hits_fmt++;
-    if (g_hits_fmt <= 3 || (g_hits_fmt % 100 == 0)) {
-        log_line([NSString stringWithFormat:@"FMT #%d self=%p", g_hits_fmt, self]);
-    }
-}
-
 static void recv_hook(void *self, void *msg, void *a, void *b, void *c, void *d) {
     g_hits_recv++;
-    if (g_hits_recv <= 3 || (g_hits_recv % 100 == 0)) {
+    if (g_hits_recv <= 5 || (g_hits_recv % 50 == 0)) {
         log_line([NSString stringWithFormat:@"RECV #%d msg=%p", g_hits_recv, msg]);
     }
     if (g_orig_recv) {
@@ -142,8 +130,8 @@ static void recv_hook(void *self, void *msg, void *a, void *b, void *c, void *d)
     }
 }
 
-static void install_all(void) {
-    log_line(@"=== arm ===");
+static void setup(void) {
+    log_line(@"=== setup ===");
     log_line([NSString stringWithFormat:@"slots=%d selftest=%d",
               brk_slot_limit(), brk_selftest()]);
 
@@ -153,46 +141,22 @@ static void install_all(void) {
     }
     log_line([NSString stringWithFormat:@"base=%p path=%s", (void *)g_base, g_path]);
 
-    uint64_t tv = text_vmaddr(g_base);
-    log_line([NSString stringWithFormat:@"__TEXT.vmaddr=0x%llx", tv]);
-    dump_segments(g_base);
-
     g_t_stage = g_base + RVA_STAGE_SETVIEWPORT;
     g_t_gb    = g_base + RVA_GAMEBUTTON_CTOR;
-    g_t_font  = g_base + RVA_NATIVEFONT_CTOR;
-    g_t_fmt   = g_base + RVA_NATIVEFONT_FORMATSTRING;
     g_t_recv  = g_base + RVA_MESSAGEMANAGER_RECEIVEMESSAGE;
 
     g_orig_recv = (recv_fn)brk_original_ptr((void *)g_t_recv);
 
-    int ok = 0;
-    if (brk_install((void *)g_t_stage, (void *)&stage_hook))  { ok++; log_line(@"i stage ok"); }
-    else log_line(@"i stage FAIL");
-    if (brk_install((void *)g_t_gb,    (void *)&gb_hook))     { ok++; log_line(@"i gb ok"); }
-    else log_line(@"i gb FAIL");
-    if (brk_install((void *)g_t_font,  (void *)&font_hook))   { ok++; log_line(@"i font ok"); }
-    else log_line(@"i font FAIL");
-    if (brk_install((void *)g_t_fmt,   (void *)&fmt_hook))    { ok++; log_line(@"i fmt ok"); }
-    else log_line(@"i fmt FAIL");
-    if (brk_install((void *)g_t_recv,  (void *)&recv_hook))   { ok++; log_line(@"i recv ok"); }
-    else log_line(@"i recv FAIL");
-
-    log_line([NSString stringWithFormat:@"installed %d of 5 active=%d",
-              ok, brk_active_count()]);
-
-    log_line([NSString stringWithFormat:
-        @"targets stage=%p gb=%p font=%p fmt=%p recv=%p",
-        (void *)g_t_stage, (void *)g_t_gb, (void *)g_t_font,
-        (void *)g_t_fmt, (void *)g_t_recv]);
-}
-
-static void rearm_tick(void) {
-    if (!g_base) return;
     brk_install((void *)g_t_stage, (void *)&stage_hook);
     brk_install((void *)g_t_gb,    (void *)&gb_hook);
-    brk_install((void *)g_t_font,  (void *)&font_hook);
-    brk_install((void *)g_t_fmt,   (void *)&fmt_hook);
     brk_install((void *)g_t_recv,  (void *)&recv_hook);
+
+    manual_arm_all_threads();
+
+    log_line([NSString stringWithFormat:
+        @"targets stage=%p gb=%p recv=%p manual_arm ok=%d fail=%d",
+        (void *)g_t_stage, (void *)g_t_gb, (void *)g_t_recv,
+        g_arm_count, g_arm_fail]);
 }
 
 static UIViewController *top_vc(void) {
@@ -210,12 +174,12 @@ static void show_alert(void) {
         if (!root) return;
 
         NSString *msg = [NSString stringWithFormat:
-            @"base: %p\npath: %s\nactive: %d / slots: %d\n\n"
-            @"stage: %d\ngb:    %d\nfont:  %d\nfmt:   %d\nrecv:  %d\n\n"
+            @"base: %p\nactive: %d / slots: %d\narm ok: %d fail: %d\n\n"
+            @"stage: %d\ngb:    %d\nrecv:  %d\n\n"
             @"log: Documents/Titanox.log",
-            (void *)g_base, basename(g_path),
-            brk_active_count(), brk_slot_limit(),
-            g_hits_stage, g_hits_gb, g_hits_font, g_hits_fmt, g_hits_recv];
+            (void *)g_base, brk_active_count(), brk_slot_limit(),
+            g_arm_count, g_arm_fail,
+            g_hits_stage, g_hits_gb, g_hits_recv];
 
         UIAlertController *a = [UIAlertController
             alertControllerWithTitle:@"Titanox diag" message:msg
@@ -230,10 +194,12 @@ __attribute__((constructor))
 static void start(void) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC),
                    dispatch_get_main_queue(), ^{
-        install_all();
-        [NSTimer scheduledTimerWithTimeInterval:2.0 repeats:YES block:^(NSTimer *t) {
-            rearm_tick();
+        setup();
+
+        [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *t) {
+            manual_arm_all_threads();
         }];
+
         [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer *t) {
             show_alert();
         }];

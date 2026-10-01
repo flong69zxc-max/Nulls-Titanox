@@ -67,14 +67,12 @@ static BOOL find_game_image(uintptr_t *out_base) {
 
 static void h_recv(void *self, void *msg) {
     g_hits_recv++;
-
-    if (g_hits_recv <= 50) {
+    if (g_hits_recv <= 100) {
         uint32_t raw0 = 0;
         if (msg) memcpy(&raw0, msg, 4);
         tlog([NSString stringWithFormat:@"RECV #%d self=%p msg=%p raw=0x%x",
               g_hits_recv, self, msg, raw0]);
     }
-
     if (g_orig_recv) {
         brk_suspend_self();
         g_orig_recv(self, msg);

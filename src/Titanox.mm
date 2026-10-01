@@ -1837,8 +1837,8 @@ static BOOL tnx_class_is_mode_like(const char *name) {
     return strstr(name, "BattleMode") != NULL;
 }
 
-static void tnx_capture_mode_object(id object, const char *selName) {
-    uintptr_t candidate = (uintptr_t)object;
+static void tnx_capture_mode_object(id candidateObject, const char *selName) {
+    uintptr_t candidate = (uintptr_t)candidateObject;
     const char *clsName = NULL;
     BOOL semantic = NO;
     int score = 0;
@@ -1846,7 +1846,7 @@ static void tnx_capture_mode_object(id object, const char *selName) {
     if (!candidate) return;
     if (!tnx_pointer_plausible(candidate)) return;
 
-    clsName = class_getName(object_getClass(object));
+    clsName = class_getName(object_getClass(candidateObject));
     semantic = tnx_class_is_mode_like(clsName);
     score = tnx_mode_score(candidate);
 
@@ -1884,7 +1884,7 @@ static id tnx_objc_rep_capture0(id self, SEL _cmd) {
         tnx_capture_mode_object(result, selName);
     } else if (g_objc_capture_logs < 4) {
         g_objc_capture_logs++;
-        tnx_logf("modecapture -%s -> %p (already have %p)", selName, (void *)result,
+        tnx_logf("modecapture -%s -> %p (already have %p)", selName, (__bridge void *)result,
                  (void *)g_mode_object);
     }
 

@@ -1164,6 +1164,9 @@ static void tnx_render_watermark(void) {
     g_label_updates++;
 }
 
+static void tnx_locate_battle_mode(void);
+static void tnx_dump_mode_objects(const char *tag);
+
 static void tnx_run_workload(void) {
     tnx_locate_battle_mode();
 

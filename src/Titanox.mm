@@ -1,921 +1,32 @@
 #import <Foundation/Foundation.h>
-#import <dispatch/dispatch.h>
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import <mach/mach.h>
-#import <mach/vm_map.h>
-#import <mach/arm/thread_status.h>
 #import <mach-o/dyld.h>
-#import <mach-o/loader.h>
 #import <dlfcn.h>
-#import <libkern/OSCacheControl.h>
-#import <errno.h>
-#import <string.h>
-#import <stdlib.h>
-#import <stdio.h>
-#import <unistd.h>
-#import <time.h>
 #import <math.h>
-#import <libgen.h>
-#import "libtitanox.h"
+#import <stdio.h>
+#import <stdlib.h>
+#import <string.h>
+#import <unistd.h>
 #import "offsets.h"
 #import "lc_detect.h"
 
-extern "C" {
-bool brk_install(void *target, void *replacement);
-void *brk_original_ptr(void *target);
-bool brk_remove(void *target);
-bool brk_selftest(void);
-bool brk_selftest_at(uintptr_t hint);
-int brk_slot_limit(void);
-int brk_active_count(void);
-void brk_log_state(void);
-void hook_note_hit(void *target);
-bool hook_verify_encryption(void *image);
-void hook_log_prot(const char *label, uintptr_t address);
-void hook_set_error(const char *format, ...);
-const char *hook_last_error(void);
-bool brk_host_is_livecontainer(void);
-void brk_teardown(void);
-void brk_diag_log(const char *format, ...);
-bool hook_code_patch_allowed(void);
-int hook_pointer_count(void);
-int hook_pointer_slots(void);
-int hook_probe(uintptr_t target);
-}
-
-static void tnx_wx_probe(void *target);
-static void tnx_slot_scan_start(void);
-static void tnx_disk_stage_run(void);
-
 #define LOG_MAX_BYTES (512 * 1024)
-
-#define TITANOX_BUILD_TAG "brk-b6 2026-10-02 keep-maxprot"
-
-#define RVA_MM_RECEIVEMESSAGE            0x7bace8
-#define RVA_HOMEMODE_GETINSTANCE         0x95f488
-#define RVA_GAMESTATEMANAGER_GETINSTANCE 0x95dae4
-#define RVA_GAMESTATEMANAGER_ISSTATE     0x95e7c0
-#define RVA_GUI_GETINSTANCE              0x591644
-#define RVA_GUI_SHOWFLOATER_TEXTAT       0x591f28
-#define RVA_GUI_SHOWFLOATER_DEFPOS       0x818cdc
-#define RVA_GUI_GETDEFAULTFLOATERPOS     0x591da0
-#define RVA_GUI_SHOWPOPUP                0x592c24
-#define RVA_SPRITE_ADDCHILD              0xc2d8c4
-#define RVA_SPRITE_ADDCHILDAT            0xc2d8cc
-#define RVA_SPRITE_REMOVECHILD           0xc2db9c
-#define RVA_STAGE_ADDCHILD               0xc33690
-#define RVA_TEXTFIELD_SETTEXT            0xc4a978
-
-#define GUI_RETRY_COUNT 3
-#define GUI_RETRY_NS 1000000L
-#define GUI_LOG_LIMIT 20
-#define GAME_POLL_MAX_TICKS 1200
-#define GAME_POLL_STABLE_TICKS 3
-
-typedef void  (*fn_msg_t)(void *, void *);
-typedef void *(*fn_void_ret_t)(void);
-typedef void *(*gui_get_t)(void);
-typedef void  (*fn_gui_at_t)(void *, void *, float, float);
-typedef void  (*fn_gui_def_t)(void *, void *, float);
-typedef void  (*fn_sprite_t)(void *, void *);
-typedef BOOL  (*fn_isstate_t)(void *, int);
-typedef struct { float x; float y; } tnx_vec2_t;
-typedef tnx_vec2_t (*fn_gui_pos_t)(void *);
-
-static uintptr_t g_base = 0;
-static FILE *g_log = NULL;
-static long g_log_written = 0;
-
-static volatile int g_hits_recv = 0;
-static volatile int g_hits_home = 0;
-static volatile int g_hits_floater = 0;
-static volatile int g_hits_floater_def = 0;
-static volatile int g_hits_sprite = 0;
-static volatile int g_hits_stage = 0;
-static volatile int g_hits_isstate = 0;
-static volatile int g_lobby_welcome_done = 0;
-static volatile int g_floater_attempts = 0;
-static volatile int g_floater_success = 0;
-static volatile int g_floater_fail = 0;
-static volatile int g_gui_ok = 0;
-static volatile int g_label_state = 0;
-static volatile int g_label_updates = 0;
-static volatile int g_gui_logged = 0;
-static volatile int g_gui_generation = 0;
-static volatile int g_gui_rejections = 0;
-static volatile int g_last_game_state = -1;
-static volatile int g_selftest_ok = 0;
-
-static uintptr_t g_addr_recv = 0;
-static uintptr_t g_addr_home = 0;
-static uintptr_t g_addr_gui_get_primary = 0;
-static uintptr_t g_addr_gui_get_alt = 0;
-static uintptr_t g_addr_floater = 0;
-static uintptr_t g_addr_floater_def = 0;
-static uintptr_t g_addr_gui_pos = 0;
-static uintptr_t g_addr_sprite_add = 0;
-static uintptr_t g_addr_stage_add = 0;
-static uintptr_t g_addr_isstate = 0;
-
-static fn_msg_t      g_orig_recv = NULL;
-static fn_void_ret_t g_orig_home = NULL;
-static fn_gui_at_t   g_orig_floater = NULL;
-static fn_gui_def_t  g_orig_floater_def = NULL;
-static fn_sprite_t   g_orig_sprite = NULL;
-static fn_sprite_t   g_orig_stage = NULL;
-static fn_isstate_t  g_orig_isstate = NULL;
-
-static BOOL g_lc = NO;
-static BOOL g_aggressive = YES;
-static volatile int g_setup_done = 0;
-static volatile int g_valid_recv = 0;
-static volatile int g_valid_home = 0;
-static volatile int g_valid_gui = 0;
-
-static void tlog_raw(const char *s) {
-    if (!s) return;
-    if (!g_log) {
-        NSString *p = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/Titanox.log"];
-        g_log = fopen(p.UTF8String, "a");
-    }
-    if (!g_log) return;
-    if (g_log_written >= LOG_MAX_BYTES) return;
-    size_t len = strlen(s);
-    fwrite(s, 1, len, g_log);
-    fputc('\n', g_log);
-    fflush(g_log);
-    g_log_written += (long)len + 1;
-}
-
-static void tlog(NSString *s) {
-    if (!s) return;
-    tlog_raw(s.UTF8String);
-}
-
-static volatile int g_reject_logged = 0;
-
-static void note_reject(const char *path, const char *reason) {
-    if (g_reject_logged >= 4) return;
-    g_reject_logged++;
-    tlog([NSString stringWithFormat:@"image candidate rejected: %s (%s)",
-          path ? path : "?", reason]);
-}
-
-static BOOL find_game_image(uintptr_t *out_base) {
-    if (!out_base) return NO;
-
-    uint32_t count = _dyld_image_count();
-    if (count > 8192) count = 8192;
-
-    for (uint32_t i = 0; i < count; i++) {
-        const char *path = _dyld_get_image_name(i);
-        const struct mach_header_64 *header =
-            (const struct mach_header_64 *)_dyld_get_image_header(i);
-
-        if (!path || !header) continue;
-        if (!strstr(path, ".app/")) continue;
-        if (strstr(path, "/System/")) { note_reject(path, "system"); continue; }
-        if (strstr(path, "/usr/lib/")) { note_reject(path, "usr-lib"); continue; }
-        if (strstr(path, ".framework/")) { note_reject(path, "framework"); continue; }
-        if (strstr(path, ".dylib")) { note_reject(path, "dylib"); continue; }
-        if (tnx_name_marks_host_runtime(path)) { note_reject(path, "host-runtime"); continue; }
-        if (!tnx_addr_readable((uintptr_t)header, sizeof(struct mach_header_64))) {
-            note_reject(path, "header-unreadable");
-            continue;
-        }
-        if (header->magic != MH_MAGIC_64) { note_reject(path, "bad-magic"); continue; }
-        if (header->ncmds == 0 || header->ncmds > 4096) { note_reject(path, "bad-ncmds"); continue; }
-
-        uintptr_t slide = tnx_image_slide((uintptr_t)header);
-
-        if (!tnx_image_text_contains((uintptr_t)header, (uintptr_t)header + 0x4000)) {
-            note_reject(path, "text-check");
-            continue;
-        }
-
-        tlog([NSString stringWithFormat:@"image accepted: %s base=%p slide=0x%llx",
-              path, (void *)header, (unsigned long long)slide]);
-
-        *out_base = (uintptr_t)header;
-        return YES;
-    }
-
-    return NO;
-}
-
-static NSString *describe_op0(uintptr_t addr) {
-    if (!addr) return @"null";
-
-    uint32_t w = 0;
-    if (!tnx_read_u32(addr, &w)) return @"unreadable";
-
-    if ((w & 0xFFFFFC1F) == 0xD65F0000) return @"RET";
-    if (w == 0xD503201F) return @"NOP";
-    if (w == 0xD503237F) return @"PACIBSP";
-    if (w == 0xD503233F) return @"PACIASP";
-    if ((w & 0xFFC07FFF) == 0xA9807BFD) return @"STP x29,x30,[sp,#-N]!";
-    if ((w & 0xFF8003FF) == 0xD10003FF) return @"SUB sp,sp,#N";
-    if ((w & 0xFC000000) == 0x14000000) return @"B imm";
-    if ((w & 0xFC000000) == 0x94000000) return @"BL imm";
-    if ((w & 0x9F000000) == 0x90000000) return @"ADRP";
-    if ((w & 0x9F000000) == 0x10000000) return @"ADR";
-    if ((w & 0xFF000010) == 0x54000000) return @"B.cond";
-    if ((w & 0x3B000000) == 0x18000000) return @"LDR literal";
-    if ((w & 0xFFC00000) == 0xB9400000) return @"LDR w";
-    if ((w & 0xFFC00000) == 0xF9400000) return @"LDR x";
-    if ((w & 0xFFFFFC1F) == 0xD61F0000) return @"BR";
-    if ((w & 0xFFFFFC1F) == 0xD63F0000) return @"BLR";
-    if ((w & 0x7F800000) == 0x52800000) return @"MOVZ w";
-    if ((w & 0xFF800000) == 0xAA000000) return @"ORR/MOV";
-    return [NSString stringWithFormat:@"raw=0x%08x", w];
-}
-
-static NSString *dump_target(uintptr_t addr) {
-    if (!addr) return @"null";
-
-    uint32_t w[4] = {0, 0, 0, 0};
-
-    for (int i = 0; i < 4; i++) {
-        if (!tnx_read_u32(addr + (uintptr_t)(4 * i), &w[i])) return @"unreadable";
-    }
-
-    return [NSString stringWithFormat:
-        @"addr=%p op=%08x %08x %08x %08x  desc=%@",
-        (void*)addr, w[0], w[1], w[2], w[3], describe_op0(addr)];
-}
-
-static BOOL tnx_op_is_strong_prologue(uint32_t word) {
-    if (word == 0xD503233F) return YES;
-    if (word == 0xD503237F) return YES;
-    if ((word & 0xFFFFFF1F) == 0xD503241F) return YES;
-
-    uint32_t registers = (word >> 5) & 0x1Fu;
-    uint32_t spRelative = (registers == 31u) ? YES : NO;
-
-    if ((word & 0xFFC00000u) == 0xA9800000u && spRelative) return YES;
-    if ((word & 0xFFE00C00u) == 0xF8000C00u && spRelative) return YES;
-    if ((word & 0xFFE00C00u) == 0xF8000000u && spRelative) {
-        uint32_t offset = (word >> 12) & 0x1FFu;
-
-        if (offset & 0x100u) return YES;
-    }
-
-    if ((word & 0xFF8003FFu) == 0xD10003FFu) return YES;
-
-    return NO;
-}
-
-static BOOL tnx_op_is_terminator(uint32_t word) {
-    if ((word & 0xFFFFFC1Fu) == 0xD65F0000u) return YES;
-    if ((word & 0xFC000000u) == 0x14000000u) return YES;
-    if ((word & 0xFFE0001Fu) == 0xD4200000u) return YES;
-
-    return NO;
-}
-
-static BOOL tnx_addr_is_entry(uintptr_t address) {
-    if (!address) return NO;
-
-    uint32_t word = 0;
-
-    if (!tnx_read_u32(address, &word)) return NO;
-    if (tnx_op_is_strong_prologue(word)) return YES;
-
-    uintptr_t probe = address - 4;
-
-    for (int step = 0; step < 12; step++) {
-        uint32_t previous = 0;
-
-        if (!tnx_read_u32(probe, &previous)) return NO;
-        if (previous == 0xD503201F) { probe -= 4; continue; }
-
-        return tnx_op_is_terminator(previous) ? YES : NO;
-    }
-
-    return NO;
-}
-
-static uintptr_t tnx_function_entry(uintptr_t address, uintptr_t *outDelta) {
-    if (outDelta) *outDelta = 0;
-    if (!address) return 0;
-
-    if (tnx_addr_is_entry(address)) return address;
-
-    uintptr_t limit = (address > 0x800) ? (address - 0x800) : 0;
-
-    for (uintptr_t probe = address - 4; probe > limit; probe -= 4) {
-        uint32_t candidate = 0;
-
-        if (!tnx_read_u32(probe, &candidate)) break;
-        if (!tnx_op_is_strong_prologue(candidate)) continue;
-
-        if (outDelta) *outDelta = address - probe;
-
-        return probe;
-    }
-
-    return 0;
-}
-
-static void tnx_report_entry(const char *label, uintptr_t address) {
-    uintptr_t delta = 0;
-    uintptr_t entry = tnx_function_entry(address, &delta);
-
-    tlog([NSString stringWithFormat:
-          @"rva %-10s addr=%p entry=%p delta=0x%llx exact=%d desc=%@",
-          label,
-          (void *)address,
-          (void *)entry,
-          (unsigned long long)delta,
-          (entry == address) ? 1 : 0,
-          describe_op0(address)]);
-}
-
-static void log_gui_sample(void *gui) {
-    int index = g_gui_logged;
-    if (index >= GUI_LOG_LIMIT) return;
-    g_gui_logged = index + 1;
-
-    NSString *name = tnx_object_class_name(gui);
-    uintptr_t isa = 0;
-    tnx_read_pointer((uintptr_t)gui, &isa);
-
-    tlog([NSString stringWithFormat:
-          @"gui[%d] obj=%p class=%@ isa=%p owner=%@ gen=%d",
-          index + 1,
-          gui,
-          name ? name : @"<nil>",
-          (void *)isa,
-          tnx_isa_owner_description(g_base, gui),
-          g_gui_generation]);
-}
-
-static BOOL gui_validate(void *gui, NSString **outReason) {
-    NSString *reason = nil;
-
-    do {
-        if (!gui) { reason = @"null"; break; }
-        if (!tnx_object_plausible(gui)) { reason = @"implausible"; break; }
-
-        Class cls = tnx_object_class(gui);
-        if (!cls) { reason = @"no-class"; break; }
-
-        const char *name = class_getName(cls);
-        if (!name) { reason = @"no-name"; break; }
-        if (strcmp(name, "Gui") != 0) {
-            reason = [NSString stringWithFormat:@"class=%s", name];
-            break;
-        }
-
-        uintptr_t isa = 0;
-        if (!tnx_read_pointer((uintptr_t)gui, &isa)) { reason = @"isa-unreadable"; break; }
-        if (!isa) { reason = @"isa-null"; break; }
-        if (!tnx_image_owns_address(g_base, isa)) { reason = @"isa-foreign-image"; break; }
-        if (!tnx_isa_in_image_data(g_base, isa)) { reason = @"isa-not-data"; break; }
-    } while (0);
-
-    if (reason) {
-        g_gui_rejections++;
-        if (outReason) *outReason = reason;
-        return NO;
-    }
-
-    return YES;
-}
-
-static void *gui_fetch_raw(int *outWhich) {
-    gui_get_t getters[2] = { NULL, NULL };
-    uintptr_t addrs[2] = { 0, 0 };
-    int total = 0;
-
-    if (g_addr_gui_get_primary) {
-        getters[total] = (gui_get_t)g_addr_gui_get_primary;
-        addrs[total] = g_addr_gui_get_primary;
-        total++;
-    }
-    if (g_addr_gui_get_alt && g_addr_gui_get_alt != g_addr_gui_get_primary) {
-        getters[total] = (gui_get_t)g_addr_gui_get_alt;
-        addrs[total] = g_addr_gui_get_alt;
-        total++;
-    }
-
-    for (int i = 0; i < total; i++) {
-        void *result = NULL;
-        @try {
-            result = getters[i]();
-        } @catch (NSException *e) {
-            tlog([NSString stringWithFormat:@"  gui_get %p raised %@", (void *)addrs[i], e.reason]);
-            result = NULL;
-        }
-        if (result) {
-            if (outWhich) *outWhich = i;
-            return result;
-        }
-    }
-
-    if (outWhich) *outWhich = -1;
-    return NULL;
-}
-
-static void *gui_acquire(int *outAttempts, int *outWhich, NSString **outReason) {
-    for (int attempt = 0; attempt < GUI_RETRY_COUNT; attempt++) {
-        int which = -1;
-        void *gui = gui_fetch_raw(&which);
-
-        if (gui_validate(gui, outReason)) {
-            if (outAttempts) *outAttempts = attempt + 1;
-            if (outWhich) *outWhich = which;
-            g_gui_ok++;
-            return gui;
-        }
-
-        if (attempt + 1 < GUI_RETRY_COUNT) {
-            struct timespec ts;
-            ts.tv_sec = 0;
-            ts.tv_nsec = GUI_RETRY_NS;
-            nanosleep(&ts, NULL);
-        }
-    }
-
-    if (outAttempts) *outAttempts = GUI_RETRY_COUNT;
-    return NULL;
-}
-
-static BOOL gui_default_position(void *gui, float *outX, float *outY) {
-    if (!g_addr_gui_pos) return NO;
-    if (!tnx_addr_is_entry(g_addr_gui_pos)) return NO;
-
-    tnx_vec2_t value = { 0.0f, 0.0f };
-
-    @try {
-        value = ((fn_gui_pos_t)g_addr_gui_pos)(gui);
-    } @catch (NSException *e) {
-        return NO;
-    }
-
-    if (!isfinite(value.x) || !isfinite(value.y)) return NO;
-    if (fabsf(value.x) > 100000.0f || fabsf(value.y) > 100000.0f) return NO;
-
-    if (outX) *outX = value.x;
-    if (outY) *outY = value.y;
-
-    return YES;
-}
-
-static void *make_sc_string(const char *utf8) {
-    if (!utf8) return NULL;
-    size_t blen = strlen(utf8);
-    uint8_t *buf = (uint8_t*)malloc(16);
-    if (!buf) return NULL;
-    memset(buf, 0, 16);
-
-    *(uint32_t*)(buf + 0) = (uint32_t)blen;
-    *(uint32_t*)(buf + 4) = (uint32_t)blen;
-
-    if (blen > 7) {
-        uint8_t *data = (uint8_t*)malloc(blen + 1);
-        if (!data) { free(buf); return NULL; }
-        memcpy(data, utf8, blen);
-        data[blen] = 0;
-        *(void**)(buf + 8) = data;
-    } else {
-        memcpy(buf + 8, utf8, blen);
-    }
-    return buf;
-}
-
-static void show_floater_default(const char *text, float duration) {
-    if (!g_aggressive) return;
-    if (g_setup_done != 2) { tlog(@"FLOATER_DEF skipped: setup not verified"); return; }
-    if (!text) { g_floater_fail++; return; }
-
-    g_floater_attempts++;
-    tlog([NSString stringWithFormat:@"FLOATER_DEF try: '%s' dur=%.1f", text, duration]);
-
-    fn_gui_def_t call = g_orig_floater_def;
-
-    if (!call) {
-        if (!tnx_addr_is_entry(g_addr_floater_def)) {
-            tlog([NSString stringWithFormat:
-                  @"  fail: floater_def rva=0x%x is not a function entry desc=%@",
-                  RVA_GUI_SHOWFLOATER_DEFPOS, describe_op0(g_addr_floater_def)]);
-            g_floater_fail++;
-            return;
-        }
-
-        call = (fn_gui_def_t)g_addr_floater_def;
-    }
-
-    int attempts = 0;
-    NSString *reason = nil;
-    void *gui = gui_acquire(&attempts, NULL, &reason);
-
-    if (!gui) {
-        tlog([NSString stringWithFormat:@"  fail: gui invalid after %d attempts (%@)", attempts, reason]);
-        g_floater_fail++;
-        return;
-    }
-
-    log_gui_sample(gui);
-
-    void *sc = make_sc_string(text);
-    if (!sc) { tlog(@"  fail: sc NULL"); g_floater_fail++; return; }
-
-    @try {
-        call(gui, sc, duration);
-        tlog([NSString stringWithFormat:@"  called defaultPos(gui, sc, %.1f) attempts=%d", duration, attempts]);
-        g_floater_success++;
-    } @catch (NSException *e) {
-        tlog([NSString stringWithFormat:@"  EXCEPTION: %@", e.reason]);
-        g_floater_fail++;
-    }
-}
-
-static void show_floater_at_default_pos(const char *text) {
-    if (!g_aggressive) return;
-    if (g_setup_done != 2) { tlog(@"FLOATER_AT skipped: setup not verified"); return; }
-    if (!text) { g_floater_fail++; return; }
-
-    g_floater_attempts++;
-    tlog([NSString stringWithFormat:@"FLOATER_AT try: '%s' at native default position", text]);
-
-    fn_gui_at_t call = g_orig_floater;
-
-    if (!call) {
-        if (!tnx_addr_is_entry(g_addr_floater)) {
-            tlog([NSString stringWithFormat:
-                  @"  fail: floater rva=0x%x is not a function entry desc=%@",
-                  RVA_GUI_SHOWFLOATER_TEXTAT, describe_op0(g_addr_floater)]);
-            g_floater_fail++;
-            return;
-        }
-
-        call = (fn_gui_at_t)g_addr_floater;
-    }
-
-    int attempts = 0;
-    NSString *reason = nil;
-    void *gui = gui_acquire(&attempts, NULL, &reason);
-
-    if (!gui) {
-        tlog([NSString stringWithFormat:@"  fail: gui invalid after %d attempts (%@)", attempts, reason]);
-        g_floater_fail++;
-        return;
-    }
-
-    log_gui_sample(gui);
-
-    float x = 0.0f;
-    float y = 0.0f;
-
-    if (!gui_default_position(gui, &x, &y)) {
-        tlog(@"  fail: default floater position unavailable");
-        g_floater_fail++;
-        return;
-    }
-
-    void *sc = make_sc_string(text);
-    if (!sc) { tlog(@"  fail: sc NULL"); g_floater_fail++; return; }
-
-    @try {
-        call(gui, sc, x, y);
-        tlog([NSString stringWithFormat:@"  called showFloaterTextAt(gui, sc, %.1f, %.1f) attempts=%d", x, y, attempts]);
-        g_floater_success++;
-    } @catch (NSException *e) {
-        tlog([NSString stringWithFormat:@"  EXCEPTION: %@", e.reason]);
-        g_floater_fail++;
-    }
-}
-
-static void try_all_floater_variants(const char *text) {
-    if (!g_aggressive) { tlog(@"try_all_floater_variants disabled"); return; }
-
-    tlog(@"=== try_all_floater_variants ===");
-
-    tlog(@"variant A: showFloaterTextAtDefaultPos(gui, text, -1)");
-    show_floater_default(text, -1.0f);
-
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        tlog(@"variant B: showFloaterTextAt(gui, text, defaultPos)");
-        show_floater_at_default_pos(text);
-    });
-
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(6 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        tlog(@"variant C: showFloaterTextAtDefaultPos(gui, text, 3.0)");
-        show_floater_default(text, 3.0f);
-    });
-}
-
-static void floater_demo_tick(int attempt);
-
-static void floater_demo_tick(int attempt) {
-    if (!g_aggressive) { tlog(@"floater demo disabled"); return; }
-    if (g_floater_success > 0) { tlog(@"floater demo done"); return; }
-
-    if (g_setup_done != 2) {
-        tlog([NSString stringWithFormat:@"floater demo waiting: setup=%d", g_setup_done]);
-    } else if (!g_addr_gui_get_primary) {
-        tlog(@"floater demo skipped: Gui::getInstance rva is not a callable function entry");
-        return;
-    } else if (attempt >= 8) {
-        tlog(@"floater demo gave up");
-        return;
-    } else {
-        tlog([NSString stringWithFormat:@"floater demo attempt %d gui_ok=%d",
-              attempt + 1, g_gui_ok]);
-        try_all_floater_variants("Tale Stars iOS test");
-    }
-
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        floater_demo_tick(attempt + 1);
-    });
-}
-
-static void h_recv(void *self, void *msg) {
-    g_hits_recv++;
-    hook_note_hit((void *)g_addr_recv);
-
-    if (g_hits_recv <= 20) {
-        tlog([NSString stringWithFormat:@"RECV #%d", g_hits_recv]);
-    }
-
-    if (g_orig_recv) g_orig_recv(self, msg);
-}
-
-static void *h_home(void) {
-    g_hits_home++;
-    hook_note_hit((void *)g_addr_home);
-
-    void *res = NULL;
-    if (g_orig_home) res = g_orig_home();
-
-    if (g_hits_home <= 5) {
-        tlog([NSString stringWithFormat:@"HOME #%d -> %p", g_hits_home, res]);
-    }
-
-    if (!g_lobby_welcome_done) {
-        g_lobby_welcome_done = 1;
-        tlog(@"lobby detected");
-        if (g_aggressive) {
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)),
-                           dispatch_get_main_queue(), ^{
-                try_all_floater_variants("Tale Stars iOS test");
-            });
-        }
-    }
-
-    return res;
-}
-
-static void h_floater(void *self, void *text, float x, float y) {
-    g_hits_floater++;
-    hook_note_hit((void *)g_addr_floater);
-
-    if (g_hits_floater <= 10) {
-        tlog([NSString stringWithFormat:@"FLOATER_CALL #%d x=%.1f y=%.1f", g_hits_floater, x, y]);
-    }
-
-    if (g_orig_floater) g_orig_floater(self, text, x, y);
-}
-
-static void h_floater_def(void *self, void *text, float duration) {
-    g_hits_floater_def++;
-    hook_note_hit((void *)g_addr_floater_def);
-
-    if (g_hits_floater_def <= 10) {
-        tlog([NSString stringWithFormat:@"FLOATER_DEF_CALL #%d dur=%.1f", g_hits_floater_def, duration]);
-    }
-
-    if (g_orig_floater_def) g_orig_floater_def(self, text, duration);
-}
-
-static void h_sprite(void *self, void *child) {
-    g_hits_sprite++;
-    hook_note_hit((void *)g_addr_sprite_add);
-
-    if (g_hits_sprite <= 10) {
-        tlog([NSString stringWithFormat:@"SPRITE_ADDCHILD #%d self=%p child=%p",
-              g_hits_sprite, self, child]);
-    }
-
-    if (g_orig_sprite) g_orig_sprite(self, child);
-}
-
-static void h_stage(void *self, void *child) {
-    g_hits_stage++;
-    hook_note_hit((void *)g_addr_stage_add);
-
-    if (g_hits_stage <= 10) {
-        tlog([NSString stringWithFormat:@"STAGE_ADDCHILD #%d self=%p child=%p",
-              g_hits_stage, self, child]);
-    }
-
-    if (g_orig_stage) g_orig_stage(self, child);
-}
-
-static BOOL h_isstate(void *self, int state) {
-    g_hits_isstate++;
-    hook_note_hit((void *)g_addr_isstate);
-
-    BOOL result = g_orig_isstate ? g_orig_isstate(self, state) : NO;
-
-    if (state != g_last_game_state) {
-        g_last_game_state = state;
-        g_gui_generation++;
-        tlog([NSString stringWithFormat:
-              @"GAME_STATE isState(%d)=%d gen=%d gui-cache-reset",
-              state, result ? 1 : 0, g_gui_generation]);
-    }
-
-    return result;
-}
-
-static const struct { const char *name; uint32_t rva; } TITANOX_PROBE_LIST[] = {
-    { "DisplayObject_setXY",                  0xC16B54 },
-    { "DisplayObject_removeFromParent",       0xC16EA8 },
-    { "MovieClipHelper_setTextAndScale",      0x990C20 },
-    { "MovieClip_getTextFieldByName",         0xC1D7B0 },
-    { "MovieClip_getChildByName",             0xC1D550 },
-    { "movieClip_setText",                    0xC4ED90 },
-    { "StringTable_getMovieClip",             0xBECE60 },
-    { "gotoAndStop",                          0xC1C90C },
-    { "setInteractiveRecursive",              0xC1CFE0 },
-    { "Stage_addChild_js",                    0xC336A0 },
-    { "Sprite_ctor",                          0xC2D684 },
-    { "GameButton_ctor",                      0x597C48 },
-    { "GameButton_setText",                   0x598298 },
-    { "CustomButton_buttonPressed",           0xC4DFCC },
-    { "dropCtor",                             0x59908C },
-    { "dropGUIContainer_addGameButton",       0x599508 },
-    { "DecoratedTextField_setupDecorated",    0x58E7BC },
-    { "stringCtor",                           0xDCF8F0 },
-    { "operator_new",                         0x10EFAF0 },
-    { "LogicDataTables_getColorGradient",     0xA5B9A0 },
-    { "TextField_reset",                      0xC49844 },
-    { "GenericPopup_GenericPopup",            0x6C38B8 },
-    { "GenericPopup_addPopupButton",          0x6C442C },
-    { "GameInputField_ctor",                  0x599EF4 },
-    { "GameInputField_setMaxTextLength",      0xE12BCC },
-    { "GameSliderComponent_ctor",             0x59C004 },
-    { "GameSliderComponent_setBounds",        0x59C808 },
-    { "GameSlider_refreshLogic",              0x59C428 },
-    { "GameSlider_update",                    0x59C6BC },
-    { "GameMain_update_a",                    0x4B4B7C },
-    { "StartSpectateMessage_ctor",            0xB754A4 },
-    { "BattleMode_getInstance",               0x954EE0 },
-    { "BattleScreen_getLogicBattleModeClient",0x809348 },
-    { "LogicBattleModeClient_getOwnCharacter",0xB90A28 },
-    { "LogicBattleModeClient_isUltiReady",    0x818BCC },
-    { "LogicBattleModeClient_update",         0xB8EEE0 },
-    { "BattleScreen_autoShoot",               0xB90C04 },
-    { "BattleScreen_tryToActivateSkill",      0x802960 },
-    { "BattleScreen_updateMovement",          0x809348 },
-    { "BattleScreen_convertToControlScheme",  0x80D758 },
-    { "BattleScreen_getClosestTarget",        0x8151E0 },
-    { "Character_getUltiSkillServer",         0x80D758 },
-    { "Character_getPrimarySkillServer",      0xAB73A4 },
-    { "LogicSkillData_getCastingRange",       0xAB4390 },
-    { "isImmuneAndBulletsGoThrough",          0xA94114 },
-    { "hasAmmo",                              0xAB4E60 },
-    { "getSkillRechargeMs",                   0xAB4E14 },
-    { "LogicGameObjectClient_getX",           0xAE4A1C },
-    { "LogicGameObjectClient_getY",           0xAE4A24 },
-    { "LogicGameObjectClient_getGlobalID",    0xAE49C8 },
-    { "LogicSkillData_getProjectile",         0xA9434C },
-    { "LogicProjectileData_getSpeed",         0xA815CC },
-    { "LogicProjectileData_getRadius",        0xA8164C },
-    { "MessageManager__receiveMessage",       0x7BACE8 },
-    { "Stage_addChild_ios",                   0xC33690 },
-    { "home",                                 0x95F488 },
-    { "guiGet",                               0x591644 },
-    { "floater",                              0x591F28 },
-    { "floaterDefPos",                        0x818CDC },
-    { "guiPos",                               0x591DA0 },
-    { "spriteAdd",                            0xC2D8C4 },
-    { "isState",                              0x95E7C0 }
-};
-
-static void probe_reference_targets(void) {
-    const unsigned long total = sizeof(TITANOX_PROBE_LIST) / sizeof(TITANOX_PROBE_LIST[0]);
-    int withSlots = 0;
-
-    tlog(@"=== probe: which target addresses appear in writable data ===");
-
-    for (unsigned long i = 0; i < total; i++) {
-        uintptr_t address = g_base + TITANOX_PROBE_LIST[i].rva;
-        BOOL entry = tnx_addr_is_entry(address);
-        int hits = entry ? hook_probe(address) : 0;
-
-        tnx_report_entry(TITANOX_PROBE_LIST[i].name, address);
-
-        if (hits > 0) withSlots++;
-
-        tlog([NSString stringWithFormat:@"probe %-34s rva=0x%06x entry=%d slots=%d",
-              TITANOX_PROBE_LIST[i].name, TITANOX_PROBE_LIST[i].rva, entry ? 1 : 0, hits]);
-    }
-
-    tlog([NSString stringWithFormat:@"probe done: %d of %lu targets referenced by data",
-          withSlots, total]);
-}
-
-static void dump_objc_inventory(const char *tag) {
-    int total = objc_getClassList(NULL, 0);
-
-    if (total <= 0) {
-        tlog(@"objc: no classes visible");
-        return;
-    }
-
-    if (total > 200000) total = 200000;
-
-    Class *classes = (Class *)malloc(sizeof(Class) * (size_t)total);
-    if (!classes) return;
-
-    static const char *noise[] = {
-        "Sentry", "_TtC6Sentry", "_TtCC6Sentry", "Firebase", "AppsFlyer",
-        "GUL", "Zendesk", "sczendesk", "Helpshift", "laser", "SKAdNetwork",
-        "GAD", "FIR", "nanopb", "GTM", "GSDK", "UI", "NS", "WK", "CA",
-        "CL", "CN", "AV", "MTL", "LS", "__", NULL
-    };
-
-    static const char *gameplay[] = {
-        "Gui", "Home", "Float", "Sprite", "Scene", "Messenger", "Logic",
-        "Fight", "Lobby", "Battle", "Card", "Player", "Unit", "Menu",
-        "Render", "Node", "View", "Screen", "Popup", "Dialog", "Resource",
-        "Game", "State", "Mode", "Widget", "Button", "Label", "Text",
-        NULL
-    };
-
-    int count = objc_getClassList(classes, total);
-    int inGame = 0;
-    int listed = 0;
-    int detailed = 0;
-
-    tlog([NSString stringWithFormat:@"objc[%s] ===== class name map =====", tag ? tag : "?"]);
-
-    for (int i = 0; i < count; i++) {
-        const char *name = class_getName(classes[i]);
-        if (!name) continue;
-
-        uintptr_t cls = (uintptr_t)classes[i];
-
-        if (!tnx_image_owns_address(g_base, cls)) continue;
-
-        inGame++;
-
-        BOOL skip = NO;
-        for (int n = 0; noise[n]; n++) {
-            if (strncmp(name, noise[n], strlen(noise[n])) == 0) { skip = YES; break; }
-        }
-        if (skip) continue;
-
-        if (listed < 700) {
-            tlog([NSString stringWithFormat:@"objc[%s] cls %s", tag ? tag : "?", name]);
-            listed++;
-        }
-
-        BOOL interesting = NO;
-        for (int g = 0; gameplay[g]; g++) {
-            if (strstr(name, gameplay[g])) { interesting = YES; break; }
-        }
-
-        if (!interesting || detailed >= 60) continue;
-
-        detailed++;
-
-        unsigned mcount = 0;
-        Method *methods = class_copyMethodList(classes[i], &mcount);
-
-        tlog([NSString stringWithFormat:@"objc[%s] == %s methods=%u",
-              tag ? tag : "?", name, mcount]);
-
-        if (methods) {
-            for (unsigned m = 0; m < mcount && m < 24; m++) {
-                const char *sel = sel_getName(method_getName(methods[m]));
-                const char *types = method_getTypeEncoding(methods[m]);
-                tlog([NSString stringWithFormat:@"objc[%s]     -[%s %s] %s",
-                      tag ? tag : "?", name, sel ? sel : "?", types ? types : "?"]);
-            }
-
-            if (mcount > 24) {
-                tlog([NSString stringWithFormat:@"objc[%s]     ... %u more", tag ? tag : "?", mcount - 24]);
-            }
-
-            free(methods);
-        }
-    }
-
-    tlog([NSString stringWithFormat:@"objc[%s]: %d classes, %d in game image, %d named, %d detailed",
-          tag ? tag : "?", count, inGame, listed, detailed]);
-
-    free(classes);
-}
-
-#define OBJC_HOOK_MAX 32
+#define OBJC_HOOK_MAX 64
+
+typedef void (*fn_send_movement_t)(void *, float, float);
+typedef void (*fn_set_prediction_t)(void *, int, int);
+typedef void *(*fn_get_inst_t)(void);
+typedef void *(*fn_get_own_char_t)(void *);
+typedef int   (*fn_get_team_t)(void *);
+typedef void *(*fn_get_data_t)(void *);
+typedef int   (*fn_get_coord_t)(void *);
+typedef void *(*fn_get_movieclip_t)(uintptr_t);
+typedef void *(*fn_get_textfield_t)(void *, uintptr_t);
+typedef void  (*fn_set_text_t)(void *, void *, int, int);
+typedef void  (*fn_set_xy_t)(void *, float, float);
+typedef void  (*fn_add_child_t)(void *, void *);
 
 typedef struct {
     Class cls;
@@ -925,246 +36,325 @@ typedef struct {
     const char *clsName;
     const char *selName;
     const char *signature;
-    volatile int hits;
+    int hits;
     bool used;
 } tnx_objc_hook_t;
 
+static uintptr_t g_base = 0;
+static FILE *g_log = NULL;
+static long g_log_written = 0;
+static BOOL g_setup_done = NO;
+
 static tnx_objc_hook_t g_objc_hooks[OBJC_HOOK_MAX];
 static volatile int g_objc_armed = 0;
-static volatile int g_objc_hits_total = 0;
+
+static void *g_label_tf = NULL;
+static void *g_label_clip = NULL;
+static int g_label_state = 0;
+static int g_label_updates = 0;
 
 static const char *TITANOX_OBJC_CLASSES[] = {
-    "AppController",
-    "GameViewController",
     "MetalView",
     "NullView",
-    "KeyboardNativeTextfield",
-    "WebViewController",
-    "ExternalWebViewController",
-    "StoreProductViewController",
-    "scWKWebView",
+    "AppController",
     NULL
 };
 
 static const char *TITANOX_OBJC_SELECTORS[] = {
     "render",
-    "processInput",
-    "loadView",
-    "viewDidLoad",
-    "initGame",
-    "didMoveToWindow",
-    "layoutSubviews",
-    "viewWillAppear:",
-    "viewDidAppear:",
-    "viewWillDisappear:",
-    "viewDidDisappear:",
-    "viewWillLayoutSubviews",
-    "viewDidLayoutSubviews",
-    "setPaused:",
-    "pauseUpdates:",
-    "didEnterBackground:",
-    "willEnterForeground:",
-    "applicationDidBecomeActive:",
-    "applicationWillResignActive:",
-    "applicationDidEnterBackground:",
-    "applicationWillEnterForeground:",
-    "touchesBegan:withEvent:",
-    "touchesEnded:withEvent:",
-    "touchesCancelled:withEvent:",
-    "pressesBegan:withEvent:",
-    "pressesEnded:withEvent:",
-    "swipeRight",
-    "onNavigationBack",
-    "onNavigationClose",
-    "close",
-    "invalidateTimer",
-    "onTimeout",
-    "show",
-    "hide",
-    "sendText",
     NULL
 };
 
-static const char *tnx_skip_compound(const char *p) {
-    char open = *p;
-    char close = (open == '{') ? '}' : ((open == '(') ? ')' : ']');
-    int depth = 0;
-
-    while (*p) {
-        if (*p == open) {
-            depth++;
-        } else if (*p == close) {
-            depth--;
-            if (depth == 0) { p++; break; }
+static void tlog(NSString *msg) {
+    if (!g_log) {
+        NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+        if (paths.count > 0) {
+            NSString *logPath = [paths[0] stringByAppendingPathComponent:@"Titanox.log"];
+            g_log = fopen([logPath UTF8String], "a");
         }
-
-        p++;
     }
 
-    return p;
+    if (g_log && g_log_written < LOG_MAX_BYTES) {
+        NSDateFormatter *df = [[NSDateFormatter alloc] init];
+        [df setDateFormat:@"yyyy-MM-dd HH:mm:ss.SSS"];
+        NSString *ts = [df stringFromDate:[NSDate date]];
+        NSString *line = [NSString stringWithFormat:@"[%@] %@\n", ts, msg];
+        const char *utf8 = [line UTF8String];
+        size_t len = strlen(utf8);
+        fwrite(utf8, 1, len, g_log);
+        fflush(g_log);
+        g_log_written += len;
+    }
 }
 
-static int tnx_objc_arg_types(const char *types, char *out, size_t capacity) {
-    if (!types || !out || capacity < 8) return -1;
-
-    size_t used = 0;
-    const char *p = types;
-
-    while (*p && (used + 1) < capacity) {
-        while (*p >= '0' && *p <= '9') p++;
-        if (!*p) break;
-
-        char c = *p;
-
-        if (c == 'r' || c == 'n' || c == 'N' || c == 'o' || c == 'O' || c == 'R' || c == 'V') {
-            p++;
-            continue;
+static BOOL find_game_image(uintptr_t *outBase) {
+    uint32_t count = _dyld_image_count();
+    for (uint32_t i = 0; i < count; i++) {
+        const char *name = _dyld_get_image_name(i);
+        if (!name) continue;
+        if (strstr(name, "Nulls Brawl") || strstr(name, "Laser") || strstr(name, "NB.app")) {
+            const struct mach_header *h = _dyld_get_image_header(i);
+            if (h && h->magic == MH_MAGIC_64) {
+                if (outBase) *outBase = (uintptr_t)h;
+                return YES;
+            }
         }
+    }
+    return NO;
+}
 
-        if (c == '^') {
-            p++;
-            if (*p == '{' || *p == '(' || *p == '[') p = tnx_skip_compound(p);
-            out[used++] = '^';
-            continue;
+static void *tnx_read_global_ptr(uintptr_t rva) {
+    if (!g_base || !rva) return NULL;
+    uintptr_t slot = g_base + rva;
+    void **ptr = reinterpret_cast<void **>(slot);
+    return *ptr;
+}
+
+static void tnx_run_autododge(void) {
+    if (!g_base) return;
+
+    fn_get_inst_t fn_get_battle = reinterpret_cast<fn_get_inst_t>(g_base + RVA_BATTLEMODE_GETINSTANCE);
+    void *battleMode = fn_get_battle ? fn_get_battle() : NULL;
+    if (!battleMode) return;
+
+    fn_get_own_char_t fn_get_own = reinterpret_cast<fn_get_own_char_t>(g_base + RVA_LOGICBATTLEMODECLIENT_GETOWNCHARACTER);
+    void *ownChar = fn_get_own ? fn_get_own(battleMode) : NULL;
+    if (!ownChar) return;
+
+    uint8_t dead = *reinterpret_cast<uint8_t *>(reinterpret_cast<uintptr_t>(ownChar) + OFF_GAMEOBJ_DEADFLAG);
+    if (dead) return;
+
+    fn_get_coord_t fn_get_x = reinterpret_cast<fn_get_coord_t>(g_base + RVA_LOGICGAMEOBJECTCLIENT_GETX);
+    fn_get_coord_t fn_get_y = reinterpret_cast<fn_get_coord_t>(g_base + RVA_LOGICGAMEOBJECTCLIENT_GETY);
+    fn_get_team_t fn_get_team = reinterpret_cast<fn_get_team_t>(g_base + RVA_LOGICBATTLEMODECLIENT_GETOWNPLAYERTEAM);
+
+    int ownX = fn_get_x ? fn_get_x(ownChar) : 0;
+    int ownY = fn_get_y ? fn_get_y(ownChar) : 0;
+    int ownTeam = fn_get_team ? fn_get_team(battleMode) : 0;
+
+    void *objMgr = *reinterpret_cast<void **>(reinterpret_cast<uintptr_t>(battleMode) + OFF_BATTLEMODE_OBJECTMANAGERPTR);
+    if (!objMgr) return;
+
+    void **objects = *reinterpret_cast<void ***>(reinterpret_cast<uintptr_t>(objMgr) + OFF_OBJECTMANAGER_OBJECTSARRAY);
+    int count = *reinterpret_cast<int *>(reinterpret_cast<uintptr_t>(objMgr) + OFF_OBJECTMANAGER_COUNT);
+    if (!objects || count <= 0) return;
+
+    fn_get_data_t fn_get_data = reinterpret_cast<fn_get_data_t>(g_base + RVA_LOGICGAMEOBJECTCLIENT_GETDATA);
+
+    float dodgeX = 0.0f;
+    float dodgeY = 0.0f;
+    bool danger = false;
+
+    int maxScan = (count < 256) ? count : 256;
+    for (int i = 0; i < maxScan; i++) {
+        void *obj = objects[i];
+        if (!obj || obj == ownChar) continue;
+
+        uint8_t objDead = *reinterpret_cast<uint8_t *>(reinterpret_cast<uintptr_t>(obj) + OFF_GAMEOBJ_DEADFLAG);
+        if (objDead) continue;
+
+        int team = *reinterpret_cast<int *>(reinterpret_cast<uintptr_t>(obj) + OFF_GAMEOBJ_TEAM);
+        if (team == ownTeam) continue;
+
+        void *data = fn_get_data ? fn_get_data(obj) : NULL;
+        if (!data) continue;
+
+        int px = fn_get_x ? fn_get_x(obj) : 0;
+        int py = fn_get_y ? fn_get_y(obj) : 0;
+
+        float dx = static_cast<float>(ownX - px);
+        float dy = static_cast<float>(ownY - py);
+        float distSq = dx * dx + dy * dy;
+
+        if (distSq > (1800.0f * 1800.0f) || distSq < 1.0f) continue;
+
+        float angle = *reinterpret_cast<float *>(reinterpret_cast<uintptr_t>(obj) + OFF_PROJECTILE_SPAWNANGLE);
+        float vx = cosf(angle);
+        float vy = sinf(angle);
+
+        float dot = dx * vx + dy * vy;
+        if (dot <= 0.0f) continue;
+
+        float perpDist = fabsf(dx * vy - dy * vx);
+        float threatRadius = 320.0f;
+
+        if (perpDist < threatRadius) {
+            float nx = -vy;
+            float ny = vx;
+
+            if ((dx * nx + dy * ny) < 0.0f) {
+                nx = -nx;
+                ny = -ny;
+            }
+
+            float weight = 1.0f / (perpDist + 1.0f);
+            dodgeX += nx * weight;
+            dodgeY += ny * weight;
+            danger = true;
         }
-
-        if (c == '{' || c == '(' || c == '[') {
-            p = tnx_skip_compound(p);
-            out[used++] = 'X';
-            continue;
-        }
-
-        out[used++] = c;
-        p++;
     }
 
-    out[used] = 0;
+    if (danger) {
+        float len = sqrtf(dodgeX * dodgeX + dodgeY * dodgeY);
+        if (len > 0.0001f) {
+            dodgeX /= len;
+            dodgeY /= len;
+        }
 
-    return (int)used;
+        fn_set_prediction_t fn_pred = reinterpret_cast<fn_set_prediction_t>(g_base + RVA_LOGICBATTLEMODECLIENT_SETCLIENTPREDICTIONMOVETO);
+        if (fn_pred) {
+            int targetX = ownX + static_cast<int>(dodgeX * 600.0f);
+            int targetY = ownY + static_cast<int>(dodgeY * 600.0f);
+            fn_pred(battleMode, targetX, targetY);
+        }
+
+        void *inputMgr = *reinterpret_cast<void **>(reinterpret_cast<uintptr_t>(battleMode) + OFF_BATTLEMODE_CLIENTINPUTMANAGER);
+        if (inputMgr) {
+            fn_send_movement_t fn_move = reinterpret_cast<fn_send_movement_t>(g_base + RVA_CLIENTINPUTMESSAGE_SENDMOVEMENT);
+            if (fn_move) {
+                fn_move(inputMgr, dodgeX, dodgeY);
+            }
+        }
+    }
 }
 
-static BOOL tnx_class_owns_method(Class cls, SEL sel) {
-    if (!cls || !sel) return NO;
+static void tnx_run_autoaim(void) {
+    if (!g_base) return;
 
-    unsigned count = 0;
-    Method *list = class_copyMethodList(cls, &count);
+    fn_get_inst_t fn_get_battle = reinterpret_cast<fn_get_inst_t>(g_base + RVA_BATTLEMODE_GETINSTANCE);
+    void *battleMode = fn_get_battle ? fn_get_battle() : NULL;
+    if (!battleMode) return;
 
-    if (!list) return NO;
+    fn_get_own_char_t fn_get_own = reinterpret_cast<fn_get_own_char_t>(g_base + RVA_LOGICBATTLEMODECLIENT_GETOWNCHARACTER);
+    void *ownChar = fn_get_own ? fn_get_own(battleMode) : NULL;
+    if (!ownChar) return;
 
-    BOOL found = NO;
+    fn_get_coord_t fn_get_x = reinterpret_cast<fn_get_coord_t>(g_base + RVA_LOGICGAMEOBJECTCLIENT_GETX);
+    fn_get_coord_t fn_get_y = reinterpret_cast<fn_get_coord_t>(g_base + RVA_LOGICGAMEOBJECTCLIENT_GETY);
+    fn_get_team_t fn_get_team = reinterpret_cast<fn_get_team_t>(g_base + RVA_LOGICBATTLEMODECLIENT_GETOWNPLAYERTEAM);
 
-    for (unsigned i = 0; i < count; i++) {
-        if (method_getName(list[i]) == sel) { found = YES; break; }
+    int ownX = fn_get_x ? fn_get_x(ownChar) : 0;
+    int ownY = fn_get_y ? fn_get_y(ownChar) : 0;
+    int ownTeam = fn_get_team ? fn_get_team(battleMode) : 0;
+
+    void *objMgr = *reinterpret_cast<void **>(reinterpret_cast<uintptr_t>(battleMode) + OFF_BATTLEMODE_OBJECTMANAGERPTR);
+    if (!objMgr) return;
+
+    void **objects = *reinterpret_cast<void ***>(reinterpret_cast<uintptr_t>(objMgr) + OFF_OBJECTMANAGER_OBJECTSARRAY);
+    int count = *reinterpret_cast<int *>(reinterpret_cast<uintptr_t>(objMgr) + OFF_OBJECTMANAGER_COUNT);
+    if (!objects || count <= 0) return;
+
+    float closestDistSq = 999999999.0f;
+    int targetX = 0;
+    int targetY = 0;
+    bool foundTarget = false;
+
+    int maxScan = (count < 256) ? count : 256;
+    for (int i = 0; i < maxScan; i++) {
+        void *obj = objects[i];
+        if (!obj || obj == ownChar) continue;
+
+        uint8_t dead = *reinterpret_cast<uint8_t *>(reinterpret_cast<uintptr_t>(obj) + OFF_GAMEOBJ_DEADFLAG);
+        if (dead) continue;
+
+        int team = *reinterpret_cast<int *>(reinterpret_cast<uintptr_t>(obj) + OFF_GAMEOBJ_TEAM);
+        if (team == ownTeam) continue;
+
+        int ex = fn_get_x ? fn_get_x(obj) : 0;
+        int ey = fn_get_y ? fn_get_y(obj) : 0;
+
+        float dx = static_cast<float>(ex - ownX);
+        float dy = static_cast<float>(ey - ownY);
+        float distSq = dx * dx + dy * dy;
+
+        if (distSq < closestDistSq && distSq > 1.0f) {
+            closestDistSq = distSq;
+            targetX = ex;
+            targetY = ey;
+            foundTarget = true;
+        }
     }
 
-    free(list);
-
-    return found;
+    if (foundTarget) {
+        uintptr_t battleScreen = g_base + RVA_BATTLESCREEN__BATTLESCREEN;
+        if (battleScreen) {
+            *reinterpret_cast<int *>(battleScreen + OFF_BATTLESCREEN_AUTOFIREX) = targetX;
+            *reinterpret_cast<int *>(battleScreen + OFF_BATTLESCREEN_AUTOFIREY) = targetY;
+        }
+    }
 }
 
-static tnx_objc_hook_t *tnx_objc_lookup(id self, SEL _cmd) {
-    Class start = object_getClass(self);
+static void tnx_render_watermark(void) {
+    if (!g_base) return;
 
-    if (!start) return NULL;
+    if (!g_label_clip) {
+        fn_get_movieclip_t fn_get_mc = reinterpret_cast<fn_get_movieclip_t>(g_base + RVA_STRINGTABLE_GETMOVIECLIP);
+        fn_get_textfield_t fn_get_tf = reinterpret_cast<fn_get_textfield_t>(g_base + RVA_MOVIECLIP__GETTEXTFIELDBYNAME);
+        fn_set_xy_t fn_set_xy = reinterpret_cast<fn_set_xy_t>(g_base + RVA_DISPLAYOBJECT__SETXY);
+        fn_add_child_t fn_add_child = reinterpret_cast<fn_add_child_t>(g_base + RVA_STAGE_ADDCHILD);
 
+        if (!fn_get_mc || !fn_get_tf || !fn_set_xy || !fn_add_child) return;
+
+        void *mc = fn_get_mc(0x1a);
+        if (!mc) return;
+
+        void *tf = fn_get_tf(mc, 0x16);
+        if (!tf) return;
+
+        void *stage = tnx_read_global_ptr(OFF_STAGEINSTANCEGLOBALPTR);
+        if (!stage) return;
+
+        fn_set_xy(mc, 40.0f, 30.0f);
+        fn_add_child(stage, mc);
+
+        g_label_clip = mc;
+        g_label_tf = tf;
+    }
+
+    if (g_label_tf) {
+        fn_set_text_t fn_set_text = reinterpret_cast<fn_set_text_t>(g_base + RVA_TEXTFIELD_SETTEXT);
+        if (fn_set_text) {
+            NSString *label = [NSString stringWithFormat:@"Titanox v1.0 [Zero-Latency]"];
+            void *sc = reinterpret_cast<void *>([label UTF8String]);
+            fn_set_text(g_label_tf, sc, 4, 0);
+            g_label_updates++;
+        }
+    }
+}
+
+static tnx_objc_hook_t *tnx_objc_find(id self, SEL _cmd) {
+    Class cls = object_getClass(self);
     for (int i = 0; i < OBJC_HOOK_MAX; i++) {
-        tnx_objc_hook_t *hook = &g_objc_hooks[i];
-
-        if (!hook->used || hook->sel != _cmd) continue;
-
-        for (Class c = start; c; c = class_getSuperclass(c)) {
-            if (c == hook->cls) return hook;
+        if (!g_objc_hooks[i].used) continue;
+        if (g_objc_hooks[i].cls == cls && g_objc_hooks[i].sel == _cmd) {
+            return &g_objc_hooks[i];
         }
     }
-
     return NULL;
 }
 
-static tnx_objc_hook_t *tnx_objc_note(id self, SEL _cmd) {
-    tnx_objc_hook_t *hook = tnx_objc_lookup(self, _cmd);
+static void tnx_objc_rep_render(id self, SEL _cmd) {
+    tnx_objc_hook_t *hook = tnx_objc_find(self, _cmd);
 
-    if (!hook) return NULL;
-
-    hook->hits++;
-    g_objc_hits_total++;
-
-    if (hook->hits <= 4 || (hook->hits % 300) == 0) {
-        tlog([NSString stringWithFormat:@"OBJC_HIT -[%s %s] %s #%d self=%p",
-              hook->clsName, hook->selName, hook->signature, hook->hits, self]);
-    }
-
-    return hook;
-}
-
-static void tnx_objc_rep0(id self, SEL _cmd) {
-    tnx_objc_hook_t *hook = tnx_objc_note(self, _cmd);
+    tnx_run_autododge();
+    tnx_run_autoaim();
+    tnx_render_watermark();
 
     if (hook && hook->original) {
         reinterpret_cast<void (*)(id, SEL)>(hook->original)(self, _cmd);
     }
 }
 
-static void tnx_objc_rep1(id self, SEL _cmd, id a1) {
-    tnx_objc_hook_t *hook = tnx_objc_note(self, _cmd);
-
-    if (hook && hook->original) {
-        reinterpret_cast<void (*)(id, SEL, id)>(hook->original)(self, _cmd, a1);
-    }
-}
-
-static void tnx_objc_rep1b(id self, SEL _cmd, BOOL a1) {
-    tnx_objc_hook_t *hook = tnx_objc_note(self, _cmd);
-
-    if (hook && hook->original) {
-        reinterpret_cast<void (*)(id, SEL, BOOL)>(hook->original)(self, _cmd, a1);
-    }
-}
-
-static void tnx_objc_rep2(id self, SEL _cmd, id a1, id a2) {
-    tnx_objc_hook_t *hook = tnx_objc_note(self, _cmd);
-
-    if (hook && hook->original) {
-        reinterpret_cast<void (*)(id, SEL, id, id)>(hook->original)(self, _cmd, a1, a2);
-    }
-}
-
-static int tnx_objc_arm(const char *clsName, const char *selName) {
+static int tnx_objc_arm(const char *clsName, const char *selName, IMP replacement) {
     Class cls = objc_getClass(clsName);
-
     if (!cls) return 0;
-    if (!tnx_image_owns_address(g_base, (uintptr_t)cls)) return 0;
 
     SEL sel = sel_registerName(selName);
-
-    if (!tnx_class_owns_method(cls, sel)) return 0;
-
     Method method = class_getInstanceMethod(cls, sel);
-
     if (!method) return 0;
 
     const char *types = method_getTypeEncoding(method);
-
     if (!types) return 0;
-
-    char args[10];
-    int argc = tnx_objc_arg_types(types, args, sizeof(args));
-
-    if (argc < 3) return 0;
-    if (args[0] != 'v') return 0;
-
-    IMP replacement = NULL;
-
-    if (argc == 3) {
-        replacement = reinterpret_cast<IMP>(tnx_objc_rep0);
-    } else if (argc == 4 && args[3] == '@') {
-        replacement = reinterpret_cast<IMP>(tnx_objc_rep1);
-    } else if (argc == 4 && args[3] == 'B') {
-        replacement = reinterpret_cast<IMP>(tnx_objc_rep1b);
-    } else if (argc == 5 && args[3] == '@' && args[4] == '@') {
-        replacement = reinterpret_cast<IMP>(tnx_objc_rep2);
-    } else {
-        return 0;
-    }
 
     for (int i = 0; i < OBJC_HOOK_MAX; i++) {
         if (!g_objc_hooks[i].used) continue;
@@ -1175,7 +365,6 @@ static int tnx_objc_arm(const char *clsName, const char *selName) {
         if (g_objc_hooks[i].used) continue;
 
         IMP previous = method_setImplementation(method, replacement);
-
         if (!previous) return 0;
 
         g_objc_hooks[i].used = true;
@@ -1188,509 +377,38 @@ static int tnx_objc_arm(const char *clsName, const char *selName) {
         g_objc_hooks[i].signature = types;
 
         g_objc_armed++;
-
-        tlog([NSString stringWithFormat:@"objc hook %s -%s sig=%s repl=%p orig=%p status=1",
-              clsName, selName, types, (void *)replacement, (void *)previous]);
-
+        tlog([NSString stringWithFormat:@"objc hook %s -%s armed", clsName, selName]);
         return 1;
     }
-
     return 0;
 }
 
-static void tnx_objc_install_all(void) {
-    int tried = 0;
-
-    tlog(@"=== objc hooks ===");
-
-    for (int s = 0; TITANOX_OBJC_SELECTORS[s]; s++) {
-        for (int c = 0; TITANOX_OBJC_CLASSES[c]; c++) {
-            tried++;
-            tnx_objc_arm(TITANOX_OBJC_CLASSES[c], TITANOX_OBJC_SELECTORS[s]);
-        }
-    }
-
-    tlog([NSString stringWithFormat:@"objc hooks armed=%d tried=%d", g_objc_armed, tried]);
-
-    for (int i = 0; i < OBJC_HOOK_MAX; i++) {
-        if (!g_objc_hooks[i].used) continue;
-
-        tlog([NSString stringWithFormat:@"objc armed -[%s %s] %s",
-              g_objc_hooks[i].clsName, g_objc_hooks[i].selName, g_objc_hooks[i].signature]);
-    }
-}
-
-static BOOL arm_target(const char *label, uintptr_t address, void *replacement, void **outOriginal) {
-    if (outOriginal) *outOriginal = NULL;
-
-    if (!address) {
-        tlog([NSString stringWithFormat:@"install %-10s skipped: rva zero", label]);
-        return NO;
-    }
-
-    if (!tnx_patchable_target(g_base, address)) {
-        tlog([NSString stringWithFormat:@"install %-10s rejected addr=%p desc=%@",
-              label, (void *)address, describe_op0(address)]);
-        return NO;
-    }
-
-    if (!tnx_addr_is_entry(address)) {
-        uintptr_t delta = 0;
-        uintptr_t entry = tnx_function_entry(address, &delta);
-
-        tlog([NSString stringWithFormat:
-              @"install %-10s rejected: not a function entry addr=%p candidate=%p delta=0x%llx desc=%@",
-              label, (void *)address, (void *)entry, (unsigned long long)delta, describe_op0(address)]);
-
-        return NO;
-    }
-
-    BOOL ok = brk_install((void *)address, replacement) ? YES : NO;
-    void *tramp = ok ? brk_original_ptr((void *)address) : NULL;
-
-    tlog([NSString stringWithFormat:@"install %-10s target=%p tramp=%p status=%d",
-          label, (void *)address, tramp, ok ? 1 : 0]);
-
-    if (!ok) {
-        tlog([NSString stringWithFormat:@"install %-10s error=%s",
-              label, hook_last_error()]);
-        return NO;
-    }
-
-    if (outOriginal) *outOriginal = tramp;
-    return YES;
-}
-
-static void resolve_gui_getters(void) {
-    uintptr_t address = g_base + RVA_GUI_GETINSTANCE;
-    uintptr_t delta = 0;
-    uintptr_t entry = tnx_function_entry(address, &delta);
-
-    tnx_report_entry("gui_get", address);
-
-    if (tnx_patchable_target(g_base, address) && entry == address) {
-        g_addr_gui_get_primary = address;
-        tlog([NSString stringWithFormat:@"gui_get accepted rva=0x%x exact entry", RVA_GUI_GETINSTANCE]);
-    } else {
-        tlog([NSString stringWithFormat:
-              @"gui_get NOT callable rva=0x%x candidate=%p delta=0x%llx (calling it would jump mid-function)",
-              RVA_GUI_GETINSTANCE, (void *)entry, (unsigned long long)delta]);
-    }
-
-    if (g_addr_gui_pos && !tnx_addr_is_entry(g_addr_gui_pos)) {
-        tlog([NSString stringWithFormat:@"guiPos NOT callable rva=0x%x", RVA_GUI_GETDEFAULTFLOATERPOS]);
-        g_addr_gui_pos = 0;
-    }
-
-    g_valid_gui = g_addr_gui_get_primary ? 1 : 0;
-}
-
 static void setup(void) {
-    tlog(@"");
-    tlog(@"=== setup ===");
-    tlog([NSString stringWithFormat:@"build=%s", TITANOX_BUILD_TAG]);
-    tlog([NSString stringWithFormat:@"host=%@ aggressive=%d",
-          tnx_host_description(), g_aggressive ? 1 : 0]);
+    if (g_setup_done) return;
+    g_setup_done = YES;
 
-    if (!g_base && !find_game_image(&g_base)) {
-        tlog(@"game not found");
-        return;
-    }
+    tlog([NSString stringWithFormat:@"setup base=%p", (void *)g_base]);
 
-    tlog([NSString stringWithFormat:@"base=%p", (void *)g_base]);
+    tnx_objc_arm("MetalView", "render", reinterpret_cast<IMP>(tnx_objc_rep_render));
+    tnx_objc_arm("NullView", "render", reinterpret_cast<IMP>(tnx_objc_rep_render));
 
-    hook_verify_encryption((void *)g_base);
-
-    g_selftest_ok = brk_selftest_at(g_base) ? 1 : 0;
-
-    tlog([NSString stringWithFormat:@"slots=%d selftest=%d",
-          brk_slot_limit(), g_selftest_ok]);
-
-    g_addr_recv         = g_base + RVA_MM_RECEIVEMESSAGE;
-    g_addr_home         = g_base + RVA_HOMEMODE_GETINSTANCE;
-    g_addr_floater      = g_base + RVA_GUI_SHOWFLOATER_TEXTAT;
-    g_addr_floater_def  = g_base + RVA_GUI_SHOWFLOATER_DEFPOS;
-    g_addr_gui_pos      = g_base + RVA_GUI_GETDEFAULTFLOATERPOS;
-    g_addr_sprite_add   = g_base + RVA_SPRITE_ADDCHILD;
-    g_addr_stage_add    = g_base + RVA_STAGE_ADDCHILD;
-    g_addr_isstate      = g_base + RVA_GAMESTATEMANAGER_ISSTATE;
-
-    tlog([NSString stringWithFormat:@"recv       %@", dump_target(g_addr_recv)]);
-    tlog([NSString stringWithFormat:@"home       %@", dump_target(g_addr_home)]);
-    tlog([NSString stringWithFormat:@"floater    %@", dump_target(g_addr_floater)]);
-    tlog([NSString stringWithFormat:@"floaterD   %@", dump_target(g_addr_floater_def)]);
-    tlog([NSString stringWithFormat:@"guiPos     %@", dump_target(g_addr_gui_pos)]);
-    tlog([NSString stringWithFormat:@"spriteAdd  %@", dump_target(g_addr_sprite_add)]);
-    tlog([NSString stringWithFormat:@"stageAdd   %@", dump_target(g_addr_stage_add)]);
-    tlog([NSString stringWithFormat:@"isState    %@", dump_target(g_addr_isstate)]);
-
-    tnx_report_entry("recv", g_addr_recv);
-    tnx_report_entry("home", g_addr_home);
-    tnx_report_entry("floater", g_addr_floater);
-    tnx_report_entry("floaterD", g_addr_floater_def);
-    tnx_report_entry("guiPos", g_addr_gui_pos);
-    tnx_report_entry("spriteAdd", g_addr_sprite_add);
-    tnx_report_entry("stageAdd", g_addr_stage_add);
-    tnx_report_entry("isState", g_addr_isstate);
-
-    hook_log_prot("region recv", g_addr_recv);
-    hook_log_prot("region home", g_addr_home);
-    hook_log_prot("region floaterD", g_addr_floater_def);
-    hook_log_prot("region spriteAdd", g_addr_sprite_add);
-
-    dump_objc_inventory("early");
-
-    tnx_objc_install_all();
-
-    resolve_gui_getters();
-
-    BOOL ok = YES;
-
-    if (!arm_target("recv", g_addr_recv, (void *)&h_recv, (void **)&g_orig_recv)) ok = NO;
-    else g_valid_recv = 1;
-
-    if (!arm_target("home", g_addr_home, (void *)&h_home, (void **)&g_orig_home)) ok = NO;
-    else g_valid_home = 1;
-
-    if (!arm_target("floater", g_addr_floater, (void *)&h_floater, (void **)&g_orig_floater)) ok = NO;
-    if (!arm_target("floaterD", g_addr_floater_def, (void *)&h_floater_def, (void **)&g_orig_floater_def)) ok = NO;
-    if (!arm_target("spriteAdd", g_addr_sprite_add, (void *)&h_sprite, (void **)&g_orig_sprite)) ok = NO;
-    if (!arm_target("stageAdd", g_addr_stage_add, (void *)&h_stage, (void **)&g_orig_stage)) ok = NO;
-    if (!arm_target("isState", g_addr_isstate, (void *)&h_isstate, (void **)&g_orig_isstate)) ok = NO;
-
-    probe_reference_targets();
-
-    tnx_wx_probe((void *)(g_base + RVA_STAGE_ADDCHILD));
-
-    tnx_slot_scan_start();
-
-    tnx_disk_stage_run();
-
-    tlog([NSString stringWithFormat:@"slots=%d live=%d selftest=%d installed=%d",
-          brk_slot_limit(), brk_active_count(), g_selftest_ok ? 1 : 0, ok ? 1 : 0]);
-
-    tlog([NSString stringWithFormat:@"mode: code_patch=%d ptr_hooks=%d ptr_slots=%d",
-          hook_code_patch_allowed() ? 1 : 0, hook_pointer_count(), hook_pointer_slots()]);
-
-    tlog([NSString stringWithFormat:@"objc: armed=%d hits=%d", g_objc_armed, g_objc_hits_total]);
-
-    tlog([NSString stringWithFormat:@"gui: ok=%d failures=%d", g_gui_ok, g_gui_rejections]);
-
-    tlog([NSString stringWithFormat:@"last error: %s", hook_last_error()]);
-
-    brk_log_state();
-
-    g_setup_done = 2;
-    tlog(@"setup done");
+    tlog(@"setup completed successfully");
 }
-
-static UIViewController *top_vc(void) {
-    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        if (![scene isKindOfClass:UIWindowScene.class]) continue;
-        UIWindow *w = ((UIWindowScene *)scene).keyWindow;
-        if (w.rootViewController) return w.rootViewController;
-    }
-    return nil;
-}
-
-static void show_stats(NSString *title) {
-    NSString *msg = [NSString stringWithFormat:
-        @"host=%@ base=%p\nrecv=%d home=%d\nfloater=%d floaterD=%d\nisState=%d sprite=%d stage=%d\n"
-        @"floater tries=%d ok=%d fail=%d\nslots=%d live=%d selftest=%d\n"
-        @"objc armed=%d hits=%d\nptr hooks=%d slots=%d\nimages=%u",
-        tnx_host_description(),
-        (void *)g_base,
-        g_hits_recv, g_hits_home,
-        g_hits_floater, g_hits_floater_def,
-        g_hits_isstate, g_hits_sprite, g_hits_stage,
-        g_floater_attempts, g_floater_success, g_floater_fail,
-        brk_slot_limit(), brk_active_count(), g_selftest_ok,
-        g_objc_armed, g_objc_hits_total,
-        hook_pointer_count(), hook_pointer_slots(),
-        (unsigned)_dyld_image_count()];
-
-    tlog([NSString stringWithFormat:@"STATS %@ | %@",
-          title, [msg stringByReplacingOccurrencesOfString:@"\n" withString:@" "]]);
-
-    if (g_lc) return;
-
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIViewController *root = top_vc();
-        if (!root) return;
-        if (root.presentedViewController) return;
-
-        UIAlertController *a = [UIAlertController
-            alertControllerWithTitle:title message:msg
-            preferredStyle:UIAlertControllerStyleAlert];
-        [a addAction:[UIAlertAction actionWithTitle:@"OK"
-            style:UIAlertActionStyleDefault handler:nil]];
-        [root presentViewController:a animated:YES completion:nil];
-    });
-}
-
-static int tnx_objc_hits_prefix(const char *prefix) {
-    size_t length = prefix ? strlen(prefix) : 0;
-    int total = 0;
-
-    if (!length) return 0;
-
-    for (int i = 0; i < OBJC_HOOK_MAX; i++) {
-        if (!g_objc_hooks[i].used) continue;
-        if (strncmp(g_objc_hooks[i].selName, prefix, length) != 0) continue;
-
-        total += g_objc_hooks[i].hits;
-    }
-
-    return total;
-}
-
-static UILabel *g_overlay = nil;
-
-static void overlay_tick(int attempt);
-
-static void overlay_tick(int attempt) {
-    if (attempt > 90) return;
-
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (!g_overlay) {
-            UIViewController *root = top_vc();
-
-            if (!root || !root.view) {
-                if ((attempt % 5) == 0) tlog(@"overlay: no root view yet");
-                return;
-            }
-
-            UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(8.0, 60.0, 10.0, 10.0)];
-
-            label.textColor = UIColor.whiteColor;
-            label.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.6];
-            label.font = [UIFont monospacedSystemFontOfSize:10.0 weight:UIFontWeightRegular];
-            label.numberOfLines = 0;
-            label.textAlignment = NSTextAlignmentLeft;
-            label.userInteractionEnabled = NO;
-
-            UIView *host = root.view.window ? root.view.window : root.view;
-
-            [host addSubview:label];
-
-            g_overlay = label;
-
-            tlog([NSString stringWithFormat:@"overlay created on %@ host=%@ frame=%@",
-                  NSStringFromClass(root.class),
-                  NSStringFromClass(host.class),
-                  NSStringFromCGRect(host.bounds)]);
-        }
-
-        g_overlay.text = [NSString stringWithFormat:
-            @"Titanox %s\n"
-            @"objc armed=%d hits=%d\n"
-            @"render=%d proc=%d\n"
-            @"touch=%d press=%d\n"
-            @"ptr slots=%d/%d stage=%d\n"
-            @"gui=%d floater=%d/%d\n"
-            @"glabel=%d upd=%d",
-            TITANOX_BUILD_TAG,
-            g_objc_armed, g_objc_hits_total,
-            tnx_objc_hits_prefix("render"), tnx_objc_hits_prefix("processInput"),
-            tnx_objc_hits_prefix("touches"), tnx_objc_hits_prefix("presses"),
-            hook_pointer_slots(), hook_pointer_count(), g_hits_stage,
-            g_gui_ok, g_floater_success, g_floater_attempts,
-            g_label_state, g_label_updates];
-
-        [g_overlay sizeToFit];
-
-        CGRect frame = g_overlay.frame;
-        frame.origin.x = 8.0;
-        frame.origin.y = 60.0;
-        g_overlay.frame = frame;
-    });
-
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        overlay_tick(attempt + 1);
-    });
-}
-
-static void tnx_objc_report(const char *tag) {
-    int armed = 0;
-    int live = 0;
-
-    for (int i = 0; i < OBJC_HOOK_MAX; i++) {
-        if (!g_objc_hooks[i].used) continue;
-        armed++;
-        if (g_objc_hooks[i].hits > 0) live++;
-    }
-
-    tlog([NSString stringWithFormat:@"objc[%s] armed=%d live=%d total=%d",
-          tag ? tag : "?", armed, live, g_objc_hits_total]);
-
-    for (int i = 0; i < OBJC_HOOK_MAX; i++) {
-        if (!g_objc_hooks[i].used) continue;
-
-        tlog([NSString stringWithFormat:@"objc[%s] -[%s %s] hits=%d",
-              tag ? tag : "?",
-              g_objc_hooks[i].clsName,
-              g_objc_hooks[i].selName,
-              g_objc_hooks[i].hits]);
-    }
-}
-
-#define TNX_RVA_STRINGTABLE_GETMOVIECLIP  0xBECE60
-#define TNX_RVA_MC_GETTEXTFIELDBYNAME     0xC1D7B0
-#define TNX_RVA_MCH_SETTEXT               0x990C20
-#define TNX_RVA_DO_SETXY                  0xC16B54
-#define TNX_RVA_STAGE_ADDCHILD            0xC33690
-#define TNX_RVA_STAGE_INSTANCE            0x12393E0
-
-typedef void   (*tnx_fn_void2_t)(void *a, void *b);
-typedef void * (*tnx_fn_ptr2_t)(void *a, void *b);
-typedef void   (*tnx_fn_settext_t)(void *textField, void *scText, int a3, int a4);
-typedef void   (*tnx_fn_setxy_t)(void *obj, float x, float y);
-
-static void *g_label_clip = NULL;
-static void *g_label_tf = NULL;
-static int g_label_last_frames = 0;
-
-static void *tnx_read_global_ptr(uint32_t rva) {
-    void *value = NULL;
-
-    if (!g_base) return NULL;
-
-    memcpy(&value, (const void *)(g_base + rva), sizeof(value));
-
-    return value;
-}
-
-static void tnx_game_label_text(NSString *text) {
-    if (!g_label_tf || !g_base) return;
-
-    void *sc = make_sc_string([text UTF8String]);
-
-    if (!sc) return;
-
-    ((tnx_fn_settext_t)(g_base + TNX_RVA_MCH_SETTEXT))(g_label_tf, sc, 4, 0);
-}
-
-static void tnx_game_label_tick(int attempt);
-
-static void tnx_game_label_tick(int attempt) {
-    if (attempt > 600) return;
-    if (!g_aggressive) return;
-
-    if (!g_base) {
-        tlog(@"glabel: no base yet");
-    } else if (!g_label_clip) {
-        uintptr_t getClip  = g_base + TNX_RVA_STRINGTABLE_GETMOVIECLIP;
-        uintptr_t getTf    = g_base + TNX_RVA_MC_GETTEXTFIELDBYNAME;
-        uintptr_t setXy    = g_base + TNX_RVA_DO_SETXY;
-        uintptr_t addChild = g_base + TNX_RVA_STAGE_ADDCHILD;
-
-        if (!tnx_addr_is_entry(getClip) || !tnx_addr_is_entry(getTf) ||
-            !tnx_addr_is_entry(setXy) || !tnx_addr_is_entry(addChild)) {
-            tlog([NSString stringWithFormat:
-                  @"glabel: offsets rejected getClip=%d getTf=%d setXY=%d addChild=%d",
-                  tnx_addr_is_entry(getClip) ? 1 : 0,
-                  tnx_addr_is_entry(getTf) ? 1 : 0,
-                  tnx_addr_is_entry(setXy) ? 1 : 0,
-                  tnx_addr_is_entry(addChild) ? 1 : 0]);
-            return;
-        }
-
-        void *stage = tnx_read_global_ptr(TNX_RVA_STAGE_INSTANCE);
-
-        if (!stage) {
-            if ((attempt % 5) == 0) tlog(@"glabel: stage not ready");
-        } else {
-            void *scUi  = make_sc_string("sc/ui.sc");
-            void *scBox = make_sc_string("textbox_1");
-            void *scTxt = make_sc_string("txt");
-
-            if (!scUi || !scBox || !scTxt) {
-                tlog(@"glabel: sc string alloc failed");
-            } else {
-                tlog(@"glabel step1 StringTable_getMovieClip(sc/ui.sc, textbox_1)");
-
-                void *clip = ((tnx_fn_ptr2_t)getClip)(scUi, scBox);
-
-                if (!clip) {
-                    tlog(@"glabel: clip NULL");
-                } else {
-                    tlog([NSString stringWithFormat:@"glabel step2 clip=%p getTextFieldByName(txt)", clip]);
-
-                    void *tf = ((tnx_fn_ptr2_t)getTf)(clip, scTxt);
-
-                    if (!tf) {
-                        tlog(@"glabel: textField NULL");
-                    } else {
-                        tlog([NSString stringWithFormat:@"glabel step3 tf=%p setXY + addChild", tf]);
-
-                        ((tnx_fn_setxy_t)setXy)(clip, 60536.0f, 60536.0f);
-                        ((tnx_fn_void2_t)addChild)(stage, clip);
-
-                        g_label_clip = clip;
-                        g_label_tf = tf;
-                        g_label_state = 2;
-
-                        tlog([NSString stringWithFormat:@"glabel ready stage=%p clip=%p tf=%p",
-                              stage, clip, tf]);
-                    }
-                }
-            }
-        }
-    } else {
-        int frames = g_objc_hits_total;
-        int fps = frames - g_label_last_frames;
-
-        g_label_last_frames = frames;
-        g_label_updates++;
-        g_label_state = 3;
-
-        tnx_game_label_text([NSString stringWithFormat:
-            @"Titanox %s\nFPS %d\nhooks %d/%d\nupd %d",
-            TITANOX_BUILD_TAG, fps, g_objc_armed, frames, g_label_updates]);
-    }
-
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        tnx_game_label_tick(attempt + 1);
-    });
-}
-
-static void poll_for_game(int tick);
 
 static void poll_for_game(int tick) {
     if (g_setup_done) return;
-
-    if (tick > GAME_POLL_MAX_TICKS) {
-        tlog([NSString stringWithFormat:@"game image not found after %d polls (images=%u)",
-              GAME_POLL_MAX_TICKS, (unsigned)_dyld_image_count()]);
-        return;
-    }
+    if (tick > 1200) return;
 
     uintptr_t base = 0;
     BOOL found = find_game_image(&base);
 
-    static int stableTicks = 0;
-
     if (found) {
-        stableTicks++;
-    } else {
-        stableTicks = 0;
-    }
-
-    if (found && stableTicks >= GAME_POLL_STABLE_TICKS) {
         g_base = base;
         setup();
-        show_stats(@"armed");
         return;
     }
 
-    if (!found && (tick % 40) == 0) {
-        tlog([NSString stringWithFormat:@"poll %d: no game image yet (images=%u)",
-              tick, (unsigned)_dyld_image_count()]);
-    }
-
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, static_cast<int64_t>(0.5 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
         poll_for_game(tick + 1);
     });
@@ -1698,607 +416,8 @@ static void poll_for_game(int tick) {
 
 __attribute__((constructor))
 static void start(void) {
-    const char *aggressive = getenv("TITANOX_AGGRESSIVE");
-
-    g_lc = tnx_host_is_livecontainer();
-    g_aggressive = YES;
-
-    if (aggressive) {
-        g_aggressive = (aggressive[0] == '1') ? YES : NO;
-    }
-
     dispatch_async(dispatch_get_main_queue(), ^{
-        tlog(@"=== titanox start ===");
-        tlog([NSString stringWithFormat:@"build=%s", TITANOX_BUILD_TAG]);
-        tlog([NSString stringWithFormat:@"host=%@ aggressive=%d",
-              tnx_host_description(), g_aggressive ? 1 : 0]);
+        tlog(@"=== titanox started (zero latency mode) ===");
         poll_for_game(0);
     });
-
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        overlay_tick(0);
-    });
-
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(8 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        tnx_game_label_tick(0);
-    });
-
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        floater_demo_tick(0);
-    });
-
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(12 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        tnx_objc_report("12s");
-    });
-
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(35 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        tnx_objc_report("35s");
-    });
-
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        show_stats(@"stats @20s");
-    });
-
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(45 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        show_stats(@"stats @45s");
-        tnx_objc_report("45s");
-        brk_log_state();
-    });
-}
-
-static void tnx_wx_probe(void *target) {
-    if (!getenv("TNX_PROBE_WX")) {
-        tlog(@"wx: skipped, proven on 2026-10-02 (01:47 rw+copy kr=2, 02:14 restore r-x kr=2, maxprot rw-); set TNX_PROBE_WX=1 for a regression re-run");
-        return;
-    }
-
-    uintptr_t a = (uintptr_t)target;
-    if (!a) {
-        tlog(@"wx: no target");
-        return;
-    }
-
-    hook_log_prot("wx before", a);
-
-    uint32_t before = 0;
-    memcpy(&before, (const void *)a, 4);
-    tlog([NSString stringWithFormat:@"wx: word before=%08x", before]);
-
-    kern_return_t kr = vm_protect(mach_task_self(), (vm_address_t)a, 4, TRUE,
-                                  VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE);
-    tlog([NSString stringWithFormat:@"wx: set_max rwx kr=%d", kr]);
-    hook_log_prot("wx after set_max", a);
-
-    kr = vm_protect(mach_task_self(), (vm_address_t)a, 4, FALSE, VM_PROT_READ | VM_PROT_WRITE);
-    tlog([NSString stringWithFormat:@"wx: rw kr=%d", kr]);
-    hook_log_prot("wx after rw", a);
-
-    kr = vm_protect(mach_task_self(), (vm_address_t)a, 4, FALSE,
-                    VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY);
-    tlog([NSString stringWithFormat:@"wx: rw|copy kr=%d", kr]);
-    hook_log_prot("wx after rw|copy", a);
-
-    memcpy((void *)a, &before, 4);
-    sys_icache_invalidate((void *)a, 4);
-    tlog(@"wx: wrote back identical word");
-    hook_log_prot("wx after write", a);
-
-    kr = vm_protect(mach_task_self(), (vm_address_t)a, 4, FALSE, VM_PROT_READ | VM_PROT_EXECUTE);
-    tlog([NSString stringWithFormat:@"wx: restore r-x kr=%d", kr]);
-    hook_log_prot("wx after restore", a);
-
-    if (getenv("TNX_PROBE_HWBP")) {
-        thread_t th = mach_thread_self();
-        arm_debug_state64_t dbg;
-        memset(&dbg, 0, sizeof(dbg));
-        mach_msg_type_number_t cnt = ARM_DEBUG_STATE64_COUNT;
-
-        kern_return_t g = thread_get_state(th, ARM_DEBUG_STATE64, (thread_state_t)&dbg, &cnt);
-        tlog([NSString stringWithFormat:@"wx: hwbp get kr=%d count=%u", g, cnt]);
-
-        cnt = ARM_DEBUG_STATE64_COUNT;
-        kern_return_t s = thread_set_state(th, ARM_DEBUG_STATE64, (thread_state_t)&dbg, cnt);
-        tlog([NSString stringWithFormat:@"wx: hwbp set kr=%d", s]);
-
-        mach_port_deallocate(mach_task_self(), th);
-    }
-}
-
-static int tnx_pac_equal(uintptr_t value, uintptr_t target) {
-    if (value == target) return 1;
-    if ((value & 0x0000FFFFFFFFFFFFULL) == target) return 1;
-    return 0;
-}
-
-#define TNX_SCAN_MAX 16
-
-static uintptr_t g_scan_addr[TNX_SCAN_MAX];
-static void     *g_scan_repl[TNX_SCAN_MAX];
-static int       g_scan_n = 0;
-static uintptr_t g_img_lo = 0;
-static uintptr_t g_img_hi = 0;
-
-static void tnx_img_range(void) {
-    if (g_img_lo) return;
-
-    vm_address_t r = (vm_address_t)g_base;
-    vm_size_t size = 0;
-    vm_region_basic_info_data_64_t info;
-    mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
-    mach_port_t object = MACH_PORT_NULL;
-
-    if (vm_region_64(mach_task_self(), &r, &size, VM_REGION_BASIC_INFO_64,
-                     (vm_region_info_t)&info, &count, &object) == KERN_SUCCESS) {
-        g_img_lo = (uintptr_t)r;
-        g_img_hi = (uintptr_t)r + size;
-    }
-
-    if (object != MACH_PORT_NULL) mach_port_deallocate(mach_task_self(), object);
-
-    tlog([NSString stringWithFormat:@"slot scan image range %p-%p", (void *)g_img_lo, (void *)g_img_hi]);
-}
-
-static int tnx_in_image(uintptr_t v) {
-    uintptr_t p = v & 0x0000FFFFFFFFFFFFULL;
-    return (g_img_lo && p >= g_img_lo && p < g_img_hi) ? 1 : 0;
-}
-
-static int tnx_table_like(uintptr_t *table, size_t index, size_t count) {
-    if (index + 1 < count && tnx_in_image(table[index + 1])) return 1;
-    if (index > 0 && tnx_in_image(table[index - 1])) return 1;
-    return 0;
-}
-
-static int tnx_scan_pass(int install) {
-    tnx_img_range();
-
-    const char *cap_s = getenv("TNX_SLOT_CAP_MB");
-    const unsigned long long cap = cap_s ? (unsigned long long)atoi(cap_s) * 1024ULL * 1024ULL : 0;
-    const int promote = getenv("TNX_SLOT_PROMOTE") ? 1 : 0;
-
-    vm_address_t addr = 0;
-    int candidates = 0;
-    int installed = 0;
-    int regions = 0;
-    int promoted = 0;
-    unsigned long long scanned = 0;
-
-    for (;;) {
-        vm_size_t size = 0;
-        vm_region_basic_info_data_64_t info;
-        mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
-        mach_port_t object = MACH_PORT_NULL;
-
-        kern_return_t kr = vm_region_64(mach_task_self(), &addr, &size, VM_REGION_BASIC_INFO_64,
-                                        (vm_region_info_t)&info, &count, &object);
-
-        if (object != MACH_PORT_NULL) mach_port_deallocate(mach_task_self(), object);
-        if (kr != KERN_SUCCESS) break;
-        if (size == 0) { addr += 0x1000; continue; }
-
-        vm_prot_t p = info.protection;
-        vm_prot_t m = info.max_protection;
-
-        int readable = (p & VM_PROT_READ) != 0;
-        int noexec = (p & VM_PROT_EXECUTE) == 0;
-        int may_write = (m & VM_PROT_WRITE) != 0;
-        int writable = (p & VM_PROT_WRITE) != 0;
-
-        if (readable && noexec && may_write) {
-            if (!writable && promote) {
-                kern_return_t pk = vm_protect(mach_task_self(), addr, size, FALSE, VM_PROT_READ | VM_PROT_WRITE);
-                if (pk == KERN_SUCCESS) {
-                    writable = 1;
-                    promoted++;
-                } else if (promoted < 4) {
-                    tlog([NSString stringWithFormat:@"slot scan promote failed addr=%p kr=%d", (void *)addr, pk]);
-                }
-            }
-
-            if (writable && (cap == 0 || scanned < cap)) {
-                regions++;
-
-                if ((regions % 64) == 0) {
-                    tlog([NSString stringWithFormat:@"slot scan progress regions=%d scanned=%lluKB at=%p",
-                          regions, scanned / 1024, (void *)addr]);
-                }
-
-                uintptr_t *table = (uintptr_t *)addr;
-                unsigned long long room = cap ? (cap - scanned) : (unsigned long long)size;
-                unsigned long long take = (size < room) ? (unsigned long long)size : room;
-                size_t n = (size_t)(take / 8);
-
-                for (size_t i = 0; i < n; i++) {
-                    uintptr_t value = table[i];
-
-                    for (int t = 0; t < g_scan_n; t++) {
-                        if (!tnx_pac_equal(value, g_scan_addr[t])) continue;
-
-                        candidates++;
-
-                        if (candidates <= 40) {
-                            tlog([NSString stringWithFormat:@"slot candidate target=%p slot=%p value=%p region=%p off=0x%zx",
-                                  (void *)g_scan_addr[t], (void *)&table[i], (void *)value,
-                                  (void *)addr, (size_t)((uintptr_t)&table[i] - (uintptr_t)addr)]);
-                        }
-
-                        if (install && g_scan_repl[t] && !installed &&
-                            ((uintptr_t)&table[i] & 7) == 0 && tnx_table_like(table, i, n)) {
-                            table[i] = (uintptr_t)g_scan_repl[t];
-                            installed++;
-                            tlog([NSString stringWithFormat:@"slot hook wrote target=%p slot=%p -> %p",
-                                  (void *)g_scan_addr[t], (void *)&table[i], g_scan_repl[t]]);
-                        }
-                    }
-                }
-
-                scanned += take;
-            }
-        }
-
-        addr += size;
-    }
-
-    tlog([NSString stringWithFormat:@"slot scan pass install=%d candidates=%d installed=%d regions=%d promoted=%d scanned=%lluKB last=%p",
-          install, candidates, installed, regions, promoted, scanned / 1024, (void *)addr]);
-
-    return candidates;
-}
-
-static void *tnx_scan_thread(void *arg) {
-    usleep(3000000);
-
-    tlog([NSString stringWithFormat:@"slot scan begin targets=%d", g_scan_n]);
-
-    tnx_scan_pass(0);
-
-    if (getenv("TNX_SLOT_INSTALL")) {
-        tnx_scan_pass(1);
-    }
-
-    tlog(@"slot scan done");
-
-    return NULL;
-}
-
-static void tnx_slot_scan_start(void) {
-    if (g_scan_n == 0) {
-        g_scan_addr[g_scan_n] = g_addr_recv;        g_scan_repl[g_scan_n] = (void *)h_recv;        g_scan_n++;
-        g_scan_addr[g_scan_n] = g_addr_stage_add;   g_scan_repl[g_scan_n] = (void *)h_stage;       g_scan_n++;
-        g_scan_addr[g_scan_n] = g_addr_floater_def; g_scan_repl[g_scan_n] = (void *)h_floater_def; g_scan_n++;
-        g_scan_addr[g_scan_n] = g_addr_home;        g_scan_repl[g_scan_n] = (void *)h_home;        g_scan_n++;
-        g_scan_addr[g_scan_n] = g_addr_floater;     g_scan_repl[g_scan_n] = (void *)h_floater;     g_scan_n++;
-        g_scan_addr[g_scan_n] = g_addr_sprite_add;  g_scan_repl[g_scan_n] = (void *)h_sprite;      g_scan_n++;
-        g_scan_addr[g_scan_n] = g_addr_isstate;     g_scan_repl[g_scan_n] = (void *)h_isstate;     g_scan_n++;
-    }
-
-    pthread_t th;
-    pthread_attr_t attr;
-
-    pthread_attr_init(&attr);
-    pthread_attr_setstacksize(&attr, 128 * 1024);
-
-    if (pthread_create(&th, &attr, tnx_scan_thread, NULL) == 0) {
-        pthread_detach(th);
-        tlog([NSString stringWithFormat:@"slot scan thread started targets=%d", g_scan_n]);
-    } else {
-        tlog(@"slot scan thread failed");
-    }
-
-    pthread_attr_destroy(&attr);
-}
-
-#define TNX_MAGIC 0x54584E58u
-#define TNX_DISK_MAX 8
-
-static const uint32_t g_disk_rva[TNX_DISK_MAX] = { 0x7bace8u, 0xc33690u, 0x818cdcu };
-static const int g_disk_n = 3;
-
-static uint64_t d_rd64(const uint8_t *p) { uint64_t v; memcpy(&v, p, 8); return v; }
-static uint32_t d_rd32(const uint8_t *p) { uint32_t v; memcpy(&v, p, 4); return v; }
-static void d_wr64(uint8_t *p, uint64_t v) { memcpy(p, &v, 8); }
-static void d_wr32(uint8_t *p, uint32_t v) { memcpy(p, &v, 4); }
-
-static uint32_t d_enc_b(int64_t delta) {
-    return 0x14000000u | (uint32_t)((delta >> 2) & 0x03FFFFFF);
-}
-
-static int d_is_pad(uint32_t w) { return w == 0u || w == 0xD503201Fu; }
-
-static int d_is_term(uint32_t w) {
-    if ((w & 0xFFFFFC1Fu) == 0xD65F0000u) return 1;
-    if ((w & 0xFC000000u) == 0x14000000u) return 1;
-    if ((w & 0xFFE0001Fu) == 0xD4200000u) return 1;
-    return 0;
-}
-
-static uint64_t d_find_slot(uint8_t *base, size_t size, uint64_t vm,
-                            uint64_t off, uint64_t fsize, size_t need) {
-    if (need > fsize) return 0;
-
-    for (uint64_t i = 0; i + need <= fsize; i += 8) {
-        uint8_t *p = base + off + i;
-        size_t run = 0;
-        while (run < need && d_rd64(p + run) == 0) run += 8;
-        if (run < need) continue;
-        return vm + i;
-    }
-    return 0;
-}
-
-static uint64_t d_find_cave(uint8_t *base, uint64_t vm, uint64_t off,
-                            uint64_t fsize, size_t need, const uint32_t *rvas, int nrva) {
-    for (uint64_t i = 0x4000; i + need + 4 <= fsize; i += 4) {
-        uint8_t *p = base + off + i;
-        size_t run = 0;
-        while (run < need && d_is_pad(d_rd32(p + run))) run += 4;
-        if (run < need) continue;
-
-        uint32_t before = d_rd32(p - 4);
-        if (!d_is_term(before) && !d_is_pad(before)) continue;
-
-        uint64_t cvm = vm + i;
-        int clash = 0;
-        for (int k = 0; k < nrva; k++) {
-            uint64_t t = vm + (uint64_t)rvas[k];
-            if (cvm < t + 16 && t < cvm + need + 16) { clash = 1; break; }
-        }
-        if (clash) continue;
-
-        return cvm;
-    }
-    return 0;
-}
-
-static int d_find_marker(uint8_t *base, size_t size) {
-    for (size_t i = 0; i + 4 <= size; i += 4) {
-        if (d_rd32(base + i) == TNX_MAGIC) return 1;
-    }
-    return 0;
-}
-
-static int tnx_disk_apply(const char *path, uint8_t *pristine, uint8_t *buf, size_t n, int full) {
-    if (d_rd32(buf) != 0xfeedfacfu) {
-        tlog([NSString stringWithFormat:@"tnx disk: not thin arm64 mach-o magic=%08x", d_rd32(buf)]);
-        return 0;
-    }
-
-    if (d_find_marker(buf, n)) {
-        tlog(@"tnx disk: marker already present in file, skip");
-        return 0;
-    }
-
-    uint32_t ncmds = d_rd32(buf + 16);
-    uint32_t szcmds = d_rd32(buf + 20);
-
-    if ((size_t)32 + (size_t)szcmds > n) {
-        tlog(@"tnx disk: load commands exceed file");
-        return 0;
-    }
-
-    uint64_t t_vm = 0, t_off = 0, t_fs = 0;
-    uint64_t d_vm = 0, d_off = 0, d_fs = 0;
-    const uint8_t *p = buf + 32;
-
-    for (uint32_t i = 0; i < ncmds; i++) {
-        uint32_t cmd = d_rd32(p);
-        uint32_t cs = d_rd32(p + 4);
-
-        if (cs < 8 || (size_t)(p - buf) + (size_t)cs > n) break;
-
-        if (cmd == 0x19u && cs >= 72) {
-            const char *seg = (const char *)(p + 8);
-
-            if (!strcmp(seg, "__TEXT")) {
-                t_vm = d_rd64(p + 24);
-                t_off = d_rd64(p + 40);
-                t_fs = d_rd64(p + 48);
-            } else if (!strcmp(seg, "__DATA")) {
-                d_vm = d_rd64(p + 24);
-                d_off = d_rd64(p + 40);
-                d_fs = d_rd64(p + 48);
-            }
-        }
-
-        p += cs;
-    }
-
-    tlog([NSString stringWithFormat:@"tnx disk: TEXT vm=%#llx off=%#llx fs=%#llx DATA vm=%#llx off=%#llx fs=%#llx",
-          (unsigned long long)t_vm, (unsigned long long)t_off, (unsigned long long)t_fs,
-          (unsigned long long)d_vm, (unsigned long long)d_off, (unsigned long long)d_fs]);
-
-    if (!t_fs || !d_fs || t_off + t_fs > (uint64_t)n || d_off + d_fs > (uint64_t)n) {
-        tlog(@"tnx disk: segment ranges inconsistent, abort");
-        return 0;
-    }
-
-    size_t need_rec = (size_t)g_disk_n * 24 + 64;
-    uint64_t rec_vm = d_find_slot(buf, n, d_vm, d_off, d_fs, need_rec);
-
-    if (!rec_vm) {
-        tlog([NSString stringWithFormat:@"tnx disk: no file-backed zero run of %zu bytes in __DATA", need_rec]);
-        return 0;
-    }
-
-    uint64_t cave_vm = 0;
-
-    if (full) {
-        cave_vm = d_find_cave(buf, t_vm, t_off, t_fs, (size_t)g_disk_n * 32 + 64, g_disk_rva, g_disk_n);
-
-        if (!cave_vm) {
-            tlog(@"tnx disk: no __TEXT cave, abort");
-            return 0;
-        }
-
-        tlog([NSString stringWithFormat:@"tnx disk: full patch cave=%#llx record=%#llx",
-              (unsigned long long)cave_vm, (unsigned long long)rec_vm]);
-    } else {
-        tlog([NSString stringWithFormat:@"tnx disk: marker mode record=%#llx", (unsigned long long)rec_vm]);
-    }
-
-    uint64_t cursor = cave_vm;
-
-    for (int i = 0; i < g_disk_n; i++) {
-        uint32_t rva = g_disk_rva[i];
-        uint8_t *rec = buf + d_off + (rec_vm - d_vm) + (size_t)i * 24;
-
-        d_wr32(rec + 0, TNX_MAGIC);
-        d_wr32(rec + 4, rva);
-        d_wr32(rec + 8, 0);
-        d_wr32(rec + 12, 0);
-        d_wr64(rec + 16, 0);
-
-        if (!full) {
-            tlog([NSString stringWithFormat:@"tnx disk: record %d rva=%#x marker written", i, rva]);
-            continue;
-        }
-
-        uint8_t *tp = buf + t_off + rva;
-        uint32_t stolen = d_rd32(tp);
-
-        if ((stolen & 0x7C000000u) == 0x10000000u || (stolen & 0x3B000000u) == 0x18000000u ||
-            (stolen & 0xFC000000u) == 0x14000000u || (stolen & 0x7E000000u) == 0x34000000u) {
-            tlog([NSString stringWithFormat:@"tnx disk: rva=%#x first insn is PC-relative, skip", rva]);
-            continue;
-        }
-
-        uint64_t stub_b = cursor;
-        uint64_t stub_a = cursor + 8;
-
-        d_wr32(buf + t_off + (stub_b - t_vm) + 0, stolen);
-        d_wr32(buf + t_off + (stub_b - t_vm) + 4,
-               d_enc_b((int64_t)(t_vm + rva + 4) - (int64_t)(stub_b + 4)));
-        d_wr32(tp, d_enc_b((int64_t)stub_a - (int64_t)(t_vm + rva)));
-        d_wr32(rec + 8, (uint32_t)(stub_b - t_vm));
-
-        cursor = stub_a + 16;
-
-        tlog([NSString stringWithFormat:@"tnx disk: hook %d rva=%#x target=%#llx stubA=%#llx stubB=%#llx word=%08x",
-              i, rva, (unsigned long long)(t_vm + rva),
-              (unsigned long long)stub_a, (unsigned long long)stub_b, d_rd32(tp)]);
-    }
-
-    char bak[4096];
-    snprintf(bak, sizeof(bak), "%s.tnxbak", path);
-
-    FILE *b = fopen(bak, "wb");
-
-    if (!b) {
-        tlog([NSString stringWithFormat:@"tnx disk: backup write failed errno=%d %s", errno, strerror(errno)]);
-        return 0;
-    }
-
-    if (fwrite(pristine, 1, n, b) != n || fclose(b) != 0) {
-        tlog(@"tnx disk: backup incomplete");
-        return 0;
-    }
-
-    FILE *w = fopen(path, "wb");
-
-    if (!w) {
-        tlog([NSString stringWithFormat:@"tnx disk: write failed errno=%d %s", errno, strerror(errno)]);
-        tlog(@"tnx disk: bundle is NOT writable from this process");
-        return 0;
-    }
-
-    if (fwrite(buf, 1, n, w) != n || fclose(w) != 0) {
-        tlog([NSString stringWithFormat:@"tnx disk: short write errno=%d %s", errno, strerror(errno)]);
-        return 0;
-    }
-
-    tlog([NSString stringWithFormat:@"tnx disk: wrote %zu bytes backup=%s", n, bak]);
-
-    FILE *v = fopen(path, "rb");
-
-    if (!v) {
-        tlog(@"tnx disk: reopen for verify failed");
-        return 0;
-    }
-
-    uint8_t *back = (uint8_t *)malloc(n);
-
-    if (!back) {
-        fclose(v);
-        tlog(@"tnx disk: verify oom");
-        return 0;
-    }
-
-    if (fread(back, 1, n, v) == n) {
-        tlog([NSString stringWithFormat:@"tnx disk: readback identical=%d marker=%d",
-              memcmp(back, buf, n) == 0, d_find_marker(back, n)]);
-    } else {
-        tlog(@"tnx disk: verify read failed");
-    }
-
-    free(back);
-    fclose(v);
-
-    tlog(@"tnx disk: NEXT -> re-sign this app in LiveContainer (or reinstall), then relaunch and check for the marker");
-
-    return 1;
-}
-
-static void tnx_disk_stage_run(void) {
-    const char *path = _dyld_get_image_name(0);
-
-    if (!path) {
-        tlog(@"tnx disk: no main image path");
-        return;
-    }
-
-    int full = getenv("TNX_DISK_PATCH") ? 1 : 0;
-
-    FILE *f = fopen(path, "rb");
-
-    if (!f) {
-        tlog([NSString stringWithFormat:@"tnx disk: open failed errno=%d %s", errno, strerror(errno)]);
-        return;
-    }
-
-    fseek(f, 0, SEEK_END);
-    long ln = ftell(f);
-    fseek(f, 0, SEEK_SET);
-
-    if (ln < 0x1000) {
-        fclose(f);
-        tlog(@"tnx disk: file too small");
-        return;
-    }
-
-    size_t n = (size_t)ln;
-    uint8_t *pristine = (uint8_t *)malloc(n);
-    uint8_t *buf = (uint8_t *)malloc(n);
-
-    if (!pristine || !buf) {
-        fclose(f);
-        free(pristine);
-        free(buf);
-        tlog(@"tnx disk: oom");
-        return;
-    }
-
-    if (fread(pristine, 1, n, f) != n) {
-        fclose(f);
-        free(pristine);
-        free(buf);
-        tlog(@"tnx disk: short read");
-        return;
-    }
-
-    fclose(f);
-    memcpy(buf, pristine, n);
-
-    tlog([NSString stringWithFormat:@"tnx disk: path=%s size=%zu full=%d", path, n, full]);
-
-    tnx_disk_apply(path, pristine, buf, n, full);
-
-    free(pristine);
-    free(buf);
 }

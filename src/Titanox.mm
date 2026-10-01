@@ -8,6 +8,7 @@
 #import <mach-o/dyld.h>
 #import <mach-o/loader.h>
 #import <dlfcn.h>
+#import <libkern/OSCacheControl.h>
 #import <string.h>
 #import <stdlib.h>
 #import <stdio.h>
@@ -41,6 +42,8 @@ int hook_pointer_count(void);
 int hook_pointer_slots(void);
 int hook_probe(uintptr_t target);
 }
+
+static void tnx_wx_probe(void *target);
 
 #define LOG_MAX_BYTES (512 * 1024)
 
@@ -1354,6 +1357,8 @@ static void setup(void) {
 
     probe_reference_targets();
 
+    tnx_wx_probe((void *)(g_base + RVA_STAGE_ADDCHILD));
+
     tlog([NSString stringWithFormat:@"slots=%d live=%d selftest=%d installed=%d",
           brk_slot_limit(), brk_active_count(), g_selftest_ok ? 1 : 0, ok ? 1 : 0]);
 
@@ -1739,4 +1744,62 @@ static void start(void) {
         tnx_objc_report("45s");
         brk_log_state();
     });
+}
+
+static void tnx_wx_probe(void *target) {
+    if (!getenv("TNX_PROBE_WX")) {
+        tlog(@"wx: skipped, proven on 2026-10-02 (01:47 rw+copy kr=2, 02:14 restore r-x kr=2, maxprot rw-); set TNX_PROBE_WX=1 for a regression re-run");
+        return;
+    }
+
+    uintptr_t a = (uintptr_t)target;
+    if (!a) {
+        tlog(@"wx: no target");
+        return;
+    }
+
+    hook_log_prot("wx before", a);
+
+    uint32_t before = 0;
+    memcpy(&before, (const void *)a, 4);
+    tlog([NSString stringWithFormat:@"wx: word before=%08x", before]);
+
+    kern_return_t kr = vm_protect(mach_task_self(), (vm_address_t)a, 4, TRUE,
+                                  VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE);
+    tlog([NSString stringWithFormat:@"wx: set_max rwx kr=%d", kr]);
+    hook_log_prot("wx after set_max", a);
+
+    kr = vm_protect(mach_task_self(), (vm_address_t)a, 4, FALSE, VM_PROT_READ | VM_PROT_WRITE);
+    tlog([NSString stringWithFormat:@"wx: rw kr=%d", kr]);
+    hook_log_prot("wx after rw", a);
+
+    kr = vm_protect(mach_task_self(), (vm_address_t)a, 4, FALSE,
+                    VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY);
+    tlog([NSString stringWithFormat:@"wx: rw|copy kr=%d", kr]);
+    hook_log_prot("wx after rw|copy", a);
+
+    memcpy((void *)a, &before, 4);
+    sys_icache_invalidate((void *)a, 4);
+    tlog(@"wx: wrote back identical word");
+    hook_log_prot("wx after write", a);
+
+    kr = vm_protect(mach_task_self(), (vm_address_t)a, 4, FALSE, VM_PROT_READ | VM_PROT_EXECUTE);
+    tlog([NSString stringWithFormat:@"wx: restore r-x kr=%d", kr]);
+    hook_log_prot("wx after restore", a);
+
+    if (getenv("TNX_PROBE_HWBP")) {
+        thread_t th = mach_thread_self();
+        arm_debug_state64_t dbg;
+        memset(&dbg, 0, sizeof(dbg));
+        mach_msg_type_number_t cnt = ARM_DEBUG_STATE64_COUNT;
+
+        kern_return_t g = thread_get_state(th, ARM_DEBUG_STATE64, (thread_state_t)&dbg, &cnt);
+        tlog([NSString stringWithFormat:@"wx: hwbp get kr=%d count=%u", g, cnt]);
+
+        cnt = ARM_DEBUG_STATE64_COUNT;
+        kern_return_t s = thread_set_state(th, ARM_DEBUG_STATE64, (thread_state_t)&dbg, cnt);
+        tlog([NSString stringWithFormat:@"wx: hwbp set kr=%d", s]);
+
+        mach_port_deallocate(mach_task_self(), th);
+    }
 }

@@ -114,6 +114,8 @@ typedef struct {
 } tnx_objc_hook_t;
 
 static uintptr_t g_base = 0;
+static uintptr_t *g_starts = NULL;
+static size_t g_starts_count = 0;
 static FILE *g_log = NULL;
 static long g_log_written = 0;
 static BOOL g_setup_done = NO;
@@ -308,23 +310,6 @@ static void *tnx_read_global_ptr(uintptr_t rva) {
     return value;
 }
 
-static uintptr_t tnx_callable(uintptr_t rva) {
-    if (!g_base || !rva) return 0;
-
-    uintptr_t address = g_base + rva;
-
-    if (!tnx_callable_target(g_base, address)) return 0;
-
-    return address;
-}
-
-static uintptr_t tnx_pick(uintptr_t rvaA, uintptr_t rvaB) {
-    uintptr_t a = tnx_callable(rvaA);
-    if (a) return a;
-
-    return tnx_callable(rvaB);
-}
-
 static const char *tnx_prologue_rule(uintptr_t address) {
     uint32_t first = 0;
 
@@ -332,16 +317,9 @@ static const char *tnx_prologue_rule(uintptr_t address) {
 
     if (first == 0xD503233F) return "paciasp";
     if (first == 0xD503237F) return "pacibsp";
-    if ((first & 0xFFFFFF1F) == 0xD503241F) return "hint";
+    if ((first & 0xFFFFFF1F) == 0xD503241F) return "bti";
 
-    uint32_t pairBase = first & 0xFFC00000u;
-
-    if ((pairBase == 0xA9800000u || pairBase == 0xA9000000u || pairBase == 0xA8C00000u) &&
-        (first & 0x7C00u) == 0x7800u &&
-        (first & 0x1Fu) == 29u) {
-        return "stpfp";
-    }
-
+    if ((first & 0xFF800000u) == 0xA9800000u && ((first >> 5) & 31u) == 31u) return "stppre";
     if ((first & 0xFF8003FFu) == 0xD10003FFu) return "subsp";
 
     if (address >= 4) {
@@ -350,6 +328,64 @@ static const char *tnx_prologue_rule(uintptr_t address) {
     }
 
     return "none";
+}
+
+static BOOL tnx_looks_like_start(uintptr_t address) {
+    const char *rule = tnx_prologue_rule(address);
+
+    if (!rule) return NO;
+
+    return strcmp(rule, "none") != 0 && strcmp(rule, "unreadable") != 0;
+}
+
+static size_t tnx_start_index(uintptr_t address, BOOL *exact) {
+    size_t index = (size_t)-1;
+
+    if (exact) *exact = NO;
+    if (!g_starts || !g_starts_count) return index;
+
+    size_t low = 0;
+    size_t high = g_starts_count;
+
+    while (low < high) {
+        size_t mid = low + (high - low) / 2;
+
+        if (g_starts[mid] <= address) low = mid + 1;
+        else high = mid;
+    }
+
+    if (low == 0) return index;
+
+    index = low - 1;
+
+    if (exact) *exact = (g_starts[index] == address);
+
+    return index;
+}
+
+static uintptr_t tnx_callable(uintptr_t rva) {
+    if (!g_base || !rva) return 0;
+
+    uintptr_t address = g_base + rva;
+
+    if (!tnx_addr_executable(address)) return 0;
+    if (!tnx_image_text_contains(g_base, address)) return 0;
+
+    BOOL exact = NO;
+
+    tnx_start_index(address, &exact);
+
+    if (exact) return address;
+    if (tnx_looks_like_start(address)) return address;
+
+    return 0;
+}
+
+static uintptr_t tnx_pick(uintptr_t rvaA, uintptr_t rvaB) {
+    uintptr_t a = tnx_callable(rvaA);
+    if (a) return a;
+
+    return tnx_callable(rvaB);
 }
 
 static void tnx_log_words(uintptr_t address, uint32_t *out, size_t count) {
@@ -365,32 +401,178 @@ static void tnx_log_words(uintptr_t address, uint32_t *out, size_t count) {
     memcpy(out, (const void *)address, bytes);
 }
 
-static uintptr_t tnx_resolve_named(const char *cls, const char *meth, uintptr_t rva) {
-    uintptr_t address = tnx_callable(rva);
+static uintptr_t tnx_linkedit(uintptr_t fileOffset, uint64_t size) {
+    if (!g_base) return 0;
+    if (!tnx_addr_readable(g_base, sizeof(struct mach_header_64))) return 0;
 
-    if (address) return address;
-    if (!g_base || !cls || !meth) return 0;
+    const struct mach_header_64 *header = (const struct mach_header_64 *)g_base;
 
-    image_ref_t ref;
-    ref.base = g_base;
-    ref.hdr = (const struct mach_header_64 *)g_base;
+    if (header->magic != MH_MAGIC_64) return 0;
 
-    uintptr_t resolved = rt_resolve_method(ref, cls, meth, NULL, 0, NULL);
+    const uint8_t *cursor = (const uint8_t *)(header + 1);
+    const uint8_t *limit = cursor + header->sizeofcmds;
+    uintptr_t slide = tnx_image_slide(g_base);
 
-    if (!resolved) return 0;
-    if (!tnx_addr_executable(resolved)) return 0;
+    for (uint32_t i = 0; i < header->ncmds; i++) {
+        if (cursor + sizeof(struct load_command) > limit) return 0;
 
-    tnx_logf("named %s::%s rva=0x%08llx -> %p", cls, meth, (unsigned long long)rva, (void *)resolved);
+        const struct load_command *command = (const struct load_command *)cursor;
 
-    return resolved;
+        if (command->cmdsize < sizeof(struct load_command)) return 0;
+        if (cursor + command->cmdsize > limit) return 0;
+
+        if (command->cmd == LC_SEGMENT_64 && command->cmdsize >= sizeof(struct segment_command_64)) {
+            const struct segment_command_64 *segment = (const struct segment_command_64 *)command;
+
+            if (strcmp(segment->segname, "__LINKEDIT") == 0) {
+                if (fileOffset < segment->fileoff) return 0;
+
+                uint64_t delta = (uint64_t)fileOffset - segment->fileoff;
+
+                if (delta > segment->filesize) return 0;
+                if (size > segment->filesize - delta) return 0;
+                if (delta > segment->vmsize) return 0;
+                if (size > segment->vmsize - delta) return 0;
+
+                return slide + (uintptr_t)segment->vmaddr + (uintptr_t)delta;
+            }
+        }
+
+        cursor += command->cmdsize;
+    }
+
+    return 0;
 }
 
-static uintptr_t tnx_pick_named(uintptr_t rvaA, uintptr_t rvaB, const char *cls, const char *meth) {
-    uintptr_t address = tnx_pick(rvaA, rvaB);
+static BOOL tnx_read_uleb(const uint8_t *bytes, size_t size, size_t *offset, uint64_t *value) {
+    if (!bytes || !offset || !value) return NO;
 
-    if (address) return address;
+    *value = 0;
 
-    return tnx_resolve_named(cls, meth, rvaA);
+    for (unsigned shift = 0; shift <= 63; shift += 7) {
+        if (*offset >= size) return NO;
+
+        uint8_t byte = bytes[(*offset)++];
+        uint64_t payload = byte & 0x7f;
+
+        if (shift == 63 && payload > 1) return NO;
+
+        *value |= payload << shift;
+
+        if (!(byte & 0x80)) return YES;
+    }
+
+    return NO;
+}
+
+static void tnx_load_function_starts(void) {
+    if (g_starts || !g_base) return;
+    if (!tnx_addr_readable(g_base, sizeof(struct mach_header_64))) return;
+
+    const struct mach_header_64 *header = (const struct mach_header_64 *)g_base;
+
+    if (header->magic != MH_MAGIC_64) return;
+
+    const uint8_t *cursor = (const uint8_t *)(header + 1);
+    const uint8_t *limit = cursor + header->sizeofcmds;
+
+    uint32_t dataoff = 0;
+    uint32_t datasize = 0;
+    BOOL found = NO;
+
+    for (uint32_t i = 0; i < header->ncmds; i++) {
+        if (cursor + sizeof(struct load_command) > limit) return;
+
+        const struct load_command *command = (const struct load_command *)cursor;
+
+        if (command->cmdsize < sizeof(struct load_command)) return;
+        if (cursor + command->cmdsize > limit) return;
+
+        if (command->cmd == LC_FUNCTION_STARTS && command->cmdsize >= sizeof(struct linkedit_data_command)) {
+            const struct linkedit_data_command *data = (const struct linkedit_data_command *)command;
+
+            dataoff = data->dataoff;
+            datasize = data->datasize;
+            found = YES;
+            break;
+        }
+
+        cursor += command->cmdsize;
+    }
+
+    if (!found || !datasize) {
+        tnx_logf("starts missing");
+        return;
+    }
+
+    if (datasize > 16u * 1024u * 1024u) {
+        tnx_logf("starts too large size=%u", datasize);
+        return;
+    }
+
+    uintptr_t source = tnx_linkedit(dataoff, datasize);
+
+    if (!source || !tnx_addr_readable(source, datasize)) {
+        tnx_logf("starts source invalid off=0x%08x size=%u", dataoff, datasize);
+        return;
+    }
+
+    uint8_t *bytes = (uint8_t *)malloc(datasize);
+
+    if (!bytes) return;
+
+    memcpy(bytes, (const void *)source, datasize);
+
+    size_t capacity = 65536;
+    uintptr_t *starts = (uintptr_t *)malloc(capacity * sizeof(uintptr_t));
+
+    if (!starts) {
+        free(bytes);
+        return;
+    }
+
+    size_t count = 0;
+    size_t offset = 0;
+    uint64_t cumulative = 0;
+    BOOL terminated = NO;
+
+    while (offset < datasize) {
+        uint64_t delta = 0;
+
+        if (!tnx_read_uleb(bytes, datasize, &offset, &delta)) break;
+
+        if (!delta) {
+            terminated = YES;
+            break;
+        }
+
+        cumulative += delta;
+
+        if (count >= capacity) {
+            size_t grown = capacity * 2;
+            uintptr_t *larger = (uintptr_t *)realloc(starts, grown * sizeof(uintptr_t));
+
+            if (!larger) break;
+
+            starts = larger;
+            capacity = grown;
+        }
+
+        starts[count++] = g_base + (uintptr_t)cumulative;
+    }
+
+    free(bytes);
+
+    if (!terminated || !count) {
+        free(starts);
+        tnx_logf("starts parse failed terminated=%d count=%zu", terminated ? 1 : 0, count);
+        return;
+    }
+
+    g_starts = starts;
+    g_starts_count = count;
+
+    tnx_logf("starts loaded=%zu first=%p last=%p", count, (void *)starts[0], (void *)starts[count - 1]);
 }
 
 static BOOL tnx_valid_header(uintptr_t base) {
@@ -1022,9 +1204,14 @@ static int tnx_objc_arm(const char *clsName, const char *selName) {
 
         rt_dump_target(clsName, originalRaw);
 
-        tnx_logf("origCheck %s prologue=%s exec=%d text=%d",
+        BOOL originalExact = NO;
+        size_t originalIndex = tnx_start_index(originalRaw, &originalExact);
+
+        tnx_logf("origCheck %s prologue=%s start=%d index=%d exec=%d text=%d",
                  clsName,
                  tnx_prologue_rule(originalRaw),
+                 originalExact ? 1 : 0,
+                 originalIndex == (size_t)-1 ? -1 : (int)originalIndex,
                  tnx_addr_executable(originalRaw) ? 1 : 0,
                  tnx_image_text_contains(g_base, originalRaw) ? 1 : 0);
 
@@ -1037,19 +1224,19 @@ static int tnx_objc_arm(const char *clsName, const char *selName) {
 static void tnx_resolve_addresses(void) {
     if (!g_base) return;
 
-    g_addr_getinstance = tnx_resolve_named("BattleMode", "getInstance", RVA_BATTLEMODE_GETINSTANCE);
-    g_addr_getownchar = tnx_resolve_named("LogicBattleModeClient", "getOwnCharacter", RVA_LOGICBATTLEMODECLIENT_GETOWNCHARACTER);
-    g_addr_getteam = tnx_resolve_named("LogicBattleModeClient", "getOwnPlayerTeam", RVA_LOGICBATTLEMODECLIENT_GETOWNPLAYERTEAM);
-    g_addr_getx = tnx_resolve_named("LogicGameObjectClient", "getX", RVA_LOGICGAMEOBJECTCLIENT_GETX);
-    g_addr_gety = tnx_resolve_named("LogicGameObjectClient", "getY", RVA_LOGICGAMEOBJECTCLIENT_GETY);
-    g_addr_setprediction = tnx_resolve_named("LogicBattleModeClient", "setClientPredictionMoveTo", RVA_LOGICBATTLEMODECLIENT_SETCLIENTPREDICTIONMOVETO);
-    g_addr_sendmovement = tnx_resolve_named("ClientInputMessage", "sendMovement", RVA_CLIENTINPUTMESSAGE_SENDMOVEMENT);
-    g_addr_getclip = tnx_resolve_named("StringTable", "getMovieClip", RVA_STRINGTABLE_GETMOVIECLIP);
-    g_addr_addchild = tnx_resolve_named("Stage", "addChild", RVA_STAGE_ADDCHILD);
+    g_addr_getinstance = tnx_callable(RVA_BATTLEMODE_GETINSTANCE);
+    g_addr_getownchar = tnx_callable(RVA_LOGICBATTLEMODECLIENT_GETOWNCHARACTER);
+    g_addr_getteam = tnx_callable(RVA_LOGICBATTLEMODECLIENT_GETOWNPLAYERTEAM);
+    g_addr_getx = tnx_callable(RVA_LOGICGAMEOBJECTCLIENT_GETX);
+    g_addr_gety = tnx_callable(RVA_LOGICGAMEOBJECTCLIENT_GETY);
+    g_addr_setprediction = tnx_callable(RVA_LOGICBATTLEMODECLIENT_SETCLIENTPREDICTIONMOVETO);
+    g_addr_sendmovement = tnx_callable(RVA_CLIENTINPUTMESSAGE_SENDMOVEMENT);
+    g_addr_getclip = tnx_callable(RVA_STRINGTABLE_GETMOVIECLIP);
+    g_addr_addchild = tnx_callable(RVA_STAGE_ADDCHILD);
 
-    g_addr_gettf = tnx_pick_named(TNX_RVA_GETTEXTFIELDBYNAME_A, TNX_RVA_GETTEXTFIELDBYNAME_B, "MovieClip", "getTextFieldByName");
-    g_addr_settext = tnx_pick_named(TNX_RVA_SETTEXT_A, TNX_RVA_SETTEXT_B, "MovieClipHelper", "setText");
-    g_addr_setxy = tnx_pick_named(TNX_RVA_SETXY_A, TNX_RVA_SETXY_B, "DisplayObject", "setXY");
+    g_addr_gettf = tnx_pick(TNX_RVA_GETTEXTFIELDBYNAME_A, TNX_RVA_GETTEXTFIELDBYNAME_B);
+    g_addr_settext = tnx_pick(TNX_RVA_SETTEXT_A, TNX_RVA_SETTEXT_B);
+    g_addr_setxy = tnx_pick(TNX_RVA_SETXY_A, TNX_RVA_SETXY_B);
 
     g_addr_battlescreen = g_base + RVA_BATTLESCREEN__BATTLESCREEN;
     if (!tnx_addr_readable(g_addr_battlescreen, sizeof(void *))) g_addr_battlescreen = 0;
@@ -1075,16 +1262,22 @@ static void tnx_dump_rvas(void) {
         uint32_t words[4] = {0, 0, 0, 0};
 
         BOOL region = tnx_query_region(address, &protection, NULL, &size, NULL);
-        BOOL text = tnx_image_text_contains(g_base, address);
+        BOOL exact = NO;
+        size_t index = tnx_start_index(address, &exact);
+        uintptr_t nearest = (index != (size_t)-1) ? g_starts[index] : 0;
+        uintptr_t next = (index != (size_t)-1 && (index + 1) < g_starts_count) ? g_starts[index + 1] : 0;
+        unsigned long long into = nearest ? (unsigned long long)(address - nearest) : 0;
 
         tnx_log_words(address, words, 4);
 
-        tnx_logf("rva %-48s off=0x%08llx addr=%p exec=%d text=%d prologue=%-10s callable=%d prot=%d words=%08x %08x %08x %08x",
+        tnx_logf("rva %-48s off=0x%08llx addr=%p start=%d into=0x%llx near=%p next=%p prologue=%-8s callable=%d prot=%d words=%08x %08x %08x %08x",
                  g_rvas[i].name,
                  (unsigned long long)g_rvas[i].rva,
                  (void *)address,
-                 tnx_addr_executable(address) ? 1 : 0,
-                 text ? 1 : 0,
+                 exact ? 1 : 0,
+                 into,
+                 (void *)nearest,
+                 (void *)next,
                  tnx_prologue_rule(address),
                  tnx_callable_target(g_base, address) ? 1 : 0,
                  region ? (int)protection : -1,
@@ -1128,6 +1321,8 @@ static void setup(void) {
     ref.hdr = (const struct mach_header_64 *)g_base;
 
     rt_dump_image(ref);
+
+    tnx_load_function_starts();
 
     tnx_resolve_addresses();
     tnx_dump_rvas();

@@ -44,7 +44,7 @@ int hook_probe(uintptr_t target);
 
 #define LOG_MAX_BYTES (512 * 1024)
 
-#define TITANOX_BUILD_TAG "brk-b1 2026-10-02 inline-hooks-on"
+#define TITANOX_BUILD_TAG "brk-b2 2026-10-02 cave-need48"
 
 #define RVA_MM_RECEIVEMESSAGE            0x7bace8
 #define RVA_HOMEMODE_GETINSTANCE         0x95f488

@@ -145,10 +145,9 @@ static void show_status(void) {
             return;
         }
 
-        for (UIViewController *vc in root.presentedViewControllers) {
-            if ([vc isKindOfClass:UIAlertController.class]) {
-                [(UIAlertController *)vc dismissViewControllerAnimated:NO completion:nil];
-            }
+        if (root.presentedViewController != nil &&
+            [root.presentedViewController isKindOfClass:UIAlertController.class]) {
+            [root.presentedViewController dismissViewControllerAnimated:NO completion:nil];
         }
 
         NSString *title = g_hits > 0 ? @"Hook fired" : @"Hook armed";

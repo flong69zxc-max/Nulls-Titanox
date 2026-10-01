@@ -22,12 +22,9 @@ static uintptr_t g_base = 0;
 static FILE *g_log = NULL;
 static long g_log_written = 0;
 
-static volatile int g_hits_recv_begin = 0;
-static volatile int g_hits_recv_xref = 0;
+static volatile int g_hits_recv = 0;
 
-static uintptr_t g_addr_begin = 0;
-static uintptr_t g_addr_xref = 0;
-
+static uintptr_t g_addr_recv = 0;
 static void (*g_orig_recv)(void *, void *) = NULL;
 
 static void tlog_raw(const char *s) {
@@ -68,25 +65,21 @@ static BOOL find_game_image(uintptr_t *out_base) {
     return NO;
 }
 
-static void h_recv_begin(void *self, void *msg) {
-    g_hits_recv_begin++;
+static void h_recv(void *self, void *msg) {
+    g_hits_recv++;
 
-    uint32_t raw0 = 0;
-    if (msg) memcpy(&raw0, msg, 4);
-
-    tlog([NSString stringWithFormat:@"RECV_BEGIN #%d self=%p msg=%p raw=0x%x",
-          g_hits_recv_begin, self, msg, raw0]);
+    if (g_hits_recv <= 50) {
+        uint32_t raw0 = 0;
+        if (msg) memcpy(&raw0, msg, 4);
+        tlog([NSString stringWithFormat:@"RECV #%d self=%p msg=%p raw=0x%x",
+              g_hits_recv, self, msg, raw0]);
+    }
 
     if (g_orig_recv) {
         brk_suspend_self();
         g_orig_recv(self, msg);
         brk_resume_self();
     }
-}
-
-static void h_recv_xref(void) {
-    g_hits_recv_xref++;
-    tlog([NSString stringWithFormat:@"RECV_XREF #%d", g_hits_recv_xref]);
 }
 
 static void setup(void) {
@@ -103,21 +96,15 @@ static void setup(void) {
     image_ref_t img = { .base = g_base, .hdr = (const struct mach_header_64 *)g_base };
     uintptr_t xref_out = 0;
 
-    g_addr_begin = rt_resolve_method(img, "MessageManager", "receiveMessage", NULL, 0, &xref_out);
-    g_addr_xref  = xref_out;
+    g_addr_recv = rt_resolve_method(img, "MessageManager", "receiveMessage", NULL, 0, &xref_out);
 
-    tlog([NSString stringWithFormat:@"begin=%p xref=%p",
-          (void *)g_addr_begin, (void *)g_addr_xref]);
+    tlog([NSString stringWithFormat:@"recv=%p xref=%p",
+          (void *)g_addr_recv, (void *)xref_out]);
 
-    if (g_addr_begin) {
-        g_orig_recv = (void (*)(void *, void *))g_addr_begin;
-        brk_install((void *)g_addr_begin, (void *)&h_recv_begin);
-        tlog(@"installed RECV_BEGIN");
-    }
-
-    if (g_addr_xref) {
-        brk_install((void *)g_addr_xref, (void *)&h_recv_xref);
-        tlog(@"installed RECV_XREF");
+    if (g_addr_recv) {
+        g_orig_recv = (void (*)(void *, void *))g_addr_recv;
+        brk_install((void *)g_addr_recv, (void *)&h_recv);
+        tlog(@"installed RECV");
     }
 
     tlog(@"setup done");

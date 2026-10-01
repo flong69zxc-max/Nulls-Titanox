@@ -191,43 +191,88 @@ static inline BOOL tnx_addr_executable(uintptr_t address) {
     return (flags & VM_PROT_EXECUTE) ? YES : NO;
 }
 
-static inline BOOL tnx_image_text_contains(uintptr_t imageBase, uintptr_t address) {
+static inline uintptr_t tnx_image_slide(uintptr_t imageBase) {
+    if (!imageBase) return 0;
+
+    const struct mach_header_64 *header = (const struct mach_header_64 *)imageBase;
+
+    if (!tnx_addr_readable(imageBase, sizeof(struct mach_header_64))) return 0;
+    if (header->magic != MH_MAGIC_64) return 0;
+    if (header->ncmds == 0 || header->ncmds > 4096) return 0;
+    if (header->sizeofcmds == 0 || header->sizeofcmds > (4u * 1024u * 1024u)) return 0;
+
+    const uint8_t *cursor = (const uint8_t *)(header + 1);
+    const uint8_t *limit = cursor + header->sizeofcmds;
+
+    for (uint32_t i = 0; i < header->ncmds; i++) {
+        if (cursor + sizeof(struct load_command) > limit) return 0;
+
+        const struct load_command *command = (const struct load_command *)cursor;
+
+        if (command->cmdsize < sizeof(struct load_command)) return 0;
+        if (cursor + command->cmdsize > limit) return 0;
+
+        if (command->cmd == LC_SEGMENT_64) {
+            if (command->cmdsize < sizeof(struct segment_command_64)) return 0;
+
+            const struct segment_command_64 *segment =
+                (const struct segment_command_64 *)command;
+
+            if (strcmp(segment->segname, "__TEXT") == 0) {
+                return imageBase - (uintptr_t)segment->vmaddr;
+            }
+        }
+
+        cursor += command->cmdsize;
+    }
+
+    return 0;
+}
+
+static inline BOOL tnx_image_segment_contains(uintptr_t imageBase,
+                                              uintptr_t address,
+                                              BOOL requireExec,
+                                              uintptr_t *outStart,
+                                              uintptr_t *outEnd,
+                                              uint32_t *outProt) {
     if (!imageBase || !address) return NO;
 
-    const struct mach_header_64 *header =
-        (const struct mach_header_64 *)imageBase;
+    const struct mach_header_64 *header = (const struct mach_header_64 *)imageBase;
 
     if (!tnx_addr_readable(imageBase, sizeof(struct mach_header_64))) return NO;
     if (header->magic != MH_MAGIC_64) return NO;
     if (header->ncmds == 0 || header->ncmds > 4096) return NO;
     if (header->sizeofcmds == 0 || header->sizeofcmds > (4u * 1024u * 1024u)) return NO;
 
-    const uint8_t *cursor =
-        (const uint8_t *)(header + 1);
+    uintptr_t slide = tnx_image_slide(imageBase);
 
-    const uint8_t *limit =
-        cursor + header->sizeofcmds;
+    const uint8_t *cursor = (const uint8_t *)(header + 1);
+    const uint8_t *limit = cursor + header->sizeofcmds;
 
     for (uint32_t i = 0; i < header->ncmds; i++) {
         if (cursor + sizeof(struct load_command) > limit) return NO;
 
-        const struct load_command *command =
-            (const struct load_command *)cursor;
+        const struct load_command *command = (const struct load_command *)cursor;
 
         if (command->cmdsize < sizeof(struct load_command)) return NO;
         if (cursor + command->cmdsize > limit) return NO;
 
         if (command->cmd == LC_SEGMENT_64) {
+            if (command->cmdsize < sizeof(struct segment_command_64)) return NO;
+
             const struct segment_command_64 *segment =
                 (const struct segment_command_64 *)command;
 
-            if (command->cmdsize < sizeof(struct segment_command_64)) return NO;
-
-            uintptr_t start = (uintptr_t)segment->vmaddr;
+            uintptr_t start = (uintptr_t)segment->vmaddr + slide;
             uintptr_t end = start + (uintptr_t)segment->vmsize;
 
             if (address >= start && address < end) {
-                return (segment->initprot & VM_PROT_EXECUTE) ? YES : NO;
+                BOOL executable = (segment->initprot & VM_PROT_EXECUTE) ? YES : NO;
+                if (requireExec && !executable) return NO;
+                if (outStart) *outStart = start;
+                if (outEnd) *outEnd = end;
+                if (outProt) *outProt = (uint32_t)segment->initprot;
+                return YES;
             }
         }
 
@@ -235,6 +280,16 @@ static inline BOOL tnx_image_text_contains(uintptr_t imageBase, uintptr_t addres
     }
 
     return NO;
+}
+
+static inline BOOL tnx_image_text_contains(uintptr_t imageBase, uintptr_t address) {
+    uintptr_t start = 0;
+    uintptr_t end = 0;
+    uint32_t prot = 0;
+
+    if (!tnx_image_segment_contains(imageBase, address, NO, &start, &end, &prot)) return NO;
+
+    return (prot & VM_PROT_EXECUTE) ? YES : NO;
 }
 
 static inline BOOL tnx_looks_like_function(uintptr_t address) {
@@ -299,57 +354,6 @@ static inline BOOL tnx_object_plausible(void *object) {
 
 static inline NSString *tnx_host_description(void) {
     return tnx_host_is_livecontainer() ? @"livecontainer" : @"native";
-}
-
-static inline BOOL tnx_image_segment_contains(uintptr_t imageBase,
-                                              uintptr_t address,
-                                              BOOL requireExec,
-                                              uintptr_t *outStart,
-                                              uintptr_t *outEnd,
-                                              uint32_t *outProt) {
-    if (!imageBase || !address) return NO;
-
-    const struct mach_header_64 *header = (const struct mach_header_64 *)imageBase;
-
-    if (!tnx_addr_readable(imageBase, sizeof(struct mach_header_64))) return NO;
-    if (header->magic != MH_MAGIC_64) return NO;
-    if (header->ncmds == 0 || header->ncmds > 4096) return NO;
-    if (header->sizeofcmds == 0 || header->sizeofcmds > (4u * 1024u * 1024u)) return NO;
-
-    const uint8_t *cursor = (const uint8_t *)(header + 1);
-    const uint8_t *limit = cursor + header->sizeofcmds;
-
-    for (uint32_t i = 0; i < header->ncmds; i++) {
-        if (cursor + sizeof(struct load_command) > limit) return NO;
-
-        const struct load_command *command = (const struct load_command *)cursor;
-
-        if (command->cmdsize < sizeof(struct load_command)) return NO;
-        if (cursor + command->cmdsize > limit) return NO;
-
-        if (command->cmd == LC_SEGMENT_64) {
-            if (command->cmdsize < sizeof(struct segment_command_64)) return NO;
-
-            const struct segment_command_64 *segment =
-                (const struct segment_command_64 *)command;
-
-            uintptr_t start = (uintptr_t)segment->vmaddr;
-            uintptr_t end = start + (uintptr_t)segment->vmsize;
-
-            if (address >= start && address < end) {
-                BOOL executable = (segment->initprot & VM_PROT_EXECUTE) ? YES : NO;
-                if (requireExec && !executable) return NO;
-                if (outStart) *outStart = start;
-                if (outEnd) *outEnd = end;
-                if (outProt) *outProt = (uint32_t)segment->initprot;
-                return YES;
-            }
-        }
-
-        cursor += command->cmdsize;
-    }
-
-    return NO;
 }
 
 static inline BOOL tnx_image_owns_address(uintptr_t imageBase, uintptr_t address) {

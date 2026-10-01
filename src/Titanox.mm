@@ -315,7 +315,7 @@ static void tnx_render_watermark(void) {
         fn_set_text_t fn_set_text = reinterpret_cast<fn_set_text_t>(g_base + RVA_TEXTFIELD_SETTEXT);
         if (fn_set_text) {
             NSString *label = [NSString stringWithFormat:@"Titanox v1.0 [Zero-Latency]"];
-            void *sc = reinterpret_cast<void *>([label UTF8String]);
+void *sc = reinterpret_cast<void *>(const_cast<char *>([label UTF8String]));
             fn_set_text(g_label_tf, sc, 4, 0);
             g_label_updates++;
         }

@@ -44,7 +44,7 @@ int hook_probe(uintptr_t target);
 
 #define LOG_MAX_BYTES (512 * 1024)
 
-#define TITANOX_BUILD_TAG "brk-a4 2026-10-02 ptrwide+pac+objchooks"
+#define TITANOX_BUILD_TAG "brk-a5 2026-10-02 objcargs+floaterdemo"
 
 #define RVA_MM_RECEIVEMESSAGE            0x7bace8
 #define RVA_HOMEMODE_GETINSTANCE         0x95f488
@@ -92,6 +92,7 @@ static volatile int g_lobby_welcome_done = 0;
 static volatile int g_floater_attempts = 0;
 static volatile int g_floater_success = 0;
 static volatile int g_floater_fail = 0;
+static volatile int g_gui_ok = 0;
 static volatile int g_gui_logged = 0;
 static volatile int g_gui_generation = 0;
 static volatile int g_gui_rejections = 0;
@@ -330,6 +331,7 @@ static void *gui_acquire(int *outAttempts, int *outWhich, NSString **outReason) 
         if (gui_validate(gui, outReason)) {
             if (outAttempts) *outAttempts = attempt + 1;
             if (outWhich) *outWhich = which;
+            g_gui_ok++;
             return gui;
         }
 
@@ -490,6 +492,27 @@ static void try_all_floater_variants(const char *text) {
                    dispatch_get_main_queue(), ^{
         tlog(@"variant C: showFloaterTextAtDefaultPos(gui, text, 3.0)");
         show_floater_default(text, 3.0f);
+    });
+}
+
+static void floater_demo_tick(int attempt);
+
+static void floater_demo_tick(int attempt) {
+    if (!g_aggressive) { tlog(@"floater demo disabled"); return; }
+    if (g_floater_success > 0) { tlog(@"floater demo done"); return; }
+    if (attempt >= 8) { tlog(@"floater demo gave up"); return; }
+
+    if (g_setup_done != 2) {
+        tlog([NSString stringWithFormat:@"floater demo waiting: setup=%d", g_setup_done]);
+    } else {
+        tlog([NSString stringWithFormat:@"floater demo attempt %d gui_ok=%d",
+              attempt + 1, g_gui_ok]);
+        try_all_floater_variants("Tale Stars iOS test");
+    }
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        floater_demo_tick(attempt + 1);
     });
 }
 
@@ -728,14 +751,16 @@ static void dump_objc_inventory(const char *tag) {
     free(classes);
 }
 
-#define OBJC_HOOK_MAX 24
+#define OBJC_HOOK_MAX 32
 
 typedef struct {
     Class cls;
     SEL sel;
     IMP original;
+    IMP replacement;
     const char *clsName;
     const char *selName;
+    const char *signature;
     volatile int hits;
     bool used;
 } tnx_objc_hook_t;
@@ -747,53 +772,111 @@ static volatile int g_objc_hits_total = 0;
 static const char *TITANOX_OBJC_CLASSES[] = {
     "AppController",
     "GameViewController",
-    "RootViewController",
-    "MainViewController",
-    "WebViewController",
     "MetalView",
     "NullView",
     "KeyboardNativeTextfield",
+    "WebViewController",
+    "ExternalWebViewController",
+    "StoreProductViewController",
     "scWKWebView",
     NULL
 };
 
 static const char *TITANOX_OBJC_SELECTORS[] = {
+    "render",
+    "processInput",
+    "loadView",
     "viewDidLoad",
+    "initGame",
+    "didMoveToWindow",
+    "layoutSubviews",
     "viewWillAppear:",
     "viewDidAppear:",
     "viewWillDisappear:",
     "viewDidDisappear:",
     "viewWillLayoutSubviews",
     "viewDidLayoutSubviews",
-    "didMoveToWindow",
-    "layoutSubviews",
+    "setPaused:",
+    "pauseUpdates:",
+    "didEnterBackground:",
+    "willEnterForeground:",
     "applicationDidBecomeActive:",
     "applicationWillResignActive:",
     "applicationDidEnterBackground:",
     "applicationWillEnterForeground:",
+    "touchesBegan:withEvent:",
+    "touchesEnded:withEvent:",
+    "touchesCancelled:withEvent:",
+    "pressesBegan:withEvent:",
+    "pressesEnded:withEvent:",
+    "swipeRight",
+    "onNavigationBack",
+    "onNavigationClose",
+    "close",
+    "invalidateTimer",
+    "onTimeout",
+    "show",
+    "hide",
+    "sendText",
     NULL
 };
 
-static BOOL tnx_encoding_void_noargs(const char *types) {
-    if (!types) return NO;
-    if (types[0] != 'v') return NO;
+static const char *tnx_skip_compound(const char *p) {
+    char open = *p;
+    char close = (open == '{') ? '}' : ((open == '(') ? ')' : ']');
+    int depth = 0;
 
-    int i = 1;
-    int digitsBefore = 0;
-    int digitsAfter = 0;
+    while (*p) {
+        if (*p == open) {
+            depth++;
+        } else if (*p == close) {
+            depth--;
+            if (depth == 0) { p++; break; }
+        }
 
-    while (types[i] >= '0' && types[i] <= '9') { i++; digitsBefore++; }
-    if (types[i] != '@') return NO;
-    i++;
-    while (types[i] >= '0' && types[i] <= '9') i++;
-    if (types[i] != ':') return NO;
-    i++;
-    while (types[i] >= '0' && types[i] <= '9') { i++; digitsAfter++; }
-    if (types[i] != 0) return NO;
-    if (digitsBefore == 0 && digitsAfter == 0) return YES;
-    if (digitsBefore > 0 && digitsAfter > 0) return YES;
+        p++;
+    }
 
-    return NO;
+    return p;
+}
+
+static int tnx_objc_arg_types(const char *types, char *out, size_t capacity) {
+    if (!types || !out || capacity < 8) return -1;
+
+    size_t used = 0;
+    const char *p = types;
+
+    while (*p && (used + 1) < capacity) {
+        while (*p >= '0' && *p <= '9') p++;
+        if (!*p) break;
+
+        char c = *p;
+
+        if (c == 'r' || c == 'n' || c == 'N' || c == 'o' || c == 'O' || c == 'R' || c == 'V') {
+            p++;
+            continue;
+        }
+
+        if (c == '^') {
+            p++;
+            if (*p == '{' || *p == '(' || *p == '[') p = tnx_skip_compound(p);
+            out[used++] = '^';
+            continue;
+        }
+
+        if (c == '{' || c == '(' || c == '[') {
+            p = tnx_skip_compound(p);
+            out[used++] = 'X';
+            continue;
+        }
+
+        out[used++] = c;
+        p++;
+    }
+
+    out[used] = 0;
+
+    return (int)used;
 }
 
 static BOOL tnx_class_owns_method(Class cls, SEL sel) {
@@ -833,23 +916,51 @@ static tnx_objc_hook_t *tnx_objc_lookup(id self, SEL _cmd) {
     return NULL;
 }
 
-typedef void (*tnx_objc_imp_t)(id, SEL);
-
-static void tnx_objc_replacement(id self, SEL _cmd) {
+static tnx_objc_hook_t *tnx_objc_note(id self, SEL _cmd) {
     tnx_objc_hook_t *hook = tnx_objc_lookup(self, _cmd);
 
-    if (hook) {
-        hook->hits++;
-        g_objc_hits_total++;
+    if (!hook) return NULL;
 
-        if (hook->hits <= 8) {
-            tlog([NSString stringWithFormat:@"OBJC_HIT -[%s %s] #%d self=%p",
-                  hook->clsName, hook->selName, hook->hits, self]);
-        }
+    hook->hits++;
+    g_objc_hits_total++;
+
+    if (hook->hits <= 4 || (hook->hits % 300) == 0) {
+        tlog([NSString stringWithFormat:@"OBJC_HIT -[%s %s] %s #%d self=%p",
+              hook->clsName, hook->selName, hook->signature, hook->hits, self]);
     }
 
+    return hook;
+}
+
+static void tnx_objc_rep0(id self, SEL _cmd) {
+    tnx_objc_hook_t *hook = tnx_objc_note(self, _cmd);
+
     if (hook && hook->original) {
-        reinterpret_cast<tnx_objc_imp_t>(hook->original)(self, _cmd);
+        reinterpret_cast<void (*)(id, SEL)>(hook->original)(self, _cmd);
+    }
+}
+
+static void tnx_objc_rep1(id self, SEL _cmd, id a1) {
+    tnx_objc_hook_t *hook = tnx_objc_note(self, _cmd);
+
+    if (hook && hook->original) {
+        reinterpret_cast<void (*)(id, SEL, id)>(hook->original)(self, _cmd, a1);
+    }
+}
+
+static void tnx_objc_rep1b(id self, SEL _cmd, BOOL a1) {
+    tnx_objc_hook_t *hook = tnx_objc_note(self, _cmd);
+
+    if (hook && hook->original) {
+        reinterpret_cast<void (*)(id, SEL, BOOL)>(hook->original)(self, _cmd, a1);
+    }
+}
+
+static void tnx_objc_rep2(id self, SEL _cmd, id a1, id a2) {
+    tnx_objc_hook_t *hook = tnx_objc_note(self, _cmd);
+
+    if (hook && hook->original) {
+        reinterpret_cast<void (*)(id, SEL, id, id)>(hook->original)(self, _cmd, a1, a2);
     }
 }
 
@@ -867,7 +978,29 @@ static int tnx_objc_arm(const char *clsName, const char *selName) {
 
     if (!method) return 0;
 
-    if (!tnx_encoding_void_noargs(method_getTypeEncoding(method))) return 0;
+    const char *types = method_getTypeEncoding(method);
+
+    if (!types) return 0;
+
+    char args[10];
+    int argc = tnx_objc_arg_types(types, args, sizeof(args));
+
+    if (argc < 3) return 0;
+    if (args[0] != 'v') return 0;
+
+    IMP replacement = NULL;
+
+    if (argc == 3) {
+        replacement = reinterpret_cast<IMP>(tnx_objc_rep0);
+    } else if (argc == 4 && args[3] == '@') {
+        replacement = reinterpret_cast<IMP>(tnx_objc_rep1);
+    } else if (argc == 4 && args[3] == 'B') {
+        replacement = reinterpret_cast<IMP>(tnx_objc_rep1b);
+    } else if (argc == 5 && args[3] == '@' && args[4] == '@') {
+        replacement = reinterpret_cast<IMP>(tnx_objc_rep2);
+    } else {
+        return 0;
+    }
 
     for (int i = 0; i < OBJC_HOOK_MAX; i++) {
         if (!g_objc_hooks[i].used) continue;
@@ -877,7 +1010,7 @@ static int tnx_objc_arm(const char *clsName, const char *selName) {
     for (int i = 0; i < OBJC_HOOK_MAX; i++) {
         if (g_objc_hooks[i].used) continue;
 
-        IMP previous = method_setImplementation(method, reinterpret_cast<IMP>(tnx_objc_replacement));
+        IMP previous = method_setImplementation(method, replacement);
 
         if (!previous) return 0;
 
@@ -885,13 +1018,15 @@ static int tnx_objc_arm(const char *clsName, const char *selName) {
         g_objc_hooks[i].cls = cls;
         g_objc_hooks[i].sel = sel;
         g_objc_hooks[i].original = previous;
+        g_objc_hooks[i].replacement = replacement;
         g_objc_hooks[i].clsName = clsName;
         g_objc_hooks[i].selName = selName;
+        g_objc_hooks[i].signature = types;
 
         g_objc_armed++;
 
-        tlog([NSString stringWithFormat:@"objc hook %s -%s orig=%p status=1",
-              clsName, selName, (void *)previous]);
+        tlog([NSString stringWithFormat:@"objc hook %s -%s sig=%s repl=%p orig=%p status=1",
+              clsName, selName, types, (void *)replacement, (void *)previous]);
 
         return 1;
     }
@@ -904,14 +1039,21 @@ static void tnx_objc_install_all(void) {
 
     tlog(@"=== objc hooks ===");
 
-    for (int c = 0; TITANOX_OBJC_CLASSES[c]; c++) {
-        for (int s = 0; TITANOX_OBJC_SELECTORS[s]; s++) {
+    for (int s = 0; TITANOX_OBJC_SELECTORS[s]; s++) {
+        for (int c = 0; TITANOX_OBJC_CLASSES[c]; c++) {
             tried++;
             tnx_objc_arm(TITANOX_OBJC_CLASSES[c], TITANOX_OBJC_SELECTORS[s]);
         }
     }
 
     tlog([NSString stringWithFormat:@"objc hooks armed=%d tried=%d", g_objc_armed, tried]);
+
+    for (int i = 0; i < OBJC_HOOK_MAX; i++) {
+        if (!g_objc_hooks[i].used) continue;
+
+        tlog([NSString stringWithFormat:@"objc armed -[%s %s] %s",
+              g_objc_hooks[i].clsName, g_objc_hooks[i].selName, g_objc_hooks[i].signature]);
+    }
 }
 
 static BOOL arm_target(const char *label, uintptr_t address, void *replacement, void **outOriginal) {
@@ -1033,6 +1175,8 @@ static void setup(void) {
 
     tlog([NSString stringWithFormat:@"objc: armed=%d hits=%d", g_objc_armed, g_objc_hits_total]);
 
+    tlog([NSString stringWithFormat:@"gui: ok=%d failures=%d", g_gui_ok, g_gui_rejections]);
+
     tlog([NSString stringWithFormat:@"last error: %s", hook_last_error()]);
 
     brk_log_state();
@@ -1083,6 +1227,30 @@ static void show_stats(NSString *title) {
             style:UIAlertActionStyleDefault handler:nil]];
         [root presentViewController:a animated:YES completion:nil];
     });
+}
+
+static void tnx_objc_report(const char *tag) {
+    int armed = 0;
+    int live = 0;
+
+    for (int i = 0; i < OBJC_HOOK_MAX; i++) {
+        if (!g_objc_hooks[i].used) continue;
+        armed++;
+        if (g_objc_hooks[i].hits > 0) live++;
+    }
+
+    tlog([NSString stringWithFormat:@"objc[%s] armed=%d live=%d total=%d",
+          tag ? tag : "?", armed, live, g_objc_hits_total]);
+
+    for (int i = 0; i < OBJC_HOOK_MAX; i++) {
+        if (!g_objc_hooks[i].used) continue;
+
+        tlog([NSString stringWithFormat:@"objc[%s] -[%s %s] hits=%d",
+              tag ? tag : "?",
+              g_objc_hooks[i].clsName,
+              g_objc_hooks[i].selName,
+              g_objc_hooks[i].hits]);
+    }
 }
 
 static void poll_for_game(int tick);
@@ -1146,12 +1314,17 @@ static void start(void) {
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
-        if (g_base) dump_objc_inventory("10s");
+        floater_demo_tick(0);
+    });
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(12 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        tnx_objc_report("12s");
     });
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(35 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
-        if (g_base) dump_objc_inventory("35s");
+        tnx_objc_report("35s");
     });
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_SEC)),
@@ -1162,6 +1335,7 @@ static void start(void) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(45 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
         show_stats(@"stats @45s");
+        tnx_objc_report("45s");
         brk_log_state();
     });
 }

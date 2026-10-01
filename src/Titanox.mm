@@ -288,6 +288,7 @@ static BOOL tnx_addr_writable(uintptr_t address, size_t length) {
         uintptr_t start = 0;
 
         if (!tnx_query_region(cursor, &protection, NULL, &size, &start)) return NO;
+        if (size == 0 || size > 0x10000000ULL) return NO;
         if ((protection & VM_PROT_WRITE) == 0) return NO;
 
         uintptr_t next = start + (uintptr_t)size;
@@ -299,36 +300,52 @@ static BOOL tnx_addr_writable(uintptr_t address, size_t length) {
     return cursor >= end;
 }
 
-static BOOL tnx_read_u8(uintptr_t address, uint8_t *out) {
-    if (!out) return NO;
-    if (!tnx_addr_readable(address, 1)) return NO;
+static BOOL tnx_read_bytes(uintptr_t address, void *out, size_t length) {
+    if (!out || !length) return NO;
+    if (!address) return NO;
 
-    *out = *(const uint8_t *)address;
+    vm_size_t got = 0;
+
+    kern_return_t result = vm_read_overwrite(
+        mach_task_self(),
+        (mach_vm_address_t)address,
+        (mach_vm_size_t)length,
+        (mach_vm_address_t)(uintptr_t)out,
+        &got
+    );
+
+    return result == KERN_SUCCESS && got == (vm_size_t)length;
+}
+
+static BOOL tnx_pointer_plausible(uintptr_t value) {
+    if (value < 0x10000) return NO;
+    if (value & 7) return NO;
+
     return YES;
+}
+
+static BOOL tnx_read_u8(uintptr_t address, uint8_t *out) {
+    return tnx_read_bytes(address, out, 1);
 }
 
 static BOOL tnx_read_i32(uintptr_t address, int32_t *out) {
     if (!out) return NO;
-    if (!tnx_addr_readable(address, 4)) return NO;
+    if (address & 3) return NO;
 
-    memcpy(out, (const void *)address, 4);
-    return YES;
+    return tnx_read_bytes(address, out, 4);
 }
 
 static BOOL tnx_read_f32(uintptr_t address, float *out) {
-    if (!out) return NO;
-    if (!tnx_addr_readable(address, 4)) return NO;
+    if (address & 3) return NO;
 
-    memcpy(out, (const void *)address, 4);
-    return YES;
+    return tnx_read_bytes(address, out, 4);
 }
 
 static BOOL tnx_read_ptr(uintptr_t address, void **out) {
     if (!out) return NO;
-    if (!tnx_addr_readable(address, sizeof(void *))) return NO;
+    if (address & 7) return NO;
 
-    memcpy(out, (const void *)address, sizeof(void *));
-    return YES;
+    return tnx_read_bytes(address, out, sizeof(void *));
 }
 
 static void *tnx_read_global_ptr(uintptr_t rva) {
@@ -424,12 +441,10 @@ static void tnx_log_words(uintptr_t address, uint32_t *out, size_t count) {
 
     size_t bytes = count * sizeof(uint32_t);
 
-    if (!tnx_addr_readable(address, bytes)) {
+    if (!tnx_read_bytes(address, out, bytes)) {
         memset(out, 0, bytes);
         return;
     }
-
-    memcpy(out, (const void *)address, bytes);
 }
 
 static uintptr_t tnx_linkedit(uintptr_t fileOffset, uint64_t size) {
@@ -668,14 +683,15 @@ static void tnx_load_function_starts(void) {
 
 static BOOL tnx_valid_header(uintptr_t base) {
     if (!base) return NO;
-    if (!tnx_addr_readable(base, sizeof(struct mach_header_64))) return NO;
+    struct mach_header_64 header;
 
-    const struct mach_header_64 *header = (const struct mach_header_64 *)base;
+    if (!tnx_pointer_plausible(base)) return NO;
+    if (!tnx_read_bytes(base, &header, sizeof(header))) return NO;
 
-    if (header->magic != MH_MAGIC_64) return NO;
-    if (header->ncmds == 0 || header->ncmds > 4096) return NO;
-    if (header->sizeofcmds == 0) return NO;
-    if (header->sizeofcmds > (4u * 1024u * 1024u)) return NO;
+    if (header.magic != MH_MAGIC_64) return NO;
+    if (header.ncmds == 0 || header.ncmds > 4096) return NO;
+    if (header.sizeofcmds == 0) return NO;
+    if (header.sizeofcmds > (4u * 1024u * 1024u)) return NO;
     if (!tnx_image_text_contains(base, base + 0x4000)) return NO;
 
     return YES;
@@ -941,7 +957,10 @@ static void tnx_run_autododge(void) {
     if (!objects || count <= 0) return;
 
     if (count > SCAN_MAX) count = SCAN_MAX;
-    if (!tnx_addr_readable((uintptr_t)objects, (size_t)count * sizeof(void *))) return;
+    void *probe = NULL;
+
+    if (!tnx_read_ptr((uintptr_t)objects, &probe)) return;
+    if (count > 1 && !tnx_read_ptr((uintptr_t)objects + (uintptr_t)(count - 1) * sizeof(void *), &probe)) return;
 
     float dodgeX = 0.0f;
     float dodgeY = 0.0f;
@@ -1049,7 +1068,10 @@ static void tnx_run_autoaim(void) {
     if (!objects || count <= 0) return;
 
     if (count > SCAN_MAX) count = SCAN_MAX;
-    if (!tnx_addr_readable((uintptr_t)objects, (size_t)count * sizeof(void *))) return;
+    void *probe = NULL;
+
+    if (!tnx_read_ptr((uintptr_t)objects, &probe)) return;
+    if (count > 1 && !tnx_read_ptr((uintptr_t)objects + (uintptr_t)(count - 1) * sizeof(void *), &probe)) return;
 
     float closestDistSq = 1.0e18f;
     int targetX = 0;
@@ -1502,15 +1524,19 @@ static BOOL tnx_segment_range(const char *name, uintptr_t *lo, uintptr_t *hi) {
 
 static BOOL tnx_manager_shape(uintptr_t manager) {
     void *array = NULL;
+    void *probe = NULL;
     int32_t count = 0;
 
-    if (!manager) return NO;
-    if (!tnx_addr_readable(manager, 0x120)) return NO;
+    if (!tnx_pointer_plausible(manager)) return NO;
     if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array)) return NO;
     if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) return NO;
     if (count < 0 || count > 4096) return NO;
-    if (count > 0 && !array) return NO;
-    if (count > 0 && !tnx_addr_readable((uintptr_t)array, (size_t)count * sizeof(void *))) return NO;
+
+    if (count > 0) {
+        if (!tnx_pointer_plausible((uintptr_t)array)) return NO;
+        if (!tnx_read_ptr((uintptr_t)array, &probe)) return NO;
+        if (count > 1 && !tnx_read_ptr((uintptr_t)array + (uintptr_t)(count - 1) * sizeof(void *), &probe)) return NO;
+    }
 
     return YES;
 }
@@ -1519,14 +1545,12 @@ static BOOL tnx_mode_shape(uintptr_t mode) {
     int32_t variation = 0;
     void *manager = NULL;
 
-    if (!mode) return NO;
-    if (!tnx_addr_readable(mode, 0x230)) return NO;
+    if (!tnx_pointer_plausible(mode)) return NO;
     if (!tnx_read_i32(mode + TNX_MODE_MODEVAR_OFF, &variation)) return NO;
     if (variation <= 0 || variation > 400) return NO;
     if (!tnx_read_ptr(mode + TNX_MODE_MANAGER_OFF, &manager)) return NO;
-    if (!tnx_manager_shape((uintptr_t)manager)) return NO;
 
-    return YES;
+    return tnx_manager_shape((uintptr_t)manager);
 }
 
 static void tnx_locate_battle_mode(void) {
@@ -1565,6 +1589,7 @@ static void tnx_locate_battle_mode(void) {
 
         memcpy(&candidate, bytes + offset, sizeof(candidate));
 
+        if (!tnx_pointer_plausible(candidate)) continue;
         if (!tnx_mode_shape(candidate)) continue;
 
         g_mode_matches++;
@@ -1650,7 +1675,7 @@ static void tnx_dump_mode_objects(const char *tag) {
 
         if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * sizeof(void *), &object)) continue;
         if (!object) continue;
-        if (!tnx_addr_readable((uintptr_t)object, TNX_SNAPSHOT_BYTES)) continue;
+        if (!tnx_pointer_plausible((uintptr_t)object)) continue;
 
         int32_t globalId = 0;
         int32_t team = 0;
@@ -1664,9 +1689,7 @@ static void tnx_dump_mode_objects(const char *tag) {
         for (uint32_t off = 0; off + 32 <= TNX_SNAPSHOT_BYTES; off += 32) {
             uint32_t words[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 
-            if (!tnx_addr_readable((uintptr_t)object + off, sizeof(words))) break;
-
-            memcpy(words, (const void *)((uintptr_t)object + off), sizeof(words));
+            if (!tnx_read_bytes((uintptr_t)object + off, words, sizeof(words))) break;
 
             tnx_logf("obj[%s][%d] +%03x %08x %08x %08x %08x %08x %08x %08x %08x",
                      tag, i, off, words[0], words[1], words[2], words[3],

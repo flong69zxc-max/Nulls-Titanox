@@ -164,14 +164,34 @@ static __thread BOOL g_inside_hook = NO;
 #define TNX_VTABLE_SEGMENT "__DATA_CONST"
 #define TNX_VTABLE_SEGMENT_ALT "__DATA"
 
-/* Verified offline: this vtable (33 slots, methods in 0xad4xxx/0xad5xxx) holds a method
-   that does [this+0x20]->addGameObject(obj), i.e. the object at [this+0x20] is the
-   game-object manager. That makes it a battle-mode class table. */
+/* Vtables verified offline as classes that OWN the game-object manager: a method of
+   each one does [this+0x20]->addGameObject(obj), so [this+0x20] is the manager. An
+   instance found through one of these is accepted no matter what the layout
+   heuristics say -- that is exactly how the layout is going to be learned.
+     rva 0x1002548 - 33 slots, methods 0xad4xxx-0xad5xxx, inherits the 0xac14cc base
+     rva 0xff5720  - 21 slots, methods 0xa2exxx-0xa31xxx
+   The second one is important: it is NOT in the 35-entry heuristic list, so the heap
+   scan used to be physically unable to see an object of that class. */
+static const uintptr_t g_mode_vtables_verified[] = { 0x1002548, 0xff5720, 0 };
+
 #define TNX_MODE_VTABLE_PRIMARY 0x1002548ULL
+
+static int tnx_verified_vtable(uintptr_t vtable) {
+    if (!g_base || vtable <= g_base) return -1;
+
+    uintptr_t rva = vtable - g_base;
+
+    for (int i = 0; g_mode_vtables_verified[i]; i++) {
+        if (rva == g_mode_vtables_verified[i]) return i;
+    }
+
+    return -1;
+}
 
 static uintptr_t g_mode_object = 0;
 static BOOL g_mode_strong = NO;
 static int g_mode_best_objects = 0;
+static int g_mode_verified_hits = 0;
 static uintptr_t g_mode_source = 0;
 static int g_mode_matches = 0;
 static BOOL g_mode_scanned = NO;
@@ -1828,7 +1848,7 @@ static void tnx_report_mode_hit(const char *tag, uintptr_t slot, uintptr_t objec
              tag, (void *)slot, (void *)object, modeSeg ? modeSeg : "-",
              vtable, vtableSeg ? vtableSeg : "-", (unsigned long long)vtableOff,
              tnx_is_mode_vtable((uintptr_t)vtable, NULL) ? 1 : 0,
-             vtableOff == TNX_MODE_VTABLE_PRIMARY ? 1 : 0,
+             tnx_verified_vtable((uintptr_t)vtable) >= 0 ? 1 : 0,
              score, variation,
              manager, (unsigned long long)managerVtableRva,
              tnx_manager_shape((uintptr_t)manager) ? 1 : 0, array, entry, count);
@@ -1899,12 +1919,14 @@ static void tnx_scan_globals_for_mode(const char *name) {
     int shapeHits = 0;
     int strongHits = 0;
     int nearMiss = 0;
+    int verifiedHits = 0;
 
     for (size_t offset = 0; offset + sizeof(void *) <= span; offset += sizeof(void *)) {
         uintptr_t object = 0;
         void *vtable = NULL;
         BOOL vtMatch = NO;
         int score = 0;
+        int vfx = -1;
 
         memcpy(&object, bytes + offset, sizeof(object));
 
@@ -1916,10 +1938,11 @@ static void tnx_scan_globals_for_mode(const char *name) {
         if (!vtable) continue;
 
         vtMatch = tnx_is_mode_vtable((uintptr_t)vtable, NULL);
+        vfx = tnx_verified_vtable((uintptr_t)vtable);
 
-        if (vtMatch || tnx_vtable_shaped((uintptr_t)vtable)) score = tnx_mode_score(object);
+        if (vfx >= 0 || vtMatch || tnx_vtable_shaped((uintptr_t)vtable)) score = tnx_mode_score(object);
 
-        if (score == 0 && !vtMatch) {
+        if (score == 0 && !vtMatch && vfx < 0) {
             /* Heap pointer whose first word is an image pointer: a plausible C++ instance
                that still failed the mode layout. Kept in the log so the next iteration
                does not have to guess which check is too strict. */
@@ -1938,16 +1961,25 @@ static void tnx_scan_globals_for_mode(const char *name) {
         hits++;
         g_mode_matches++;
 
+        if (vfx >= 0) {
+            g_mode_verified_hits++;
+            verifiedHits++;
+        }
         if (vtMatch) vtHits++;
         if (score >= 1) shapeHits++;
         if (score >= 2) strongHits++;
 
-        if (g_mode_strict_logs < 6) {
+        if (g_mode_strict_logs < 6 || vfx >= 0) {
             g_mode_strict_logs++;
-            tnx_report_mode_hit(score >= 2 ? "strong" : (score == 1 ? "weak" : "vt"), lo + offset, object);
+            tnx_report_mode_hit(vfx >= 0 ? "cap" : (score >= 2 ? "strong" : (score == 1 ? "weak" : "vt")),
+                                lo + offset, object);
         }
 
-        if (score >= 2) {
+        if (vfx >= 0) {
+            /* An instance of a class verified to own the game-object manager: accepted
+               unconditionally, whatever the layout heuristics say. */
+            tnx_adopt_mode(object, YES, "verified");
+        } else if (score >= 2) {
             tnx_adopt_mode(object, YES, "strong");
         } else if (score == 1) {
             tnx_adopt_mode(object, NO, "container");
@@ -1956,8 +1988,8 @@ static void tnx_scan_globals_for_mode(const char *name) {
 
     free(bytes);
 
-    tnx_logf("votescan %s hits=%d vt=%d shape=%d strong=%d near=%d",
-             name, hits, vtHits, shapeHits, strongHits, nearMiss);
+    tnx_logf("votescan %s hits=%d vt=%d shape=%d strong=%d near=%d vfx=%d",
+             name, hits, vtHits, shapeHits, strongHits, nearMiss, verifiedHits);
 }
 
 static void tnx_scan_heap_for_mode(void) {
@@ -1967,6 +1999,7 @@ static void tnx_scan_heap_for_mode(void) {
     int hits = 0;
     int shapeHits = 0;
     int strongHits = 0;
+    int verifiedHits = 0;
 
     while (regions < 8192 && scanned < (512ull * 1024ull * 1024ull)) {
         vm_size_t size = 0;
@@ -2005,25 +2038,36 @@ static void tnx_scan_heap_for_mode(void) {
 
                         memcpy(&vtable, buffer + offset, sizeof(vtable));
 
-                        if (!tnx_is_mode_vtable(vtable, NULL)) continue;
+                        /* Must also match the verified vtables: one of them (0xff5720) is
+                           NOT in the 35-entry heuristic list, so looking only at that list
+                           made an instance of that class invisible to this scan. */
+                        if (!tnx_is_mode_vtable(vtable, NULL) && tnx_verified_vtable(vtable) < 0) continue;
 
                         hits++;
                         g_mode_matches++;
 
                         uintptr_t object = cursor + offset;
+                        int vfx = tnx_verified_vtable(vtable);
                         int score = tnx_mode_score(object);
 
-                        if (score == 0) continue;
+                        if (vfx >= 0) {
+                            g_mode_verified_hits++;
+                            verifiedHits++;
+                        }
+
+                        if (score == 0 && vfx < 0) continue;
 
                         shapeHits++;
                         if (score >= 2) strongHits++;
 
-                        if (g_mode_relaxed_logs < 8) {
+                        if (g_mode_relaxed_logs < 8 || vfx >= 0) {
                             g_mode_relaxed_logs++;
-                            tnx_report_mode_hit(score >= 2 ? "heap+" : "heapw", 0, object);
+                            tnx_report_mode_hit(vfx >= 0 ? "heap-cap" : (score >= 2 ? "heap+" : "heapw"), 0, object);
                         }
 
-                        if (score >= 2) {
+                        if (vfx >= 0) {
+                            tnx_adopt_mode(object, YES, "heap-verified");
+                        } else if (score >= 2) {
                             tnx_adopt_mode(object, YES, "heap-strong");
                         } else if (score == 1) {
                             tnx_adopt_mode(object, NO, "heap-container");
@@ -2049,8 +2093,8 @@ static void tnx_scan_heap_for_mode(void) {
         address = (vm_address_t)next;
     }
 
-    tnx_logf("votescan heap scanned=%zu regions=%d hits=%d shape=%d strong=%d",
-             scanned, regions, hits, shapeHits, strongHits);
+    tnx_logf("votescan heap scanned=%zu regions=%d hits=%d shape=%d strong=%d vfx=%d",
+             scanned, regions, hits, shapeHits, strongHits, verifiedHits);
 }
 
 static void tnx_locate_battle_mode(void) {
@@ -2059,8 +2103,9 @@ static void tnx_locate_battle_mode(void) {
     if (g_votescan_attempts >= TNX_VOTESCAN_ATTEMPTS) {
         /* Only a candidate whose vtable is one of the 35 anchors is ever promoted.
            Every lobby candidate had inList = 0, so nothing is promoted from noise. */
-        tnx_logf("votescan exhausted: object=%p strong=%d maxObj=%d matches=%d",
-                 (void *)g_mode_object, g_mode_strong ? 1 : 0, g_mode_best_objects, g_mode_matches);
+        tnx_logf("votescan exhausted: object=%p strong=%d maxObj=%d matches=%d vfx=%d",
+                 (void *)g_mode_object, g_mode_strong ? 1 : 0, g_mode_best_objects,
+                 g_mode_matches, g_mode_verified_hits);
 
         return;
     }
@@ -2088,9 +2133,9 @@ static void tnx_locate_battle_mode(void) {
                  g_votescan_attempts, (void *)g_mode_object, (void *)g_mode_source);
         tnx_report_mode_hit("found", g_mode_source, g_mode_object);
     } else if ((g_votescan_attempts % TNX_VOTESCAN_HEARTBEAT) == 0) {
-        tnx_logf("votescan alive attempt=%d/%d hits=%d best=%p maxObj=%d",
+        tnx_logf("votescan alive attempt=%d/%d hits=%d best=%p maxObj=%d vfx=%d",
                  g_votescan_attempts, TNX_VOTESCAN_ATTEMPTS, g_mode_matches,
-                 (void *)g_mode_object, g_mode_best_objects);
+                 (void *)g_mode_object, g_mode_best_objects, g_mode_verified_hits);
     }
 }
 

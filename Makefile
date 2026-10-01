@@ -10,7 +10,7 @@ TWEAK_NAME = Titanox
 Titanox_FILES = src/Titanox.mm
 Titanox_FILES += $(shell find $(TITANOX) -type f \( -name '*.m' -o -name '*.mm' -o -name '*.c' \) ! -path '*/build/*' 2>/dev/null)
 
-Titanox_CFLAGS = -fobjc-arc -std=c++17 \
+COMMON_FLAGS = -fobjc-arc \
 	-Iinclude \
 	-I$(TITANOX) \
 	-I$(TITANOX)/libtitanox \
@@ -25,6 +25,9 @@ Titanox_CFLAGS = -fobjc-arc -std=c++17 \
 	-Wno-unused-function -Wno-unused-variable -Wno-unused-parameter \
 	-Wno-everything \
 	-Wl,-undefined,dynamic_lookup
+
+Titanox_OBJCFLAGS = $(COMMON_FLAGS) -std=c++17
+Titanox_CFLAGS = -Iinclude -I$(TITANOX) -I$(TITANOX)/fishhook -I$(TITANOX)/libtitanox
 
 Titanox_FRAMEWORKS = Foundation UIKit
 

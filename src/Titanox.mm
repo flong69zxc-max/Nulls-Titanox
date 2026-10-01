@@ -13,25 +13,43 @@
 #import "libtitanox.h"
 #import "offsets.h"
 
-#define LOG_MAX_BYTES (200 * 1024)
+#define LOG_MAX_BYTES (300 * 1024)
 
-#define RVA_MM_RECEIVE_A 0x75cce0
-#define RVA_MM_RECEIVE_B 0x75c508
+#define RVA_MM_RECEIVEMESSAGE        0x7bace8
+#define RVA_HOMEMODE_GETINSTANCE     0x95f488
+#define RVA_GUI_GETINSTANCE          0x5914b4
+#define RVA_GUI_SHOWFLOATER_TEXTAT   0x591f28
+#define RVA_GUI_SHOWFLOATER_DEFPOS   0x818cdc
+#define RVA_STRING_CTOR              0xdcf8f0
 
 static uintptr_t g_base = 0;
 static FILE *g_log = NULL;
 static long g_log_written = 0;
 
-static volatile int g_hits_a = 0;
-static volatile int g_hits_b = 0;
-static volatile int g_font_hits = 0;
+static volatile int g_hits_recv = 0;
+static volatile int g_hits_home = 0;
+static volatile int g_hits_floater = 0;
+static volatile int g_hits_floater_def = 0;
+static volatile int g_lobby_welcome_done = 0;
+static volatile int g_floater_fail_count = 0;
 
-static uintptr_t g_addr_a = 0;
-static uintptr_t g_addr_b = 0;
-static uintptr_t g_addr_font = 0;
+static uintptr_t g_addr_recv = 0;
+static uintptr_t g_addr_home = 0;
+static uintptr_t g_addr_gui = 0;
+static uintptr_t g_addr_floater = 0;
+static uintptr_t g_addr_floater_def = 0;
+static uintptr_t g_addr_str_ctor = 0;
 
-static void (*g_orig_a)(void *, void *) = NULL;
-static void (*g_orig_b)(void *, void *) = NULL;
+static void (*g_orig_recv)(void*, void*) = NULL;
+static void* (*g_orig_home)(void) = NULL;
+
+typedef void* (*gui_get_t)(void);
+typedef void  (*gui_floater_t)(void*, void*, float, int);
+typedef void* (*str_ctor_t)(void*, const char*);
+
+static gui_get_t     g_fn_gui_get = NULL;
+static gui_floater_t g_fn_floater = NULL;
+static str_ctor_t    g_fn_str_ctor = NULL;
 
 static void tlog_raw(const char *s) {
     if (!g_log) {
@@ -56,7 +74,8 @@ static BOOL find_game_image(uintptr_t *out_base) {
     uint32_t n = _dyld_image_count();
     for (uint32_t i = 0; i < n; i++) {
         const char *path = _dyld_get_image_name(i);
-        const struct mach_header_64 *hdr = (const struct mach_header_64 *)_dyld_get_image_header(i);
+        const struct mach_header_64 *hdr =
+            (const struct mach_header_64 *)_dyld_get_image_header(i);
         if (!path || !hdr || hdr->magic != MH_MAGIC_64) continue;
         if (strstr(path, "/System/")) continue;
         if (strstr(path, "LiveContainer")) continue;
@@ -71,17 +90,6 @@ static BOOL find_game_image(uintptr_t *out_base) {
     return NO;
 }
 
-static NSString *hex_dump(void *p, int len) {
-    if (!p) return @"null";
-    const uint8_t *b = (const uint8_t *)p;
-    NSMutableString *s = [NSMutableString string];
-    for (int i = 0; i < len; i++) {
-        [s appendFormat:@"%02x ", b[i]];
-        if ((i + 1) % 16 == 0) [s appendString:@"\n                "];
-    }
-    return s;
-}
-
 static int read_msg_id(void *msg) {
     if (!msg) return 0;
     void **vt = *(void ***)msg;
@@ -92,56 +100,93 @@ static int read_msg_id(void *msg) {
     return ((msgid_fn_t)fn)(msg);
 }
 
-static void h_recv_a(void *self, void *msg) {
-    g_hits_a++;
-    if (g_hits_a <= 100) {
-        int id = read_msg_id(msg);
-        int sub = msg ? *(int *)((uint8_t *)msg + 0x90) : -1;
-        NSMutableString *line = [NSMutableString string];
-        [line appendFormat:@"RECV_A #%d self=%p msg=%p id=%d sub=%d",
-              g_hits_a, self, msg, id, sub];
-        if (msg) {
-            [line appendFormat:@"\n  head: %@", hex_dump(msg, 32)];
-        }
-        tlog(line);
-        if (id == 20103 && sub == 8) {
-            tlog(@"*** RECV_A got 20103/sub8 ***");
-        }
+static void show_floater(const char *text) {
+    if (!text) return;
+    if (!g_fn_gui_get || !g_fn_floater || !g_fn_str_ctor) {
+        tlog(@"show_floater: missing func ptrs");
+        g_floater_fail_count++;
+        return;
     }
-    if (g_orig_a) {
+
+    void *gui = g_fn_gui_get();
+    if (!gui) {
+        tlog(@"show_floater: gui null");
+        g_floater_fail_count++;
+        return;
+    }
+
+    void *sc = malloc(40);
+    if (!sc) {
+        tlog(@"show_floater: malloc fail");
+        g_floater_fail_count++;
+        return;
+    }
+    memset(sc, 0, 40);
+    g_fn_str_ctor(sc, text);
+
+    g_fn_floater(gui, sc, 0.0f, -1);
+
+    tlog([NSString stringWithFormat:@"FLOATER shown: '%s'", text]);
+}
+
+static void schedule_floater(const char *text, int delay_ms) {
+    NSString *s = [NSString stringWithUTF8String:text];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)delay_ms * NSEC_PER_MSEC),
+                   dispatch_get_main_queue(), ^{
+        show_floater([s UTF8String]);
+    });
+}
+
+static void h_recv(void *self, void *msg) {
+    g_hits_recv++;
+    int id = read_msg_id(msg);
+    int sub = msg ? *(int *)((uint8_t *)msg + 0x90) : -1;
+
+    if (g_hits_recv <= 30) {
+        tlog([NSString stringWithFormat:@"RECV #%d id=%d sub=%d",
+              g_hits_recv, id, sub]);
+    }
+
+    if (id == 20103 && sub == 8) {
+        tlog(@"*** 20103/sub8 caught ***");
+        schedule_floater("Tale Stars: update available!", 100);
+    }
+
+    if (g_orig_recv) {
         brk_suspend_self();
-        g_orig_a(self, msg);
+        g_orig_recv(self, msg);
         brk_resume_self();
     }
 }
 
-static void h_recv_b(void *self, void *msg) {
-    g_hits_b++;
-    if (g_hits_b <= 100) {
-        int id = read_msg_id(msg);
-        int sub = msg ? *(int *)((uint8_t *)msg + 0x90) : -1;
-        NSMutableString *line = [NSMutableString string];
-        [line appendFormat:@"RECV_B #%d self=%p msg=%p id=%d sub=%d",
-              g_hits_b, self, msg, id, sub];
-        if (msg) {
-            [line appendFormat:@"\n  head: %@", hex_dump(msg, 32)];
-        }
-        tlog(line);
-        if (id == 20103 && sub == 8) {
-            tlog(@"*** RECV_B got 20103/sub8 ***");
-        }
-    }
-    if (g_orig_b) {
+static void* h_home(void) {
+    g_hits_home++;
+    void *res = NULL;
+    if (g_orig_home) {
         brk_suspend_self();
-        g_orig_b(self, msg);
+        res = g_orig_home();
         brk_resume_self();
+    }
+
+    if (!g_lobby_welcome_done && res) {
+        g_lobby_welcome_done = 1;
+        tlog(@"lobby detected, scheduling welcome floater");
+        schedule_floater("Tale Stars loaded on iOS!", 1500);
+    }
+    return res;
+}
+
+static void h_floater(void) {
+    g_hits_floater++;
+    if (g_hits_floater <= 5) {
+        tlog([NSString stringWithFormat:@"FLOATER_CALL #%d", g_hits_floater]);
     }
 }
 
-static void h_font(void) {
-    g_font_hits++;
-    if (g_font_hits <= 3) {
-        tlog([NSString stringWithFormat:@"FONT #%d", g_font_hits]);
+static void h_floater_def(void) {
+    g_hits_floater_def++;
+    if (g_hits_floater_def <= 5) {
+        tlog([NSString stringWithFormat:@"FLOATER_DEF_CALL #%d", g_hits_floater_def]);
     }
 }
 
@@ -165,26 +210,37 @@ static void setup(void) {
     }
     tlog([NSString stringWithFormat:@"base=%p", (void *)g_base]);
 
-    g_addr_a    = g_base + RVA_MM_RECEIVE_A;
-    g_addr_b    = g_base + RVA_MM_RECEIVE_B;
-    g_addr_font = g_base + RVA_NATIVEFONT_FORMATSTRING;
+    g_addr_recv        = g_base + RVA_MM_RECEIVEMESSAGE;
+    g_addr_home        = g_base + RVA_HOMEMODE_GETINSTANCE;
+    g_addr_gui         = g_base + RVA_GUI_GETINSTANCE;
+    g_addr_floater     = g_base + RVA_GUI_SHOWFLOATER_TEXTAT;
+    g_addr_floater_def = g_base + RVA_GUI_SHOWFLOATER_DEFPOS;
+    g_addr_str_ctor    = g_base + RVA_STRING_CTOR;
 
-    dump_target("A(0x75cce0)", g_addr_a);
-    dump_target("B(0x7bace8)", g_addr_b);
-    dump_target("F(font)    ", g_addr_font);
+    dump_target("recv",    g_addr_recv);
+    dump_target("home",    g_addr_home);
+    dump_target("gui",     g_addr_gui);
+    dump_target("floater", g_addr_floater);
+    dump_target("floaterD",g_addr_floater_def);
+    dump_target("strctor", g_addr_str_ctor);
 
-    g_orig_a = (void (*)(void *, void *))brk_original_ptr((void *)g_addr_a);
-    bool ok_a = brk_install((void *)g_addr_a, (void *)&h_recv_a);
-    tlog([NSString stringWithFormat:@"install A ok=%d orig=%p",
-          ok_a ? 1 : 0, (void *)g_orig_a]);
+    g_fn_gui_get  = (gui_get_t)g_addr_gui;
+    g_fn_floater  = (gui_floater_t)g_addr_floater;
+    g_fn_str_ctor = (str_ctor_t)g_addr_str_ctor;
 
-    g_orig_b = (void (*)(void *, void *))brk_original_ptr((void *)g_addr_b);
-    bool ok_b = brk_install((void *)g_addr_b, (void *)&h_recv_b);
-    tlog([NSString stringWithFormat:@"install B ok=%d orig=%p",
-          ok_b ? 1 : 0, (void *)g_orig_b]);
+    g_orig_recv = (void (*)(void*, void*))brk_original_ptr((void *)g_addr_recv);
+    bool ok1 = brk_install((void *)g_addr_recv, (void *)&h_recv);
+    tlog([NSString stringWithFormat:@"install recv ok=%d", ok1 ? 1 : 0]);
 
-    bool ok_f = brk_install((void *)g_addr_font, (void *)&h_font);
-    tlog([NSString stringWithFormat:@"install F ok=%d", ok_f ? 1 : 0]);
+    g_orig_home = (void* (*)(void))brk_original_ptr((void *)g_addr_home);
+    bool ok2 = brk_install((void *)g_addr_home, (void *)&h_home);
+    tlog([NSString stringWithFormat:@"install home ok=%d", ok2 ? 1 : 0]);
+
+    bool ok3 = brk_install((void *)g_addr_floater, (void *)&h_floater);
+    tlog([NSString stringWithFormat:@"install floater ok=%d", ok3 ? 1 : 0]);
+
+    bool ok4 = brk_install((void *)g_addr_floater_def, (void *)&h_floater_def);
+    tlog([NSString stringWithFormat:@"install floater_def ok=%d", ok4 ? 1 : 0]);
 
     tlog(@"setup done");
 }
@@ -203,8 +259,10 @@ static void show_stats(NSString *title) {
         UIViewController *root = top_vc();
         if (!root) return;
         NSString *msg = [NSString stringWithFormat:
-            @"base=%p\nA(0x75cce0)=%d\nB(0x7bace8)=%d\nF(font)=%d\nslots=%d",
-            (void *)g_base, g_hits_a, g_hits_b, g_font_hits, brk_slot_limit()];
+            @"base=%p\nrecv=%d\nhome=%d\nfloater=%d\nfloaterD=%d\nfail=%d\nslots=%d",
+            (void *)g_base, g_hits_recv, g_hits_home,
+            g_hits_floater, g_hits_floater_def,
+            g_floater_fail_count, brk_slot_limit()];
         UIAlertController *a = [UIAlertController
             alertControllerWithTitle:title message:msg
             preferredStyle:UIAlertControllerStyleAlert];
@@ -222,13 +280,18 @@ static void start(void) {
         show_stats(@"armed");
     });
 
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 35 * NSEC_PER_SEC),
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 20 * NSEC_PER_SEC),
                    dispatch_get_main_queue(), ^{
-        show_stats(@"stats @30s");
+        if (!g_lobby_welcome_done) {
+            g_lobby_welcome_done = 1;
+            tlog(@"timed fallback, showing floater");
+            show_floater("Tale Stars loaded on iOS!");
+        }
+        show_stats(@"stats @15s");
     });
 
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 65 * NSEC_PER_SEC),
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 45 * NSEC_PER_SEC),
                    dispatch_get_main_queue(), ^{
-        show_stats(@"stats @60s");
+        show_stats(@"stats @40s");
     });
 }

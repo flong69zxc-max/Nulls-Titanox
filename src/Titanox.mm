@@ -10,12 +10,12 @@
 #import <stdio.h>
 #import <unistd.h>
 #import <libgen.h>
-#import <sys/stat.h>
+#import <ptrauth.h>
 #import "libtitanox.h"
 #import "offsets.h"
 
 #define BCR_ON 0x1e5ULL
-#define LOG_MAX_BYTES (50 * 1024)
+#define LOG_MAX_BYTES (100 * 1024)
 
 static uintptr_t g_base = 0;
 static char g_path[512] = {0};
@@ -79,9 +79,6 @@ static void log_line(NSString *s) {
     if (!d.length) return;
 
     if (g_log_written + (long)d.length > LOG_MAX_BYTES) {
-        static const char *trunc = "[...log truncated...]\n";
-        fwrite(trunc, 1, strlen(trunc), g_log);
-        fflush(g_log);
         return;
     }
 
@@ -109,6 +106,27 @@ static BOOL find_game_image(uintptr_t *out_base, char *out_path, size_t cap) {
         return YES;
     }
     return NO;
+}
+
+static BOOL is_pac_signed(void *ptr) {
+#if __has_feature(ptrauth_calls)
+    if (!ptr) return NO;
+    uintptr_t raw = (uintptr_t)ptr;
+    uintptr_t stripped = (uintptr_t)ptrauth_strip(ptr, ptrauth_key_function_pointer);
+    return (raw != stripped);
+#else
+    (void)ptr;
+    return NO;
+#endif
+}
+
+static void log_target_info(const char *name, uintptr_t addr) {
+    uint32_t op0 = *(volatile uint32_t *)addr;
+    uint32_t op1 = *(volatile uint32_t *)(addr + 4);
+    log_line([NSString stringWithFormat:
+              @"%@ addr=%p op0=%08x op1=%08x pac_signed=%d",
+              [NSString stringWithUTF8String:name],
+              (void *)addr, op0, op1, is_pac_signed((void *)addr)]);
 }
 
 static void manual_arm(void) {
@@ -149,9 +167,52 @@ static void manual_arm(void) {
     g_arm_fail = fail;
 }
 
+static void dump_self_bvr(void) {
+    thread_t self = mach_thread_self();
+    arm_debug_state64_t st;
+    mach_msg_type_number_t cnt = ARM_DEBUG_STATE64_COUNT;
+    memset(&st, 0, sizeof(st));
+
+    kern_return_t kr = thread_get_state(self, ARM_DEBUG_STATE64,
+                                        (thread_state_t)&st, &cnt);
+    log_line([NSString stringWithFormat:@"--- self BVR (kr=%d) ---", kr]);
+    for (int k = 0; k < 6; k++) {
+        log_line([NSString stringWithFormat:
+                  @"  bvr[%d]=%p bcr=0x%x", k,
+                  (void *)st.__bvr[k], st.__bcr[k]]);
+    }
+    mach_port_deallocate(mach_task_self(), self);
+}
+
+static void check_bp_ports(void) {
+    mach_port_t ports[EXC_TYPES_COUNT];
+    mach_msg_type_number_t cnt = EXC_TYPES_COUNT;
+    exception_mask_t masks[EXC_TYPES_COUNT];
+    exception_behavior_t behaviors[EXC_TYPES_COUNT];
+    thread_state_flavor_t flavors[EXC_TYPES_COUNT];
+    memset(ports, 0, sizeof(ports));
+
+    kern_return_t kr = task_get_exception_ports(mach_task_self(),
+        EXC_MASK_BREAKPOINT, masks, &cnt, ports, behaviors, flavors);
+
+    log_line([NSString stringWithFormat:
+        @"--- EXC_MASK_BREAKPOINT: kr=%d count=%u ---", kr, cnt]);
+
+    for (uint32_t i = 0; i < cnt; i++) {
+        Dl_info di = {0};
+        const char *owner = "?";
+        if (dladdr((void *)(uintptr_t)ports[i], &di) && di.dli_fname) {
+            owner = basename((char *)di.dli_fname);
+        }
+        log_line([NSString stringWithFormat:
+            @"  port[%u]=%u behavior=0x%x owner=%s",
+            i, ports[i], behaviors[i], owner]);
+    }
+}
+
 static void h_stage(void *a, void *b, void *c, void *d) {
     g_hits_stage++;
-    if (g_hits_stage <= 3 || g_hits_stage == 100 || g_hits_stage % 1000 == 0) {
+    if (g_hits_stage <= 3 || g_hits_stage % 1000 == 0) {
         log_line([NSString stringWithFormat:@"STAGE #%d", g_hits_stage]);
     }
 }
@@ -198,7 +259,9 @@ static void setup(void) {
         log_line(@"game not found");
         return;
     }
-    log_line([NSString stringWithFormat:@"base=%p", (void *)g_base]);
+    log_line([NSString stringWithFormat:@"base=%p path=%s", (void *)g_base, g_path]);
+
+    check_bp_ports();
 
     g_stage_real     = resolve_thunk(g_base, RVA_STAGE_SETVIEWPORT, "stage");
     g_recv_real      = resolve_thunk(g_base, RVA_MESSAGEMANAGER_RECEIVEMESSAGE, "recv");
@@ -206,6 +269,13 @@ static void setup(void) {
     g_char_ctor_real = resolve_thunk(g_base, RVA_CHARACTER_CTOR, "char_ctor");
     g_font_fmt_real  = resolve_thunk(g_base, RVA_NATIVEFONT_FORMATSTRING, "font_fmt");
     g_mc_ctor_real   = resolve_thunk(g_base, RVA_MOVIECLIP_CTOR, "mc_ctor");
+
+    log_target_info("stage", g_stage_real);
+    log_target_info("recv", g_recv_real);
+    log_target_info("ldt_init", g_ldt_init_real);
+    log_target_info("char_ctor", g_char_ctor_real);
+    log_target_info("font_fmt", g_font_fmt_real);
+    log_target_info("mc_ctor", g_mc_ctor_real);
 
     void *getpid_addr = dlsym(RTLD_DEFAULT, "getpid");
     void *malloc_addr = dlsym(RTLD_DEFAULT, "malloc");
@@ -219,52 +289,10 @@ static void setup(void) {
     if (g_font_fmt_real)  brk_install((void *)g_font_fmt_real,  (void *)&h_font_fmt);
     if (g_mc_ctor_real)   brk_install((void *)g_mc_ctor_real,   (void *)&h_mc_ctor);
 
+    brk_install(getpid_addr, (void *)&h_getpid);
+    brk_install(malloc_addr, (void *)&h_malloc);
+
     manual_arm();
     log_line([NSString stringWithFormat:@"armed ok=%d fail=%d", g_arm_ok, g_arm_fail]);
-}
-
-static UIViewController *top_vc(void) {
-    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        if (![scene isKindOfClass:UIWindowScene.class]) continue;
-        UIWindow *w = ((UIWindowScene *)scene).keyWindow;
-        if (w.rootViewController) return w.rootViewController;
-    }
-    return nil;
-}
-
-static void show_alert(void) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIViewController *root = top_vc();
-        if (!root) return;
-
-        NSString *msg = [NSString stringWithFormat:
-            @"arm: %d/%d\n\n"
-            @"stage:    %d\nrecv:     %d\nldt_init: %d\nchar:     %d\nfmt:      %d\nmc:       %d\n\n"
-            @"log size: %ld / %d\n\nlog: Documents/Titanox.log",
-            g_arm_ok, g_arm_fail,
-            g_hits_stage, g_hits_recv, g_hits_ldt_init,
-            g_hits_char_ctor, g_hits_font_fmt, g_hits_mc_ctor,
-            g_log_written, LOG_MAX_BYTES];
-
-        UIAlertController *a = [UIAlertController
-            alertControllerWithTitle:@"Titanox diag" message:msg
-            preferredStyle:UIAlertControllerStyleAlert];
-        [a addAction:[UIAlertAction actionWithTitle:@"OK"
-            style:UIAlertActionStyleDefault handler:nil]];
-        [root presentViewController:a animated:YES completion:nil];
-    });
-}
-
-__attribute__((constructor))
-static void start(void) {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC),
-                   dispatch_get_main_queue(), ^{
-        setup();
-        [NSTimer scheduledTimerWithTimeInterval:0.3 repeats:YES block:^(NSTimer *t) {
-            manual_arm();
-        }];
-        [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer *t) {
-            show_alert();
-        }];
-    });
+    dump_self_bvr();
 }

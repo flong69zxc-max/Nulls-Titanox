@@ -150,6 +150,10 @@ static __thread BOOL g_inside_hook = NO;
 #define TNX_VOTESCAN_INTERVAL 1.0
 #define TNX_VOTESCAN_ATTEMPTS 240
 #define TNX_VOTESCAN_HEAP_EVERY 30
+
+/* A battle is a container holding several live entities. Lobby look-alikes hold 0 or 1.
+   This is the anchor now: not a vtable list, but a verifiable battle-shaped structure. */
+#define TNX_MODE_MIN_OBJECTS 3
 #define TNX_VOTESCAN_HEARTBEAT 30
 #define TNX_HEAP_CHUNK (8u * 1024u * 1024u)
 
@@ -158,10 +162,8 @@ static __thread BOOL g_inside_hook = NO;
 #define TNX_VTABLE_SEGMENT "__DATA_CONST"
 
 static uintptr_t g_mode_object = 0;
-static uintptr_t g_mode_tentative = 0;
-static BOOL g_mode_tentative_listed = NO;
 static BOOL g_mode_strong = NO;
-static int g_objc_capture_logs = 0;
+static int g_mode_best_objects = 0;
 static uintptr_t g_mode_source = 0;
 static int g_mode_matches = 0;
 static BOOL g_mode_scanned = NO;
@@ -1709,7 +1711,6 @@ static BOOL tnx_manager_shape(uintptr_t manager) {
 static int tnx_mode_score(uintptr_t mode) {
     void *manager = NULL;
     void *array = NULL;
-    void *first = NULL;
     int32_t variation = 0;
     int32_t count = 0;
 
@@ -1725,13 +1726,34 @@ static int tnx_mode_score(uintptr_t mode) {
     if (!tnx_read_ptr((uintptr_t)manager + TNX_MGR_ARRAY_OFF, &array)) return 0;
     if (!tnx_read_i32((uintptr_t)manager + TNX_MGR_COUNT_OFF, &count)) return 0;
 
-    /* An empty manager is not a battle. Requiring count > 0 removes the last lobby
-       candidates: every one of them reported count = 0. */
-    if (count <= 0) return 0;
-    if (!array || !tnx_heap_resident((uintptr_t)array)) return 0;
-    if (!tnx_read_ptr((uintptr_t)array, &first)) return 0;
+    /* Highest entry count seen on any structurally plausible candidate: the heartbeat
+       prints it so a lobby run can be told apart from a run that simply found nothing. */
+    if (count > g_mode_best_objects) g_mode_best_objects = count;
 
-    return tnx_gameobject_shape((uintptr_t)first) ? 2 : 1;
+    /* Every lobby look-alike observed so far held 0 or 1 entries. A battle holds several. */
+    if (count < TNX_MODE_MIN_OBJECTS || count > 512) return 0;
+    if (!array || !tnx_heap_resident((uintptr_t)array)) return 0;
+
+    int verified = 0;
+    int live = 0;
+
+    for (int32_t i = 0; i < count; i++) {
+        void *element = NULL;
+
+        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * sizeof(void *), &element)) break;
+        if (!element) continue;
+        if (!tnx_heap_resident((uintptr_t)element)) continue;
+
+        live++;
+
+        if (tnx_gameobject_shape((uintptr_t)element)) verified++;
+    }
+
+    /* score 1: a real container of live C++ objects, but the game-object fields did not
+       all match. score 2: the fields matched too. Either way this is worth dumping. */
+    if (live < TNX_MODE_MIN_OBJECTS) return 0;
+
+    return (verified >= TNX_MODE_MIN_OBJECTS) ? 2 : 1;
 }
 
 static const uintptr_t g_mode_vtables[] = {
@@ -1805,207 +1827,30 @@ static void tnx_report_mode_hit(const char *tag, uintptr_t slot, uintptr_t objec
     }
 }
 
-/* ---------------------------------------------------------------------------
-   Semantic capture.
+/* Adopt a candidate so the a/b snapshot dumps fire for it. A "container" hit (score 1) is
+   kept for diagnostics only and does NOT stop the scan; a confirmed hit (score 2) replaces
+   it and stops it. Replacing a candidate re-arms the snapshot pair. */
+static void tnx_adopt_mode(uintptr_t object, BOOL strong, const char *tag) {
+    if (!object) return;
+    if (g_mode_strong) return;
+    if (g_mode_object == object && strong == g_mode_strong) return;
+    if (g_mode_object && !strong) return;
 
-   The offsets table cannot supply the battle mode: its RVAs are virtual-call
-   sites, not entry points. A memory scan only finds an object that happens to be
-   alive, and the lobby is full of look-alikes. An ObjC accessor whose selector
-   names the battle mode client is a far better anchor: hook it, read the object
-   it returns, adopt it. Nothing in __TEXT is patched here - only the method's IMP
-   in the ObjC runtime is redirected.
-   --------------------------------------------------------------------------- */
-
-static const char *const g_mode_accessor_keys[] = {
-    "LogicBattleModeClient", "LogicBattleMode", "BattleModeClient", NULL
-};
-
-static BOOL tnx_selector_is_mode_accessor(const char *name) {
-    if (!name) return NO;
-
-    for (int i = 0; g_mode_accessor_keys[i]; i++) {
-        if (strstr(name, g_mode_accessor_keys[i])) return YES;
+    if (g_mode_object != object) {
+        g_snapshot_first = NO;
+        g_snapshot_second = NO;
+        g_snapshot_start = 0.0;
     }
 
-    return NO;
-}
-
-static BOOL tnx_class_is_mode_like(const char *name) {
-    if (!name) return NO;
-    if (strstr(name, "Screen")) return NO;
-
-    return strstr(name, "BattleMode") != NULL;
-}
-
-static void tnx_capture_mode_object(id candidateObject, const char *selName) {
-    uintptr_t candidate = (uintptr_t)candidateObject;
-    const char *clsName = NULL;
-    BOOL semantic = NO;
-    int score = 0;
-
-    if (!candidate) return;
-    if (!tnx_pointer_plausible(candidate)) return;
-
-    clsName = class_getName(object_getClass(candidateObject));
-    semantic = tnx_class_is_mode_like(clsName);
-    score = tnx_mode_score(candidate);
-
-    tnx_logf("modecapture -%s class=%s score=%d semantic=%d object=%p",
-             selName ? selName : "?", clsName ? clsName : "-", score, semantic ? 1 : 0,
-             (void *)candidate);
-
-    if (score == 0 && !semantic) return;
-    if (g_mode_object) return;
-
-    g_mode_object = candidate;
+    g_mode_object = object;
     g_mode_source = 0;
-    g_mode_strong = YES;
 
-    tnx_logf("modecapture ADOPT object=%p class=%s score=%d semantic=%d",
-             (void *)candidate, clsName ? clsName : "-", score, semantic ? 1 : 0);
+    if (strong) g_mode_strong = YES;
 
-    tnx_report_mode_hit("cap", 0, candidate);
-}
+    tnx_logf("mode adopt tag=%s object=%p strong=%d maxObj=%d",
+             tag, (void *)object, strong ? 1 : 0, g_mode_best_objects);
 
-static id tnx_objc_rep_capture0(id self, SEL _cmd) {
-    tnx_objc_hook_t *hook = tnx_objc_find(self, _cmd);
-    const char *selName = hook ? hook->selName : "?";
-    id result = nil;
-
-    if (hook && hook->original) {
-        result = reinterpret_cast<id (*)(id, SEL)>(hook->original)(self, _cmd);
-    }
-
-    if (hook) hook->hits++;
-
-    if (!result) return nil;
-
-    if (!g_mode_object) {
-        tnx_capture_mode_object(result, selName);
-    } else if (g_objc_capture_logs < 4) {
-        g_objc_capture_logs++;
-        tnx_logf("modecapture -%s -> %p (already have %p)", selName, (__bridge void *)result,
-                 (void *)g_mode_object);
-    }
-
-    return result;
-}
-
-static int tnx_objc_arm_capture(Class owner, SEL sel, const char *clsName, const char *selName) {
-    Method method = class_getInstanceMethod(owner, sel);
-
-    if (!method) return 0;
-
-    const char *types = method_getTypeEncoding(method);
-
-    if (!types) return 0;
-    if (types[0] != '@') return 0;
-
-    char args[10];
-    int argc = tnx_objc_arg_types(types, args, sizeof(args));
-
-    if (argc != 3) return 0;
-
-    for (int i = 0; i < OBJC_HOOK_MAX; i++) {
-        if (!g_objc_hooks[i].used) continue;
-        if (g_objc_hooks[i].cls != owner || g_objc_hooks[i].sel != sel) continue;
-
-        return 0;
-    }
-
-    IMP replacement = reinterpret_cast<IMP>(tnx_objc_rep_capture0);
-    IMP previous = method_setImplementation(method, replacement);
-
-    if (!previous) return 0;
-
-    if (tnx_strip_imp(previous) == tnx_strip_imp(replacement)) {
-        method_setImplementation(method, previous);
-        return 0;
-    }
-
-    for (int i = 0; i < OBJC_HOOK_MAX; i++) {
-        if (g_objc_hooks[i].used) continue;
-
-        g_objc_hooks[i].used = YES;
-        g_objc_hooks[i].cls = owner;
-        g_objc_hooks[i].sel = sel;
-        g_objc_hooks[i].original = previous;
-        g_objc_hooks[i].replacement = replacement;
-        g_objc_hooks[i].selName = selName;
-        g_objc_hooks[i].signature = types;
-        g_objc_hooks[i].hits = 0;
-        g_objc_hooks[i].wantedCount = 0;
-
-        tnx_objc_add_wanted(&g_objc_hooks[i], owner);
-
-        g_objc_armed++;
-
-        tnx_logf("objc capture armed %s -%s sig=%s orig=%p", clsName, selName, types,
-                 (void *)previous);
-
-        return 1;
-    }
-
-    method_setImplementation(method, previous);
-
-    return 0;
-}
-
-static int tnx_objc_sweep_mode_accessors(void) {
-    int total = objc_getClassList(NULL, 0);
-
-    if (total <= 0) return 0;
-    if (total > 200000) total = 200000;
-
-    Class *classes = (Class *)malloc(sizeof(Class) * (size_t)total);
-
-    if (!classes) return 0;
-
-    int count = objc_getClassList(classes, total);
-    int found = 0;
-    int armed = 0;
-
-    for (int i = 0; i < count; i++) {
-        Class cls = classes[i];
-
-        if (!cls) continue;
-        if (!tnx_image_owns_address(g_base, (uintptr_t)cls)) continue;
-
-        const char *clsName = class_getName(cls);
-
-        if (!clsName) continue;
-
-        unsigned mcount = 0;
-        Method *methods = class_copyMethodList(cls, &mcount);
-
-        if (!methods) continue;
-
-        for (unsigned m = 0; m < mcount; m++) {
-            SEL sel = method_getName(methods[m]);
-            const char *selName = sel_getName(sel);
-
-            if (!tnx_selector_is_mode_accessor(selName)) continue;
-
-            Class owner = tnx_owner_class(cls, sel);
-
-            found++;
-            tnx_logf("objc mode accessor found %s -%s owner=%s", clsName, selName,
-                     owner ? class_getName(owner) : "-");
-
-            if (!owner) continue;
-            if (!tnx_image_owns_address(g_base, (uintptr_t)owner)) continue;
-
-            armed += tnx_objc_arm_capture(owner, sel, clsName, selName);
-        }
-
-        free(methods);
-    }
-
-    free(classes);
-
-    tnx_logf("objc capture sweep classes=%d found=%d armed=%d", count, found, armed);
-
-    return armed;
+    tnx_report_mode_hit(tag, 0, object);
 }
 
 static void tnx_scan_globals_for_mode(const char *name) {
@@ -2090,13 +1935,10 @@ static void tnx_scan_globals_for_mode(const char *name) {
             tnx_report_mode_hit(score >= 2 ? "strong" : (score == 1 ? "weak" : "vt"), lo + offset, object);
         }
 
-        if (score >= 2 && !g_mode_object) {
-            g_mode_object = object;
-            g_mode_source = lo + offset;
-            g_mode_strong = YES;
-        } else if (score == 1 && !g_mode_tentative) {
-            g_mode_tentative = object;
-            g_mode_tentative_listed = vtMatch;
+        if (score >= 2) {
+            tnx_adopt_mode(object, YES, "strong");
+        } else if (score == 1) {
+            tnx_adopt_mode(object, NO, "container");
         }
     }
 
@@ -2169,12 +2011,10 @@ static void tnx_scan_heap_for_mode(void) {
                             tnx_report_mode_hit(score >= 2 ? "heap+" : "heapw", 0, object);
                         }
 
-                        if (score >= 2 && !g_mode_object) {
-                            g_mode_object = object;
-                            g_mode_strong = YES;
-                        } else if (score == 1 && !g_mode_tentative) {
-                            g_mode_tentative = object;
-                            g_mode_tentative_listed = YES;
+                        if (score >= 2) {
+                            tnx_adopt_mode(object, YES, "heap-strong");
+                        } else if (score == 1) {
+                            tnx_adopt_mode(object, NO, "heap-container");
                         }
                     }
                 }
@@ -2207,13 +2047,8 @@ static void tnx_locate_battle_mode(void) {
     if (g_votescan_attempts >= TNX_VOTESCAN_ATTEMPTS) {
         /* Only a candidate whose vtable is one of the 35 anchors is ever promoted.
            Every lobby candidate had inList = 0, so nothing is promoted from noise. */
-        if (!g_mode_object && g_mode_tentative && g_mode_tentative_listed) {
-            g_mode_object = g_mode_tentative;
-            tnx_logf("votescan exhausted: promoting provisional object=%p (inList=1)", (void *)g_mode_object);
-            tnx_report_mode_hit("prov", g_mode_tentative, g_mode_tentative);
-        } else if (!g_mode_object && g_mode_tentative) {
-            tnx_logf("votescan exhausted: candidate %p not promoted (inList=0)", (void *)g_mode_tentative);
-        }
+        tnx_logf("votescan exhausted: object=%p strong=%d maxObj=%d matches=%d",
+                 (void *)g_mode_object, g_mode_strong ? 1 : 0, g_mode_best_objects, g_mode_matches);
 
         return;
     }
@@ -2241,8 +2076,9 @@ static void tnx_locate_battle_mode(void) {
                  g_votescan_attempts, (void *)g_mode_object, (void *)g_mode_source);
         tnx_report_mode_hit("found", g_mode_source, g_mode_object);
     } else if ((g_votescan_attempts % TNX_VOTESCAN_HEARTBEAT) == 0) {
-        tnx_logf("votescan alive attempt=%d/%d hits=%d tentative=%p",
-                 g_votescan_attempts, TNX_VOTESCAN_ATTEMPTS, g_mode_matches, (void *)g_mode_tentative);
+        tnx_logf("votescan alive attempt=%d/%d hits=%d best=%p maxObj=%d",
+                 g_votescan_attempts, TNX_VOTESCAN_ATTEMPTS, g_mode_matches,
+                 (void *)g_mode_object, g_mode_best_objects);
     }
 }
 
@@ -2455,9 +2291,6 @@ static void setup(void) {
     tnx_dump_verified();
     tnx_dump_rvas();
     tnx_probe_classes();
-
-    tnx_dump_objc_inventory("boot");
-    tnx_objc_sweep_mode_accessors();
 
     tnx_objc_arm("MetalView", "render");
     tnx_objc_arm("NullView", "render");

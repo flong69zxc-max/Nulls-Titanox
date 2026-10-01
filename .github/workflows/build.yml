@@ -1,107 +1,46 @@
-name: Build Titanox
+name: Titanox
 
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
-
-permissions:
-  contents: read
 
 jobs:
   build:
     runs-on: macos-14
-    timeout-minutes: 20
+    timeout-minutes: 15
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Cache Theos
-        id: cache-theos
-        uses: actions/cache@v4
+      - uses: actions/cache@v4
         with:
-          path: ${{ github.workspace }}/theos
-          key: theos-${{ runner.os }}-${{ hashFiles('.github/workflows/build.yml') }}
+          path: theos
+          key: theos-${{ runner.os }}
 
-      - name: Install Theos
-        if: steps.cache-theos.outputs.cache-hit != 'true'
+      - name: Setup Theos
         run: |
-          set -euo pipefail
-          git clone --recursive --depth 1 --shallow-submodules \
-            https://github.com/theos/theos.git "$GITHUB_WORKSPACE/theos"
-          echo "$GITHUB_WORKSPACE/theos" > /tmp/theos-path
+          [ -d theos ] || git clone --recursive --depth 1 --shallow-submodules https://github.com/theos/theos.git theos
+          brew install ldid make
+          echo "THEOS=$PWD/theos" >> $GITHUB_ENV
+          echo "$PWD/theos/bin" >> $GITHUB_PATH
+          echo "/opt/homebrew/opt/make/libexec/gnubin" >> $GITHUB_PATH
 
-      - name: Restore Theos path
-        if: steps.cache-theos.outputs.cache-hit == 'true'
+      - name: Get Titanox
         run: |
-          echo "$GITHUB_WORKSPACE/theos" > /tmp/theos-path
-
-      - name: Cache Homebrew
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/Library/Caches/Homebrew
-            /opt/homebrew/Cellar
-          key: brew-${{ runner.os }}-ldid-make
-
-      - name: Install deps
-        run: |
-          set -euo pipefail
-          brew install ldid make || true
-
-      - name: Fetch Titanox
-        run: |
-          set -euo pipefail
-          rm -rf deps/Titanox
-          mkdir -p deps
           git clone --depth 1 https://github.com/flong69zxc-max/Titanox.git deps/Titanox
           rm -rf deps/Titanox/.git
-          grep -n 'new\[\]' deps/Titanox/libtitanox/brk_hook/Hook/hook.h || echo "hook.h clean"
-
-      - name: Configure env
-        run: |
-          set -euo pipefail
-          THEOS_PATH=$(cat /tmp/theos-path)
-          echo "THEOS=$THEOS_PATH" >> "$GITHUB_ENV"
-          echo "$THEOS_PATH/bin" >> "$GITHUB_PATH"
-          echo "/opt/homebrew/opt/make/libexec/gnubin" >> "$GITHUB_PATH"
 
       - name: Build
         run: |
-          set -euo pipefail
-          export PATH="/opt/homebrew/opt/make/libexec/gnubin:$PATH"
-          gmake -j"$(sysctl -n hw.ncpu)" \
-            ARCHS=arm64 \
-            DEBUG=0 \
-            FINALPACKAGE=1 \
-            CC="clang -O2" \
-            CXX="clang++ -O2" \
-            ADDITIONAL_CFLAGS="-O2 -fno-exceptions" \
-            ADDITIONAL_OBJCFLAGS="-O2"
+          gmake -j$(sysctl -n hw.ncpu) ARCHS=arm64 DEBUG=0 FINALPACKAGE=1
 
       - name: Package
         run: |
-          set -euo pipefail
           mkdir -p out
-          DYLIB=$(find .theos/obj -type f -name '*.dylib' ! -path '*.dSYM*' ! -path '*/debug/*' | head -n1)
-          if [ -z "$DYLIB" ]; then
-            DYLIB=$(find .theos/obj -type f -name '*.dylib' ! -path '*.dSYM*' | head -n1)
-          fi
-          if [ -z "$DYLIB" ]; then
-            echo "no dylib produced"
-            find .theos/obj -name '*.dylib'
-            exit 1
-          fi
-          cp "$DYLIB" out/Titanox.dylib
-          file out/Titanox.dylib
-          otool -hv out/Titanox.dylib | head -n 5
-          ls -la out/
+          find .theos -type f -name '*.dylib' ! -path '*.dSYM*' -exec cp {} out/Titanox.dylib \;
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: Titanox
           path: out/Titanox.dylib

@@ -36,6 +36,9 @@ const char *hook_last_error(void);
 bool brk_host_is_livecontainer(void);
 void brk_teardown(void);
 void brk_diag_log(const char *format, ...);
+bool hook_code_patch_allowed(void);
+int hook_pointer_count(void);
+int hook_pointer_slots(void);
 }
 
 #define LOG_MAX_BYTES (512 * 1024)
@@ -740,6 +743,9 @@ static void setup(void) {
 
     tlog([NSString stringWithFormat:@"slots=%d live=%d selftest=%d installed=%d",
           brk_slot_limit(), brk_active_count(), g_selftest_ok ? 1 : 0, ok ? 1 : 0]);
+
+    tlog([NSString stringWithFormat:@"mode: code_patch=%d ptr_hooks=%d ptr_slots=%d",
+          hook_code_patch_allowed() ? 1 : 0, hook_pointer_count(), hook_pointer_slots()]);
 
     tlog([NSString stringWithFormat:@"last error: %s", hook_last_error()]);
 

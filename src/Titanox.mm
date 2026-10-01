@@ -10,14 +10,17 @@
 #import <stdio.h>
 #import <unistd.h>
 #import <libgen.h>
+#import <sys/stat.h>
 #import "libtitanox.h"
 #import "offsets.h"
 
 #define BCR_ON 0x1e5ULL
+#define LOG_MAX_BYTES (50 * 1024)
 
 static uintptr_t g_base = 0;
 static char g_path[512] = {0};
 static FILE *g_log = NULL;
+static long g_log_written = 0;
 
 static uintptr_t g_stage_real = 0;
 static uintptr_t g_recv_real = 0;
@@ -39,6 +42,8 @@ static volatile int g_hits_malloc = 0;
 static volatile int g_arm_ok = 0;
 static volatile int g_arm_fail = 0;
 
+static void log_line(NSString *s);
+
 static uintptr_t decode_bl(uintptr_t thunk_addr, uint32_t opcode) {
     if ((opcode & 0xFC000000) != 0x94000000) return 0;
     int32_t imm26 = opcode & 0x03FFFFFF;
@@ -58,7 +63,7 @@ static uintptr_t resolve_thunk(uintptr_t base, uint64_t rva, const char *name) {
                   name, (void *)thunk, (void *)real]);
         return real;
     }
-    log_line([NSString stringWithFormat:@"%s rva=0x%llx not a thunk, using direct",
+    log_line([NSString stringWithFormat:@"%s rva=0x%llx not a thunk",
               name, rva]);
     return thunk;
 }
@@ -69,12 +74,21 @@ static void log_line(NSString *s) {
         g_log = fopen(p.UTF8String, "a");
     }
     if (!g_log) return;
+
     NSData *d = [s dataUsingEncoding:NSUTF8StringEncoding];
-    if (d.length) {
-        fwrite(d.bytes, 1, d.length, g_log);
-        fputc('\n', g_log);
+    if (!d.length) return;
+
+    if (g_log_written + (long)d.length > LOG_MAX_BYTES) {
+        static const char *trunc = "[...log truncated...]\n";
+        fwrite(trunc, 1, strlen(trunc), g_log);
         fflush(g_log);
+        return;
     }
+
+    fwrite(d.bytes, 1, d.length, g_log);
+    fputc('\n', g_log);
+    fflush(g_log);
+    g_log_written += (long)d.length + 1;
 }
 
 static BOOL find_game_image(uintptr_t *out_base, char *out_path, size_t cap) {
@@ -135,16 +149,43 @@ static void manual_arm(void) {
     g_arm_fail = fail;
 }
 
-static void h_stage(void *a, void *b, void *c, void *d) { g_hits_stage++; }
-static void h_ldt_init(void *a, int b, void *c) { g_hits_ldt_init++; }
-static void h_char_ctor(void *a, void *b, void *c, void *d) { g_hits_char_ctor++; }
-static void h_font_fmt(void *a, void *b, void *c) { g_hits_font_fmt++; }
-static void h_mc_ctor(void *a, void *b) { g_hits_mc_ctor++; }
-
+static void h_stage(void *a, void *b, void *c, void *d) {
+    g_hits_stage++;
+    if (g_hits_stage <= 3 || g_hits_stage == 100 || g_hits_stage % 1000 == 0) {
+        log_line([NSString stringWithFormat:@"STAGE #%d", g_hits_stage]);
+    }
+}
+static void h_ldt_init(void *a, int b, void *c) {
+    g_hits_ldt_init++;
+    if (g_hits_ldt_init <= 3 || g_hits_ldt_init % 100 == 0) {
+        log_line([NSString stringWithFormat:@"LDT_INIT #%d idx=%d", g_hits_ldt_init, b]);
+    }
+}
+static void h_char_ctor(void *a, void *b, void *c, void *d) {
+    g_hits_char_ctor++;
+    if (g_hits_char_ctor <= 5 || g_hits_char_ctor % 50 == 0) {
+        log_line([NSString stringWithFormat:@"CHAR #%d self=%p", g_hits_char_ctor, a]);
+    }
+}
+static void h_font_fmt(void *a, void *b, void *c) {
+    g_hits_font_fmt++;
+    if (g_hits_font_fmt <= 3 || g_hits_font_fmt % 5000 == 0) {
+        log_line([NSString stringWithFormat:@"FMT #%d", g_hits_font_fmt]);
+    }
+}
+static void h_mc_ctor(void *a, void *b) {
+    g_hits_mc_ctor++;
+    if (g_hits_mc_ctor <= 3 || g_hits_mc_ctor % 500 == 0) {
+        log_line([NSString stringWithFormat:@"MC #%d self=%p", g_hits_mc_ctor, a]);
+    }
+}
 static void h_recv(void *self, void *msg, void *a, void *b, void *c, void *d) {
     g_hits_recv++;
-    if (g_hits_recv <= 10) {
-        log_line([NSString stringWithFormat:@"RECV #%d msg=%p", g_hits_recv, msg]);
+    if (g_hits_recv <= 20 || g_hits_recv % 200 == 0) {
+        uint32_t msgId = 0;
+        if (msg) memcpy(&msgId, msg, 4);
+        log_line([NSString stringWithFormat:@"RECV #%d msg=%p id=0x%x",
+                  g_hits_recv, msg, msgId]);
     }
 }
 
@@ -157,7 +198,7 @@ static void setup(void) {
         log_line(@"game not found");
         return;
     }
-    log_line([NSString stringWithFormat:@"base=%p path=%s", (void *)g_base, g_path]);
+    log_line([NSString stringWithFormat:@"base=%p", (void *)g_base]);
 
     g_stage_real     = resolve_thunk(g_base, RVA_STAGE_SETVIEWPORT, "stage");
     g_recv_real      = resolve_thunk(g_base, RVA_MESSAGEMANAGER_RECEIVEMESSAGE, "recv");
@@ -179,12 +220,7 @@ static void setup(void) {
     if (g_mc_ctor_real)   brk_install((void *)g_mc_ctor_real,   (void *)&h_mc_ctor);
 
     manual_arm();
-
-    log_line([NSString stringWithFormat:
-        @"real: stage=%p recv=%p ldt=%p char=%p fmt=%p mc=%p arm=%d/%d",
-        (void *)g_stage_real, (void *)g_recv_real, (void *)g_ldt_init_real,
-        (void *)g_char_ctor_real, (void *)g_font_fmt_real, (void *)g_mc_ctor_real,
-        g_arm_ok, g_arm_fail]);
+    log_line([NSString stringWithFormat:@"armed ok=%d fail=%d", g_arm_ok, g_arm_fail]);
 }
 
 static UIViewController *top_vc(void) {
@@ -203,11 +239,12 @@ static void show_alert(void) {
 
         NSString *msg = [NSString stringWithFormat:
             @"arm: %d/%d\n\n"
-            @"stage:   %d\nrecv:    %d\nldt_init:%d\nchar:    %d\nfmt:     %d\nmc:      %d\n\n"
-            @"log: Documents/Titanox.log",
+            @"stage:    %d\nrecv:     %d\nldt_init: %d\nchar:     %d\nfmt:      %d\nmc:       %d\n\n"
+            @"log size: %ld / %d\n\nlog: Documents/Titanox.log",
             g_arm_ok, g_arm_fail,
             g_hits_stage, g_hits_recv, g_hits_ldt_init,
-            g_hits_char_ctor, g_hits_font_fmt, g_hits_mc_ctor];
+            g_hits_char_ctor, g_hits_font_fmt, g_hits_mc_ctor,
+            g_log_written, LOG_MAX_BYTES];
 
         UIAlertController *a = [UIAlertController
             alertControllerWithTitle:@"Titanox diag" message:msg

@@ -270,6 +270,13 @@ static std::vector<uintptr_t> function_starts(const Image &img)
 {
     std::vector<uintptr_t> result;
 
+    brk_diag_log(
+        "function_starts hasStarts=%d dataoff=0x%llx datasize=0x%llx",
+        img.hasStarts ? 1 : 0,
+        (unsigned long long)img.starts.dataoff,
+        (unsigned long long)img.starts.datasize
+    );
+
     if (!img.hasStarts || !img.starts.datasize) return result;
     if (img.starts.datasize > 16U * 1024U * 1024U) return result;
 
@@ -279,11 +286,19 @@ static std::vector<uintptr_t> function_starts(const Image &img)
             img,
             img.starts.dataoff,
             img.starts.datasize,
-            address)) return result;
+            address)) {
+        brk_diag_log("function_starts linkedit_address_failed");
+        return result;
+    }
+
+    brk_diag_log("function_starts linkedit=%p", (void *)address);
 
     std::vector<uint8_t> bytes(img.starts.datasize);
 
-    if (!read_memory(address, bytes.data(), bytes.size())) return result;
+    if (!read_memory(address, bytes.data(), bytes.size())) {
+        brk_diag_log("function_starts read_memory_failed size=%zu", bytes.size());
+        return result;
+    }
 
     size_t offset = 0;
     uint64_t cumulative = 0;
@@ -292,7 +307,10 @@ static std::vector<uintptr_t> function_starts(const Image &img)
     while (offset < bytes.size()) {
         uint64_t delta = 0;
 
-        if (!read_uleb(bytes, offset, delta)) return {};
+        if (!read_uleb(bytes, offset, delta)) {
+            brk_diag_log("function_starts uleb_failed offset=%zu", offset);
+            return {};
+        }
 
         if (!delta) {
             terminated = true;
@@ -306,10 +324,22 @@ static std::vector<uintptr_t> function_starts(const Image &img)
 
         uintptr_t pc = img.text + (uintptr_t)cumulative;
 
-        if (!code_address(img, pc)) return {};
+        if (!code_address(img, pc)) {
+            brk_diag_log(
+                "function_starts code_address_failed pc=%p",
+                (void *)pc
+            );
+            continue;
+        }
 
         result.push_back(pc);
     }
+
+    brk_diag_log(
+        "function_starts parsed=%zu terminated=%d",
+        result.size(),
+        terminated
+    );
 
     if (!terminated) return {};
 
@@ -320,9 +350,20 @@ static bool method_name(
     const std::string &name,
     const std::string &wanted)
 {
+    if (name == wanted) return true;
+
     size_t open = name.find('(');
 
-    if (open == std::string::npos || open < wanted.size()) return false;
+    if (open == std::string::npos) {
+        return name == wanted;
+    }
+
+    if (open == wanted.size() &&
+        name.compare(0, wanted.size(), wanted) == 0) {
+        return true;
+    }
+
+    if (open < wanted.size()) return false;
 
     size_t start = open - wanted.size();
 
@@ -567,6 +608,55 @@ static uintptr_t enclosing_function(
     return 0;
 }
 
+static uintptr_t find_prologue_backward(const Image &img, uintptr_t pc)
+{
+    if (pc < 4) return 0;
+
+    for (const auto &r : img.ranges) {
+        if (!r.code) continue;
+        if (!contains(r, pc, 4)) continue;
+        if (pc < r.addr + 4) return 0;
+
+        uintptr_t minAddr = r.addr;
+        uintptr_t scan = pc;
+
+        int steps = 0;
+        while (scan >= minAddr + 4 && steps < 8192) {
+            uint32_t here = *(const uint32_t *)scan;
+            uint32_t prev = *(const uint32_t *)(scan - 4);
+
+            int isPrologue = 0;
+            if (here == 0xD503233F) isPrologue = 1;
+            else if ((here & 0xFFC003E0U) == 0xA98003E0U) isPrologue = 1;
+            else if ((here & 0xFFC003FFU) == 0xD10003FFU) isPrologue = 1;
+            else if ((here & 0xFF8003FFU) == 0x910003FDU) isPrologue = 1;
+
+            int prevBoundary = 0;
+            if (prev == 0xD65F03C0U) prevBoundary = 1;
+            else if (prev == 0xD503201FU) prevBoundary = 1;
+            else if (prev == 0xD4200000U) prevBoundary = 1;
+
+            if (isPrologue && prevBoundary) return scan;
+
+            scan -= 4;
+            steps++;
+        }
+
+        if (scan < minAddr + 4) {
+            uint32_t here = *(const uint32_t *)scan;
+            int isPrologue = 0;
+            if (here == 0xD503233F) isPrologue = 1;
+            else if ((here & 0xFFC003E0U) == 0xA98003E0U) isPrologue = 1;
+            else if ((here & 0xFFC003FFU) == 0xD10003FFU) isPrologue = 1;
+            else if ((here & 0xFF8003FFU) == 0x910003FDU) isPrologue = 1;
+
+            if (isPrologue) return scan;
+        }
+    }
+
+    return 0;
+}
+
 }
 
 extern "C" uintptr_t rt_resolve_method(
@@ -655,14 +745,22 @@ extern "C" uintptr_t rt_resolve_method(
     uintptr_t selectedXref = 0;
 
     for (uintptr_t reference : references) {
-        uintptr_t start =
-            enclosing_function(img, starts, reference);
+        uintptr_t start = 0;
+
+        if (!starts.empty()) {
+            start = enclosing_function(img, starts, reference);
+        }
+
+        if (!start) {
+            start = find_prologue_backward(img, reference);
+        }
 
         brk_diag_log(
-            "resolve name=%s xref=%p containing_function=%p",
+            "resolve name=%s xref=%p containing_function=%p source=%s",
             wanted.c_str(),
             (void *)reference,
-            (void *)start
+            (void *)start,
+            starts.empty() ? "prologue" : "starts"
         );
 
         if (start) {

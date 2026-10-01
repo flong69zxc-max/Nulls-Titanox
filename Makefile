@@ -1,30 +1,25 @@
 TARGET := iphone:clang:latest:15.0
 ARCHS := arm64
 
-TITANOX := deps/Titanox
+TITANOX := deps/Titanox/libtitanox
 
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = Titanox
 
 Titanox_FILES = src/Titanox.mm
-Titanox_FILES += $(shell find $(TITANOX) -type f \( -name '*.m' -o -name '*.mm' -o -name '*.c' \) ! -path '*/build/*' ! -path '*/.git/*' ! -path '*/Tests/*' 2>/dev/null)
+Titanox_FILES += $(TITANOX)/brk_hook/Hook/hook.c
+Titanox_FILES += $(TITANOX)/brk_hook/Hook/mach_excServer.c
+Titanox_FILES += src/resolve_targets.mm
 
-Titanox_CFLAGS = \
+COMMON_INCLUDES = \
 	-Iinclude \
-	-I$(TITANOX) \
-	-I$(TITANOX)/libtitanox \
-	-I$(TITANOX)/libtitanox/libtitanox \
-	-I$(TITANOX)/libtitanox/brk_hook \
-	-I$(TITANOX)/libtitanox/brk_hook/Hook \
-	-I$(TITANOX)/libtitanox/MemX \
-	-I$(TITANOX)/libtitanox/fishhook \
-	-I$(TITANOX)/libtitanox/mempatch \
-	-I$(TITANOX)/libtitanox/static-inline-hook \
-	-I$(TITANOX)/libtitanox/utils \
-	-I$(TITANOX)/libtitanox/vm_funcs
+	-I$(TITANOX)/brk_hook/Hook \
+	-I$(TITANOX)/libtitanox
 
-Titanox_OBJCFLAGS = -fobjc-arc -std=c++17 $(Titanox_CFLAGS) \
+Titanox_CFLAGS = $(COMMON_INCLUDES)
+
+Titanox_OBJCFLAGS = -fobjc-arc -std=c++17 $(COMMON_INCLUDES) \
 	-Wno-unused-function -Wno-unused-variable -Wno-unused-parameter \
 	-Wno-everything
 

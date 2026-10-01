@@ -22,17 +22,10 @@ static uintptr_t g_base = 0;
 static FILE *g_log = NULL;
 static long g_log_written = 0;
 
-static volatile int g_hits_stage = 0;
 static volatile int g_hits_recv = 0;
-static volatile int g_hits_fmt = 0;
 
-static uintptr_t g_target_stage = 0;
 static uintptr_t g_target_recv = 0;
-static uintptr_t g_target_fmt = 0;
-
-static void (*g_orig_stage)(void *) = NULL;
 static void (*g_orig_recv)(void *, void *) = NULL;
-static void *(*g_orig_fmt)(void *, void *, void *) = NULL;
 
 static void tlog_raw(const char *s) {
     if (!g_log) {
@@ -72,45 +65,32 @@ static BOOL find_game_image(uintptr_t *out_base) {
     return NO;
 }
 
-static void h_stage(void *self) {
-    g_hits_stage++;
-    if (g_hits_stage <= 3 || g_hits_stage % 1000 == 0) {
-        tlog([NSString stringWithFormat:@"STAGE #%d self=%p", g_hits_stage, self]);
-    }
-    if (g_orig_stage) {
-        brk_suspend_self();
-        g_orig_stage(self);
-        brk_resume_self();
-    }
+static int read_msg_id(void *msg) {
+    if (!msg) return 0;
+    void **vtable = *(void ***)msg;
+    if (!vtable) return 0;
+    void *fn = *(void **)((uint8_t *)vtable + 0x28);
+    if (!fn) return 0;
+    typedef int (*vfunc_id_t)(void *);
+    return ((vfunc_id_t)fn)(msg);
 }
 
 static void h_recv(void *self, void *msg) {
     g_hits_recv++;
-    uint32_t msgId = 0;
-    if (msg) memcpy(&msgId, msg, 4);
-    if (g_hits_recv <= 20 || g_hits_recv % 200 == 0) {
-        tlog([NSString stringWithFormat:@"RECV #%d msg=%p id=0x%x",
-              g_hits_recv, msg, msgId]);
+
+    if (g_hits_recv <= 100) {
+        int id = read_msg_id(msg);
+        uint32_t raw0 = 0;
+        if (msg) memcpy(&raw0, msg, 4);
+        tlog([NSString stringWithFormat:@"RECV #%d msg=%p raw=0x%x id=%d",
+              g_hits_recv, msg, raw0, id]);
     }
+
     if (g_orig_recv) {
         brk_suspend_self();
         g_orig_recv(self, msg);
         brk_resume_self();
     }
-}
-
-static void *h_fmt(void *self, void *a, void *b) {
-    g_hits_fmt++;
-    if (g_hits_fmt <= 3 || g_hits_fmt % 5000 == 0) {
-        tlog([NSString stringWithFormat:@"FMT #%d self=%p", g_hits_fmt, self]);
-    }
-    if (g_orig_fmt) {
-        brk_suspend_self();
-        void *r = g_orig_fmt(self, a, b);
-        brk_resume_self();
-        return r;
-    }
-    return NULL;
 }
 
 static void setup(void) {
@@ -127,63 +107,17 @@ static void setup(void) {
     image_ref_t img = { .base = g_base, .hdr = (const struct mach_header_64 *)g_base };
     uintptr_t xref = 0;
 
-    g_target_stage = rt_resolve_method(img, "Stage", "setViewport", NULL, 0, &xref);
-    g_target_recv  = rt_resolve_method(img, "MessageManager", "receiveMessage", NULL, 0, &xref);
-    g_target_fmt   = rt_resolve_method(img, "NativeFont", "formatString", NULL, 0, &xref);
+    g_target_recv = rt_resolve_method(img, "MessageManager", "receiveMessage", NULL, 0, &xref);
 
-    tlog([NSString stringWithFormat:@"resolved stage=%p recv=%p fmt=%p",
-          (void *)g_target_stage, (void *)g_target_recv, (void *)g_target_fmt]);
+    tlog([NSString stringWithFormat:@"resolved recv=%p", (void *)g_target_recv]);
 
-    if (g_target_stage) {
-        g_orig_stage = (void (*)(void *))g_target_stage;
-        brk_install((void *)g_target_stage, (void *)&h_stage);
-        tlog(@"installed STAGE");
-    }
     if (g_target_recv) {
         g_orig_recv = (void (*)(void *, void *))g_target_recv;
         brk_install((void *)g_target_recv, (void *)&h_recv);
         tlog(@"installed RECV");
     }
-    if (g_target_fmt) {
-        g_orig_fmt = (void *(*)(void *, void *, void *))g_target_fmt;
-        brk_install((void *)g_target_fmt, (void *)&h_fmt);
-        tlog(@"installed FMT");
-    }
 
     tlog(@"setup done");
-}
-
-static UIViewController *top_vc(void) {
-    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        if (![scene isKindOfClass:UIWindowScene.class]) continue;
-        UIWindow *w = ((UIWindowScene *)scene).keyWindow;
-        if (w.rootViewController) return w.rootViewController;
-    }
-    return nil;
-}
-
-static void show_alert(void) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIViewController *root = top_vc();
-        if (!root) return;
-        NSString *msg = [NSString stringWithFormat:
-            @"slots=%d\n\n"
-            @"stage:  %d\nrecv:   %d\nfmt:    %d\n\n"
-            @"stage=%p\nrecv=%p\nfmt=%p\n\n"
-            @"log: %ld / %d B",
-            brk_slot_limit(),
-            g_hits_stage, g_hits_recv, g_hits_fmt,
-            (void *)g_target_stage, (void *)g_target_recv,
-            (void *)g_target_fmt,
-            g_log_written, LOG_MAX_BYTES];
-
-        UIAlertController *a = [UIAlertController
-            alertControllerWithTitle:@"Titanox diag" message:msg
-            preferredStyle:UIAlertControllerStyleAlert];
-        [a addAction:[UIAlertAction actionWithTitle:@"OK"
-            style:UIAlertActionStyleDefault handler:nil]];
-        [root presentViewController:a animated:YES completion:nil];
-    });
 }
 
 __attribute__((constructor))
@@ -191,8 +125,5 @@ static void start(void) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC),
                    dispatch_get_main_queue(), ^{
         setup();
-        [NSTimer scheduledTimerWithTimeInterval:2.0 repeats:YES block:^(NSTimer *t) {
-            show_alert();
-        }];
     });
 }

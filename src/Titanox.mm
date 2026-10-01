@@ -132,6 +132,30 @@ static BOOL g_aim_rejected = NO;
 
 static __thread BOOL g_inside_hook = NO;
 
+#define TNX_MODE_MANAGER_OFF 0x20ULL
+#define TNX_MGR_ARRAY_OFF 0x0ULL
+#define TNX_MGR_COUNT_OFF 0xcULL
+#define TNX_OBJ_GLOBALID_OFF 0x8ULL
+#define TNX_OBJ_TEAM_OFF 0x4cULL
+#define TNX_MODE_MODEVAR_OFF 0x124ULL
+#define TNX_MODE_STARS0_OFF 0x1e8ULL
+#define TNX_MODE_STARS1_OFF 0x1ecULL
+#define TNX_MODE_SLOT_A 0x218ULL
+#define TNX_MODE_SLOT_B 0x220ULL
+#define TNX_MODE_SLOT_C 0x228ULL
+
+#define TNX_SNAPSHOT_OBJECTS 12
+#define TNX_SNAPSHOT_BYTES 0x140
+#define TNX_SNAPSHOT_DELAY 1.2
+
+static uintptr_t g_mode_object = 0;
+static uintptr_t g_mode_source = 0;
+static int g_mode_matches = 0;
+static BOOL g_mode_scanned = NO;
+static BOOL g_snapshot_first = NO;
+static BOOL g_snapshot_second = NO;
+static double g_snapshot_start = 0.0;
+
 static tnx_objc_hook_t g_objc_hooks[OBJC_HOOK_MAX];
 static int g_objc_armed = 0;
 
@@ -476,7 +500,7 @@ static BOOL tnx_copy(uintptr_t source, void *destination, size_t length) {
     if (!source || !destination || !length) return NO;
     if (!tnx_addr_readable(source, length)) return NO;
 
-    mach_vm_size_t copied = 0;
+    vm_size_t copied = 0;
 
     kern_return_t result = vm_read_overwrite(
         mach_task_self(),
@@ -486,7 +510,7 @@ static BOOL tnx_copy(uintptr_t source, void *destination, size_t length) {
         &copied
     );
 
-    return result == KERN_SUCCESS && copied == (mach_vm_size_t)length;
+    return result == KERN_SUCCESS && copied == (vm_size_t)length;
 }
 
 static BOOL tnx_text_section(uintptr_t *address, uint64_t *size) {
@@ -1141,6 +1165,19 @@ static void tnx_render_watermark(void) {
 }
 
 static void tnx_run_workload(void) {
+    tnx_locate_battle_mode();
+
+    if (!g_snapshot_first) {
+        g_snapshot_first = YES;
+        g_snapshot_start = CFAbsoluteTimeGetCurrent();
+        tnx_dump_mode_objects("a");
+    } else if (!g_snapshot_second) {
+        if (CFAbsoluteTimeGetCurrent() > (g_snapshot_start + TNX_SNAPSHOT_DELAY)) {
+            g_snapshot_second = YES;
+            tnx_dump_mode_objects("b");
+        }
+    }
+
     tnx_run_autododge();
     tnx_run_autoaim();
     tnx_render_watermark();
@@ -1384,9 +1421,21 @@ static const tnx_rva_entry_t g_verified[] = {
     { "LogicGameObjectManager::generateGameObjectGlobalID", 0xa27b98 },
     { "LogicBattleModeClient::getTeamStars", 0xac3cfc },
     { "LogicProjectileData::getColumnValue", 0x9cd5e0 },
+    { "LogicBattleModeClient::slotA (this+0x218)", 0xac40d8 },
+    { "LogicBattleModeClient::slotB (this+0x220)", 0xac40e8 },
+    { "LogicBattleModeClient::slotC (this+0x228)", 0xac40f8 },
+    { "LogicBattleModeClient::getInt (this+0xec)", 0xac3500 },
     { "TABLE_RVA_MESSAGEMANAGER__RECEIVEMESSAGE", 0x7bace8 },
     { NULL, 0 }
 };
+
+static void tnx_dump_structs(void) {
+    tnx_logf("structs mode+0x%llx=manager mgr+0x%llx=array mgr+0x%llx=count obj+0x%llx=gid obj+0x%llx=team mode+0x%llx=modeVar mode+0x%llx/0x%llx=stars slots=0x%llx/0x%llx/0x%llx",
+             TNX_MODE_MANAGER_OFF, TNX_MGR_ARRAY_OFF, TNX_MGR_COUNT_OFF,
+             TNX_OBJ_GLOBALID_OFF, TNX_OBJ_TEAM_OFF, TNX_MODE_MODEVAR_OFF,
+             TNX_MODE_STARS0_OFF, TNX_MODE_STARS1_OFF,
+             TNX_MODE_SLOT_A, TNX_MODE_SLOT_B, TNX_MODE_SLOT_C);
+}
 
 static void tnx_dump_verified(void) {
     if (!g_base) return;
@@ -1408,6 +1457,218 @@ static void tnx_dump_verified(void) {
                  tnx_prologue_rule(address),
                  tnx_callable_target(g_base, address) ? 1 : 0,
                  words[0], words[1], words[2], words[3]);
+    }
+}
+
+static BOOL tnx_segment_range(const char *name, uintptr_t *lo, uintptr_t *hi) {
+    if (!g_base || !name) return NO;
+    if (!tnx_addr_readable(g_base, sizeof(struct mach_header_64))) return NO;
+
+    const struct mach_header_64 *header = (const struct mach_header_64 *)g_base;
+
+    if (header->magic != MH_MAGIC_64) return NO;
+
+    const uint8_t *cursor = (const uint8_t *)(header + 1);
+    const uint8_t *limit = cursor + header->sizeofcmds;
+    uintptr_t slide = tnx_image_slide(g_base);
+
+    for (uint32_t i = 0; i < header->ncmds; i++) {
+        if (cursor + sizeof(struct load_command) > limit) return NO;
+
+        const struct load_command *command = (const struct load_command *)cursor;
+
+        if (command->cmdsize < sizeof(struct load_command)) return NO;
+        if (cursor + command->cmdsize > limit) return NO;
+
+        if (command->cmd == LC_SEGMENT_64 && command->cmdsize >= sizeof(struct segment_command_64)) {
+            const struct segment_command_64 *segment = (const struct segment_command_64 *)command;
+
+            if (strcmp(segment->segname, name) == 0) {
+                if (lo) *lo = slide + (uintptr_t)segment->vmaddr;
+                if (hi) *hi = slide + (uintptr_t)segment->vmaddr + (uintptr_t)segment->vmsize;
+
+                return YES;
+            }
+        }
+
+        cursor += command->cmdsize;
+    }
+
+    return NO;
+}
+
+static BOOL tnx_manager_shape(uintptr_t manager) {
+    void *array = NULL;
+    int32_t count = 0;
+
+    if (!manager) return NO;
+    if (!tnx_addr_readable(manager, 0x120)) return NO;
+    if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array)) return NO;
+    if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) return NO;
+    if (count < 0 || count > 4096) return NO;
+    if (count > 0 && !array) return NO;
+    if (count > 0 && !tnx_addr_readable((uintptr_t)array, (size_t)count * sizeof(void *))) return NO;
+
+    return YES;
+}
+
+static BOOL tnx_mode_shape(uintptr_t mode) {
+    int32_t variation = 0;
+    void *manager = NULL;
+
+    if (!mode) return NO;
+    if (!tnx_addr_readable(mode, 0x230)) return NO;
+    if (!tnx_read_i32(mode + TNX_MODE_MODEVAR_OFF, &variation)) return NO;
+    if (variation <= 0 || variation > 400) return NO;
+    if (!tnx_read_ptr(mode + TNX_MODE_MANAGER_OFF, &manager)) return NO;
+    if (!tnx_manager_shape((uintptr_t)manager)) return NO;
+
+    return YES;
+}
+
+static void tnx_locate_battle_mode(void) {
+    if (g_mode_scanned) return;
+    g_mode_scanned = YES;
+
+    uintptr_t lo = 0;
+    uintptr_t hi = 0;
+
+    if (!tnx_segment_range("__DATA", &lo, &hi)) {
+        tnx_logf("mode scan no __DATA");
+        return;
+    }
+
+    size_t span = (size_t)(hi - lo);
+    if (span < 0x1000 || span > (16u * 1024u * 1024u)) {
+        tnx_logf("mode scan bad span=%zu", span);
+        return;
+    }
+
+    uint8_t *bytes = (uint8_t *)malloc(span);
+
+    if (!bytes) {
+        tnx_logf("mode scan alloc failed");
+        return;
+    }
+
+    if (!tnx_copy(lo, bytes, span)) {
+        free(bytes);
+        tnx_logf("mode scan read failed");
+        return;
+    }
+
+    for (size_t offset = 0; offset + sizeof(void *) <= span; offset += sizeof(void *)) {
+        uintptr_t candidate = 0;
+
+        memcpy(&candidate, bytes + offset, sizeof(candidate));
+
+        if (!tnx_mode_shape(candidate)) continue;
+
+        g_mode_matches++;
+
+        if (!g_mode_object) {
+            g_mode_object = candidate;
+            g_mode_source = lo + offset;
+        }
+    }
+
+    free(bytes);
+
+    tnx_logf("mode scan matches=%d object=%p global=%p", g_mode_matches, (void *)g_mode_object, (void *)g_mode_source);
+}
+
+static uintptr_t tnx_vtable_rva(void *object) {
+    void *vtable = NULL;
+
+    if (!object) return 0;
+    if (!tnx_read_ptr((uintptr_t)object, &vtable)) return 0;
+    if (!vtable) return 0;
+    if ((uintptr_t)vtable < g_base) return 0;
+
+    return (uintptr_t)vtable - g_base;
+}
+
+static void tnx_dump_mode_refs(const char *tag) {
+    if (!g_mode_object) return;
+
+    tnx_logf("moderef[%s] mode=%p vt=%#llx", tag, (void *)g_mode_object,
+             (unsigned long long)tnx_vtable_rva((void *)g_mode_object));
+
+    for (uint32_t off = 0; off < 0x60; off += 8) {
+        void *field = NULL;
+
+        if (!tnx_read_ptr(g_mode_object + off, &field)) continue;
+        if (!field) continue;
+        if ((uintptr_t)field < 0x10000) continue;
+
+        int32_t probe = 0;
+        tnx_read_i32((uintptr_t)field + TNX_MODE_MODEVAR_OFF, &probe);
+
+        tnx_logf("moderef[%s] +%02x -> %p vt=%#llx int124=%d",
+                 tag, off, field, (unsigned long long)tnx_vtable_rva(field), probe);
+    }
+
+    for (int i = 0; i < 3; i++) {
+        uint32_t off = (uint32_t)(TNX_MODE_SLOT_A + i * 8);
+        void *slot = NULL;
+
+        if (!tnx_read_ptr(g_mode_object + off, &slot)) continue;
+        if (!slot) continue;
+
+        tnx_logf("moderef[%s] sl%c +%x -> %p vt=%#llx",
+                 tag, (char)('A' + i), off, slot, (unsigned long long)tnx_vtable_rva(slot));
+    }
+}
+
+static void tnx_dump_mode_objects(const char *tag) {
+    if (!g_mode_object) return;
+
+    tnx_dump_mode_refs(tag);
+
+    void *manager = NULL;
+    void *array = NULL;
+    int32_t count = 0;
+    int32_t variation = 0;
+
+    if (!tnx_read_ptr(g_mode_object + TNX_MODE_MANAGER_OFF, &manager)) return;
+    if (!tnx_read_i32(g_mode_object + TNX_MODE_MODEVAR_OFF, &variation)) return;
+    if (!tnx_read_ptr((uintptr_t)manager + TNX_MGR_ARRAY_OFF, &array)) return;
+    if (!tnx_read_i32((uintptr_t)manager + TNX_MGR_COUNT_OFF, &count)) return;
+
+    tnx_logf("mode[%s] object=%p variation=%d manager=%p array=%p count=%d",
+             tag, (void *)g_mode_object, variation, manager, array, count);
+
+    if (!array || count <= 0) return;
+
+    int limit = count < TNX_SNAPSHOT_OBJECTS ? count : TNX_SNAPSHOT_OBJECTS;
+
+    for (int i = 0; i < limit; i++) {
+        void *object = NULL;
+
+        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * sizeof(void *), &object)) continue;
+        if (!object) continue;
+        if (!tnx_addr_readable((uintptr_t)object, TNX_SNAPSHOT_BYTES)) continue;
+
+        int32_t globalId = 0;
+        int32_t team = 0;
+
+        tnx_read_i32((uintptr_t)object + TNX_OBJ_GLOBALID_OFF, &globalId);
+        tnx_read_i32((uintptr_t)object + TNX_OBJ_TEAM_OFF, &team);
+
+        tnx_logf("obj[%s][%d] %p vt=%#llx gid=%d team=%d", tag, i, object,
+                 (unsigned long long)tnx_vtable_rva(object), globalId, team);
+
+        for (uint32_t off = 0; off + 32 <= TNX_SNAPSHOT_BYTES; off += 32) {
+            uint32_t words[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+
+            if (!tnx_addr_readable((uintptr_t)object + off, sizeof(words))) break;
+
+            memcpy(words, (const void *)((uintptr_t)object + off), sizeof(words));
+
+            tnx_logf("obj[%s][%d] +%03x %08x %08x %08x %08x %08x %08x %08x %08x",
+                     tag, i, off, words[0], words[1], words[2], words[3],
+                     words[4], words[5], words[6], words[7]);
+        }
     }
 }
 
@@ -1523,6 +1784,7 @@ static void setup(void) {
     tnx_load_function_starts();
 
     tnx_resolve_addresses();
+    tnx_dump_structs();
     tnx_dump_verified();
     tnx_dump_rvas();
     tnx_probe_classes();

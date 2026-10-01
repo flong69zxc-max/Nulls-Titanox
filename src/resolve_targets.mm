@@ -13,6 +13,7 @@
 #include <limits>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -743,6 +744,7 @@ extern "C" uintptr_t rt_resolve_method(
 
     std::set<uintptr_t> candidates;
     uintptr_t selectedXref = 0;
+    std::vector<std::pair<uintptr_t, uintptr_t>> resolved;
 
     for (uintptr_t reference : references) {
         uintptr_t start = 0;
@@ -765,15 +767,52 @@ extern "C" uintptr_t rt_resolve_method(
 
         if (start) {
             candidates.insert(start);
+            resolved.push_back(std::make_pair(start, reference));
             if (!selectedXref) selectedXref = reference;
         }
     }
 
-    if (candidates.size() != 1) return 0;
+    if (candidates.empty()) return 0;
+
+    uintptr_t chosen = 0;
+
+    if (candidates.size() == 1) {
+        chosen = *candidates.begin();
+    } else {
+        size_t bestCount = 0;
+
+        for (uintptr_t candidate : candidates) {
+            size_t count = 0;
+            for (const auto &entry : resolved) {
+                if (entry.first == candidate) count++;
+            }
+            if (count > bestCount) {
+                bestCount = count;
+                chosen = candidate;
+            }
+        }
+
+        brk_diag_log(
+            "resolve name=%s ambiguous=%zu chosen=%p xref_count=%zu",
+            wanted.c_str(),
+            candidates.size(),
+            (void *)chosen,
+            bestCount
+        );
+
+        if (!chosen) return 0;
+
+        for (const auto &entry : resolved) {
+            if (entry.first == chosen) {
+                selectedXref = entry.second;
+                break;
+            }
+        }
+    }
 
     if (xrefOut) *xrefOut = selectedXref;
 
-    return *candidates.begin();
+    return chosen;
 }
 
 extern "C" int rt_is_code(image_ref_t ref, uintptr_t target)

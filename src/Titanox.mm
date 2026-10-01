@@ -1607,17 +1607,18 @@ static BOOL tnx_mode_shape(uintptr_t mode) {
 
     if (!tnx_object_shaped(mode)) return NO;
     if (!tnx_read_i32(mode + TNX_MODE_MODEVAR_OFF, &variation)) return NO;
-    if (variation <= 0 || variation > 400) return NO;
+    if (variation < 0 || variation > 400) return NO;
     if (!tnx_read_ptr(mode + TNX_MODE_MANAGER_OFF, &manager)) return NO;
+    if (!manager) return NO;
 
     return tnx_manager_shape((uintptr_t)manager);
 }
 
 static const uintptr_t g_mode_vtables[] = {
-    0xfd6958, 0xfd6ee8, 0xfd7250, 0xfd7dc8, 0x10012c8, 0x1001318, 0x1001368, 0x10013b8,
+    0x10012c8, 0x1001318, 0x1001368, 0x10013b8,
     0x1001408, 0x1001458, 0x10014a8, 0x10014f8, 0x1001548, 0x1001598, 0x10015e8, 0x10016e0,
     0x10017d8, 0x10018c0, 0x1001908, 0x10019d0, 0x1001ac8, 0x1001bc0, 0x1001cb8, 0x1001d80,
-    0x1001e48, 0x1001f10, 0x1001fd8, 0x10022f0, 0x10023b8, 0x1002480, 0x1002548, 0x1002610,
+    0x1001e48, 0x1001f10, 0x10022f0, 0x10023b8, 0x1002480, 0x1002548, 0x1002610,
     0x10026d8, 0x10027a0, 0x1002868, 0x1002930, 0x10029f8, 0x1002ac0, 0x1002b88, 0x1002d18,
     0,
 };
@@ -1640,12 +1641,19 @@ static void tnx_report_mode_hit(const char *tag, uintptr_t slot, uintptr_t objec
     uint32_t words[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     uintptr_t vtableRva = 0;
     uintptr_t managerVtableRva = 0;
+    uintptr_t vtableOff = 0;
+    void *vtable = NULL;
     void *manager = NULL;
     void *managerVtable = NULL;
     void *array = NULL;
     void *entry = NULL;
     int32_t variation = 0;
     int32_t count = 0;
+
+    tnx_read_ptr(object, &vtable);
+    tnx_is_mode_vtable((uintptr_t)vtable, &vtableRva);
+
+    if (g_base && (uintptr_t)vtable > g_base) vtableOff = (uintptr_t)vtable - g_base;
 
     tnx_read_i32(object + TNX_MODE_MODEVAR_OFF, &variation);
     tnx_read_ptr(object + TNX_MODE_MANAGER_OFF, &manager);
@@ -1656,8 +1664,9 @@ static void tnx_report_mode_hit(const char *tag, uintptr_t slot, uintptr_t objec
     tnx_read_ptr((uintptr_t)array, &entry);
     tnx_read_bytes(object, words, sizeof(words));
 
-    tnx_logf("modehit[%s] slot=%p mode=%p vtRva=%#llx shape=%d var=%d mgr=%p mgrVtRva=%#llx mgrShape=%d array=%p entry0=%p count=%d",
-             tag, (void *)slot, (void *)object, (unsigned long long)vtableRva,
+    tnx_logf("modehit[%s] slot=%p mode=%p vt=%p vtOff=%#llx inList=%d shape=%d var=%d mgr=%p mgrVtRva=%#llx mgrShape=%d array=%p entry0=%p count=%d",
+             tag, (void *)slot, (void *)object, vtable, (unsigned long long)vtableOff,
+             tnx_is_mode_vtable((uintptr_t)vtable, NULL) ? 1 : 0,
              tnx_mode_shape(object) ? 1 : 0, variation,
              manager, (unsigned long long)managerVtableRva,
              tnx_manager_shape((uintptr_t)manager) ? 1 : 0, array, entry, count);
@@ -1698,26 +1707,41 @@ static void tnx_scan_globals_for_mode(const char *name) {
     }
 
     int hits = 0;
+    int vtHits = 0;
+    int shapeHits = 0;
 
     for (size_t offset = 0; offset + sizeof(void *) <= span; offset += sizeof(void *)) {
         uintptr_t object = 0;
         void *vtable = NULL;
+        BOOL vtMatch = NO;
+        BOOL shape = NO;
 
         memcpy(&object, bytes + offset, sizeof(object));
 
         if (!tnx_pointer_plausible(object)) continue;
         if (!tnx_read_ptr(object, &vtable)) continue;
-        if (!tnx_is_mode_vtable((uintptr_t)vtable, NULL)) continue;
+        if (!vtable) continue;
+
+        vtMatch = tnx_is_mode_vtable((uintptr_t)vtable, NULL);
+
+        if (vtMatch || tnx_image_contains((uintptr_t)vtable)) {
+            shape = tnx_mode_shape(object);
+        }
+
+        if (!vtMatch && !shape) continue;
 
         hits++;
         g_mode_matches++;
+
+        if (vtMatch) vtHits++;
+        if (shape) shapeHits++;
 
         if (g_mode_strict_logs < 6) {
             g_mode_strict_logs++;
             tnx_report_mode_hit("globals", lo + offset, object);
         }
 
-        if (!g_mode_object) {
+        if (shape && !g_mode_object) {
             g_mode_object = object;
             g_mode_source = lo + offset;
         }
@@ -1725,7 +1749,7 @@ static void tnx_scan_globals_for_mode(const char *name) {
 
     free(bytes);
 
-    tnx_logf("votescan %s hits=%d", name, hits);
+    tnx_logf("votescan %s hits=%d vt=%d shape=%d", name, hits, vtHits, shapeHits);
 }
 
 static void tnx_scan_heap_for_mode(void) {
@@ -1733,6 +1757,7 @@ static void tnx_scan_heap_for_mode(void) {
     size_t scanned = 0;
     int regions = 0;
     int hits = 0;
+    int shapeHits = 0;
 
     while (regions < 8192 && scanned < (512ull * 1024ull * 1024ull)) {
         vm_size_t size = 0;
@@ -1776,12 +1801,18 @@ static void tnx_scan_heap_for_mode(void) {
                         hits++;
                         g_mode_matches++;
 
+                        uintptr_t object = cursor + offset;
+
+                        if (!tnx_mode_shape(object)) continue;
+
+                        shapeHits++;
+
                         if (g_mode_relaxed_logs < 8) {
                             g_mode_relaxed_logs++;
-                            tnx_report_mode_hit("heap", 0, cursor + offset);
+                            tnx_report_mode_hit("heap", 0, object);
                         }
 
-                        if (!g_mode_object) g_mode_object = cursor + offset;
+                        if (!g_mode_object) g_mode_object = object;
                     }
                 }
 
@@ -1803,7 +1834,7 @@ static void tnx_scan_heap_for_mode(void) {
         address = (vm_address_t)next;
     }
 
-    tnx_logf("votescan heap scanned=%zu regions=%d hits=%d", scanned, regions, hits);
+    tnx_logf("votescan heap scanned=%zu regions=%d hits=%d shape=%d", scanned, regions, hits, shapeHits);
 }
 
 static void tnx_locate_battle_mode(void) {

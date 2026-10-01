@@ -565,7 +565,7 @@ static BOOL h_isstate(void *self, int state) {
     return result;
 }
 
-static void dump_objc_inventory(void) {
+static void dump_objc_inventory(const char *tag) {
     int total = objc_getClassList(NULL, 0);
 
     if (total <= 0) {
@@ -573,58 +573,50 @@ static void dump_objc_inventory(void) {
         return;
     }
 
-    if (total > 60000) total = 60000;
+    if (total > 200000) total = 200000;
 
     Class *classes = (Class *)malloc(sizeof(Class) * (size_t)total);
     if (!classes) return;
 
     int count = objc_getClassList(classes, total);
-
-    static const char *wanted[] = {
-        "Gui", "HomeMode", "GameState", "Sprite", "Messenger",
-        "Logic", "Floater", "Scene", "Fight", "Lobby", NULL
-    };
-
+    int inGame = 0;
     int dumped = 0;
 
-    for (int i = 0; i < count && dumped < 12; i++) {
+    for (int i = 0; i < count; i++) {
         const char *name = class_getName(classes[i]);
         if (!name) continue;
 
-        BOOL match = NO;
-        for (int w = 0; wanted[w]; w++) {
-            if (strstr(name, wanted[w])) { match = YES; break; }
-        }
-        if (!match) continue;
-
         uintptr_t cls = (uintptr_t)classes[i];
 
-        tlog([NSString stringWithFormat:@"objc class %s image=%@",
-              name, tnx_image_owns_address(g_base, cls) ? @"game" : @"other"]);
+        if (!tnx_image_owns_address(g_base, cls)) continue;
+
+        inGame++;
+
+        if (dumped >= 120) continue;
+        dumped++;
 
         unsigned mcount = 0;
         Method *methods = class_copyMethodList(classes[i], &mcount);
 
+        tlog([NSString stringWithFormat:@"objc[%s] %s methods=%u",
+              tag ? tag : "?", name, mcount]);
+
         if (methods) {
-            for (unsigned m = 0; m < mcount && m < 40; m++) {
+            for (unsigned m = 0; m < mcount && m < 12; m++) {
                 const char *sel = sel_getName(method_getName(methods[m]));
-                const char *types = method_getTypeEncoding(methods[m]);
-                tlog([NSString stringWithFormat:@"   -[%s %s] types=%s",
-                      name, sel ? sel : "?", types ? types : "?"]);
+                tlog([NSString stringWithFormat:@"     -[%s %s]", name, sel ? sel : "?"]);
             }
 
-            if (mcount > 40) {
-                tlog([NSString stringWithFormat:@"   ... %u more", mcount - 40]);
+            if (mcount > 12) {
+                tlog([NSString stringWithFormat:@"     ... %u more", mcount - 12]);
             }
 
             free(methods);
         }
-
-        dumped++;
     }
 
-    tlog([NSString stringWithFormat:@"objc: %d classes total, %d candidates dumped",
-          count, dumped]);
+    tlog([NSString stringWithFormat:@"objc[%s]: %d classes, %d in game image, %d listed",
+          tag ? tag : "?", count, inGame, dumped]);
 
     free(classes);
 }
@@ -724,7 +716,7 @@ static void setup(void) {
     hook_log_prot("region floaterD", g_addr_floater_def);
     hook_log_prot("region spriteAdd", g_addr_sprite_add);
 
-    dump_objc_inventory();
+    dump_objc_inventory("early");
 
     resolve_gui_getters();
 
@@ -852,6 +844,16 @@ static void start(void) {
         tlog([NSString stringWithFormat:@"host=%@ aggressive=%d",
               tnx_host_description(), g_aggressive ? 1 : 0]);
         poll_for_game(0);
+    });
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        if (g_base) dump_objc_inventory("10s");
+    });
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(35 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        if (g_base) dump_objc_inventory("35s");
     });
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_SEC)),

@@ -2,7 +2,6 @@
 
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
-#import <objc/message.h>
 #import <mach/mach.h>
 #import <mach/vm_map.h>
 #import <mach-o/dyld.h>
@@ -378,7 +377,11 @@ static inline Class tnx_object_class(void *object) {
     if (address & 7) return Nil;
     if (!tnx_addr_readable(address, sizeof(void *))) return Nil;
 
+#if __has_feature(objc_arc)
+    return object_getClass((__bridge id)object);
+#else
     return object_getClass((id)object);
+#endif
 }
 
 static inline NSString *tnx_object_class_name(void *object) {

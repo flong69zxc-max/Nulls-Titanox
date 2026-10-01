@@ -24,6 +24,7 @@ bool brk_install(void *target, void *replacement);
 void *brk_original_ptr(void *target);
 bool brk_remove(void *target);
 bool brk_selftest(void);
+bool brk_selftest_at(uintptr_t hint);
 int brk_slot_limit(void);
 int brk_active_count(void);
 void brk_log_state(void);
@@ -568,7 +569,7 @@ static BOOL arm_target(const char *label, uintptr_t address, void *replacement, 
         return NO;
     }
 
-    if (!tnx_callable_target(g_base, address)) {
+    if (!tnx_patchable_target(g_base, address)) {
         tlog([NSString stringWithFormat:@"install %-10s rejected addr=%p desc=%@",
               label, (void *)address, describe_op0(address)]);
         return NO;
@@ -628,7 +629,7 @@ static void setup(void) {
 
     hook_verify_encryption((void *)g_base);
 
-    g_selftest_ok = brk_selftest() ? 1 : 0;
+    g_selftest_ok = brk_selftest_at(g_base) ? 1 : 0;
 
     tlog([NSString stringWithFormat:@"slots=%d selftest=%d",
           brk_slot_limit(), g_selftest_ok]);

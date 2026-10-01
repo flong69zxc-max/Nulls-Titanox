@@ -44,6 +44,7 @@ int hook_probe(uintptr_t target);
 }
 
 static void tnx_wx_probe(void *target);
+static void tnx_slot_scan_start(void);
 
 #define LOG_MAX_BYTES (512 * 1024)
 
@@ -1359,6 +1360,10 @@ static void setup(void) {
 
     tnx_wx_probe((void *)(g_base + RVA_STAGE_ADDCHILD));
 
+    if (getenv("TNX_SLOT_SCAN")) {
+        tnx_slot_scan_start();
+    }
+
     tlog([NSString stringWithFormat:@"slots=%d live=%d selftest=%d installed=%d",
           brk_slot_limit(), brk_active_count(), g_selftest_ok ? 1 : 0, ok ? 1 : 0]);
 
@@ -1802,4 +1807,183 @@ static void tnx_wx_probe(void *target) {
 
         mach_port_deallocate(mach_task_self(), th);
     }
+}
+
+static int tnx_pac_equal(uintptr_t value, uintptr_t target) {
+    if (value == target) return 1;
+    if ((value & 0x0000FFFFFFFFFFFFULL) == target) return 1;
+    return 0;
+}
+
+#define TNX_SCAN_MAX 16
+
+static uintptr_t g_scan_addr[TNX_SCAN_MAX];
+static void     *g_scan_repl[TNX_SCAN_MAX];
+static int       g_scan_n = 0;
+static uintptr_t g_img_lo = 0;
+static uintptr_t g_img_hi = 0;
+
+static void tnx_img_range(void) {
+    if (g_img_lo) return;
+
+    vm_address_t r = (vm_address_t)g_base;
+    vm_size_t size = 0;
+    vm_region_basic_info_data_64_t info;
+    mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
+    mach_port_t object = MACH_PORT_NULL;
+
+    if (vm_region_64(mach_task_self(), &r, &size, VM_REGION_BASIC_INFO_64,
+                     (vm_region_info_t)&info, &count, &object) == KERN_SUCCESS) {
+        g_img_lo = (uintptr_t)r;
+        g_img_hi = (uintptr_t)r + size;
+    }
+
+    if (object != MACH_PORT_NULL) mach_port_deallocate(mach_task_self(), object);
+
+    tlog([NSString stringWithFormat:@"slot scan image range %p-%p", (void *)g_img_lo, (void *)g_img_hi]);
+}
+
+static int tnx_in_image(uintptr_t v) {
+    uintptr_t p = v & 0x0000FFFFFFFFFFFFULL;
+    return (g_img_lo && p >= g_img_lo && p < g_img_hi) ? 1 : 0;
+}
+
+static int tnx_table_like(uintptr_t *table, size_t index, size_t count) {
+    if (index + 1 < count && tnx_in_image(table[index + 1])) return 1;
+    if (index > 0 && tnx_in_image(table[index - 1])) return 1;
+    return 0;
+}
+
+static int tnx_scan_pass(int install) {
+    tnx_img_range();
+
+    const char *cap_s = getenv("TNX_SLOT_CAP_MB");
+    const unsigned long long cap = cap_s ? (unsigned long long)atoi(cap_s) * 1024ULL * 1024ULL : 0;
+    const int promote = getenv("TNX_SLOT_PROMOTE") ? 1 : 0;
+
+    vm_address_t addr = 0;
+    int candidates = 0;
+    int installed = 0;
+    int regions = 0;
+    int promoted = 0;
+    unsigned long long scanned = 0;
+
+    for (;;) {
+        vm_size_t size = 0;
+        vm_region_basic_info_data_64_t info;
+        mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
+        mach_port_t object = MACH_PORT_NULL;
+
+        kern_return_t kr = vm_region_64(mach_task_self(), &addr, &size, VM_REGION_BASIC_INFO_64,
+                                        (vm_region_info_t)&info, &count, &object);
+
+        if (object != MACH_PORT_NULL) mach_port_deallocate(mach_task_self(), object);
+        if (kr != KERN_SUCCESS) break;
+        if (size == 0) { addr += 0x1000; continue; }
+
+        vm_prot_t p = info.protection;
+        vm_prot_t m = info.max_protection;
+
+        int readable = (p & VM_PROT_READ) != 0;
+        int noexec = (p & VM_PROT_EXECUTE) == 0;
+        int may_write = (m & VM_PROT_WRITE) != 0;
+        int writable = (p & VM_PROT_WRITE) != 0;
+
+        if (readable && noexec && may_write) {
+            if (!writable && promote) {
+                kern_return_t pk = vm_protect(mach_task_self(), addr, size, FALSE, VM_PROT_READ | VM_PROT_WRITE);
+                if (pk == KERN_SUCCESS) {
+                    writable = 1;
+                    promoted++;
+                } else if (promoted < 4) {
+                    tlog([NSString stringWithFormat:@"slot scan promote failed addr=%p kr=%d", (void *)addr, pk]);
+                }
+            }
+
+            if (writable && (cap == 0 || scanned < cap)) {
+                regions++;
+
+                uintptr_t *table = (uintptr_t *)addr;
+                unsigned long long room = cap ? (cap - scanned) : (unsigned long long)size;
+                unsigned long long take = (size < room) ? (unsigned long long)size : room;
+                size_t n = (size_t)(take / 8);
+
+                for (size_t i = 0; i < n; i++) {
+                    uintptr_t value = table[i];
+
+                    for (int t = 0; t < g_scan_n; t++) {
+                        if (!tnx_pac_equal(value, g_scan_addr[t])) continue;
+
+                        candidates++;
+
+                        if (candidates <= 40) {
+                            tlog([NSString stringWithFormat:@"slot candidate target=%p slot=%p value=%p region=%p off=0x%zx",
+                                  (void *)g_scan_addr[t], (void *)&table[i], (void *)value,
+                                  (void *)addr, (size_t)((uintptr_t)&table[i] - (uintptr_t)addr)]);
+                        }
+
+                        if (install && g_scan_repl[t] && !installed &&
+                            ((uintptr_t)&table[i] & 7) == 0 && tnx_table_like(table, i, n)) {
+                            table[i] = (uintptr_t)g_scan_repl[t];
+                            installed++;
+                            tlog([NSString stringWithFormat:@"slot hook wrote target=%p slot=%p -> %p",
+                                  (void *)g_scan_addr[t], (void *)&table[i], g_scan_repl[t]]);
+                        }
+                    }
+                }
+
+                scanned += take;
+            }
+        }
+
+        addr += size;
+    }
+
+    tlog([NSString stringWithFormat:@"slot scan pass install=%d candidates=%d installed=%d regions=%d promoted=%d scanned=%lluKB",
+          install, candidates, installed, regions, promoted, scanned / 1024]);
+
+    return candidates;
+}
+
+static void *tnx_scan_thread(void *arg) {
+    usleep(3000000);
+
+    tlog([NSString stringWithFormat:@"slot scan begin targets=%d", g_scan_n]);
+
+    tnx_scan_pass(0);
+
+    if (getenv("TNX_SLOT_INSTALL")) {
+        tnx_scan_pass(1);
+    }
+
+    tlog(@"slot scan done");
+
+    return NULL;
+}
+
+static void tnx_slot_scan_start(void) {
+    if (g_scan_n == 0) {
+        g_scan_addr[g_scan_n] = g_addr_recv;        g_scan_repl[g_scan_n] = (void *)h_recv;        g_scan_n++;
+        g_scan_addr[g_scan_n] = g_addr_stage_add;   g_scan_repl[g_scan_n] = (void *)h_stage;       g_scan_n++;
+        g_scan_addr[g_scan_n] = g_addr_floater_def; g_scan_repl[g_scan_n] = (void *)h_floater_def; g_scan_n++;
+        g_scan_addr[g_scan_n] = g_addr_home;        g_scan_repl[g_scan_n] = (void *)h_home;        g_scan_n++;
+        g_scan_addr[g_scan_n] = g_addr_floater;     g_scan_repl[g_scan_n] = (void *)h_floater;     g_scan_n++;
+        g_scan_addr[g_scan_n] = g_addr_sprite_add;  g_scan_repl[g_scan_n] = (void *)h_sprite;      g_scan_n++;
+        g_scan_addr[g_scan_n] = g_addr_isstate;     g_scan_repl[g_scan_n] = (void *)h_isstate;     g_scan_n++;
+    }
+
+    pthread_t th;
+    pthread_attr_t attr;
+
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, 128 * 1024);
+
+    if (pthread_create(&th, &attr, tnx_scan_thread, NULL) == 0) {
+        pthread_detach(th);
+        tlog([NSString stringWithFormat:@"slot scan thread started targets=%d", g_scan_n]);
+    } else {
+        tlog(@"slot scan thread failed");
+    }
+
+    pthread_attr_destroy(&attr);
 }

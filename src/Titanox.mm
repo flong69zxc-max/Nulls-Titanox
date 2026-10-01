@@ -833,7 +833,9 @@ static tnx_objc_hook_t *tnx_objc_lookup(id self, SEL _cmd) {
     return NULL;
 }
 
-static id tnx_objc_replacement(id self, SEL _cmd, ...) {
+typedef void (*tnx_objc_imp_t)(id, SEL);
+
+static void tnx_objc_replacement(id self, SEL _cmd) {
     tnx_objc_hook_t *hook = tnx_objc_lookup(self, _cmd);
 
     if (hook) {
@@ -847,11 +849,8 @@ static id tnx_objc_replacement(id self, SEL _cmd, ...) {
     }
 
     if (hook && hook->original) {
-        IMP original = hook->original;
-        original(self, _cmd);
+        reinterpret_cast<tnx_objc_imp_t>(hook->original)(self, _cmd);
     }
-
-    return nil;
 }
 
 static int tnx_objc_arm(const char *clsName, const char *selName) {
@@ -878,7 +877,7 @@ static int tnx_objc_arm(const char *clsName, const char *selName) {
     for (int i = 0; i < OBJC_HOOK_MAX; i++) {
         if (g_objc_hooks[i].used) continue;
 
-        IMP previous = method_setImplementation(method, tnx_objc_replacement);
+        IMP previous = method_setImplementation(method, reinterpret_cast<IMP>(tnx_objc_replacement));
 
         if (!previous) return 0;
 

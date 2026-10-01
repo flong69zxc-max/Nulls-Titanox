@@ -2,47 +2,84 @@ name: Titanox
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: macos-14
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install tools
+        run: |
+          set -euo pipefail
+          brew list ldid >/dev/null 2>&1 || brew install ldid
+          brew list make >/dev/null 2>&1 || brew install make
+          echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
+
       - uses: actions/cache@v4
         with:
           path: theos
-          key: theos-${{ runner.os }}
+          key: theos-${{ runner.os }}-diagnostics-v2
 
       - name: Setup Theos
         run: |
-          [ -d theos ] || git clone --recursive --depth 1 --shallow-submodules https://github.com/theos/theos.git theos
-          brew install ldid make
-          echo "THEOS=$PWD/theos" >> $GITHUB_ENV
-          echo "$PWD/theos/bin" >> $GITHUB_PATH
-          echo "/opt/homebrew/opt/make/libexec/gnubin" >> $GITHUB_PATH
+          set -euo pipefail
+          if [ ! -d theos/.git ]; then
+            git clone --recursive --depth 1 --shallow-submodules \
+              https://github.com/theos/theos.git theos
+          fi
+          git -C theos submodule update --init --recursive
+          echo "THEOS=$PWD/theos" >> "$GITHUB_ENV"
+          echo "$PWD/theos/bin" >> "$GITHUB_PATH"
+          git -C theos rev-parse HEAD
 
       - name: Get Titanox
         run: |
-          rm -rf deps/Titanox
-          git clone --depth 1 https://github.com/flong69zxc-max/Titanox.git deps/Titanox
-          rm -rf deps/Titanox/.git
+          set -euo pipefail
+          mkdir -p deps
+          git clone --depth 1 \
+            https://github.com/flong69zxc-max/Titanox.git deps/Titanox
+          git rev-parse HEAD
+          git -C deps/Titanox rev-parse HEAD
 
       - name: Build
         run: |
-          gmake -j$(sysctl -n hw.ncpu) ARCHS=arm64 DEBUG=0 FINALPACKAGE=1
+          set -euo pipefail
+          gmake clean
+          gmake -j"$(sysctl -n hw.ncpu)" \
+            ARCHS=arm64 DEBUG=0 FINALPACKAGE=1
 
-      - name: Package
+      - name: Collect artifact
         run: |
+          set -euo pipefail
           mkdir -p out
-          find .theos -type f -name '*.dylib' ! -path '*.dSYM*' -exec cp {} out/Titanox.dylib \;
+          dylib="$(find .theos -type f \
+            -name Titanox.dylib \
+            ! -path '*.dSYM/*' \
+            | sort | head -n 1)"
+          test -n "$dylib"
+          cp "$dylib" out/Titanox.dylib
+          xcrun lipo -info out/Titanox.dylib
+          xcrun otool -L out/Titanox.dylib
+          shasum -a 256 out/Titanox.dylib
+          {
+            printf 'Nulls-Titanox '
+            git rev-parse HEAD
+            printf 'Titanox '
+            git -C deps/Titanox rev-parse HEAD
+          } > out/build-commits.txt
 
       - uses: actions/upload-artifact@v4
         with:
           name: Titanox
-          path: out/Titanox.dylib
+          path: |
+            out/Titanox.dylib
+            out/build-commits.txt
           if-no-files-found: error

@@ -52,6 +52,8 @@ void brk_diag_log(const char *format, ...);
 #define GUI_RETRY_COUNT 3
 #define GUI_RETRY_NS 1000000L
 #define GUI_LOG_LIMIT 20
+#define GAME_POLL_MAX_TICKS 1200
+#define GAME_POLL_STABLE_TICKS 3
 
 typedef void  (*fn_msg_t)(void *, void *);
 typedef void *(*fn_void_ret_t)(void);
@@ -128,6 +130,15 @@ static void tlog(NSString *s) {
     tlog_raw(s.UTF8String);
 }
 
+static volatile int g_reject_logged = 0;
+
+static void note_reject(const char *path, const char *reason) {
+    if (g_reject_logged >= 4) return;
+    g_reject_logged++;
+    tlog([NSString stringWithFormat:@"image candidate rejected: %s (%s)",
+          path ? path : "?", reason]);
+}
+
 static BOOL find_game_image(uintptr_t *out_base) {
     if (!out_base) return NO;
 
@@ -140,18 +151,28 @@ static BOOL find_game_image(uintptr_t *out_base) {
             (const struct mach_header_64 *)_dyld_get_image_header(i);
 
         if (!path || !header) continue;
-        if (!tnx_addr_readable((uintptr_t)header, sizeof(struct mach_header_64))) continue;
-        if (header->magic != MH_MAGIC_64) continue;
-
-        if (strstr(path, "/System/")) continue;
-        if (strstr(path, "/usr/lib/")) continue;
-        if (strstr(path, ".framework/")) continue;
-        if (strstr(path, ".dylib")) continue;
-        if (tnx_name_marks_host_runtime(path)) continue;
         if (!strstr(path, ".app/")) continue;
+        if (strstr(path, "/System/")) { note_reject(path, "system"); continue; }
+        if (strstr(path, "/usr/lib/")) { note_reject(path, "usr-lib"); continue; }
+        if (strstr(path, ".framework/")) { note_reject(path, "framework"); continue; }
+        if (strstr(path, ".dylib")) { note_reject(path, "dylib"); continue; }
+        if (tnx_name_marks_host_runtime(path)) { note_reject(path, "host-runtime"); continue; }
+        if (!tnx_addr_readable((uintptr_t)header, sizeof(struct mach_header_64))) {
+            note_reject(path, "header-unreadable");
+            continue;
+        }
+        if (header->magic != MH_MAGIC_64) { note_reject(path, "bad-magic"); continue; }
+        if (header->ncmds == 0 || header->ncmds > 4096) { note_reject(path, "bad-ncmds"); continue; }
 
-        if (header->ncmds == 0 || header->ncmds > 4096) continue;
-        if (!tnx_image_text_contains((uintptr_t)header, (uintptr_t)header + 0x4000)) continue;
+        uintptr_t slide = tnx_image_slide((uintptr_t)header);
+
+        if (!tnx_image_text_contains((uintptr_t)header, (uintptr_t)header + 0x4000)) {
+            note_reject(path, "text-check");
+            continue;
+        }
+
+        tlog([NSString stringWithFormat:@"image accepted: %s base=%p slide=0x%llx",
+              path, (void *)header, (unsigned long long)slide]);
 
         *out_base = (uintptr_t)header;
         return YES;
@@ -665,14 +686,15 @@ static UIViewController *top_vc(void) {
 static void show_stats(NSString *title) {
     NSString *msg = [NSString stringWithFormat:
         @"host=%@ base=%p\nrecv=%d home=%d\nfloater=%d floaterD=%d\nisState=%d sprite=%d\n"
-        @"floater tries=%d ok=%d fail=%d\nslots=%d live=%d",
+        @"floater tries=%d ok=%d fail=%d\nslots=%d live=%d selftest=%d\nimages=%u",
         tnx_host_description(),
         (void *)g_base,
         g_hits_recv, g_hits_home,
         g_hits_floater, g_hits_floater_def,
         g_hits_isstate, g_hits_sprite,
         g_floater_attempts, g_floater_success, g_floater_fail,
-        brk_slot_limit(), brk_active_count()];
+        brk_slot_limit(), brk_active_count(), g_selftest_ok,
+        (unsigned)_dyld_image_count()];
 
     tlog([NSString stringWithFormat:@"STATS %@ | %@",
           title, [msg stringByReplacingOccurrencesOfString:@"\n" withString:@" "]]);
@@ -698,31 +720,33 @@ static void poll_for_game(int tick);
 static void poll_for_game(int tick) {
     if (g_setup_done) return;
 
-    if (tick > 240) {
-        tlog(@"game image never stabilised, aborting");
+    if (tick > GAME_POLL_MAX_TICKS) {
+        tlog([NSString stringWithFormat:@"game image not found after %d polls (images=%u)",
+              GAME_POLL_MAX_TICKS, (unsigned)_dyld_image_count()]);
         return;
     }
 
     uintptr_t base = 0;
     BOOL found = find_game_image(&base);
 
-    static uint32_t lastCount = 0;
     static int stableTicks = 0;
 
-    uint32_t count = _dyld_image_count();
-
-    if (found && count == lastCount) {
+    if (found) {
         stableTicks++;
     } else {
         stableTicks = 0;
-        lastCount = count;
     }
 
-    if (found && stableTicks >= 4) {
+    if (found && stableTicks >= GAME_POLL_STABLE_TICKS) {
         g_base = base;
         setup();
         show_stats(@"armed");
         return;
+    }
+
+    if (!found && (tick % 40) == 0) {
+        tlog([NSString stringWithFormat:@"poll %d: no game image yet (images=%u)",
+              tick, (unsigned)_dyld_image_count()]);
     }
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),

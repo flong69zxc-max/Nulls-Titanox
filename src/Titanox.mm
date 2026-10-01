@@ -148,15 +148,24 @@ static __thread BOOL g_inside_hook = NO;
 #define TNX_SNAPSHOT_BYTES 0x140
 #define TNX_SNAPSHOT_DELAY 1.2
 #define TNX_VOTESCAN_INTERVAL 1.0
-#define TNX_VOTESCAN_ATTEMPTS 30
+#define TNX_VOTESCAN_ATTEMPTS 240
+#define TNX_VOTESCAN_HEAP_EVERY 10
+#define TNX_VOTESCAN_HEARTBEAT 30
 #define TNX_HEAP_CHUNK (8u * 1024u * 1024u)
 
+/* Engine vtables live in __DATA_CONST (__const), never in __DATA: verified offline,
+   all 35 candidates sit at 0x10012c8-0x1002d18 which is inside __DATA_CONST. */
+#define TNX_VTABLE_SEGMENT "__DATA_CONST"
+
 static uintptr_t g_mode_object = 0;
+static uintptr_t g_mode_tentative = 0;
+static BOOL g_mode_strong = NO;
 static uintptr_t g_mode_source = 0;
 static int g_mode_matches = 0;
 static BOOL g_mode_scanned = NO;
 static int g_mode_relaxed = 0;
 static int g_mode_strict_logs = 0;
+static int g_mode_near_logs = 0;
 static int g_mode_relaxed_logs = 0;
 static int g_votescan_attempts = 0;
 static double g_votescan_last = 0.0;
@@ -1568,6 +1577,92 @@ static BOOL tnx_image_contains(uintptr_t value) {
     return NO;
 }
 
+static const char *tnx_image_segment_name(uintptr_t value) {
+    if (!g_base || !value) return NULL;
+    if (!tnx_addr_readable(g_base, sizeof(struct mach_header_64))) return NULL;
+
+    const struct mach_header_64 *header = (const struct mach_header_64 *)g_base;
+
+    if (header->magic != MH_MAGIC_64) return NULL;
+
+    const uint8_t *cursor = (const uint8_t *)(header + 1);
+    const uint8_t *limit = cursor + header->sizeofcmds;
+    uintptr_t slide = tnx_image_slide(g_base);
+
+    for (uint32_t i = 0; i < header->ncmds; i++) {
+        if (cursor + sizeof(struct load_command) > limit) return NULL;
+
+        const struct load_command *command = (const struct load_command *)cursor;
+
+        if (command->cmdsize < sizeof(struct load_command)) return NULL;
+        if (cursor + command->cmdsize > limit) return NULL;
+
+        if (command->cmd == LC_SEGMENT_64 && command->cmdsize >= sizeof(struct segment_command_64)) {
+            const struct segment_command_64 *segment = (const struct segment_command_64 *)command;
+
+            if (segment->vmsize) {
+                uintptr_t start = slide + (uintptr_t)segment->vmaddr;
+
+                if (value >= start && value < (start + (uintptr_t)segment->vmsize)) {
+                    return segment->segname;
+                }
+            }
+        }
+
+        cursor += command->cmdsize;
+    }
+
+    return NULL;
+}
+
+/* Engine vtables are const data: they sit in __DATA_CONST, not in __DATA. */
+static BOOL tnx_vtable_shaped(uintptr_t value) {
+    const char *segment = tnx_image_segment_name(value);
+
+    if (!segment) return NO;
+    if (value % 8) return NO;
+
+    return strcmp(segment, TNX_VTABLE_SEGMENT) == 0;
+}
+
+/* A real engine instance is heap allocated: its address can never be inside a
+   mapped image segment. This is what rejects the static tables in __DATA. */
+static BOOL tnx_heap_resident(uintptr_t value) {
+    if (!value) return NO;
+
+    return tnx_image_segment_name(value) ? NO : YES;
+}
+
+static BOOL tnx_gameobject_shape(uintptr_t object) {
+    void *vtable = NULL;
+    int32_t globalId = 0;
+    int32_t team = 0;
+
+    if (!tnx_pointer_plausible(object)) return NO;
+    if (!tnx_heap_resident(object)) return NO;
+    if (!tnx_read_ptr(object, &vtable)) return NO;
+    if (!tnx_vtable_shaped((uintptr_t)vtable)) return NO;
+    if (!tnx_read_i32(object + TNX_OBJ_GLOBALID_OFF, &globalId)) return NO;
+    if (globalId <= 0) return NO;
+    if (!tnx_read_i32(object + TNX_OBJ_TEAM_OFF, &team)) return NO;
+    if (team < 0 || team > 3) return NO;
+
+    return YES;
+}
+
+static BOOL tnx_instance_shaped(uintptr_t object) {
+    void *vtable = NULL;
+
+    if (!tnx_pointer_plausible(object)) return NO;
+    if (!tnx_heap_resident(object)) return NO;
+    if (!tnx_read_ptr(object, &vtable)) return NO;
+    if (!vtable) return NO;
+    if ((uintptr_t)vtable == object) return NO;
+    if (!tnx_vtable_shaped((uintptr_t)vtable)) return NO;
+
+    return YES;
+}
+
 static BOOL tnx_object_shaped(uintptr_t object) {
     void *vtable = NULL;
 
@@ -1583,35 +1678,51 @@ static BOOL tnx_manager_shape(uintptr_t manager) {
     void *probe = NULL;
     int32_t count = 0;
 
-    if (!tnx_object_shaped(manager)) return NO;
+    /* No vtable check on the manager: per the verified disassembly of
+       LogicGameObjectManager its word at +0x0 is the object array, not a vtable.
+       Only residency plus array/count shape is required here. */
+    if (!tnx_heap_resident(manager)) return NO;
     if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array)) return NO;
     if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) return NO;
     if (count < 0 || count > 512) return NO;
 
     if (count > 0) {
-        if (!tnx_pointer_plausible((uintptr_t)array)) return NO;
+        if (!tnx_heap_resident((uintptr_t)array)) return NO;
         if (!tnx_read_ptr((uintptr_t)array, &probe)) return NO;
-        if (!tnx_pointer_plausible((uintptr_t)probe)) return NO;
+        if (!tnx_heap_resident((uintptr_t)probe)) return NO;
         if (count > 1) {
             if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)(count - 1) * sizeof(void *), &probe)) return NO;
-            if (!tnx_pointer_plausible((uintptr_t)probe)) return NO;
+            if (!tnx_heap_resident((uintptr_t)probe)) return NO;
         }
     }
 
     return YES;
 }
 
-static BOOL tnx_mode_shape(uintptr_t mode) {
-    int32_t variation = 0;
+/* 0 = not a battle mode, 1 = structure plausible, 2 = confirmed by game-object layout. */
+static int tnx_mode_score(uintptr_t mode) {
     void *manager = NULL;
+    void *array = NULL;
+    void *first = NULL;
+    int32_t variation = 0;
+    int32_t count = 0;
 
-    if (!tnx_object_shaped(mode)) return NO;
-    if (!tnx_read_i32(mode + TNX_MODE_MODEVAR_OFF, &variation)) return NO;
-    if (variation < 0 || variation > 400) return NO;
-    if (!tnx_read_ptr(mode + TNX_MODE_MANAGER_OFF, &manager)) return NO;
-    if (!manager) return NO;
+    if (!tnx_instance_shaped(mode)) return 0;
 
-    return tnx_manager_shape((uintptr_t)manager);
+    if (!tnx_read_i32(mode + TNX_MODE_MODEVAR_OFF, &variation)) return 0;
+    if (variation < 0 || variation > 400) return 0;
+
+    if (!tnx_read_ptr(mode + TNX_MODE_MANAGER_OFF, &manager)) return 0;
+    if (!manager) return 0;
+    if (!tnx_manager_shape((uintptr_t)manager)) return 0;
+
+    if (!tnx_read_ptr((uintptr_t)manager + TNX_MGR_ARRAY_OFF, &array)) return 1;
+    if (!tnx_read_i32((uintptr_t)manager + TNX_MGR_COUNT_OFF, &count)) return 1;
+    if (count <= 0) return 1;
+    if (!tnx_heap_resident((uintptr_t)array)) return 1;
+    if (!tnx_read_ptr((uintptr_t)array, &first)) return 1;
+
+    return tnx_gameobject_shape((uintptr_t)first) ? 2 : 1;
 }
 
 static const uintptr_t g_mode_vtables[] = {
@@ -1642,6 +1753,9 @@ static void tnx_report_mode_hit(const char *tag, uintptr_t slot, uintptr_t objec
     uintptr_t vtableRva = 0;
     uintptr_t managerVtableRva = 0;
     uintptr_t vtableOff = 0;
+    const char *modeSeg = NULL;
+    const char *vtableSeg = NULL;
+    int score = 0;
     void *vtable = NULL;
     void *manager = NULL;
     void *managerVtable = NULL;
@@ -1655,6 +1769,10 @@ static void tnx_report_mode_hit(const char *tag, uintptr_t slot, uintptr_t objec
 
     if (g_base && (uintptr_t)vtable > g_base) vtableOff = (uintptr_t)vtable - g_base;
 
+    modeSeg = tnx_image_segment_name(object);
+    vtableSeg = tnx_image_segment_name((uintptr_t)vtable);
+    score = tnx_mode_score(object);
+
     tnx_read_i32(object + TNX_MODE_MODEVAR_OFF, &variation);
     tnx_read_ptr(object + TNX_MODE_MANAGER_OFF, &manager);
     tnx_read_ptr((uintptr_t)manager, &managerVtable);
@@ -1664,10 +1782,11 @@ static void tnx_report_mode_hit(const char *tag, uintptr_t slot, uintptr_t objec
     tnx_read_ptr((uintptr_t)array, &entry);
     tnx_read_bytes(object, words, sizeof(words));
 
-    tnx_logf("modehit[%s] slot=%p mode=%p vt=%p vtOff=%#llx inList=%d shape=%d var=%d mgr=%p mgrVtRva=%#llx mgrShape=%d array=%p entry0=%p count=%d",
-             tag, (void *)slot, (void *)object, vtable, (unsigned long long)vtableOff,
+    tnx_logf("modehit[%s] slot=%p mode=%p mdSeg=%s vt=%p vtSeg=%s vtOff=%#llx inList=%d score=%d var=%d mgr=%p mgr0Rva=%#llx mgrShape=%d array=%p entry0=%p count=%d",
+             tag, (void *)slot, (void *)object, modeSeg ? modeSeg : "-",
+             vtable, vtableSeg ? vtableSeg : "-", (unsigned long long)vtableOff,
              tnx_is_mode_vtable((uintptr_t)vtable, NULL) ? 1 : 0,
-             tnx_mode_shape(object) ? 1 : 0, variation,
+             score, variation,
              manager, (unsigned long long)managerVtableRva,
              tnx_manager_shape((uintptr_t)manager) ? 1 : 0, array, entry, count);
 
@@ -1709,47 +1828,69 @@ static void tnx_scan_globals_for_mode(const char *name) {
     int hits = 0;
     int vtHits = 0;
     int shapeHits = 0;
+    int strongHits = 0;
+    int nearMiss = 0;
 
     for (size_t offset = 0; offset + sizeof(void *) <= span; offset += sizeof(void *)) {
         uintptr_t object = 0;
         void *vtable = NULL;
         BOOL vtMatch = NO;
-        BOOL shape = NO;
+        int score = 0;
 
         memcpy(&object, bytes + offset, sizeof(object));
 
+        /* Cheap and decisive: a table entry inside __DATA is static storage, never a
+           heap instance. This is what removed the 99 false hits in __DATA. */
         if (!tnx_pointer_plausible(object)) continue;
+        if (!tnx_heap_resident(object)) continue;
         if (!tnx_read_ptr(object, &vtable)) continue;
         if (!vtable) continue;
 
         vtMatch = tnx_is_mode_vtable((uintptr_t)vtable, NULL);
 
-        if (vtMatch || tnx_image_contains((uintptr_t)vtable)) {
-            shape = tnx_mode_shape(object);
-        }
+        if (vtMatch || tnx_vtable_shaped((uintptr_t)vtable)) score = tnx_mode_score(object);
 
-        if (!vtMatch && !shape) continue;
+        if (score == 0 && !vtMatch) {
+            /* Heap pointer whose first word is an image pointer: a plausible C++ instance
+               that still failed the mode layout. Kept in the log so the next iteration
+               does not have to guess which check is too strict. */
+            if (tnx_object_shaped(object)) {
+                nearMiss++;
+
+                if (g_mode_near_logs < 3) {
+                    g_mode_near_logs++;
+                    tnx_report_mode_hit("near", lo + offset, object);
+                }
+            }
+
+            continue;
+        }
 
         hits++;
         g_mode_matches++;
 
         if (vtMatch) vtHits++;
-        if (shape) shapeHits++;
+        if (score >= 1) shapeHits++;
+        if (score >= 2) strongHits++;
 
         if (g_mode_strict_logs < 6) {
             g_mode_strict_logs++;
-            tnx_report_mode_hit("globals", lo + offset, object);
+            tnx_report_mode_hit(score >= 2 ? "strong" : (score == 1 ? "weak" : "vt"), lo + offset, object);
         }
 
-        if (shape && !g_mode_object) {
+        if (score >= 2 && !g_mode_object) {
             g_mode_object = object;
             g_mode_source = lo + offset;
+            g_mode_strong = YES;
+        } else if (score == 1 && !g_mode_tentative) {
+            g_mode_tentative = object;
         }
     }
 
     free(bytes);
 
-    tnx_logf("votescan %s hits=%d vt=%d shape=%d", name, hits, vtHits, shapeHits);
+    tnx_logf("votescan %s hits=%d vt=%d shape=%d strong=%d near=%d",
+             name, hits, vtHits, shapeHits, strongHits, nearMiss);
 }
 
 static void tnx_scan_heap_for_mode(void) {
@@ -1758,6 +1899,7 @@ static void tnx_scan_heap_for_mode(void) {
     int regions = 0;
     int hits = 0;
     int shapeHits = 0;
+    int strongHits = 0;
 
     while (regions < 8192 && scanned < (512ull * 1024ull * 1024ull)) {
         vm_size_t size = 0;
@@ -1802,17 +1944,24 @@ static void tnx_scan_heap_for_mode(void) {
                         g_mode_matches++;
 
                         uintptr_t object = cursor + offset;
+                        int score = tnx_mode_score(object);
 
-                        if (!tnx_mode_shape(object)) continue;
+                        if (score == 0) continue;
 
                         shapeHits++;
+                        if (score >= 2) strongHits++;
 
                         if (g_mode_relaxed_logs < 8) {
                             g_mode_relaxed_logs++;
-                            tnx_report_mode_hit("heap", 0, object);
+                            tnx_report_mode_hit(score >= 2 ? "heap+" : "heapw", 0, object);
                         }
 
-                        if (!g_mode_object) g_mode_object = object;
+                        if (score >= 2 && !g_mode_object) {
+                            g_mode_object = object;
+                            g_mode_strong = YES;
+                        } else if (score == 1 && !g_mode_tentative) {
+                            g_mode_tentative = object;
+                        }
                     }
                 }
 
@@ -1834,12 +1983,22 @@ static void tnx_scan_heap_for_mode(void) {
         address = (vm_address_t)next;
     }
 
-    tnx_logf("votescan heap scanned=%zu regions=%d hits=%d shape=%d", scanned, regions, hits, shapeHits);
+    tnx_logf("votescan heap scanned=%zu regions=%d hits=%d shape=%d strong=%d",
+             scanned, regions, hits, shapeHits, strongHits);
 }
 
 static void tnx_locate_battle_mode(void) {
-    if (g_mode_object) return;
-    if (g_votescan_attempts >= TNX_VOTESCAN_ATTEMPTS) return;
+    if (g_mode_strong) return;
+
+    if (g_votescan_attempts >= TNX_VOTESCAN_ATTEMPTS) {
+        if (!g_mode_object && g_mode_tentative) {
+            g_mode_object = g_mode_tentative;
+            tnx_logf("votescan exhausted: promoting provisional object=%p", (void *)g_mode_object);
+            tnx_report_mode_hit("prov", g_mode_tentative, g_mode_tentative);
+        }
+
+        return;
+    }
 
     double now = CFAbsoluteTimeGetCurrent();
 
@@ -1849,20 +2008,24 @@ static void tnx_locate_battle_mode(void) {
     g_votescan_attempts++;
 
     if (g_votescan_attempts == 1) {
-        tnx_logf("votescan candidates=%d interval=%.1f attempts=%d",
+        tnx_logf("votescan candidates=%d interval=%.1f attempts=%d heapEvery=%d",
                  (int)(sizeof(g_mode_vtables) / sizeof(g_mode_vtables[0]) - 1),
-                 (double)TNX_VOTESCAN_INTERVAL, TNX_VOTESCAN_ATTEMPTS);
+                 (double)TNX_VOTESCAN_INTERVAL, TNX_VOTESCAN_ATTEMPTS, TNX_VOTESCAN_HEAP_EVERY);
     }
 
     tnx_scan_globals_for_mode("__DATA");
 
-    if (!g_mode_object) tnx_scan_globals_for_mode("__DATA_CONST");
-    if (!g_mode_object && (g_votescan_attempts % 5) == 1) tnx_scan_heap_for_mode();
+    if (!g_mode_strong) tnx_scan_globals_for_mode("__DATA_CONST");
+    if (!g_mode_strong && (g_votescan_attempts % TNX_VOTESCAN_HEAP_EVERY) == 1) tnx_scan_heap_for_mode();
 
-    tnx_logf("votescan attempt=%d hits=%d object=%p global=%p",
-             g_votescan_attempts, g_mode_matches, (void *)g_mode_object, (void *)g_mode_source);
-
-    if (g_mode_object) tnx_report_mode_hit("found", g_mode_source, g_mode_object);
+    if (g_mode_strong) {
+        tnx_logf("votescan SUCCESS attempt=%d object=%p global=%p",
+                 g_votescan_attempts, (void *)g_mode_object, (void *)g_mode_source);
+        tnx_report_mode_hit("found", g_mode_source, g_mode_object);
+    } else if ((g_votescan_attempts % TNX_VOTESCAN_HEARTBEAT) == 0) {
+        tnx_logf("votescan alive attempt=%d/%d hits=%d tentative=%p",
+                 g_votescan_attempts, TNX_VOTESCAN_ATTEMPTS, g_mode_matches, (void *)g_mode_tentative);
+    }
 }
 
 static uintptr_t tnx_vtable_rva(void *object) {

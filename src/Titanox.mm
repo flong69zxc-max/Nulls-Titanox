@@ -14,7 +14,6 @@
 #import "libtitanox.h"
 #import "offsets.h"
 
-#define BCR_ON 0x1e5ULL
 #define LOG_MAX_BYTES (100 * 1024)
 
 static uintptr_t g_base = 0;
@@ -35,10 +34,7 @@ static volatile int g_hits_ldt_init = 0;
 static volatile int g_hits_char_ctor = 0;
 static volatile int g_hits_font_fmt = 0;
 static volatile int g_hits_mc_ctor = 0;
-static volatile int g_hits_getpid = 0;
-static volatile int g_hits_malloc = 0;
-static volatile int g_arm_ok = 0;
-static volatile int g_arm_fail = 0;
+static volatile int g_installed = 0;
 
 static void log_raw(const char *s) {
     if (!g_log) {
@@ -100,112 +96,13 @@ static BOOL find_game_image(uintptr_t *out_base, char *out_path, size_t cap) {
     return NO;
 }
 
-static BOOL is_pac_signed(uintptr_t addr) {
-#if __has_feature(ptrauth_calls)
-    if (!addr) return NO;
-    void *ptr = (void *)addr;
-    uintptr_t stripped = (uintptr_t)ptrauth_strip(ptr, ptrauth_key_function_pointer);
-    return (addr != stripped);
-#else
-    (void)addr;
-    return NO;
-#endif
-}
-
 static void log_target_info(const char *name, uintptr_t addr) {
     uint32_t op0 = *(volatile uint32_t *)addr;
     uint32_t op1 = *(volatile uint32_t *)(addr + 4);
     log_line([NSString stringWithFormat:
-              @"%@ addr=%p op0=%08x op1=%08x pac_signed=%d",
+              @"%@ addr=%p op0=%08x op1=%08x",
               [NSString stringWithUTF8String:name],
-              (void *)addr, op0, op1, is_pac_signed(addr)]);
-}
-
-static void dump_self_bvr(void) {
-    thread_t self = mach_thread_self();
-    arm_debug_state64_t st;
-    mach_msg_type_number_t cnt = ARM_DEBUG_STATE64_COUNT;
-    memset(&st, 0, sizeof(st));
-
-    kern_return_t kr = thread_get_state(self, ARM_DEBUG_STATE64,
-                                        (thread_state_t)&st, &cnt);
-    log_line([NSString stringWithFormat:@"--- self BVR (kr=%d) ---", kr]);
-    for (int k = 0; k < 6; k++) {
-        log_line([NSString stringWithFormat:
-                  @"  bvr[%d]=%p bcr=0x%x", k,
-                  (void *)st.__bvr[k], st.__bcr[k]]);
-    }
-    mach_port_deallocate(mach_task_self(), self);
-}
-
-static void manual_arm(void) {
-    task_t task = mach_task_self();
-    thread_act_array_t threads = NULL;
-    mach_msg_type_number_t count = 0;
-    if (task_threads(task, &threads, &count) != KERN_SUCCESS) return;
-
-    int ok = 0, fail = 0;
-    for (mach_msg_type_number_t i = 0; i < count; i++) {
-        arm_debug_state64_t st;
-        mach_msg_type_number_t cnt = ARM_DEBUG_STATE64_COUNT;
-        memset(&st, 0, sizeof(st));
-
-        int slot = 0;
-        uintptr_t targets[6] = {
-            g_stage_real, g_recv_real, g_ldt_init_real,
-            g_char_ctor_real, g_font_fmt_real, g_mc_ctor_real
-        };
-        for (int s = 0; s < 6 && slot < 6; s++) {
-            if (targets[s]) {
-                st.__bvr[slot] = targets[s];
-                st.__bcr[slot] = (uint32_t)BCR_ON;
-                slot++;
-            }
-        }
-
-        kern_return_t kr = thread_set_state(threads[i], ARM_DEBUG_STATE64,
-                                            (thread_state_t)&st, cnt);
-        if (kr == KERN_SUCCESS) ok++;
-        else fail++;
-
-        mach_port_deallocate(task, threads[i]);
-    }
-    vm_deallocate(task, (vm_address_t)threads, count * sizeof(thread_act_t));
-
-    static int last_ok = -1;
-    if (ok != last_ok) {
-        log_line([NSString stringWithFormat:@"armed ok=%d fail=%d", ok, fail]);
-        last_ok = ok;
-    }
-    g_arm_ok = ok;
-    g_arm_fail = fail;
-}
-
-static pid_t (*g_orig_getpid)(void) = NULL;
-static void *(*g_orig_malloc)(size_t) = NULL;
-
-static pid_t h_getpid(void) {
-    g_hits_getpid++;
-    log_line([NSString stringWithFormat:@"GETPID #%d", g_hits_getpid]);
-    if (g_orig_getpid) {
-        brk_suspend_self();
-        pid_t r = g_orig_getpid();
-        brk_resume_self();
-        return r;
-    }
-    return 0;
-}
-
-static void *h_malloc(size_t sz) {
-    g_hits_malloc++;
-    log_line([NSString stringWithFormat:@"MALLOC #%d size=%zu", g_hits_malloc, sz]);
-    if (g_orig_malloc) {
-        brk_suspend_self();
-        void *r = g_orig_malloc(sz);
-        brk_resume_self();
-        return r;
-    }
-    return NULL;
+              (void *)addr, op0, op1]);
 }
 
 static void h_stage(void *a, void *b, void *c, void *d) {
@@ -261,24 +158,16 @@ static void setup(void) {
     log_target_info("font_fmt", g_font_fmt_real);
     log_target_info("mc_ctor", g_mc_ctor_real);
 
-    void *getpid_addr = dlsym(RTLD_DEFAULT, "getpid");
-    void *malloc_addr = dlsym(RTLD_DEFAULT, "malloc");
+    int ok = 0;
+    if (brk_install((void *)g_stage_real, (void *)&h_stage)) { ok++; log_line(@"i stage"); } else log_line(@"x stage");
+    if (brk_install((void *)g_recv_real, (void *)&h_recv)) { ok++; log_line(@"i recv"); } else log_line(@"x recv");
+    if (brk_install((void *)g_ldt_init_real, (void *)&h_ldt_init)) { ok++; log_line(@"i ldt_init"); } else log_line(@"x ldt_init");
+    if (brk_install((void *)g_char_ctor_real, (void *)&h_char_ctor)) { ok++; log_line(@"i char_ctor"); } else log_line(@"x char_ctor");
+    if (brk_install((void *)g_font_fmt_real, (void *)&h_font_fmt)) { ok++; log_line(@"i font_fmt"); } else log_line(@"x font_fmt");
+    if (brk_install((void *)g_mc_ctor_real, (void *)&h_mc_ctor)) { ok++; log_line(@"i mc_ctor"); } else log_line(@"x mc_ctor");
 
-    g_orig_getpid = (pid_t(*)(void))brk_original_ptr(getpid_addr);
-    g_orig_malloc = (void*(*)(size_t))brk_original_ptr(malloc_addr);
-
-    brk_install((void *)g_stage_real,     (void *)&h_stage);
-    brk_install((void *)g_recv_real,      (void *)&h_recv);
-    brk_install((void *)g_ldt_init_real,  (void *)&h_ldt_init);
-    brk_install((void *)g_char_ctor_real, (void *)&h_char_ctor);
-    brk_install((void *)g_font_fmt_real,  (void *)&h_font_fmt);
-    brk_install((void *)g_mc_ctor_real,   (void *)&h_mc_ctor);
-    brk_install(getpid_addr,              (void *)&h_getpid);
-    brk_install(malloc_addr,              (void *)&h_malloc);
-
-    log_line(@"installed via Titanox");
-    manual_arm();
-    dump_self_bvr();
+    g_installed = ok;
+    log_line([NSString stringWithFormat:@"installed %d/6", ok]);
     log_line(@"setup done");
 }
 
@@ -296,13 +185,11 @@ static void show_alert(void) {
         UIViewController *root = top_vc();
         if (!root) return;
         NSString *msg = [NSString stringWithFormat:
-            @"arm: %d/%d\n\n"
-            @"getpid:  %d\nmalloc:  %d\n\n"
+            @"installed: %d/6\n\n"
             @"stage:    %d\nrecv:     %d\nldt_init: %d\nchar:     %d\nfmt:      %d\nmc:       %d\n\n"
             @"log: %ld / %d B\n\n"
             @"log: Documents/Titanox.log",
-            g_arm_ok, g_arm_fail,
-            g_hits_getpid, g_hits_malloc,
+            g_installed,
             g_hits_stage, g_hits_recv, g_hits_ldt_init,
             g_hits_char_ctor, g_hits_font_fmt, g_hits_mc_ctor,
             g_log_written, LOG_MAX_BYTES];
@@ -321,9 +208,6 @@ static void start(void) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC),
                    dispatch_get_main_queue(), ^{
         setup();
-        [NSTimer scheduledTimerWithTimeInterval:0.3 repeats:YES block:^(NSTimer *t) {
-            manual_arm();
-        }];
         [NSTimer scheduledTimerWithTimeInterval:2.0 repeats:YES block:^(NSTimer *t) {
             show_alert();
         }];

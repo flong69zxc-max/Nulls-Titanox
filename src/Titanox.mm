@@ -44,7 +44,7 @@ int hook_probe(uintptr_t target);
 
 #define LOG_MAX_BYTES (512 * 1024)
 
-#define TITANOX_BUILD_TAG "brk-a6 2026-10-02 entrycheck+overlay"
+#define TITANOX_BUILD_TAG "brk-a7 2026-10-02 jsoffsets+glabel"
 
 #define RVA_MM_RECEIVEMESSAGE            0x7bace8
 #define RVA_HOMEMODE_GETINSTANCE         0x95f488
@@ -93,6 +93,8 @@ static volatile int g_floater_attempts = 0;
 static volatile int g_floater_success = 0;
 static volatile int g_floater_fail = 0;
 static volatile int g_gui_ok = 0;
+static volatile int g_label_state = 0;
+static volatile int g_label_updates = 0;
 static volatile int g_gui_logged = 0;
 static volatile int g_gui_generation = 0;
 static volatile int g_gui_rejections = 0;
@@ -242,15 +244,48 @@ static BOOL tnx_op_is_strong_prologue(uint32_t word) {
     if (word == 0xD503237F) return YES;
     if ((word & 0xFFFFFF1F) == 0xD503241F) return YES;
 
-    uint32_t pairBase = word & 0xFFC00000u;
+    uint32_t registers = (word >> 5) & 0x1Fu;
+    uint32_t spRelative = (registers == 31u) ? YES : NO;
 
-    if ((pairBase == 0xA9800000u || pairBase == 0xA9000000u || pairBase == 0xA8C00000u) &&
-        (word & 0x7C00u) == 0x7800u &&
-        (word & 0x1Fu) == 29u) {
-        return YES;
+    if ((word & 0xFFC00000u) == 0xA9800000u && spRelative) return YES;
+    if ((word & 0xFFE00C00u) == 0xF8000C00u && spRelative) return YES;
+    if ((word & 0xFFE00C00u) == 0xF8000000u && spRelative) {
+        uint32_t offset = (word >> 12) & 0x1FFu;
+
+        if (offset & 0x100u) return YES;
     }
 
     if ((word & 0xFF8003FFu) == 0xD10003FFu) return YES;
+
+    return NO;
+}
+
+static BOOL tnx_op_is_terminator(uint32_t word) {
+    if ((word & 0xFFFFFC1Fu) == 0xD65F0000u) return YES;
+    if ((word & 0xFC000000u) == 0x14000000u) return YES;
+    if ((word & 0xFFE0001Fu) == 0xD4200000u) return YES;
+
+    return NO;
+}
+
+static BOOL tnx_addr_is_entry(uintptr_t address) {
+    if (!address) return NO;
+
+    uint32_t word = 0;
+
+    if (!tnx_read_u32(address, &word)) return NO;
+    if (tnx_op_is_strong_prologue(word)) return YES;
+
+    uintptr_t probe = address - 4;
+
+    for (int step = 0; step < 12; step++) {
+        uint32_t previous = 0;
+
+        if (!tnx_read_u32(probe, &previous)) return NO;
+        if (previous == 0xD503201F) { probe -= 4; continue; }
+
+        return tnx_op_is_terminator(previous) ? YES : NO;
+    }
 
     return NO;
 }
@@ -259,10 +294,7 @@ static uintptr_t tnx_function_entry(uintptr_t address, uintptr_t *outDelta) {
     if (outDelta) *outDelta = 0;
     if (!address) return 0;
 
-    uint32_t word = 0;
-
-    if (!tnx_read_u32(address, &word)) return 0;
-    if (tnx_op_is_strong_prologue(word)) return address;
+    if (tnx_addr_is_entry(address)) return address;
 
     uintptr_t limit = (address > 0x800) ? (address - 0x800) : 0;
 
@@ -278,14 +310,6 @@ static uintptr_t tnx_function_entry(uintptr_t address, uintptr_t *outDelta) {
     }
 
     return 0;
-}
-
-static BOOL tnx_addr_is_entry(uintptr_t address) {
-    uintptr_t delta = 0;
-
-    if (!address) return NO;
-
-    return tnx_function_entry(address, &delta) == address;
 }
 
 static void tnx_report_entry(const char *label, uintptr_t address) {
@@ -705,26 +729,68 @@ static BOOL h_isstate(void *self, int state) {
 }
 
 static const struct { const char *name; uint32_t rva; } TITANOX_PROBE_LIST[] = {
-    { "Projectile__update",              0x5158f8 },
-    { "Projectile_ctor",                 0x514f88 },
-    { "DisplayObject__removeFromParent", 0xc16ea8 },
-    { "DisplayObject__setXY",            0xc16b4c },
-    { "MovieClip__gotoAndStopFrameIndex",0xc1c90c },
-    { "MovieClip__setChildVisible",      0xc1dd48 },
-    { "MovieClip__getTextFieldByName",   0xc1d550 },
-    { "TextField_setText",               0xc4a978 },
-    { "ScrollArea__scrollTo",            0xbe15e8 },
-    { "BattleScreen__update",            0x56fa80 },
-    { "CombatHUD__update",               0x579fcc },
-    { "Character__updateHealthBar",      0x57647c },
-    { "GameMain__draw",                  0x4b63a0 },
-    { "ClientInputManager_addInput",     0x79bf3c },
-    { "LogicGameObjectClient_getX",      0xae4a1c },
-    { "GUI__showFloaterTextAt",          0x591f28 },
-    { "Gui_showFloaterTextAtDefaultPos", 0x818cdc },
-    { "Sprite__addChild",                0xc2d8c4 },
-    { "Stage_addChild",                  0xc33690 },
-    { "MessageManager__receiveMessage",  0x7bace8 }
+    { "DisplayObject_setXY",                  0xC16B54 },
+    { "DisplayObject_removeFromParent",       0xC16EA8 },
+    { "MovieClipHelper_setTextAndScale",      0x990C20 },
+    { "MovieClip_getTextFieldByName",         0xC1D7B0 },
+    { "MovieClip_getChildByName",             0xC1D550 },
+    { "movieClip_setText",                    0xC4ED90 },
+    { "StringTable_getMovieClip",             0xBECE60 },
+    { "gotoAndStop",                          0xC1C90C },
+    { "setInteractiveRecursive",              0xC1CFE0 },
+    { "Stage_addChild_js",                    0xC336A0 },
+    { "Sprite_ctor",                          0xC2D684 },
+    { "GameButton_ctor",                      0x597C48 },
+    { "GameButton_setText",                   0x598298 },
+    { "CustomButton_buttonPressed",           0xC4DFCC },
+    { "dropCtor",                             0x59908C },
+    { "dropGUIContainer_addGameButton",       0x599508 },
+    { "DecoratedTextField_setupDecorated",    0x58E7BC },
+    { "stringCtor",                           0xDCF8F0 },
+    { "operator_new",                         0x10EFAF0 },
+    { "LogicDataTables_getColorGradient",     0xA5B9A0 },
+    { "TextField_reset",                      0xC49844 },
+    { "GenericPopup_GenericPopup",            0x6C38B8 },
+    { "GenericPopup_addPopupButton",          0x6C442C },
+    { "GameInputField_ctor",                  0x599EF4 },
+    { "GameInputField_setMaxTextLength",      0xE12BCC },
+    { "GameSliderComponent_ctor",             0x59C004 },
+    { "GameSliderComponent_setBounds",        0x59C808 },
+    { "GameSlider_refreshLogic",              0x59C428 },
+    { "GameSlider_update",                    0x59C6BC },
+    { "GameMain_update_a",                    0x4B4B7C },
+    { "StartSpectateMessage_ctor",            0xB754A4 },
+    { "BattleMode_getInstance",               0x954EE0 },
+    { "BattleScreen_getLogicBattleModeClient",0x809348 },
+    { "LogicBattleModeClient_getOwnCharacter",0xB90A28 },
+    { "LogicBattleModeClient_isUltiReady",    0x818BCC },
+    { "LogicBattleModeClient_update",         0xB8EEE0 },
+    { "BattleScreen_autoShoot",               0xB90C04 },
+    { "BattleScreen_tryToActivateSkill",      0x802960 },
+    { "BattleScreen_updateMovement",          0x809348 },
+    { "BattleScreen_convertToControlScheme",  0x80D758 },
+    { "BattleScreen_getClosestTarget",        0x8151E0 },
+    { "Character_getUltiSkillServer",         0x80D758 },
+    { "Character_getPrimarySkillServer",      0xAB73A4 },
+    { "LogicSkillData_getCastingRange",       0xAB4390 },
+    { "isImmuneAndBulletsGoThrough",          0xA94114 },
+    { "hasAmmo",                              0xAB4E60 },
+    { "getSkillRechargeMs",                   0xAB4E14 },
+    { "LogicGameObjectClient_getX",           0xAE4A1C },
+    { "LogicGameObjectClient_getY",           0xAE4A24 },
+    { "LogicGameObjectClient_getGlobalID",    0xAE49C8 },
+    { "LogicSkillData_getProjectile",         0xA9434C },
+    { "LogicProjectileData_getSpeed",         0xA815CC },
+    { "LogicProjectileData_getRadius",        0xA8164C },
+    { "MessageManager__receiveMessage",       0x7BACE8 },
+    { "Stage_addChild_ios",                   0xC33690 },
+    { "home",                                 0x95F488 },
+    { "guiGet",                               0x591644 },
+    { "floater",                              0x591F28 },
+    { "floaterDefPos",                        0x818CDC },
+    { "guiPos",                               0x591DA0 },
+    { "spriteAdd",                            0xC2D8C4 },
+    { "isState",                              0x95E7C0 }
 };
 
 static void probe_reference_targets(void) {
@@ -1409,13 +1475,15 @@ static void overlay_tick(int attempt) {
             @"render=%d proc=%d\n"
             @"touch=%d press=%d\n"
             @"ptr slots=%d/%d stage=%d\n"
-            @"gui=%d floater=%d/%d",
+            @"gui=%d floater=%d/%d\n"
+            @"glabel=%d upd=%d",
             TITANOX_BUILD_TAG,
             g_objc_armed, g_objc_hits_total,
             tnx_objc_hits_prefix("render"), tnx_objc_hits_prefix("processInput"),
             tnx_objc_hits_prefix("touches"), tnx_objc_hits_prefix("presses"),
             hook_pointer_slots(), hook_pointer_count(), g_hits_stage,
-            g_gui_ok, g_floater_success, g_floater_attempts];
+            g_gui_ok, g_floater_success, g_floater_attempts,
+            g_label_state, g_label_updates];
 
         [g_overlay sizeToFit];
 
@@ -1453,6 +1521,127 @@ static void tnx_objc_report(const char *tag) {
               g_objc_hooks[i].selName,
               g_objc_hooks[i].hits]);
     }
+}
+
+#define TNX_RVA_STRINGTABLE_GETMOVIECLIP  0xBECE60
+#define TNX_RVA_MC_GETTEXTFIELDBYNAME     0xC1D7B0
+#define TNX_RVA_MCH_SETTEXT               0x990C20
+#define TNX_RVA_DO_SETXY                  0xC16B54
+#define TNX_RVA_STAGE_ADDCHILD            0xC33690
+#define TNX_RVA_STAGE_INSTANCE            0x12393E0
+
+typedef void   (*tnx_fn_void2_t)(void *a, void *b);
+typedef void * (*tnx_fn_ptr2_t)(void *a, void *b);
+typedef void   (*tnx_fn_settext_t)(void *textField, void *scText, int a3, int a4);
+typedef void   (*tnx_fn_setxy_t)(void *obj, float x, float y);
+
+static void *g_label_clip = NULL;
+static void *g_label_tf = NULL;
+static int g_label_last_frames = 0;
+
+static void *tnx_read_global_ptr(uint32_t rva) {
+    void *value = NULL;
+
+    if (!g_base) return NULL;
+
+    memcpy(&value, (const void *)(g_base + rva), sizeof(value));
+
+    return value;
+}
+
+static void tnx_game_label_text(NSString *text) {
+    if (!g_label_tf || !g_base) return;
+
+    void *sc = make_sc_string([text UTF8String]);
+
+    if (!sc) return;
+
+    ((tnx_fn_settext_t)(g_base + TNX_RVA_MCH_SETTEXT))(g_label_tf, sc, 4, 0);
+}
+
+static void tnx_game_label_tick(int attempt);
+
+static void tnx_game_label_tick(int attempt) {
+    if (attempt > 600) return;
+    if (!g_aggressive) return;
+
+    if (!g_base) {
+        tlog(@"glabel: no base yet");
+    } else if (!g_label_clip) {
+        uintptr_t getClip  = g_base + TNX_RVA_STRINGTABLE_GETMOVIECLIP;
+        uintptr_t getTf    = g_base + TNX_RVA_MC_GETTEXTFIELDBYNAME;
+        uintptr_t setXy    = g_base + TNX_RVA_DO_SETXY;
+        uintptr_t addChild = g_base + TNX_RVA_STAGE_ADDCHILD;
+
+        if (!tnx_addr_is_entry(getClip) || !tnx_addr_is_entry(getTf) ||
+            !tnx_addr_is_entry(setXy) || !tnx_addr_is_entry(addChild)) {
+            tlog([NSString stringWithFormat:
+                  @"glabel: offsets rejected getClip=%d getTf=%d setXY=%d addChild=%d",
+                  tnx_addr_is_entry(getClip) ? 1 : 0,
+                  tnx_addr_is_entry(getTf) ? 1 : 0,
+                  tnx_addr_is_entry(setXy) ? 1 : 0,
+                  tnx_addr_is_entry(addChild) ? 1 : 0]);
+            return;
+        }
+
+        void *stage = tnx_read_global_ptr(TNX_RVA_STAGE_INSTANCE);
+
+        if (!stage) {
+            if ((attempt % 5) == 0) tlog(@"glabel: stage not ready");
+        } else {
+            void *scUi  = make_sc_string("sc/ui.sc");
+            void *scBox = make_sc_string("textbox_1");
+            void *scTxt = make_sc_string("txt");
+
+            if (!scUi || !scBox || !scTxt) {
+                tlog(@"glabel: sc string alloc failed");
+            } else {
+                tlog(@"glabel step1 StringTable_getMovieClip(sc/ui.sc, textbox_1)");
+
+                void *clip = ((tnx_fn_ptr2_t)getClip)(scUi, scBox);
+
+                if (!clip) {
+                    tlog(@"glabel: clip NULL");
+                } else {
+                    tlog([NSString stringWithFormat:@"glabel step2 clip=%p getTextFieldByName(txt)", clip]);
+
+                    void *tf = ((tnx_fn_ptr2_t)getTf)(clip, scTxt);
+
+                    if (!tf) {
+                        tlog(@"glabel: textField NULL");
+                    } else {
+                        tlog([NSString stringWithFormat:@"glabel step3 tf=%p setXY + addChild", tf]);
+
+                        ((tnx_fn_setxy_t)setXy)(clip, 60536.0f, 60536.0f);
+                        ((tnx_fn_void2_t)addChild)(stage, clip);
+
+                        g_label_clip = clip;
+                        g_label_tf = tf;
+                        g_label_state = 2;
+
+                        tlog([NSString stringWithFormat:@"glabel ready stage=%p clip=%p tf=%p",
+                              stage, clip, tf]);
+                    }
+                }
+            }
+        }
+    } else {
+        int frames = g_objc_hits_total;
+        int fps = frames - g_label_last_frames;
+
+        g_label_last_frames = frames;
+        g_label_updates++;
+        g_label_state = 3;
+
+        tnx_game_label_text([NSString stringWithFormat:
+            @"Titanox %s\nFPS %d\nhooks %d/%d\nupd %d",
+            TITANOX_BUILD_TAG, fps, g_objc_armed, frames, g_label_updates]);
+    }
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        tnx_game_label_tick(attempt + 1);
+    });
 }
 
 static void poll_for_game(int tick);
@@ -1517,6 +1706,11 @@ static void start(void) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
         overlay_tick(0);
+    });
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(8 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        tnx_game_label_tick(0);
     });
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10 * NSEC_PER_SEC)),

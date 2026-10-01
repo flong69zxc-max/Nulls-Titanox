@@ -1,9 +1,8 @@
-Package: com.nulls.titanox
-Name: Titanox
-Version: 1.0.0
+Package: com.null.titanox
+Name: Titanox Diagnostics
+Version: 0.2.0
 Architecture: iphoneos-arm64
-Description: Runtime hooks for Nulls Brawl
-Maintainer: nulls
-Author: nulls
+Description: Hardware breakpoint diagnostics for Nulls Brawl
+Maintainer: null
+Author: null
 Section: Tweaks
-Depends: mobilesubstrate

@@ -147,6 +147,18 @@ static __thread BOOL g_inside_hook = NO;
 #define TNX_MGR_ARRAY_OFF 0x0ULL
 #define TNX_MGR_COUNT_OFF 0xcULL
 
+/* Capacity. Not a guess: the engine's own Array<T> append routine at RVA 0x46aefc reads the
+   header as `ldp w9, w8, [x0, #8]` -- w9 = capacity (+0x8), w8 = count (+0xc) -- grows when the
+   two are equal, then stores with `ldr x9,[x19]` / `str x20,[x9, w8, sxtw #3]`. So the header is
+   {T** data @0x0; uint32 capacity @0x8; uint32 count @0xc}, stride 8, and count <= capacity
+   always holds. A fresh array is grown to at least 5.
+
+   This invariant is what finally kills the string family. The 18:16 candidate held 0xffffffff at
+   +0x8 and 21 at +0xc -- a capacity of four billion. No real array has that, and the check costs
+   nothing: it is a plain word compare inside the buffer, before any syscall. */
+#define TNX_MGR_CAP_OFF 0x8ULL
+#define TNX_MGR_CAP_MAX 4096
+
 /* The input queue the working implementation hands its dodge to: BattleMode_clientInputManager
    = 0x58, and a ClientInput carries x at 0xc and y at 0x10. Nothing is written here yet; the
    pointer is printed on capture so the movement side has a target to aim at next. */
@@ -229,12 +241,15 @@ static __thread BOOL g_inside_hook = NO;
    with count [this+0x8c]. Slot B's object uses the familiar [this+0x20] path. Both
    layouts are printed on capture so neither has to be guessed again. */
 #define TNX_SLOT_BRIDGE_OFF 0x8ULL
+/* setOwner(object, manager) is `str x1,[x0,#0x20]` at 0xa2d250, so a captured class-B object
+   carries the manager at +0x20. Class A reaches it as [[this+0x8]+0x0] instead. */
+#define TNX_SLOT_OWNER_OFF 0x20ULL
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
 /* Printed as the first line after "setup", so every log identifies the build that produced
    it. Two device logs were once spent comparing a new binary against an old one. */
-#define TNX_BUILD_TAG "titanox_35"
+#define TNX_BUILD_TAG "titanox_36"
 
 /* IN-LINE HOOKING IS IMPOSSIBLE ON THIS PROCESS -- measured, not assumed. The 17:38 log caught
    it directly:
@@ -366,6 +381,11 @@ static int g_manager_count = 0;
 static int g_manager_probes = 0;
 static int g_manager_probes_total = 0;
 static int g_manager_skipped = 0;
+static int g_manager_last_live = 0;
+static int g_manager_last_nonempty = 0;
+static int g_manager_last_capacity = 0;
+static int g_manager_saw_cap = 0;
+static int g_manager_cap_rejects = 0;
 static int g_manager_best_count = 0;
 static int g_manager_best_live = 0;
 static int g_heap_passes = 0;
@@ -538,6 +558,19 @@ typedef uint64_t (*tnx_slot_fn_t)(void *a0, uint64_t a1, uint64_t a2, uint64_t a
 
 static tnx_slot_fn_t g_slot_orig[TNX_SLOT_COUNT] = { NULL };
 static uintptr_t g_slot_object[TNX_SLOT_COUNT] = { 0 };
+
+/* The second register argument, kept from the very first hit. This is the one value the whole
+   exercise has been missing. Disassembly of LogicGameObjectManager::addGameObject at 0xa27930:
+
+        ldr x0, [sp, #0x28]        ; the object being added
+        ldr x8, [x0]; ldr x8, [x8, #0x18]
+        mov x1, x19                ; x19 = the manager (x0 on entry to addGameObject)
+        blr x8
+
+   and the slot it calls is byte RVA 0xff5738 -- exactly our B2, whose target 0xa2d250 is
+   `str x1, [x0, #0x20]`, i.e. setOwner(object, manager). So on the first game object created in
+   a match the forwarder is handed the manager itself in a1, and until now it threw that away. */
+static uintptr_t g_slot_arg1[TNX_SLOT_COUNT] = { 0 };
 static uint64_t g_slot_hits[TNX_SLOT_COUNT] = { 0 };
 static int g_slot_installed[TNX_SLOT_COUNT] = { -1, -1, -1, -1, -1, -1, -1 };
 static uint32_t g_slot_reported_mask = 0;
@@ -550,13 +583,16 @@ static void tnx_slot_diag(const char *why);
 static BOOL tnx_obj_coord(uintptr_t object, uintptr_t slot, int32_t *value);
 
 /* Runs inside the game's thread. Two stores and a bounds check, nothing else. */
-static void tnx_slot_note(int index, void *self) {
-    if (!self) return;
+static void tnx_slot_note(int index, void *self, uint64_t arg1) {
     if (index < 0 || index >= TNX_SLOT_COUNT) return;
 
     g_slot_hits[index]++;
 
-    if (!g_slot_object[index]) g_slot_object[index] = (uintptr_t)self;
+    if (!g_slot_object[index] && self) g_slot_object[index] = (uintptr_t)self;
+
+    /* Kept separately and never overwritten: the manager set by setOwner is the same pointer for
+       every object in the match, so the first one is the one worth having. */
+    if (!g_slot_arg1[index] && arg1) g_slot_arg1[index] = (uintptr_t)arg1;
 }
 
 /* One replacement per slot: a rewritten vtable entry cannot tell which slot invoked it, so
@@ -565,7 +601,7 @@ static void tnx_slot_note(int index, void *self) {
    forwarding the eight incoming integer registers safe. */
 static uint64_t tnx_slot_repl_0(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                 uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
-    tnx_slot_note(0, a0);
+    tnx_slot_note(0, a0, a1);
 
     if (g_slot_orig[0]) return g_slot_orig[0](a0, a1, a2, a3, a4, a5, a6, a7);
 
@@ -574,7 +610,7 @@ static uint64_t tnx_slot_repl_0(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
 
 static uint64_t tnx_slot_repl_1(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                 uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
-    tnx_slot_note(1, a0);
+    tnx_slot_note(1, a0, a1);
 
     if (g_slot_orig[1]) return g_slot_orig[1](a0, a1, a2, a3, a4, a5, a6, a7);
 
@@ -583,7 +619,7 @@ static uint64_t tnx_slot_repl_1(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
 
 static uint64_t tnx_slot_repl_2(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                 uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
-    tnx_slot_note(2, a0);
+    tnx_slot_note(2, a0, a1);
 
     if (g_slot_orig[2]) return g_slot_orig[2](a0, a1, a2, a3, a4, a5, a6, a7);
 
@@ -592,7 +628,7 @@ static uint64_t tnx_slot_repl_2(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
 
 static uint64_t tnx_slot_repl_3(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                 uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
-    tnx_slot_note(3, a0);
+    tnx_slot_note(3, a0, a1);
 
     if (g_slot_orig[3]) return g_slot_orig[3](a0, a1, a2, a3, a4, a5, a6, a7);
 
@@ -601,7 +637,7 @@ static uint64_t tnx_slot_repl_3(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
 
 static uint64_t tnx_slot_repl_4(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                 uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
-    tnx_slot_note(4, a0);
+    tnx_slot_note(4, a0, a1);
 
     if (g_slot_orig[4]) return g_slot_orig[4](a0, a1, a2, a3, a4, a5, a6, a7);
 
@@ -610,7 +646,7 @@ static uint64_t tnx_slot_repl_4(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
 
 static uint64_t tnx_slot_repl_5(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                 uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
-    tnx_slot_note(5, a0);
+    tnx_slot_note(5, a0, a1);
 
     if (g_slot_orig[5]) return g_slot_orig[5](a0, a1, a2, a3, a4, a5, a6, a7);
 
@@ -619,7 +655,7 @@ static uint64_t tnx_slot_repl_5(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
 
 static uint64_t tnx_slot_repl_6(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                 uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
-    tnx_slot_note(6, a0);
+    tnx_slot_note(6, a0, a1);
 
     if (g_slot_orig[6]) return g_slot_orig[6](a0, a1, a2, a3, a4, a5, a6, a7);
 
@@ -645,7 +681,9 @@ static const struct {
        SEVEN slots, i.e. seven sibling vtables around 0xff5xxx share them, so those two hooks
        cover a whole family of derived classes, not one class. */
     { "B1/vt0ff5720+05/a2e5b8", "B1", 0x00a2e5b8ULL, 0x00ff5748ULL, tnx_slot_repl_2, 0 },
-    { "B2/vt0ff5720+03/a2d250", "B2", 0x00a2d250ULL, 0x00ff5738ULL, tnx_slot_repl_3, 0 },
+    /* B2 is setOwner: 0xa2d250 is `str x1,[x0,#0x20]`, and addGameObject calls it with the
+       manager in x1. This is the slot that hands us the manager. */
+    { "B2/vt0ff5720+03/a2d250 setOwner", "B2", 0x00a2d250ULL, 0x00ff5738ULL, tnx_slot_repl_3, 0 },
     { "B3/vt0ff5720+07/a2d6ac", "B3", 0x00a2d6acULL, 0x00ff5758ULL, tnx_slot_repl_4, 0 },
     /* CONTROLS, never adopted.
        C1 Stage::addChild is the only anchor resolved out of the offsets table that turned out
@@ -2217,6 +2255,7 @@ static const tnx_rva_entry_t g_verified[] = {
     { "LogicBattleModeClient::findOwningTeam (mgr+0x28,team@0x40)", 0xac3ddc },
     { "LogicBattleModeClient::findOwningTeam2 (mgr+0x28)", 0xac3e74 },
     { "LogicBattleModeClient::managerProgress (mgr+0x8c/0x90)", 0xac3f2c },
+    { "GameObj::setOwner (this+0x20 = manager) [slot 0xff5738]", 0xa2d250 },
     { "LogicBattleModeClient::setPredictionXY (this+0x1d4/0x1d8)", 0xac3f20 },
     { "LogicGameObjectManager::findByTeam (mgr+0x0/+0xc)", 0xac3d80 },
     { "TABLE_RVA_MESSAGEMANAGER__RECEIVEMESSAGE", 0x7bace8 },
@@ -2444,6 +2483,7 @@ static BOOL tnx_manager_shape(uintptr_t manager) {
     void *array = NULL;
     void *probe = NULL;
     int32_t count = 0;
+    int32_t capacity = 0;
 
     /* No vtable check on the manager: per the verified disassembly of
        LogicGameObjectManager its word at +0x0 is the object array, not a vtable.
@@ -2451,7 +2491,11 @@ static BOOL tnx_manager_shape(uintptr_t manager) {
     if (!tnx_heap_resident(manager)) return NO;
     if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array)) return NO;
     if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) return NO;
+    if (!tnx_read_i32(manager + TNX_MGR_CAP_OFF, &capacity)) return NO;
     if (count < 0 || count > TNX_MANAGER_MAX_OBJECTS) return NO;
+
+    /* The header invariant from the engine's own append routine. */
+    if (capacity < count || capacity > TNX_MGR_CAP_MAX) return NO;
 
     /* The array field is checked for residency even when the count is zero: the lobby
        false positives all had an image-resident array with count 0. */
@@ -2800,25 +2844,37 @@ static void tnx_dump_manager(uintptr_t manager, int count) {
 static int tnx_manager_live_count(uintptr_t manager) {
     void *array = NULL;
     int32_t count = 0;
-    int live = 0;
+    int32_t capacity = 0;
 
     if (!tnx_pointer_plausible(manager)) return 0;
     if (!tnx_heap_resident(manager)) return 0;
     if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array)) return 0;
     if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) return 0;
+    if (!tnx_read_i32(manager + TNX_MGR_CAP_OFF, &capacity)) return 0;
     if (count < TNX_MANAGER_MIN_OBJECTS || count > TNX_MANAGER_MAX_OBJECTS) return 0;
     if (!array) return 0;
     if (!tnx_heap_resident((uintptr_t)array)) return 0;
+    if ((uintptr_t)array & 0xf) return 0;
+
+    /* Header invariant taken from the engine's own append routine: count <= capacity, and a
+       capacity of four billion is not a capacity. */
+    if (capacity < count || capacity > TNX_MGR_CAP_MAX) return 0;
 
     uintptr_t types[TNX_MODE_TYPE_MAX] = {0};
     int typeCount = 0;
+    int nonEmpty = 0;
 
-    for (int32_t i = 0; i < count && i < 8; i++) {
+    /* Every entry, not just the first eight. A real object array holds objects in every slot;
+       the string containers that keep fooling the scanner hold text in all of them. */
+    for (int32_t i = 0; i < count; i++) {
         void *element = NULL;
         void *vtable = NULL;
 
         if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * sizeof(void *), &element)) break;
         if (!element) continue;
+
+        nonEmpty++;
+
         if (!tnx_heap_resident((uintptr_t)element)) continue;
         if (!tnx_read_ptr((uintptr_t)element, &vtable)) continue;
         if (!vtable) continue;
@@ -2853,6 +2909,20 @@ static int tnx_manager_live_count(uintptr_t manager) {
 
     if (typeCount < TNX_MODE_MIN_TYPES) return 0;
 
+    /* Three quarters of the occupied slots have to be real instances. A real object array is
+       exactly that; a string or resource table decodes as instances in only a couple of slots,
+       which is how the 18:16 run reached live=4 out of count=21 and then locked the scan. */
+    if (live < TNX_MANAGER_MIN_OBJECTS || live * 4 < nonEmpty * 3) {
+        g_manager_last_live = live;
+        g_manager_last_nonempty = nonEmpty;
+        g_manager_last_capacity = capacity;
+        return 0;
+    }
+
+    g_manager_last_live = live;
+    g_manager_last_nonempty = nonEmpty;
+    g_manager_last_capacity = capacity;
+
     return live;
 }
 
@@ -2868,10 +2938,25 @@ static void tnx_probe_manager(uintptr_t cursor, size_t offset, const uint8_t *bu
     if (g_manager_object) return;
     if (offset + 0x10 > chunk) return;
 
+    uint32_t capacity = 0;
+
     memcpy(&arrayValue, buffer + offset, sizeof(arrayValue));
+    memcpy(&capacity, buffer + offset + TNX_MGR_CAP_OFF, sizeof(capacity));
     memcpy(&count, buffer + offset + 0xc, sizeof(count));
 
     if (count < TNX_MANAGER_MIN_OBJECTS || count > TNX_MANAGER_MAX_OBJECTS) return;
+
+    /* Free, straight out of the engine's own append routine: count never exceeds capacity, and
+       no real object array is ever allocated four billion entries. The 18:16 candidate is
+       rejected right here -- 0xffffffff capacity -- which is why it needs no syscall at all. */
+    if (capacity < count || capacity > TNX_MGR_CAP_MAX) {
+        g_manager_saw_cap++;
+        g_manager_cap_rejects++;
+        return;
+    }
+
+    g_manager_saw_cap++;
+
     if (!tnx_pointer_plausible((uintptr_t)arrayValue)) return;
 
     /* A heap allocation is 16-byte aligned. A word that is only 8-byte aligned is a field
@@ -2982,10 +3067,11 @@ static void tnx_diag_report(const char *why) {
     }
 
     tnx_logf("DIAG(%s) attempts=%d/%d heapPasses=%d covered=%lluMB probes=%d/%d skipped=%d "
-             "bestCount=%d bestLive=%d mgr=%p vfx=%d mx=%d",
+             "capRej=%d/%d bestCount=%d bestLive=%d mgr=%p vfx=%d mx=%d",
              why ? why : "?", g_votescan_attempts, TNX_VOTESCAN_ATTEMPTS, g_heap_passes,
              g_heap_covered / (1024ull * 1024ull), g_manager_probes_total, TNX_MANAGER_PROBE_LIMIT,
-             g_manager_skipped, g_manager_best_count, g_manager_best_live, (void *)g_manager_object,
+             g_manager_skipped, g_manager_cap_rejects, g_manager_saw_cap,
+             g_manager_best_count, g_manager_best_live, (void *)g_manager_object,
              g_mode_verified_hits, g_mode_best_objects);
 
     tnx_logf("DIAG verdict: %s", verdict);
@@ -3248,10 +3334,13 @@ static void tnx_scan_heap_for_mode(void) {
 
     g_heap_covered += (unsigned long long)scanned;
 
-    tnx_logf("votescan heap pass=%d from=%p scanned=%zu regions=%d hits=%d vfx=%d mgr=%p probes=%d/%d skipped=%d best%d/%d",
+    tnx_logf("votescan heap pass=%d from=%p scanned=%zu regions=%d hits=%d vfx=%d mgr=%p "
+             "probes=%d/%d skipped=%d cap=%d/%d best%d/%d(live %d/%d cap %d)",
              g_heap_passes, (void *)startAddress, scanned, regions, hits, verifiedHits,
              (void *)g_manager_object, g_manager_probes, TNX_MANAGER_PROBE_LIMIT,
-             g_manager_skipped, g_manager_best_count, g_manager_best_live);
+             g_manager_skipped, g_manager_cap_rejects, g_manager_saw_cap,
+             g_manager_best_count, g_manager_best_live, g_manager_last_live,
+             g_manager_last_nonempty, g_manager_last_capacity);
 }
 
 static void tnx_locate_battle_mode(void) {
@@ -3427,6 +3516,32 @@ static void tnx_dump_mode_objects(const char *tag) {
 /* Runs on the 1 Hz timer, never inside the hook: the replacement itself only stores a
    pointer, so the game thread is never asked to log, to read memory or to walk an array.
    The first object seen is dumped once, in both possible layouts. */
+/* Reports one candidate manager pointer in full, whether it came from a1 or from an object
+   field. The header counts, the capacity invariant the engine's append routine guarantees, and
+   the entries themselves -- every number a dodge needs, from one call. */
+static void tnx_report_manager(const char *tag, uintptr_t manager) {
+    void *array = NULL;
+    int32_t count = 0;
+    int32_t capacity = 0;
+
+    if (!tnx_pointer_plausible(manager)) return;
+    if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array)) {
+        tnx_logf("%s mgr=%p unreadable", tag, (void *)manager);
+        return;
+    }
+    if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) return;
+    if (!tnx_read_i32(manager + TNX_MGR_CAP_OFF, &capacity)) return;
+
+    tnx_logf("%s mgr=%p array=%p count=%d cap=%d live=%d%s", tag, (void *)manager, array,
+             count, capacity, tnx_manager_live_count(manager),
+             (capacity >= count && capacity <= TNX_MGR_CAP_MAX) ? "" : " CAP-VIOLATION");
+
+    if (count < TNX_MANAGER_MIN_OBJECTS || count > TNX_MANAGER_MAX_OBJECTS) return;
+    if (capacity < count || capacity > TNX_MGR_CAP_MAX) return;
+
+    tnx_dump_manager(manager, (int)count);
+}
+
 static void tnx_slot_pump(void) {
     int first = -1;
 
@@ -3443,8 +3558,9 @@ static void tnx_slot_pump(void) {
 
         g_slot_reported_mask |= bit;
 
-        tnx_logf("slot %s: captured this=%p hits=%llu%s", g_slot_specs[i].tag,
-                 (void *)g_slot_object[i], (unsigned long long)g_slot_hits[i],
+        tnx_logf("slot %s: captured this=%p arg1=%p hits=%llu%s", g_slot_specs[i].tag,
+                 (void *)g_slot_object[i], (void *)g_slot_arg1[i],
+                 (unsigned long long)g_slot_hits[i],
                  g_slot_specs[i].control ? " CONTROL" : "");
     }
 
@@ -3536,6 +3652,20 @@ static void tnx_slot_pump(void) {
                  (unsigned long long)tnx_vtable_rva(inputManager));
 
         tnx_dump_hex("slotInMgr", (uintptr_t)inputManager, 0x40);
+    }
+
+    /* THE shot. If this slot was setOwner, a1 IS the manager the engine just stored into the
+       object -- no hunting, no scan, no threshold. It is reported before anything else. */
+    if (g_slot_arg1[first]) {
+        tnx_report_manager("slot arg1", g_slot_arg1[first]);
+    }
+
+    /* Class B stores it at +0x20 (setOwner), class A reaches it through +0x8. */
+    void *ownerField = NULL;
+
+    if (tnx_read_ptr(object + TNX_SLOT_OWNER_OFF, &ownerField) && ownerField &&
+        (uintptr_t)ownerField != g_slot_arg1[first]) {
+        tnx_report_manager("slot +20", (uintptr_t)ownerField);
     }
 
     /* The captured object's own table, forty entries of it. Issuing a dodge needs a callable

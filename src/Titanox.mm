@@ -214,7 +214,7 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_57"
+#define TNX_BUILD_TAG "titanox_58"
 
 #define TNX_RVA_SETPREDICTION 0x00ac3f20ULL
 #define TNX_OBJ_X_OFF 0x30ULL
@@ -785,7 +785,7 @@ static uint64_t tnx_slot_repl_12(void *a0, uint64_t a1, uint64_t a2, uint64_t a3
         g_v57_last_arg1 = a1;
         g_v57_last_arg2 = a2;
 
-        tnx_logf("v57 setpred args x0=%p x1=%#llx x2=%#llx x3=%#llx x4=%#llx x5=%#llx x6=%#llx "
+        tnx_logf("v58 setpred args x0=%p x1=%#llx x2=%#llx x3=%#llx x4=%#llx x5=%#llx x6=%#llx "
                  "x7=%#llx", a0, (unsigned long long)a1, (unsigned long long)a2,
                  (unsigned long long)a3, (unsigned long long)a4, (unsigned long long)a5,
                  (unsigned long long)a6, (unsigned long long)a7);
@@ -938,7 +938,7 @@ static void tnx_slot_fired_report(void) {
             if (!(g_v50_never_dispatched_mask & (1u << (unsigned)i))) {
                 g_v50_never_dispatched_mask |= (1u << (unsigned)i);
 
-                tnx_logf("v57 hook %s slots=%d slotRva=%#llx zero entries after %llu ticks",
+                tnx_logf("v58 hook %s slots=%d slotRva=%#llx zero entries after %llu ticks",
                          g_slot_specs[i].shortTag, g_slot_slots[i],
                          (unsigned long long)g_slot_specs[i].slotRva,
                          (unsigned long long)g_v50_ticks);
@@ -3567,7 +3567,7 @@ static void tnx_probe_manager(uintptr_t cursor, size_t offset, const uint8_t *bu
         if (g_v52_stringy_logs < 4) {
             g_v52_stringy_logs++;
 
-            tnx_logf("v57 trail: stringy container refused before scoring mgr=%p count=%u live=%d "
+            tnx_logf("v58 trail: stringy container refused before scoring mgr=%p count=%u live=%d "
                      "nonEmpty=%d firstTextSlot=%d - text never reaches the top eight",
                      (void *)candidate, count, g_manager_last_live, g_manager_last_nonempty,
                      g_v57_stringy_slot);
@@ -4352,7 +4352,7 @@ static void tnx_object_vote_finish(void) {
                 if (g_v57_reject_logs < 8) {
                     g_v57_reject_logs++;
 
-                    tnx_logf("v57 adopt refused owner=%p teams=%#x votes=%d distinctGids=%d "
+                    tnx_logf("v58 adopt refused owner=%p teams=%#x votes=%d distinctGids=%d "
                              "reason=%s count=%d cap=%d - the owner is excluded and the vote moves "
                              "to the next one", (void *)entry->owner, entry->teamMask, entry->votes,
                              entry->gidSeenCount, reason, owned, ownedCap);
@@ -6059,13 +6059,13 @@ static void tnx_v48_discriminate(uintptr_t manager) {
     if (intPairOff >= 0 && g_v57_coord_off != intPairOff) {
         g_v57_coord_off = intPairOff;
 
-        tnx_logf("v57 coord pair chosen=+0x%x,+0x%x (%d distinct) instead of the repository "
+        tnx_logf("v58 coord pair chosen=+0x%x,+0x%x (%d distinct) instead of the repository "
                  "default +0x%llx/+0x%llx", intPairOff, intPairOff + 4, n,
                  (unsigned long long)TNX_OBJ_X_OFF, (unsigned long long)TNX_OBJ_Y_OFF);
     } else if (intPairOff < 0 && coordOff >= 0 && g_v57_coord_off != coordOff) {
         g_v57_coord_off = coordOff;
 
-        tnx_logf("v57 coord offset chosen=+0x%x (%d distinct) instead of the repository default "
+        tnx_logf("v58 coord offset chosen=+0x%x (%d distinct) instead of the repository default "
                  "+0x%llx", coordOff, coordDistinct, (unsigned long long)TNX_OBJ_X_OFF);
     }
 }
@@ -6240,7 +6240,7 @@ static void tnx_v48_probe(uintptr_t manager, uintptr_t mode, int verbose) {
              "the offset the engine itself reads)",
              g_v47_team_off, distinctOld, distinctNew);
 
-    tnx_logf("v57 walk offsets team=+0x%x distinctOld=%d distinctNew=%d coord=+0x%llx/+0x%llx "
+    tnx_logf("v58 walk offsets team=+0x%x distinctOld=%d distinctNew=%d coord=+0x%llx/+0x%llx "
              "usable=%d distinct=%d inRange=%d - chosen from the measurements, not from a constant",
              g_v47_team_off, distinctOld, distinctNew,
              (unsigned long long)tnx_v57_coord_x_off(), (unsigned long long)tnx_v57_coord_y_off(),
@@ -6749,16 +6749,16 @@ static int tnx_v57_is_fn_start(uintptr_t address) {
 static int tnx_v57_class_slot_ok(uintptr_t vtable) {
     uintptr_t lo = 0;
     uintptr_t hi = 0;
-    uintptr_t entry0 = 0;
-    uintptr_t entry1 = 0;
+    void *entry0 = NULL;
+    void *entry1 = NULL;
 
     if (!vtable || (vtable & 7ULL)) return 0;
     if (!tnx_v56_vtable_in_image(vtable)) return 0;
     if (!tnx_segment_range("__TEXT", &lo, &hi)) return 0;
     if (!tnx_read_ptr(vtable, &entry0) || !entry0) return 0;
-    if (entry0 < lo || entry0 >= hi) return 0;
+    if ((uintptr_t)entry0 < lo || (uintptr_t)entry0 >= hi) return 0;
     if (!tnx_read_ptr(vtable + 8ULL, &entry1) || !entry1) return 0;
-    if (entry1 < lo || entry1 >= hi) return 0;
+    if ((uintptr_t)entry1 < lo || (uintptr_t)entry1 >= hi) return 0;
 
     return 1;
 }
@@ -6788,7 +6788,7 @@ static uintptr_t tnx_v57_coord_y_off(void) {
 }
 
 static void tnx_v57_mode_drop(void) {
-    tnx_logf("v57 mode dropped this=%p - %d ticks without a class table and a manager, so it is "
+    tnx_logf("v58 mode dropped this=%p - %d ticks without a class table and a manager, so it is "
              "not the battle mode", (void *)g_mode_object, g_v57_stale_ticks);
 
     g_mode_object = 0;
@@ -6803,14 +6803,14 @@ static void tnx_v57_mode_drop(void) {
 
 static int tnx_v57_mode_reverify(void) {
     void *vtable = NULL;
-    uintptr_t manager = 0;
+    void *managerPtr = NULL;
 
     if (!g_mode_object) return 0;
 
     if ((tnx_read_ptr(g_mode_object, &vtable) && vtable &&
          tnx_v57_class_slot_ok((uintptr_t)vtable)) &&
-        (tnx_read_ptr(g_mode_object + TNX_MODE_MANAGER_OFF, &manager) && manager &&
-         tnx_v57_header_reason((uintptr_t)manager, NULL, NULL) == NULL)) {
+        (tnx_read_ptr(g_mode_object + TNX_MODE_MANAGER_OFF, &managerPtr) && managerPtr &&
+         tnx_v57_header_reason((uintptr_t)managerPtr, NULL, NULL) == NULL)) {
         g_v57_stale_ticks = 0;
 
         return 1;
@@ -6825,7 +6825,7 @@ static int tnx_v57_mode_reverify(void) {
 
 static void tnx_v56_mode_capture(uintptr_t candidate) {
     void *vtable = NULL;
-    uintptr_t manager = 0;
+    void *managerPtr = NULL;
     int32_t count = 0;
     int32_t capacity = 0;
 
@@ -6837,7 +6837,7 @@ static void tnx_v56_mode_capture(uintptr_t candidate) {
         if (g_v57_capture_rejects < 4) {
             g_v57_capture_rejects++;
 
-            tnx_logf("v57 mode reject this=%p vt=%#llx - not a class table in __DATA_CONST or "
+            tnx_logf("v58 mode reject this=%p vt=%#llx - not a class table in __DATA_CONST or "
                      "__DATA with two code entries", (void *)candidate,
                      (unsigned long long)(uintptr_t)vtable);
         }
@@ -6845,8 +6845,8 @@ static void tnx_v56_mode_capture(uintptr_t candidate) {
         return;
     }
 
-    if (!tnx_read_ptr(candidate + TNX_MODE_MANAGER_OFF, &manager) || !manager) return;
-    if (tnx_v57_header_reason((uintptr_t)manager, &count, &capacity)) return;
+    if (!tnx_read_ptr(candidate + TNX_MODE_MANAGER_OFF, &managerPtr) || !managerPtr) return;
+    if (tnx_v57_header_reason((uintptr_t)managerPtr, &count, &capacity)) return;
 
     if (g_v57_cand_this == candidate && g_v57_cand_vt == (uintptr_t)vtable) {
         g_v57_cand_ticks++;
@@ -6855,9 +6855,9 @@ static void tnx_v56_mode_capture(uintptr_t candidate) {
         g_v57_cand_vt = (uintptr_t)vtable;
         g_v57_cand_ticks = 1;
 
-        tnx_logf("v57 mode candidate this=%p vt=%#llx manager=%p count=%d cap=%d - it needs %d "
+        tnx_logf("v58 mode candidate this=%p vt=%#llx manager=%p count=%d cap=%d - it needs %d "
                  "matching ticks before it becomes the mode", (void *)candidate,
-                 (unsigned long long)(uintptr_t)vtable, (void *)manager, count, capacity,
+                 (unsigned long long)(uintptr_t)vtable, managerPtr, count, capacity,
                  TNX_V57_MODE_REVERIFY_TICKS);
 
         return;
@@ -6875,8 +6875,8 @@ static void tnx_v56_mode_capture(uintptr_t candidate) {
 
     tnx_battle_begin("setpred");
 
-    tnx_logf("v57 mode captured this=%p vt=%#llx manager=%p count=%d cap=%d ticks=%d",
-             (void *)candidate, (unsigned long long)(uintptr_t)vtable, (void *)manager, count,
+    tnx_logf("v58 mode captured this=%p vt=%#llx manager=%p count=%d cap=%d ticks=%d",
+             (void *)candidate, (unsigned long long)(uintptr_t)vtable, managerPtr, count,
              capacity, g_v57_cand_ticks);
 }
 
@@ -6890,7 +6890,7 @@ static void tnx_v57_drop_hook(int index) {
 
     if (!target) return;
     if (!brk_remove((void *)target)) {
-        tnx_logf("v57 hook %s drop failed target=%p %s", g_slot_specs[index].shortTag,
+        tnx_logf("v58 hook %s drop failed target=%p %s", g_slot_specs[index].shortTag,
                  (void *)target, hook_last_error() ? hook_last_error() : "-");
 
         return;
@@ -6898,7 +6898,7 @@ static void tnx_v57_drop_hook(int index) {
 
     g_slot_installed[index] = 0;
 
-    tnx_logf("v57 hook %s dropped target=%p - zero entries after 30 ticks and no slot of its own, "
+    tnx_logf("v58 hook %s dropped target=%p - zero entries after 30 ticks and no slot of its own, "
              "so the budget it held is returned to the engine", g_slot_specs[index].shortTag,
              (void *)target);
 }
@@ -6914,7 +6914,7 @@ static void tnx_v57_hook_triage(int index) {
     }
 
     if (g_slot_specs[index].slotRva) {
-        tnx_logf("v57 hook %s kept: slotRva=%#llx is a real pointer slot (%d slot(s)) and the "
+        tnx_logf("v58 hook %s kept: slotRva=%#llx is a real pointer slot (%d slot(s)) and the "
                  "function is simply not reached in this scenario - no re-slot needed",
                  g_slot_specs[index].shortTag, (unsigned long long)g_slot_specs[index].slotRva,
                  g_slot_slots[index]);
@@ -6982,7 +6982,7 @@ static int tnx_v56_man_walk(void) {
         if (tnx_v57_is_fn_start(candidate)) {
             g_v57_getown = candidate;
 
-            tnx_logf("v57 getown resolved at %#llx, function start confirmed",
+            tnx_logf("v58 getown resolved at %#llx, function start confirmed",
                      (unsigned long long)g_v57_getown);
         }
     }
@@ -6991,8 +6991,8 @@ static int tnx_v56_man_walk(void) {
         if (!g_v57_getown_logged) {
             g_v57_getown_logged = 1;
 
-            tnx_logf("v57 man walk blocked: getOwnCharacter candidate %#llx is not a function start "
-                     "- resolve the real entry from xrefs before calling it",
+            tnx_logf("v58 man walk blocked: getOwnCharacter candidate %#llx is not a function "
+                     "start - resolve the real entry from xrefs before calling it",
                      (unsigned long long)(g_base + TNX_V57_GETOWN_RVA));
         }
 

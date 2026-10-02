@@ -214,7 +214,7 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_68"
+#define TNX_BUILD_TAG "titanox_69"
 
 #define TNX_RVA_SETPREDICTION 0x00ac3f20ULL
 #define TNX_OBJ_X_OFF 0x30ULL
@@ -266,6 +266,9 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_V67_OWNER_RETRY_TICKS 20
 #define TNX_V68_PENDING_MAX 8
 #define TNX_V68_PENDING_RETRY_TICKS 5
+#define TNX_V69_PENDING_MAX_ATTEMPTS 3
+#define TNX_V69_ARRAY_PROBE 8
+#define TNX_V69_ARRAY_MIN_OBJS 2
 
 #define TNX_V47_OWN_MAX_SQ 100000000LL
 
@@ -682,6 +685,13 @@ static int g_v68_pending_count = 0;
 static int g_v68_probe_logs = 0;
 static int g_v68_gate_logs = 0;
 static int g_v68_dump_logs = 0;
+static int g_v69_pending_attempts[TNX_V68_PENDING_MAX] = { 0 };
+static int g_v69_pending_evicted = 0;
+static int g_v69_head_reject_logs = 0;
+static int g_v69_array_reject_logs = 0;
+static int g_v69_modewindow_logs = 0;
+static int g_v69_head_ok = 0;
+static int g_v69_head_rejected = 0;
 static int g_v62_class_pass = 0;
 static int g_v62_alert_shown = 0;
 static int g_v62_alerts_off = 0;
@@ -743,6 +753,9 @@ static void tnx_v68_pending_push(uintptr_t owner, const char *reason);
 static void tnx_v68_pending_tick(void);
 static void tnx_v68_multiteam_dump(uintptr_t owner, uint32_t teamMask,
                                    int teamCount);
+static int tnx_v69_manager_head_ok(uintptr_t owner);
+static int tnx_v69_array_probe(uintptr_t array, int32_t count, char *why, size_t whyLen);
+static void tnx_v69_modewindow_dump(uintptr_t mode);
 static uintptr_t tnx_v57_coord_x_off(void);
 static uintptr_t tnx_v57_coord_y_off(void);
 static BOOL tnx_read_ptr(uintptr_t address, void **out);
@@ -2361,9 +2374,11 @@ static void tnx_v64_modesig_tick(void) {
         tnx_read_i32((uintptr_t)mgr + TNX_MGR_COUNT_OFF, &count);
         tnx_read_i32((uintptr_t)mgr + TNX_MGR_CAP_OFF, &cap);
 
-        tnx_logf("v68 modesig accepted obj=%p vt=%#llx ec=%d m124=%#x mgr=%p count=%d ticks=%d "
+        tnx_logf("v69 modesig accepted obj=%p vt=%#llx ec=%d m124=%#x mgr=%p count=%d ticks=%d "
                  "src=SIG", (void *)found, (unsigned long long)(uintptr_t)vt, ec, (unsigned)m124,
                  mgr, count, g_v65_sig_ticks);
+
+        tnx_v69_modewindow_dump(found);
 
         if (count >= 2 && cap >= count && cap <= TNX_MGR_CAP_MAX) {
             g_manager_object = (uintptr_t)mgr;
@@ -4482,11 +4497,12 @@ static void tnx_objhit_dump(void) {
                 tnx_read_i32(hit->at + TNX_OBJ_Y_OFF, &hy);
 
                 tnx_logf("objhit pass=%d #%d at=%p vt=%#llx gid=%d team=%d own=%d dead=%d pos=(%d,%d) "
-                         "owner=%p ownerClass=%s",
+                         "owner=%p o20=%#llx o20Heap=%d ownerClass=%s",
                          g_heap_passes, printed, (void *)hit->at,
                          (unsigned long long)(hit->vt > g_base ? hit->vt - g_base : 0), hit->gid,
                          hit->team, hit->ownerIdx, hit->dead, hx, hy, (void *)hit->owner,
-                         names[want]);
+                         (unsigned long long)tnx_v68_word(hit->at + TNX_OBJ_OWNER_OFF),
+                         (int)tnx_heap_contains((uintptr_t)hit->owner), names[want]);
             }
 
             printed++;
@@ -4678,6 +4694,19 @@ static void tnx_object_vote_finish(void) {
             int32_t owned = 0;
             int32_t ownedCap = 0;
             char gateWhy[64] = { 0 };
+
+            if (!tnx_v69_manager_head_ok(entry->owner)) {
+                if (g_v69_head_reject_logs < 8) {
+                    g_v69_head_reject_logs++;
+
+                    tnx_logf("v69 objvote head refused owner=%p head=%#llx votes=%d gids=%d src=B",
+                             (void *)entry->owner,
+                             (unsigned long long)tnx_v68_word(entry->owner + TNX_MGR_ARRAY_OFF),
+                             entry->votes, entry->gidSeenCount);
+                }
+
+                return;
+            }
 
             tnx_v68_multiteam_dump(entry->owner, entry->teamMask, g_objvote_best_teamcount);
 
@@ -7162,6 +7191,134 @@ static uint64_t tnx_v68_word(uintptr_t address) {
     return value;
 }
 
+static int tnx_v69_manager_head_ok(uintptr_t owner) {
+    uintptr_t head = 0;
+
+    if (!owner) return 0;
+
+    head = (uintptr_t)tnx_v68_word(owner + TNX_MGR_ARRAY_OFF);
+
+    if (!head) {
+        g_v69_head_rejected++;
+
+        return 0;
+    }
+
+    if (tnx_in_image_span(head)) {
+        g_v69_head_rejected++;
+
+        return 0;
+    }
+
+    if (!tnx_heap_contains(head) && !tnx_heap_window_shaped(head)) {
+        g_v69_head_rejected++;
+
+        return 0;
+    }
+
+    g_v69_head_ok++;
+
+    return 1;
+}
+
+static int tnx_v69_array_probe(uintptr_t array, int32_t count, char *why, size_t whyLen) {
+    int probe = 0;
+    int valid = 0;
+
+    if (!array) {
+        if (why) snprintf(why, whyLen, "array-null");
+
+        return 0;
+    }
+
+    if (tnx_in_image_span(array) || (!tnx_heap_contains(array) && !tnx_heap_window_shaped(array))) {
+        if (why) snprintf(why, whyLen, "head-not-heap=%p", (void *)array);
+
+        return 0;
+    }
+
+    probe = count < TNX_V69_ARRAY_PROBE ? count : TNX_V69_ARRAY_PROBE;
+
+    for (int i = 0; i < probe; i++) {
+        void *element = NULL;
+        void *vtable = NULL;
+        int32_t team = 0;
+
+        if (!tnx_read_ptr(array + (uintptr_t)i * 8ULL, &element) || !element) continue;
+        if (!tnx_heap_contains((uintptr_t)element)) continue;
+        if (!tnx_read_ptr((uintptr_t)element, &vtable) || !vtable) continue;
+        if (!tnx_v56_vtable_in_image((uintptr_t)vtable)) continue;
+        if (!tnx_read_i32((uintptr_t)element + TNX_OBJ_TEAM_OFF, &team)) continue;
+        if (team < 0 || team > TNX_OBJ_TEAM_MAX) continue;
+
+        valid++;
+    }
+
+    if (valid < TNX_V69_ARRAY_MIN_OBJS) {
+        if (why) snprintf(why, whyLen, "elements=%d-of-%d", valid, probe);
+
+        return 0;
+    }
+
+    return valid;
+}
+
+static void tnx_v69_modewindow_dump(uintptr_t mode) {
+    void *before = NULL;
+    void *tableHead = NULL;
+
+    if (!mode) return;
+    if (g_v69_modewindow_logs >= 2) return;
+
+    g_v69_modewindow_logs++;
+
+    tnx_logf("v69 modewindow mode=%p m-10=%#llx m-08=%#llx m-00=%#llx m+08=%#llx src=SIG",
+             (void *)mode, (unsigned long long)tnx_v68_word(mode - 0x10ULL),
+             (unsigned long long)tnx_v68_word(mode - 0x8ULL),
+             (unsigned long long)tnx_v68_word(mode),
+             (unsigned long long)tnx_v68_word(mode + 0x8ULL));
+
+    tnx_logf("v69 modewindow mode=%p m+10=%#llx m+18=%#llx m+20=%#llx m+28=%#llx src=SIG",
+             (void *)mode, (unsigned long long)tnx_v68_word(mode + 0x10ULL),
+             (unsigned long long)tnx_v68_word(mode + 0x18ULL),
+             (unsigned long long)tnx_v68_word(mode + 0x20ULL),
+             (unsigned long long)tnx_v68_word(mode + 0x28ULL));
+
+    tnx_logf("v69 modewindow mode=%p m+30=%#llx m+38=%#llx m+40=%#llx m+48=%#llx src=SIG",
+             (void *)mode, (unsigned long long)tnx_v68_word(mode + 0x30ULL),
+             (unsigned long long)tnx_v68_word(mode + 0x38ULL),
+             (unsigned long long)tnx_v68_word(mode + 0x40ULL),
+             (unsigned long long)tnx_v68_word(mode + 0x48ULL));
+
+    tnx_read_ptr(mode - 0x8ULL, &before);
+
+    if (!before) {
+        tnx_logf("v69 classtable mode=%p m-08=null src=SIG", (void *)mode);
+
+        return;
+    }
+
+    if (!tnx_v56_vtable_in_image((uintptr_t)before)) {
+        tnx_logf("v69 classtable mode=%p m-08=%p not-in-image src=SIG", (void *)mode, before);
+
+        return;
+    }
+
+    if (!tnx_read_ptr((uintptr_t)before, &tableHead) || !tableHead) {
+        tnx_logf("v69 classtable mode=%p m-08=%p vt0=null src=SIG", (void *)mode, before);
+
+        return;
+    }
+
+    {
+        uintptr_t tableRva = (uintptr_t)tableHead > g_base ? (uintptr_t)tableHead - g_base : 0;
+
+        tnx_logf("v69 classtable mode=%p m-08=%p vt0=%p vt0InImage=%d vt0rva=%#llx src=SIG",
+                 (void *)mode, before, tableHead,
+                 (int)tnx_v56_vtable_in_image((uintptr_t)tableHead), (unsigned long long)tableRva);
+    }
+}
+
 static int tnx_v68_container_gate(uintptr_t manager, uintptr_t *containerOut, int32_t *countOut,
                                   int32_t *capOut, char *why, size_t whyLen) {
     void *array = NULL;
@@ -7224,6 +7381,17 @@ static int tnx_v68_container_gate(uintptr_t manager, uintptr_t *containerOut, in
 
     if (capacity < count || capacity > 10 * TNX_MGR_CAP_MAX) capacity = count;
 
+    if (!tnx_v69_array_probe((uintptr_t)array, count, why, whyLen)) {
+        if (g_v69_array_reject_logs < 8) {
+            g_v69_array_reject_logs++;
+
+            tnx_logf("v69 gate array refused mgr=%p array=%p count=%d reason=%s src=B",
+                     (void *)manager, array, count, why && why[0] ? why : "unknown");
+        }
+
+        return 0;
+    }
+
     if (containerOut) *containerOut = manager;
     if (countOut) *countOut = count;
     if (capOut) *capOut = capacity;
@@ -7252,6 +7420,7 @@ static void tnx_v68_pending_push(uintptr_t owner, const char *why) {
     if (g_v68_pending_count >= TNX_V68_PENDING_MAX) return;
 
     g_v68_pending_tick[g_v68_pending_count] = (int)g_v50_ticks;
+    g_v69_pending_attempts[g_v68_pending_count] = 0;
     g_v68_pending[g_v68_pending_count++] = owner;
 
     tnx_logf("v68 pending push owner=%p reason=%s size=%d src=B", (void *)owner,
@@ -7276,16 +7445,40 @@ static void tnx_v68_multiteam_dump(uintptr_t owner, uint32_t teamMask, int teamC
     tnx_logf("v68 multiteam owner=%p teams=%#x teamCount=%d src=B", (void *)owner, teamMask,
              teamCount);
 
-    tnx_logf("v68 dump owner=%p +00=%#llx +08=%#llx +10=%#llx +18=%#llx +20=%#llx +28=%#llx "
-             "+80=%#llx +88=%#llx src=B", (void *)owner,
+    tnx_logf("v69 dump owner=%p +00=%#llx +08=%#llx +10=%#llx +18=%#llx src=B", (void *)owner,
              (unsigned long long)tnx_v68_word(owner + 0x0ULL),
              (unsigned long long)tnx_v68_word(owner + 0x8ULL),
              (unsigned long long)tnx_v68_word(owner + 0x10ULL),
-             (unsigned long long)tnx_v68_word(owner + 0x18ULL),
+             (unsigned long long)tnx_v68_word(owner + 0x18ULL));
+
+    tnx_logf("v69 dump owner=%p +20=%#llx +28=%#llx +30=%#llx +38=%#llx src=B", (void *)owner,
              (unsigned long long)tnx_v68_word(owner + 0x20ULL),
              (unsigned long long)tnx_v68_word(owner + 0x28ULL),
-             (unsigned long long)tnx_v68_word(owner + 0x80ULL),
-             (unsigned long long)tnx_v68_word(owner + 0x88ULL));
+             (unsigned long long)tnx_v68_word(owner + 0x30ULL),
+             (unsigned long long)tnx_v68_word(owner + 0x38ULL));
+
+    tnx_logf("v69 dump owner=%p +40=%#llx +48=%#llx +50=%#llx +58=%#llx src=B", (void *)owner,
+             (unsigned long long)tnx_v68_word(owner + 0x40ULL),
+             (unsigned long long)tnx_v68_word(owner + 0x48ULL),
+             (unsigned long long)tnx_v68_word(owner + 0x50ULL),
+             (unsigned long long)tnx_v68_word(owner + 0x58ULL));
+
+    tnx_logf("v69 dump owner=%p +60=%#llx +68=%#llx +70=%#llx +78=%#llx src=B", (void *)owner,
+             (unsigned long long)tnx_v68_word(owner + 0x60ULL),
+             (unsigned long long)tnx_v68_word(owner + 0x68ULL),
+             (unsigned long long)tnx_v68_word(owner + 0x70ULL),
+             (unsigned long long)tnx_v68_word(owner + 0x78ULL));
+
+    {
+        uintptr_t head = (uintptr_t)tnx_v68_word(owner + TNX_MGR_ARRAY_OFF);
+        uintptr_t word20 = (uintptr_t)tnx_v68_word(owner + TNX_OBJ_OWNER_OFF);
+
+        tnx_logf("v69 head owner=%p head=%#llx headImg=%d headHeap=%d headWin=%d +20=%#llx "
+                 "+20Heap=%d src=B", (void *)owner, (unsigned long long)head,
+                 (int)tnx_in_image_span(head), (int)tnx_heap_contains(head),
+                 (int)tnx_heap_window_shaped(head), (unsigned long long)word20,
+                 (int)tnx_heap_contains(word20));
+    }
 
     if (!tnx_read_ptr(owner + TNX_MGR_ARRAY_OFF, &array) || !array) return;
 
@@ -7327,8 +7520,10 @@ static void tnx_v68_pending_tick(void) {
         if (!owner) continue;
 
         g_v68_pending_tick[i] = (int)g_v50_ticks;
+        g_v69_pending_attempts[i]++;
 
-        tnx_logf("v68 pending retry owner=%p age=%d src=B", (void *)owner, age);
+        tnx_logf("v69 pending retry owner=%p age=%d attempt=%d src=B", (void *)owner, age,
+                 g_v69_pending_attempts[i]);
 
         if (tnx_v68_container_gate(owner, &container, &count, &cap, why, sizeof(why))) {
             g_manager_object = container;
@@ -7340,8 +7535,25 @@ static void tnx_v68_pending_tick(void) {
             return;
         }
 
+        if (g_v69_pending_attempts[i] >= TNX_V69_PENDING_MAX_ATTEMPTS) {
+            tnx_logf("v69 pending evict owner=%p attempts=%d src=B", (void *)owner,
+                     g_v69_pending_attempts[i]);
+
+            g_v69_pending_evicted++;
+
+            for (int k = i; k + 1 < g_v68_pending_count; k++) {
+                g_v68_pending[k] = g_v68_pending[k + 1];
+                g_v68_pending_tick[k] = g_v68_pending_tick[k + 1];
+                g_v69_pending_attempts[k] = g_v69_pending_attempts[k + 1];
+            }
+
+            g_v68_pending_count--;
+
+            return;
+        }
+
         if (g_v68_dump_logs < 4 && why[0]) {
-            tnx_logf("v68 pending still refused owner=%p reason=%s src=B", (void *)owner, why);
+            tnx_logf("v69 pending still refused owner=%p reason=%s src=B", (void *)owner, why);
         }
 
         return;

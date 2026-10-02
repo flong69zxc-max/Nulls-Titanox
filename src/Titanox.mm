@@ -188,7 +188,21 @@ static __thread BOOL g_inside_hook = NO;
 
 /* Printed as the first line after "setup", so every log identifies the build that produced
    it. Two device logs were once spent comparing a new binary against an old one. */
-#define TNX_BUILD_TAG "titanox_30"
+#define TNX_BUILD_TAG "titanox_31"
+
+/* Arming the WHOLE __text as RWX kills the process: the 17:32 run ends right after
+   "slot hooks: codePatch=1 flag=1 ..." and before the arming line itself could be printed,
+   with no crash report at all -- which is what an integrity kill looks like, not a fault.
+   Arming eight pages at a time (the 17:28 run) was survivable, so the footprint has to stay
+   small and precise.
+
+   The engine's cave finder wants a run of zeros or NOPs inside __text, so the only pages that
+   can ever host the trampoline are the pages that CONTAIN such a run. Those are found here at
+   runtime rather than from the file, because the two differ: the file holds method-list data
+   at byte RVA 0xdcea48 where the 05:52 run had zeros. Each such page is armed on its own and
+   logged, so even a truncated log shows exactly how far this got. */
+#define TNX_CAVE_MIN_RUN 96
+#define TNX_CAVE_PAGE_LIMIT 64
 
 /* The whole __text region, pre-armed READ|WRITE|EXECUTE before the first install. The engine's
    trampoline cave finder searches this region and its choice is NOT stable between runs: byte
@@ -601,6 +615,56 @@ static void tnx_make_rwx(uintptr_t address, size_t length) {
     tnx_logf("rwx %p..%p kr=%d", (void *)page, (void *)last, (int)result);
 }
 
+/* Arms only the pages of __text that could host the trampoline cave: the ones holding a run of
+   at least TNX_CAVE_MIN_RUN bytes that are all zero or all NOP. Page-local detection is enough
+   because the first byte of the run -- where the engine would put the cave -- lies inside the
+   page that reports it. Every page is logged before it is armed, so a truncated log still
+   shows how far this got. */
+static int tnx_arm_cave_pages(void) {
+    static uint8_t buffer[0x4000];
+    uintptr_t first = g_base + TNX_TEXT_RVA_LO;
+    uintptr_t last = first + TNX_TEXT_RVA_SIZE;
+    int armed = 0;
+
+    for (uintptr_t page = first; page + 0x4000 <= last; page += 0x4000) {
+        vm_size_t got = 0;
+        int best = 0;
+        int run = 0;
+
+        if (armed >= TNX_CAVE_PAGE_LIMIT) break;
+
+        if (vm_read_overwrite(mach_task_self(), (vm_address_t)page, 0x4000,
+                              (vm_address_t)buffer, &got) != KERN_SUCCESS) continue;
+
+        if (got != 0x4000) continue;
+
+        for (int i = 0; i + 4 <= 0x4000; i += 4) {
+            uint32_t word = (uint32_t)buffer[i] | ((uint32_t)buffer[i + 1] << 8) |
+                            ((uint32_t)buffer[i + 2] << 16) | ((uint32_t)buffer[i + 3] << 24);
+
+            if (word == 0x00000000 || word == 0xd503201f) {
+                run += 4;
+
+                if (run > best) best = run;
+            } else {
+                run = 0;
+            }
+        }
+
+        if (best < TNX_CAVE_MIN_RUN) continue;
+
+        tnx_logf("cave page rva=%#llx run=%d", (unsigned long long)(page - g_base), best);
+
+        tnx_make_rwx(page, 0x4000);
+
+        armed++;
+    }
+
+    tnx_logf("cave pages armed=%d of limit=%d", armed, TNX_CAVE_PAGE_LIMIT);
+
+    return armed;
+}
+
 /* Runs on the game's thread: record only, never log or read memory here. */
 static uint64_t tnx_ag_repl(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                             uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
@@ -721,7 +785,7 @@ static void tnx_slot_hooks_install(void) {
 
     /* Must happen before the FIRST install: the cave address is chosen on the first attempt and
        reused afterwards, so arming later only helps if that same page gets armed. */
-    tnx_make_rwx(g_base + TNX_TEXT_RVA_LO, TNX_TEXT_RVA_SIZE);
+    tnx_arm_cave_pages();
 
     for (int i = 0; i < TNX_SLOT_COUNT; i++) tnx_slot_install_one(i);
 

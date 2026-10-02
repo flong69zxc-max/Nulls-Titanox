@@ -249,7 +249,7 @@ static __thread BOOL g_inside_hook = NO;
 
 /* Printed as the first line after "setup", so every log identifies the build that produced
    it. Two device logs were once spent comparing a new binary against an old one. */
-#define TNX_BUILD_TAG "titanox_40"
+#define TNX_BUILD_TAG "titanox_41"
 
 /* IN-LINE HOOKING IS IMPOSSIBLE ON THIS PROCESS -- measured, not assumed. The 17:38 log caught
    it directly:
@@ -3842,6 +3842,59 @@ static tnx_trail_t g_trail[TNX_TRAIL_MAX];
 static int g_trail_count = 0;
 static uint64_t g_trail_total = 0;
 
+/* Seen-address memory, one table per pass.
+
+   The 19:13 run made the need for this plain. The trail recorded a candidate as
+   `count=52 cap=52 live=10 nonEmpty=46`, and twenty-five seconds later the read-only dump of
+   the very same address reported `count=12` and an array pointer that could not even be read
+   -- `shown=0`. The same thing happened in the 19:03 run with 48 turning into 12. Whatever the
+   scanner is finding, it is scratch memory that is rewritten as the game runs, not a container
+   that lives for the length of a match.
+
+   A real object manager is stable, so stability becomes a requirement: an address is only
+   worth reporting once it has held the same count in two different passes. This runs only for
+   candidates that already reached a probe, so it costs almost nothing. */
+#define TNX_SEEN_MAX 64
+
+typedef struct {
+    uintptr_t address;
+    int32_t count;
+} tnx_seen_t;
+
+static tnx_seen_t g_seen_now[TNX_SEEN_MAX];
+static tnx_seen_t g_seen_prev[TNX_SEEN_MAX];
+static int g_seen_now_count = 0;
+static int g_seen_prev_count = 0;
+static int g_seen_pass = -1;
+
+static BOOL tnx_candidate_is_stable(uintptr_t address, int32_t count) {
+    BOOL stable = NO;
+
+    if (g_seen_pass != g_heap_passes) {
+        for (int i = 0; i < g_seen_now_count && i < TNX_SEEN_MAX; i++) {
+            g_seen_prev[i] = g_seen_now[i];
+        }
+        g_seen_prev_count = g_seen_now_count;
+        g_seen_now_count = 0;
+        g_seen_pass = g_heap_passes;
+    }
+
+    for (int i = 0; i < g_seen_prev_count; i++) {
+        if (g_seen_prev[i].address == address && g_seen_prev[i].count == count) {
+            stable = YES;
+            break;
+        }
+    }
+
+    if (g_seen_now_count < TNX_SEEN_MAX) {
+        g_seen_now[g_seen_now_count].address = address;
+        g_seen_now[g_seen_now_count].count = count;
+        g_seen_now_count++;
+    }
+
+    return stable;
+}
+
 static void tnx_trail_note(uintptr_t manager, int32_t count, int32_t capacity, int live,
                            int nonEmpty) {
     int slot = -1;
@@ -3850,6 +3903,10 @@ static void tnx_trail_note(uintptr_t manager, int32_t count, int32_t capacity, i
     g_trail_total++;
 
     if (live > g_manager_best_live) g_manager_best_live = live;
+
+    /* Scratch memory is rewritten as the game runs, so a single sighting proves nothing.
+       Only structures that have held the same count across two passes are reported. */
+    if (!tnx_candidate_is_stable(manager, count)) return;
 
     /* One entry per address. Without this the same structure was recorded over and over and
        filled all eight slots -- on the 18:55 run every slot held 0x108846678, so the list that

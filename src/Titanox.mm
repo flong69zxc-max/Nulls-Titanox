@@ -148,7 +148,12 @@ static __thread BOOL g_inside_hook = NO;
 #define TNX_SNAPSHOT_BYTES 0x140
 #define TNX_SNAPSHOT_DELAY 1.2
 #define TNX_VOTESCAN_INTERVAL 1.0
-#define TNX_VOTESCAN_ATTEMPTS 240
+#define TNX_VOTESCAN_ATTEMPTS 600
+
+/* Bytes per heap pass. The pass is not allowed to grow (it runs on the render thread),
+   so coverage of the whole address space comes from starting each pass where the
+   previous one ran out of budget -- see g_heap_scan_next. */
+#define TNX_HEAP_SCAN_BUDGET (512ull * 1024ull * 1024ull)
 #define TNX_VOTESCAN_HEAP_EVERY 30
 
 /* A battle is a container holding several live entities. Lobby look-alikes hold 0 or 1.
@@ -192,6 +197,8 @@ static uintptr_t g_mode_object = 0;
 static BOOL g_mode_strong = NO;
 static int g_mode_best_objects = 0;
 static int g_mode_verified_hits = 0;
+static uintptr_t g_heap_scan_next = 0;
+static int g_scan_sig[2] = { -1, -1 };
 static uintptr_t g_mode_source = 0;
 static int g_mode_matches = 0;
 static BOOL g_mode_scanned = NO;
@@ -1885,6 +1892,86 @@ static void tnx_adopt_mode(uintptr_t object, BOOL strong, const char *tag) {
     tnx_report_mode_hit(tag, 0, object);
 }
 
+/* ---------------------------------------------------------------------------
+   Protocol discovery.
+
+   The engine's native-facing callback channel is an ObjC protocol: MetalView and
+   NullView both carry a `titanDelegate` property, and the binary contains the
+   protocol name TitanViewDelegate plus scTitanApplication / scTitanHookRegistry.
+   A delegate protocol is the supported way to learn when a battle starts and ends
+   -- far better than guessing structure in memory. Read the runtime instead of the
+   binary so the names are exact.
+   --------------------------------------------------------------------------- */
+
+static void tnx_dump_protocol_methods(const char *name) {
+    Protocol *protocol = objc_getProtocol(name);
+
+    if (!protocol) {
+        tnx_logf("proto %s absent", name);
+        return;
+    }
+
+    unsigned required = 0;
+    unsigned optional = 0;
+    struct objc_method_description *req = protocol_copyMethodDescriptionList(protocol, YES, YES, &required);
+    struct objc_method_description *opt = protocol_copyMethodDescriptionList(protocol, NO, YES, &optional);
+
+    tnx_logf("proto %s required=%u optional=%u", name, required, optional);
+
+    for (unsigned i = 0; req && i < required && i < 48; i++) {
+        tnx_logf("proto %s req -%s types=%s", name, sel_getName(req[i].name),
+                 req[i].types ? req[i].types : "-");
+    }
+
+    for (unsigned i = 0; opt && i < optional && i < 48; i++) {
+        tnx_logf("proto %s opt -%s types=%s", name, sel_getName(opt[i].name),
+                 opt[i].types ? opt[i].types : "-");
+    }
+
+    if (req) free(req);
+    if (opt) free(opt);
+}
+
+static void tnx_dump_protocols(void) {
+    unsigned total = 0;
+    Protocol *__unsafe_unretained *list = objc_copyProtocolList(&total);
+    int named = 0;
+
+    for (unsigned i = 0; list && i < total; i++) {
+        const char *name = protocol_getName(list[i]);
+
+        if (!name) continue;
+
+        if (strstr(name, "itan") || strstr(name, "attle") || strstr(name, "Titan") ||
+            strstr(name, "Hook") || strstr(name, "View") || strstr(name, "Game")) {
+            if (named++ < 60) tnx_logf("proto found %s", name);
+        }
+    }
+
+    tnx_logf("proto total=%u interesting=%d", total, named);
+
+    if (list) free(list);
+
+    /* Property attributes name the delegate's protocol exactly, e.g.
+       T@"<TitanViewDelegate>", so no name guessing is needed. */
+    static const char *const classes[] = { "MetalView", "NullView", NULL };
+
+    for (int i = 0; classes[i]; i++) {
+        Class cls = objc_getClass(classes[i]);
+
+        if (!cls) continue;
+
+        objc_property_t property = class_getProperty(cls, "titanDelegate");
+
+        tnx_logf("prop %s titanDelegate attrs=%s", classes[i],
+                 property ? (property_getAttributes(property) ? property_getAttributes(property) : "-") : "absent");
+    }
+
+    static const char *const protocols[] = { "TitanViewDelegate", NULL };
+
+    for (int i = 0; protocols[i]; i++) tnx_dump_protocol_methods(protocols[i]);
+}
+
 static void tnx_scan_globals_for_mode(const char *name) {
     uintptr_t lo = 0;
     uintptr_t hi = 0;
@@ -1988,12 +2075,25 @@ static void tnx_scan_globals_for_mode(const char *name) {
 
     free(bytes);
 
-    tnx_logf("votescan %s hits=%d vt=%d shape=%d strong=%d near=%d vfx=%d",
-             name, hits, vtHits, shapeHits, strongHits, nearMiss, verifiedHits);
+    /* Quiet by default: the two per-attempt lines used to bury the whole 240-attempt
+       window in ~500 identical lines, which is exactly why every pasted log stopped
+       before the interesting part. Log on change, and otherwise twice a minute. */
+    {
+        int index = (strcmp(name, "__DATA_CONST") == 0) ? 1 : 0;
+        int sig = hits * 31 + shapeHits * 131 + strongHits * 1313 + verifiedHits * 131313;
+
+        if (sig != g_scan_sig[index] || (g_votescan_attempts % 30) == 0) {
+            g_scan_sig[index] = sig;
+
+            tnx_logf("votescan %s hits=%d vt=%d shape=%d strong=%d near=%d vfx=%d",
+                     name, hits, vtHits, shapeHits, strongHits, nearMiss, verifiedHits);
+        }
+    }
 }
 
 static void tnx_scan_heap_for_mode(void) {
-    vm_address_t address = 0;
+    uintptr_t startAddress = g_heap_scan_next;
+    vm_address_t address = (vm_address_t)startAddress;
     size_t scanned = 0;
     int regions = 0;
     int hits = 0;
@@ -2001,7 +2101,7 @@ static void tnx_scan_heap_for_mode(void) {
     int strongHits = 0;
     int verifiedHits = 0;
 
-    while (regions < 8192 && scanned < (512ull * 1024ull * 1024ull)) {
+    while (regions < 8192 && scanned < TNX_HEAP_SCAN_BUDGET) {
         vm_size_t size = 0;
         vm_region_basic_info_data_64_t info;
         mach_msg_type_number_t infoCount = VM_REGION_BASIC_INFO_COUNT_64;
@@ -2026,7 +2126,7 @@ static void tnx_scan_heap_for_mode(void) {
             uint64_t remaining = (uint64_t)size;
             uintptr_t cursor = (uintptr_t)address;
 
-            while (remaining >= 16 && scanned < (512ull * 1024ull * 1024ull)) {
+            while (remaining >= 16 && scanned < TNX_HEAP_SCAN_BUDGET) {
                 size_t chunk = (size_t)(remaining < TNX_HEAP_CHUNK ? remaining : (uint64_t)TNX_HEAP_CHUNK);
                 uint8_t *buffer = (uint8_t *)malloc(chunk);
 
@@ -2093,8 +2193,18 @@ static void tnx_scan_heap_for_mode(void) {
         address = (vm_address_t)next;
     }
 
-    tnx_logf("votescan heap scanned=%zu regions=%d hits=%d shape=%d strong=%d vfx=%d",
-             scanned, regions, hits, shapeHits, strongHits, verifiedHits);
+    /* If the byte budget ran out, remember where: the next pass continues from there
+       instead of re-scanning the same low part of the address space every time. */
+    if (scanned >= TNX_HEAP_SCAN_BUDGET && regions >= 8192) {
+        g_heap_scan_next = 0;
+    } else if (scanned >= TNX_HEAP_SCAN_BUDGET) {
+        g_heap_scan_next = (uintptr_t)address;
+    } else {
+        g_heap_scan_next = 0;
+    }
+
+    tnx_logf("votescan heap from=%p scanned=%zu regions=%d hits=%d shape=%d strong=%d vfx=%d",
+             (void *)startAddress, scanned, regions, hits, shapeHits, strongHits, verifiedHits);
 }
 
 static void tnx_locate_battle_mode(void) {
@@ -2348,6 +2458,7 @@ static void setup(void) {
     tnx_dump_verified();
     tnx_dump_rvas();
     tnx_probe_classes();
+    tnx_dump_protocols();
 
     tnx_objc_arm("MetalView", "render");
     tnx_objc_arm("NullView", "render");

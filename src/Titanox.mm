@@ -249,7 +249,7 @@ static __thread BOOL g_inside_hook = NO;
 
 /* Printed as the first line after "setup", so every log identifies the build that produced
    it. Two device logs were once spent comparing a new binary against an old one. */
-#define TNX_BUILD_TAG "titanox_37"
+#define TNX_BUILD_TAG "titanox_38"
 
 /* IN-LINE HOOKING IS IMPOSSIBLE ON THIS PROCESS -- measured, not assumed. The 17:38 log caught
    it directly:
@@ -385,6 +385,7 @@ static int g_manager_last_live = 0;
 static int g_manager_last_nonempty = 0;
 static int g_manager_last_capacity = 0;
 static int g_manager_saw_cap = 0;
+static int g_manager_loose_count = 0;
 static int g_manager_cap_rejects = 0;
 static int g_manager_best_count = 0;
 static int g_manager_best_live = 0;
@@ -572,6 +573,7 @@ static uintptr_t g_slot_object[TNX_SLOT_COUNT] = { 0 };
    a match the forwarder is handed the manager itself in a1, and until now it threw that away. */
 static uintptr_t g_slot_arg1[TNX_SLOT_COUNT] = { 0 };
 static uint64_t g_slot_hits[TNX_SLOT_COUNT] = { 0 };
+static uint64_t g_slot_hits_total = 0;
 static int g_slot_installed[TNX_SLOT_COUNT] = { -1, -1, -1, -1, -1, -1, -1 };
 static uint32_t g_slot_reported_mask = 0;
 static uintptr_t g_slot_adopted = 0;
@@ -2266,7 +2268,7 @@ static const tnx_rva_entry_t g_verified[] = {
     { "LogicProjectileData::getColumnValue", 0x9cd5e0 },
     { "GameObj::setOwner (this+0x20 = manager)", 0xa2d250 },
     { "Array<T>::append (header layout source)", 0x46aefc },
-    { "LogicGameObjectClient data accessor", 0x100382cc8 },
+    { "LogicGameObjectClient data accessor", 0x382cc8 },
     { "LogicBattleModeClient::getInt (+0xec)", 0xac3500 },
     { "LogicBattleModeClient::get 0x218", 0xac40d8 },
     { "LogicBattleModeClient::get 0x220", 0xac40e8 },
@@ -2969,6 +2971,19 @@ static void tnx_probe_manager(uintptr_t cursor, size_t offset, const uint8_t *bu
         return;
     }
 
+    /* And the tight bound, which is the one that actually matters. The append routine at
+       0x46aefc grows with `lsl w9, w8, #1` -- new capacity is exactly twice the old count, with
+       a floor of 5 -- so for any array holding three or more entries `capacity` can never
+       exceed `count * 2`. titanox_37 accepted only `capacity <= 4096`, and on the device that
+       let 2,031,646 words through: 1,454,207 of them passed every free check, so the 65536
+       probe budget was gone inside the first pass and the rest of the heap was never looked at.
+       This bound costs nothing and removes almost all of them. */
+    if (capacity > count * 2) {
+        g_manager_saw_cap++;
+        g_manager_cap_rejects++;
+        return;
+    }
+
     g_manager_saw_cap++;
 
     if (!tnx_pointer_plausible((uintptr_t)arrayValue)) return;
@@ -2982,6 +2997,8 @@ static void tnx_probe_manager(uintptr_t cursor, size_t offset, const uint8_t *bu
 
     /* Counted, not silently dropped: if this ever fires the pass line says so instead of the
        scan quietly going blind the way it did on the previous run. */
+    g_manager_loose_count++;
+
     if (g_manager_probes >= TNX_MANAGER_PROBE_LIMIT) {
         g_manager_skipped++;
         return;
@@ -2998,16 +3015,18 @@ static void tnx_probe_manager(uintptr_t cursor, size_t offset, const uint8_t *bu
     if ((int)count > g_manager_best_count) g_manager_best_count = (int)count;
     if (live > g_manager_best_live) g_manager_best_live = live;
 
-    if (live < TNX_MANAGER_MIN_OBJECTS) return;
-
-    g_manager_object = candidate;
-    g_manager_count = (int)count;
-
+    /* The closest miss, recorded BEFORE the rejection -- in titanox_37 this sat after it and
+       was therefore unreachable, which is why every run printed "trail: 0 candidates" while
+       simultaneously reporting bestCount=96. A diagnostic that can never fire is worse than no
+       diagnostic: it looks like evidence of absence. */
     if (live < TNX_MANAGER_MIN_OBJECTS) {
         tnx_trail_note(candidate, (int32_t)count, g_manager_last_capacity,
                        g_manager_last_live, g_manager_last_nonempty);
         return;
     }
+
+    g_manager_object = candidate;
+    g_manager_count = (int)count;
 
     tnx_logf("MANAGER found object=%p count=%u live=%d", (void *)candidate, count, live);
 
@@ -3082,9 +3101,30 @@ static void tnx_diag_report(const char *why) {
     /* The previous run reported "wrong layout" for a log in which mx never exceeded 1, i.e. in
        which the game had not built a battle container at all. The two cases have to be told
        apart by the log itself, or a correct layout gets blamed for an absent battle. */
-    if (!g_manager_object && g_mode_best_objects < TNX_MANAGER_MIN_OBJECTS && g_heap_passes > 0) {
+    /* A blind scanner outranks every other conclusion. titanox_37 printed "NO BATTLE IN
+       WINDOW" for a run in which the probe budget was exhausted at 65536 with 749,337
+       candidates skipped -- that verdict was not supported by the run and would have sent the
+       next iteration after the wrong thing entirely. */
+    if (g_manager_loose_count == 0 && g_manager_saw_cap == 0 && g_heap_passes > 0) {
+        verdict = "NO ARRAY-SHAPED WORD ANYWHERE - the header test itself matched nothing";
+    } else if (g_manager_skipped > 0 || g_manager_probes >= TNX_MANAGER_PROBE_LIMIT) {
+        verdict = "SCANNER BLIND - probe budget exhausted, this run proves nothing about the layout";
+    } else if (g_slot_hits_total == 0 && g_heap_passes > 0) {
+        verdict = "NO HOOK EVER FIRED and no manager found - the battle may never have started";
+    } else if (!g_manager_object && g_mode_best_objects < TNX_MANAGER_MIN_OBJECTS &&
+               g_heap_passes > 0) {
         verdict = "NO BATTLE IN WINDOW - nothing battle-shaped existed, this says nothing about the layout";
     }
+
+    g_slot_hits_total = 0;
+    for (int i = 0; i < TNX_SLOT_COUNT; i++) g_slot_hits_total += (uint64_t)g_slot_hits[i];
+
+    tnx_logf("hooks fired=%llu of %d slots (A1=%llu A2=%llu B1=%llu B2=%llu B3=%llu C1=%llu C2=%llu)",
+             (unsigned long long)g_slot_hits_total, TNX_SLOT_COUNT,
+             (unsigned long long)g_slot_hits[0], (unsigned long long)g_slot_hits[1],
+             (unsigned long long)g_slot_hits[2], (unsigned long long)g_slot_hits[3],
+             (unsigned long long)g_slot_hits[4], (unsigned long long)g_slot_hits[5],
+             (unsigned long long)g_slot_hits[6]);
 
     tnx_trail_dump();
 
@@ -3357,12 +3397,12 @@ static void tnx_scan_heap_for_mode(void) {
     g_heap_covered += (unsigned long long)scanned;
 
     tnx_logf("votescan heap pass=%d from=%p scanned=%zu regions=%d hits=%d vfx=%d mgr=%p "
-             "probes=%d/%d skipped=%d cap=%d/%d best%d/%d(live %d/%d cap %d)",
+             "probes=%d/%d skipped=%d cap=%d/%d loose=%d best%d/%d(live %d/%d cap %d)",
              g_heap_passes, (void *)startAddress, scanned, regions, hits, verifiedHits,
              (void *)g_manager_object, g_manager_probes, TNX_MANAGER_PROBE_LIMIT,
              g_manager_skipped, g_manager_cap_rejects, g_manager_saw_cap,
-             g_manager_best_count, g_manager_best_live, g_manager_last_live,
-             g_manager_last_nonempty, g_manager_last_capacity);
+             g_manager_loose_count, g_manager_best_count, g_manager_best_live,
+             g_manager_last_live, g_manager_last_nonempty, g_manager_last_capacity);
 }
 
 static void tnx_locate_battle_mode(void) {

@@ -135,6 +135,11 @@ static __thread BOOL g_inside_hook = NO;
 #define TNX_MODE_MANAGER_OFF 0x20ULL
 #define TNX_MGR_ARRAY_OFF 0x0ULL
 #define TNX_MGR_COUNT_OFF 0xcULL
+
+/* A battle manager holds several live objects; every lobby container observed so far
+   held 0 or 1. Used by the vtable-free manager probe. */
+#define TNX_MANAGER_MIN_OBJECTS 3
+#define TNX_MANAGER_PROBE_LIMIT 2048
 #define TNX_OBJ_GLOBALID_OFF 0x8ULL
 #define TNX_OBJ_TEAM_OFF 0x4cULL
 #define TNX_MODE_MODEVAR_OFF 0x124ULL
@@ -197,6 +202,14 @@ static uintptr_t g_mode_object = 0;
 static BOOL g_mode_strong = NO;
 static int g_mode_best_objects = 0;
 static int g_mode_verified_hits = 0;
+static uintptr_t g_manager_object = 0;
+static int g_manager_count = 0;
+static int g_manager_probes = 0;
+static int g_manager_probes_total = 0;
+static int g_manager_best_count = 0;
+static int g_manager_best_live = 0;
+static int g_heap_passes = 0;
+static unsigned long long g_heap_covered = 0;
 static uintptr_t g_heap_scan_next = 0;
 static int g_scan_sig[2] = { -1, -1 };
 static uintptr_t g_mode_source = 0;
@@ -1269,13 +1282,13 @@ static void tnx_overlay_attach(NSString *text) {
     }
 
     if (!g_overlay) {
-        UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(10.0, 44.0, 480.0, 20.0)];
+        UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(10.0, 44.0, 520.0, 36.0)];
 
         label.font = [UIFont monospacedSystemFontOfSize:12.0 weight:UIFontWeightBold];
         label.textColor = [UIColor colorWithRed:1.0 green:0.32 blue:0.32 alpha:1.0];
         label.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.55];
         label.userInteractionEnabled = NO;
-        label.numberOfLines = 1;
+        label.numberOfLines = 2;
 
         g_overlay = label;
     }
@@ -1295,9 +1308,10 @@ static void tnx_overlay_update(void) {
 
     g_overlay_last = now;
 
-    snprintf(text, sizeof(text), "TNX t=%d a=%d/%d mx=%d vfx=%d obj=%s",
-             g_scan_ticks, g_votescan_attempts, TNX_VOTESCAN_ATTEMPTS,
-             g_mode_best_objects, g_mode_verified_hits, g_mode_object ? "ok" : "-");
+    snprintf(text, sizeof(text), "TNX t=%d a=%d/%d hp=%d\nmx=%d vfx=%d mgr=%d pr=%d bc=%d bl=%d",
+             g_scan_ticks, g_votescan_attempts, TNX_VOTESCAN_ATTEMPTS, g_heap_passes,
+             g_mode_best_objects, g_mode_verified_hits, g_manager_count,
+             g_manager_probes_total, g_manager_best_count, g_manager_best_live);
 
     NSString *string = [NSString stringWithUTF8String:text];
 
@@ -2137,6 +2151,155 @@ static void tnx_dump_protocols(void) {
     for (int i = 0; protocols[i]; i++) tnx_dump_protocol_methods(protocols[i]);
 }
 
+static void tnx_dump_hex(const char *tag, uintptr_t address, size_t bytes) {
+    uint8_t buffer[0x100];
+
+    if (bytes > sizeof(buffer)) bytes = sizeof(buffer);
+
+    for (size_t offset = 0; offset + 16 <= bytes; offset += 16) {
+        uint32_t words[4] = { 0, 0, 0, 0 };
+
+        if (!tnx_copy(address + offset, buffer, 16)) break;
+
+        memcpy(words, buffer, sizeof(words));
+
+        tnx_logf("%s +%02zx %08x %08x %08x %08x", tag, offset, words[0], words[1], words[2], words[3]);
+    }
+}
+
+/* Vtable-free manager shape.
+
+   This is the anchor that needs no vtable guess at all. The layout of the manager was
+   established from the 38 call sites of addGameObject, not from an offsets table:
+   [manager+0x0] is the array, [manager+0xc] is the live count. Every lobby container
+   seen so far held 0 or 1 entries; a battle manager holds several, and those entries
+   are heap objects that themselves look like C++ instances.
+
+   Score 2 = at least TNX_MANAGER_MIN_OBJECTS entries look like instances. */
+
+static void tnx_dump_manager(uintptr_t manager, int count) {
+    void *array = NULL;
+
+    tnx_logf("mgr[dump] manager=%p count=%d", (void *)manager, count);
+    tnx_dump_hex("mgr", manager, 0x40);
+
+    if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array)) return;
+    if (!array) return;
+
+    tnx_dump_hex("mgrArr", (uintptr_t)array, 0x40);
+
+    for (int i = 0; i < count && i < 4; i++) {
+        void *element = NULL;
+
+        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * sizeof(void *), &element)) return;
+        if (!element) continue;
+
+        tnx_logf("mgr[%d] element=%p", i, element);
+        tnx_dump_hex("mgrObj", (uintptr_t)element, 0x100);
+    }
+}
+
+/* How many of the first entries of a manager-shaped object are heap objects that
+   themselves look like C++ instances. This single number is what separates a battle
+   manager from a lobby container, and it is also what the verdict below reports. */
+static int tnx_manager_live_count(uintptr_t manager) {
+    void *array = NULL;
+    int32_t count = 0;
+    int live = 0;
+
+    if (!tnx_pointer_plausible(manager)) return 0;
+    if (!tnx_heap_resident(manager)) return 0;
+    if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array)) return 0;
+    if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) return 0;
+    if (count < TNX_MANAGER_MIN_OBJECTS || count > 512) return 0;
+    if (!array) return 0;
+    if (!tnx_heap_resident((uintptr_t)array)) return 0;
+
+    for (int32_t i = 0; i < count && i < 8; i++) {
+        void *element = NULL;
+        void *vtable = NULL;
+
+        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * sizeof(void *), &element)) break;
+        if (!element) continue;
+        if (!tnx_heap_resident((uintptr_t)element)) continue;
+        if (!tnx_read_ptr((uintptr_t)element, &vtable)) continue;
+        if (!vtable) continue;
+        if (!tnx_vtable_shaped((uintptr_t)vtable)) continue;
+
+        live++;
+    }
+
+    return live;
+}
+
+/* Called for every aligned word of the chunk. The first tests are pure register work, so
+   the cost over a 500 MB pass stays negligible; the syscall-heavy part runs only for
+   words whose [+0xc] already looks like a live count. */
+static void tnx_probe_manager(uintptr_t cursor, size_t offset, const uint8_t *buffer, size_t chunk) {
+    uint64_t arrayValue = 0;
+    uint32_t count = 0;
+    uintptr_t candidate = 0;
+    int live = 0;
+
+    if (g_manager_object) return;
+    if (g_manager_probes >= TNX_MANAGER_PROBE_LIMIT) return;
+    if (offset + 0x10 > chunk) return;
+
+    memcpy(&arrayValue, buffer + offset, sizeof(arrayValue));
+    memcpy(&count, buffer + offset + 0xc, sizeof(count));
+
+    if (count < TNX_MANAGER_MIN_OBJECTS || count > 512) return;
+    if (!tnx_pointer_plausible((uintptr_t)arrayValue)) return;
+
+    g_manager_probes++;
+    g_manager_probes_total++;
+
+    candidate = cursor + offset;
+    live = tnx_manager_live_count(candidate);
+
+    /* Record the closest miss too: this is what says whether the shape is absent or
+       merely never complete. */
+    if ((int)count > g_manager_best_count) g_manager_best_count = (int)count;
+    if (live > g_manager_best_live) g_manager_best_live = live;
+
+    if (live < TNX_MANAGER_MIN_OBJECTS) return;
+
+    g_manager_object = candidate;
+    g_manager_count = (int)count;
+
+    tnx_logf("MANAGER found object=%p count=%u live=%d", (void *)candidate, count, live);
+
+    tnx_dump_manager(candidate, (int)count);
+}
+
+/* Prints the conclusion, not the raw numbers: this is the line that has to be read. */
+static void tnx_diag_report(const char *why) {
+    const char *verdict = "no battle-shaped structure in the memory scanned so far";
+
+    if (g_manager_object) {
+        verdict = "MANAGER FOUND - the objects exist, coordinates come from the mgrObj dump";
+    } else if (g_mode_object) {
+        verdict = "an object was adopted but no battle-shaped manager around it";
+    } else if (g_manager_best_live >= 1) {
+        verdict = "manager-shaped array seen, but too few live instances -> not a battle";
+    } else if (g_manager_best_count >= TNX_MANAGER_MIN_OBJECTS) {
+        verdict = "count at +0xc is in rage but entries are not C++ instances -> wrong layout";
+    } else if (g_manager_probes_total == 0 && g_heap_passes > 0) {
+        verdict = "no manager-like count at +0xc anywhere -> layout @+0xc wrong, or coverage short";
+    } else if (g_heap_passes == 0) {
+        verdict = "no heap pass completed yet";
+    }
+
+    tnx_logf("DIAG(%s) attempts=%d/%d heapPasses=%d covered=%lluMB probes=%d "
+             "bestCount=%d bestLive=%d mgr=%p vfx=%d mx=%d",
+             why ? why : "?", g_votescan_attempts, TNX_VOTESCAN_ATTEMPTS, g_heap_passes,
+             g_heap_covered / (1024ull * 1024ull), g_manager_probes_total,
+             g_manager_best_count, g_manager_best_live, (void *)g_manager_object,
+             g_mode_verified_hits, g_mode_best_objects);
+
+    tnx_logf("DIAG verdict: %s", verdict);
+}
+
 static void tnx_scan_globals_for_mode(const char *name) {
     uintptr_t lo = 0;
     uintptr_t hi = 0;
@@ -2262,6 +2425,10 @@ static void tnx_scan_heap_for_mode(void) {
     uintptr_t startAddress = g_heap_scan_next;
     vm_address_t address = (vm_address_t)startAddress;
     size_t scanned = 0;
+
+    g_manager_probes = 0;
+
+    g_heap_passes++;
     int regions = 0;
     int hits = 0;
     int shapeHits = 0;
@@ -2316,6 +2483,8 @@ static void tnx_scan_heap_for_mode(void) {
                         uintptr_t vtable = 0;
 
                         memcpy(&vtable, buffer + offset, sizeof(vtable));
+
+                        tnx_probe_manager(cursor, offset, buffer, chunk);
 
                         /* Must also match the verified vtables: one of them (0xff5720) is
                            NOT in the 35-entry heuristic list, so looking only at that list
@@ -2384,8 +2553,11 @@ static void tnx_scan_heap_for_mode(void) {
         g_heap_scan_next = 0;
     }
 
-    tnx_logf("votescan heap from=%p scanned=%zu regions=%d hits=%d shape=%d strong=%d vfx=%d",
-             (void *)startAddress, scanned, regions, hits, shapeHits, strongHits, verifiedHits);
+    g_heap_covered += (unsigned long long)scanned;
+
+    tnx_logf("votescan heap pass=%d from=%p scanned=%zu regions=%d hits=%d vfx=%d mgr=%p probes=%d best%d/%d",
+             g_heap_passes, (void *)startAddress, scanned, regions, hits, verifiedHits,
+             (void *)g_manager_object, g_manager_probes, g_manager_best_count, g_manager_best_live);
 }
 
 static void tnx_locate_battle_mode(void) {
@@ -2394,9 +2566,7 @@ static void tnx_locate_battle_mode(void) {
     if (g_votescan_attempts >= TNX_VOTESCAN_ATTEMPTS) {
         /* Only a candidate whose vtable is one of the 35 anchors is ever promoted.
            Every lobby candidate had inList = 0, so nothing is promoted from noise. */
-        tnx_logf("votescan exhausted: object=%p strong=%d maxObj=%d matches=%d vfx=%d",
-                 (void *)g_mode_object, g_mode_strong ? 1 : 0, g_mode_best_objects,
-                 g_mode_matches, g_mode_verified_hits);
+        tnx_diag_report("exhausted");
 
         return;
     }
@@ -2424,9 +2594,7 @@ static void tnx_locate_battle_mode(void) {
                  g_votescan_attempts, (void *)g_mode_object, (void *)g_mode_source);
         tnx_report_mode_hit("found", g_mode_source, g_mode_object);
     } else if ((g_votescan_attempts % TNX_VOTESCAN_HEARTBEAT) == 0) {
-        tnx_logf("votescan alive attempt=%d/%d hits=%d best=%p maxObj=%d vfx=%d",
-                 g_votescan_attempts, TNX_VOTESCAN_ATTEMPTS, g_mode_matches,
-                 (void *)g_mode_object, g_mode_best_objects, g_mode_verified_hits);
+        tnx_diag_report("heartbeat");
     }
 }
 

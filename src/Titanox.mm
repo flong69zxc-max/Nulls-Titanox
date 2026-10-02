@@ -193,8 +193,15 @@ static __thread BOOL g_inside_hook = NO;
    (first word inside __DATA_CONST, +0x28 a heap pointer, +0x124 a small integer,
    +0x1d4/+0x1d8 plausible) are what keep the syscall-heavy part rare, and g_chain_skipped
    reports if the valve is ever reached -- a probe limit that goes quiet is how the previous
-   scanner went blind without saying so. */
-#define TNX_CHAIN_PROBE_LIMIT 8192
+   scanner went blind without saying so.
+
+   MEASURED, 2026-10-02 19:34, with a real battle running: pass 1 made 515110 chain checks, 97179
+   of them reached `ready`, and the old limit of 8192 let only 8.4% of those through -- skip=88987.
+   Pass 3 was worse still: ready=222999, skip=214807. The free tests are plainly not selective
+   enough to justify a valve this small, so it was throttling the only remaining sensor to a tenth
+   of its candidates. Raised to 65536. g_chain_skipped still reports every time it is reached, so
+   this stays a measurement instead of an assumption. */
+#define TNX_CHAIN_PROBE_LIMIT 65536
 
 /* Range of __DATA_CONST at runtime, measured on the device: __TEXT is 0xf74000 long and the
    segment list in every log reports __DATA_CONST with size 0xd4000 straight after it. A mode's
@@ -213,6 +220,52 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
     0x1002548,                                                            /* class A, A1 and A2 */
     0xff5148, 0xff51f8, 0xff5500, 0xff5648, 0xff5720, 0xff57f8, 0xff58c8, /* class B, B1 to B3 */
 };
+
+/* THE OBJECT VOTE -- the selector that replaces "guess the manager by its array header".
+
+   Why the old selector had to go. The 19:34 run walked 542 MB of heap and the manager probe
+   reached its budget inside that one pass: 4710812 words survived the capacity test, 3571612
+   then passed the alignment, window and residency tests, and `skipped=3506076` says almost none
+   of them was ever probed. The reason is that the test was `a pointer followed by two small
+   integers`, and on a real heap that is not a signature: it is what ordinary field data looks
+   like. Three passes, 65536 probes each, `mgr=0x0`.
+
+   What IS a signature, and what this selector uses, are the three fields the engine itself
+   writes when it creates a game object -- each one taken from the engine's own code, not from an
+   offsets table:
+
+     +0x00  vtable, must land inside __DATA_CONST (every engine class table does)
+     +0x08  a fresh global id, written by addGameObject at 0xa278e4
+     +0x20  the owning manager, written by setOwner = `str x1,[x0,#0x20]` at 0xa2d250
+     +0x40  team, an int
+     +0x3c  owner index, an int
+
+   No single one of those is distinctive. Together they are, because they are the record layout
+   of one specific class and no other allocation reproduces it.
+
+   And the vote is what turns the objects into the manager: `setOwner` writes the SAME manager
+   into +0x20 of every object the manager creates, so the owning manager is simply the pointer
+   that turns up at +0x20 of the most object-shaped words -- and it has to carry several
+   DIFFERENT global ids, because addGameObject hands every object a fresh one. That last
+   requirement is exactly the invariant the 19:19 false positive failed: a config table whose
+   four entries all read id 1 and 0 at +0x20. Distinct ids at one shared owner is the one test
+   that table cannot pass.
+
+   The whole test is buffer-local (all five fields sit inside the same 8 MB chunk), so unlike the
+   array-header probe it costs no syscall and can be run on every aligned word of a full pass. */
+#define TNX_OWNER_VOTE_MAX 48
+#define TNX_OWNER_VOTE_MIN 3
+#define TNX_OWNER_VOTE_GID_MAX 16
+#define TNX_OWNER_VOTE_VT_MAX 4
+#define TNX_OBJ_OWNERIDX_MAX 0xff
+/* An owner has to win two passes in a row before anything is reported, for the same reason the
+   trail needs two passes: one sighting of a shared pointer in a heap that is being rewritten
+   continuously is not evidence of a manager. 1 means "on the second consecutive pass". */
+#define TNX_OWNER_VOTE_CONFIRM 1
+/* How many objects of a confirmed owner are printed. Same value as TNX_BEST_DETAIL_MAX, declared
+   separately because the vote report sits 450 lines above that define and a use-before-declaration
+   is a compile error in C++ (and did break the build of this file once already). */
+#define TNX_OWNER_VOTE_DETAIL_MAX 12
 
 #define TNX_OBJ_GLOBALID_OFF 0x8ULL
 
@@ -301,7 +354,7 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 
 /* Printed as the first line after "setup", so every log identifies the build that produced
    it. Two device logs were once spent comparing a new binary against an old one. */
-#define TNX_BUILD_TAG "titanox_42"
+#define TNX_BUILD_TAG "titanox_43"
 
 /* IN-LINE HOOKING IS IMPOSSIBLE ON THIS PROCESS -- measured, not assumed. The 17:38 log caught
    it directly:
@@ -452,6 +505,31 @@ static int g_chain_best_gid = 0;
 static int g_seen_stable = 0;     /* candidates that held the same count in two passes */
 static uintptr_t g_chain_vtable = 0;
 static unsigned long long g_vtprobe_hits[TNX_VTPROBE_COUNT];
+
+/* The object vote. `g_objvote_hits` is the count of words that looked like a game object,
+   `g_objvote_skipped` the ones dropped because the vote table was full -- printed so a silent
+   cap can never be mistaken for an absence of objects. */
+typedef struct {
+    uintptr_t owner;                           /* the pointer the objects carry at +0x20 */
+    int votes;                                 /* object-shaped words that named this owner */
+    int teamMask;                              /* teams seen, one bit per team value */
+    int deadOk;                                /* of its objects, how many had a 0/1 byte at +0xd0 */
+    int vtCount;
+    uintptr_t vt[TNX_OWNER_VOTE_VT_MAX];       /* the class tables seen on its objects */
+    uint32_t gidSeen[TNX_OWNER_VOTE_GID_MAX];  /* the DISTINCT global ids seen at this owner */
+    int gidSeenCount;                          /* == number of distinct ids, capped */
+} tnx_owner_vote_t;
+
+static tnx_owner_vote_t g_owner_votes[TNX_OWNER_VOTE_MAX];
+static int g_owner_vote_count = 0;
+static unsigned long long g_objvote_hits = 0;
+static unsigned long long g_objvote_skipped = 0;
+static int g_objvote_dead_seen = 0;            /* hits whose +0xd0 really was a 0/1 byte */
+static uintptr_t g_objvote_best_owner = 0;
+static int g_objvote_best_gids = 0;
+static uintptr_t g_objvote_prev_owner = 0;     /* the same owner winning two passes in a row */
+static int g_objvote_confirm = 0;
+static BOOL g_objvote_owner_ok = NO;           /* confirmed owner -> the verdict may say so */
 
 /* Declared here because the heap pass line reports it long before the trail itself exists. */
 static int g_trail_best = 0;
@@ -656,6 +734,10 @@ static void tnx_trail_note(uintptr_t manager, int32_t count, int32_t capacity, i
                            int nonEmpty);
 static void tnx_trail_dump(void);
 static void tnx_best_candidate_dump(void);
+/* Declared here because the heap pass, which runs long before either is defined, reports a
+   confirmed owner by name. */
+static void tnx_report_manager(const char *tag, uintptr_t manager);
+static int tnx_object_detail_readonly(uintptr_t manager, int limit);
 
 /* Runs inside the game's thread. Two stores and a bounds check, nothing else. */
 static void tnx_slot_note(int index, void *self, uint64_t arg1) {
@@ -3257,7 +3339,7 @@ static void tnx_probe_manager(uintptr_t cursor, size_t offset, const uint8_t *bu
        share. One array test cannot tell such a table from a manager, so on this path the
        candidate is recorded and reported but never adopted; adoption belongs to the chain, where
        the mode, its [mode+0x28] manager and that manager's array have to agree at once. */
-    if (!g_manager_object) {
+    if (!g_manager_object && !g_objvote_owner_ok) {
         g_manager_object = candidate;
         g_manager_count = (int)count;
 
@@ -3411,12 +3493,18 @@ static void tnx_probe_mode_chain(uintptr_t cursor, size_t offset, const uint8_t 
    identical in every log so far: either no instance of those seven classes is ever created, or
    instances exist and the slot we rewrote is never dispatched. Only a word at an object's own
    start counts, i.e. one at a 16-byte aligned offset, because a stored pointer to some other
-   object's vtable would otherwise be counted as an instance. */
-static void tnx_vtprobe_note(uintptr_t vtable, size_t offset) {
+   object's vtable would otherwise be counted as an instance.
+
+   The alignment test is on the ABSOLUTE address, not on the offset inside the chunk. The chunk
+   walker advances by `chunk - 8` so that a word straddling two chunks is still seen, which means
+   the chunk base drifts 8 bytes out of phase on every step; `offset & 0xf` therefore answered a
+   different question on every second chunk, and half of the 16-byte aligned objects were
+   invisible to this probe. */
+static void tnx_vtprobe_note(uintptr_t vtable, uintptr_t absolute) {
     uintptr_t rva = 0;
 
     if (!vtable || !g_base) return;
-    if (offset & 0xf) return;
+    if (absolute & 0xf) return;
     if (vtable < g_base + TNX_DC_RVA_LO) return;
     if (vtable >= g_base + TNX_DC_RVA_LO + TNX_DC_RVA_SIZE) return;
 
@@ -3428,6 +3516,197 @@ static void tnx_vtprobe_note(uintptr_t vtable, size_t offset) {
             return;
         }
     }
+}
+
+/* ---------------------------------------------------------------------------
+   THE OBJECT VOTE.
+
+   One entry per owner pointer seen at +0x20 of an object-shaped word. The table is cleared at
+   the start of every heap pass, so a winner is always this pass's winner and two passes can be
+   compared.
+   --------------------------------------------------------------------------- */
+static tnx_owner_vote_t *tnx_owner_vote_slot(uintptr_t owner) {
+    for (int i = 0; i < g_owner_vote_count; i++) {
+        if (g_owner_votes[i].owner == owner) return &g_owner_votes[i];
+    }
+
+    if (g_owner_vote_count >= TNX_OWNER_VOTE_MAX) return NULL;
+
+    tnx_owner_vote_t *entry = &g_owner_votes[g_owner_vote_count++];
+
+    memset(entry, 0, sizeof(*entry));
+    entry->owner = owner;
+
+    return entry;
+}
+
+static void tnx_owner_vote_note(tnx_owner_vote_t *entry, int32_t gid, int32_t team, int deadOk,
+                                uintptr_t vtable) {
+    BOOL known = NO;
+
+    entry->votes++;
+
+    /* Distinct ids only. This is the number the whole vote rests on: setOwner writes the same
+       manager into every object, but addGameObject gives every object its own id, so a real
+       manager accumulates MANY ids while the 19:19 config table -- four entries, all id 1 --
+       accumulates exactly one. */
+    for (int i = 0; i < entry->gidSeenCount; i++) {
+        if (entry->gidSeen[i] == (uint32_t)gid) {
+            known = YES;
+            break;
+        }
+    }
+
+    if (!known && entry->gidSeenCount < TNX_OWNER_VOTE_GID_MAX) {
+        entry->gidSeen[entry->gidSeenCount++] = (uint32_t)gid;
+    }
+
+    if (team >= 0 && team < 32) entry->teamMask |= (1 << team);
+    if (deadOk) entry->deadOk++;
+
+    if (vtable) {
+        BOOL have = NO;
+
+        for (int i = 0; i < entry->vtCount; i++) {
+            if (entry->vt[i] == vtable) {
+                have = YES;
+                break;
+            }
+        }
+
+        /* The class tables this owner's objects carry. Reported, because a table that is not
+           one of the seven already hooked is the direct explanation of `hooks fired=0`. */
+        if (!have && entry->vtCount < TNX_OWNER_VOTE_VT_MAX) entry->vt[entry->vtCount++] = vtable;
+    }
+}
+
+/* Runs for every aligned word of a chunk, entirely out of the buffer: not one syscall until a
+   word has already satisfied the whole record layout. `absolute` is the word's real address --
+   the 16-byte start test has to be on that, because the chunk walker steps by `chunk - 8` and
+   the chunk base is therefore out of phase with the 16-byte grid on every second chunk. */
+static void tnx_probe_object_vote(uintptr_t cursor, size_t offset, const uint8_t *buffer,
+                                  size_t chunk, uintptr_t dcLo, uintptr_t dcHi) {
+    uintptr_t absolute = cursor + offset;
+    uintptr_t vtable = 0;
+    uintptr_t owner = 0;
+    int32_t gid = 0;
+    int32_t team = 0;
+    int32_t ownerIdx = 0;
+    int deadOk = 0;
+
+    if (g_mode_strong) return;
+
+    /* Objects are heap allocations and heap allocations are 16-byte aligned; a stored pointer
+       to some other object's table is not an object. */
+    if (absolute & 0xf) return;
+    if (offset + TNX_OBJ_DEADFLAG_OFF + 1 > chunk) return;
+
+    memcpy(&vtable, buffer + offset, sizeof(vtable));
+
+    /* Field 1: the class table, inside __DATA_CONST. Every engine object has one, and this is
+       the reason the scan needs no list of class names at all. */
+    if (vtable < dcLo || vtable >= dcHi) return;
+    if (vtable & 7) return;
+
+    /* Field 2: the global id addGameObject writes at 0xa278e4. Zero is not an id it produces. */
+    memcpy(&gid, buffer + offset + TNX_OBJ_GLOBALID_OFF, sizeof(gid));
+
+    if (gid <= 0) return;
+
+    /* Field 3: team, a small non-negative int. */
+    memcpy(&team, buffer + offset + TNX_OBJ_TEAM_OFF, sizeof(team));
+
+    if (team < 0 || team > TNX_OBJ_TEAM_MAX) return;
+
+    /* Field 4: owner index, an int. Wide bound on purpose -- this one is a sanity filter, not a
+       layout claim. */
+    memcpy(&ownerIdx, buffer + offset + TNX_OBJ_OWNERINDEX_OFF, sizeof(ownerIdx));
+
+    if (ownerIdx < 0 || ownerIdx > TNX_OBJ_OWNERIDX_MAX) return;
+
+    /* Field 5: the owning manager, which setOwner stores with `str x1,[x0,#0x20]`. */
+    memcpy(&owner, buffer + offset + TNX_SLOT_OWNER_OFF, sizeof(owner));
+
+    if (!owner || (owner & 0xf)) return;
+    if (!tnx_heap_window_shaped(owner)) return;
+
+    tnx_owner_vote_t *entry = tnx_owner_vote_slot(owner);
+
+    if (!entry) {
+        g_objvote_skipped++;
+        return;
+    }
+
+    /* The dead flag at +0xd0 is COUNTED, not required. It is the one field here whose offset
+       comes only from the reference implementation, and gating the selector on an unverified
+       constant is exactly how one wrong offset blinds a whole search: `objvote deadOk=` reports
+       how often it really is a 0/1 byte, so the next log says whether it holds on this build. */
+    deadOk = (buffer[offset + TNX_OBJ_DEADFLAG_OFF] <= 1) ? 1 : 0;
+
+    if (deadOk) g_objvote_dead_seen++;
+
+    g_objvote_hits++;
+    tnx_owner_vote_note(entry, gid, team, deadOk, vtable);
+}
+
+/* Called once at the end of every heap pass, after the table has been filled. */
+static void tnx_object_vote_finish(void) {
+    int best = -1;
+
+    for (int i = 0; i < g_owner_vote_count; i++) {
+        if (g_owner_votes[i].gidSeenCount < TNX_OWNER_VOTE_MIN) continue;
+        if (best < 0 || g_owner_votes[i].gidSeenCount > g_owner_votes[best].gidSeenCount) best = i;
+    }
+
+    /* Always printed, even at zero. `objvote hits=0` and `objvote hits=4000` mean completely
+       different things and no log should be able to confuse the two. */
+    tnx_logf("objvote hits=%llu skipped=%llu owners=%d deadOk=%d best=%p gids=%d confirm=%d",
+             g_objvote_hits, g_objvote_skipped, g_owner_vote_count, g_objvote_dead_seen,
+             (void *)g_objvote_best_owner, g_objvote_best_gids, g_objvote_confirm);
+
+    if (best < 0) {
+        g_objvote_confirm = 0;
+        return;
+    }
+
+    tnx_owner_vote_t *entry = &g_owner_votes[best];
+
+    if (entry->owner == g_objvote_prev_owner) g_objvote_confirm++;
+    else g_objvote_confirm = 0;
+
+    g_objvote_prev_owner = entry->owner;
+    g_objvote_best_owner = entry->owner;
+    g_objvote_best_gids = entry->gidSeenCount;
+
+    /* The class tables of a real game object, LEARNED rather than assumed. If vt0 is not one of
+       the seven tables that are already hooked, that single number is the answer to
+       `hooks fired=0`, and it is also the table to hook next. */
+    tnx_logf("objvote owner=%p distinctGids=%d votes=%d teams=%#x deadOk=%d vtCount=%d "
+             "vt0=%#llx vt1=%#llx vt2=%#llx vt3=%#llx",
+             (void *)entry->owner, entry->gidSeenCount, entry->votes, entry->teamMask,
+             entry->deadOk, entry->vtCount,
+             (unsigned long long)(entry->vt[0] > g_base ? entry->vt[0] - g_base : 0),
+             (unsigned long long)(entry->vt[1] > g_base ? entry->vt[1] - g_base : 0),
+             (unsigned long long)(entry->vt[2] > g_base ? entry->vt[2] - g_base : 0),
+             (unsigned long long)(entry->vt[3] > g_base ? entry->vt[3] - g_base : 0));
+
+    if (g_objvote_confirm < TNX_OWNER_VOTE_CONFIRM) return;
+    /* NOT `if (g_manager_object) return;`. That variable is also written by the array-shaped
+       path, which records candidates it explicitly does not trust; letting an untrusted
+       candidate veto the vote is the same "one false positive kills the run" defect that made
+       titanox_41's passes 2 and 3 do zero probes. Only a confirmed owner stops this. */
+    if (g_objvote_owner_ok) return;
+
+    /* Confirmed the same way the trail demands it: the same owner, with several different ids
+       on its objects, in two consecutive passes. Only then is it worth a full dump. */
+    tnx_battle_begin("objvote");
+
+    g_objvote_owner_ok = YES;
+    g_manager_object = entry->owner;
+    g_manager_count = entry->gidSeenCount;
+
+    tnx_report_manager("objvote", entry->owner);
+    tnx_object_detail_readonly(entry->owner, TNX_OWNER_VOTE_DETAIL_MAX);
 }
 
 /* The line that has to be read first in every future log: how often each hook was entered, and
@@ -3489,18 +3768,31 @@ static void tnx_diag_report(const char *why) {
        19:19 log announced that no manager existed in the same heartbeat whose own DIAG line read
        `mgr=0x112844d28`. A verdict that contradicts the numbers printed beside it is worse than
        no verdict at all, because it is the line that gets read first. */
+    /* POSITIVE RESULTS FIRST. titanox_42 put the two blindness branches second and third, which
+       meant `SCANNER BLIND` still outranked `MODE ADOPTED` four lines below it -- the same
+       contradiction the comment above says was fixed, only one level down. A verdict may not
+       deny a capture that the numbers printed beside it report. Blindness is now reported in the
+       branches that come after every positive one, and in the terms of the channel it applies to:
+       the array test running out of budget says nothing about the object vote, which has no
+       budget and did cover the pass. */
     if (g_heap_passes == 0) {
         verdict = "no heap pass completed yet";
+    } else if (g_mode_strong) {
+        verdict = "MODE ADOPTED through the mode -> manager -> array chain, fields only, nothing called";
+    } else if (g_objvote_owner_ok) {
+        verdict = "OWNER CAPTURED - a game-object owner was confirmed by the object vote; this is a real battle container";
+    } else if (g_objvote_best_gids >= TNX_OWNER_VOTE_MIN) {
+        verdict = "OBJECT VOTE sees game objects under one owner, but it has not won two passes in a row yet";
+    } else if (g_objvote_hits > 0) {
+        verdict = "OBJECT VOTE matched object-shaped words but no owner reached the distinct-id minimum - the layout is partly recognised";
+    } else if (g_mode_object) {
+        verdict = "an object was adopted but the chain is not fully confirmed";
     } else if (g_manager_loose_count == 0 && g_manager_saw_cap == 0) {
         verdict = "NO ARRAY-SHAPED WORD ANYWHERE - the header test itself matched nothing";
     } else if (g_manager_skipped > 0 || g_manager_probes >= TNX_MANAGER_PROBE_LIMIT) {
-        verdict = "SCANNER BLIND - the manager probe budget was exhausted, this run proves nothing about the layout";
+        verdict = "ARRAY TEST BLIND - its probe budget was exhausted; the object vote is the channel that still covered the whole pass";
     } else if (g_chain_skipped > 0 && !g_mode_object && !g_manager_object) {
         verdict = "CHAIN BLIND - the chain probe hit its limit before the heap was covered, and it found nothing before that; this run proves nothing about the mode";
-    } else if (g_mode_strong) {
-        verdict = "MODE ADOPTED through the mode -> manager -> array chain, fields only, nothing called";
-    } else if (g_mode_object) {
-        verdict = "an object was adopted but the chain is not fully confirmed";
     } else if (g_manager_best_live >= TNX_MANAGER_MIN_OBJECTS) {
         verdict = "a container passed the array test and was recorded, NOT adopted - the chain never matched";
     } else if (g_manager_best_live >= 1) {
@@ -3543,8 +3835,14 @@ static void tnx_diag_report(const char *why) {
        facts: the hooks were not dispatched, and that says nothing yet about whether a match
        ran. The vtprobe numbers in the pass line decide whether the class even exists. */
     if (g_slot_hits_total == 0 && g_heap_passes > 0) {
-        tnx_logf("DIAG note: none of the seven slots was ever dispatched; vtprobe says whether "
-                 "those classes have live instances at all");
+        /* The caveat is part of the sentence now. `vtprobe=0` is a statement about the bytes
+           that were actually scanned, and on the 19:34 run those were 542 MB of a 7760 MB span
+           -- 7% -- because the cursor kept resetting to 0x0. The pass line carries `next=` and
+           `span=` so the coverage behind any vtprobe verdict can be checked directly. */
+        tnx_logf("DIAG note: none of the seven slots was ever dispatched; vtprobe counts live "
+                 "instances of those classes IN THE BYTES SCANNED ONLY (next=/span= in the pass "
+                 "line say how much that was), and the object vote in the same lines says which "
+                 "class tables the battle's real objects carry");
     }
 
     tnx_trail_dump();
@@ -3553,14 +3851,18 @@ static void tnx_diag_report(const char *why) {
 
     tnx_logf("DIAG(%s) attempts=%d/%d heapPasses=%d covered=%lluMB probes=%d/%d skipped=%d "
              "capRej=%d/%d bestCount=%d bestLive=%d mgr=%p adopted=%d vfx=%d mx=%d "
-             "chain=%d/%d chainSkip=%d stable=%d own=%d gid=%d",
+             "chain=%d/%d chainSkip=%d stable=%d own=%d gid=%d "
+             "objvote=%llu skipped=%llu owners=%d best=%p gids=%d confirm=%d deadOk=%d",
              why ? why : "?", g_votescan_attempts, TNX_VOTESCAN_ATTEMPTS, g_heap_passes,
              g_heap_covered / (1024ull * 1024ull), g_manager_probes_total, TNX_MANAGER_PROBE_LIMIT,
              g_manager_skipped, g_manager_cap_rejects, g_manager_saw_cap,
              g_manager_best_count, g_manager_best_live, (void *)g_manager_object,
              g_mode_strong ? 1 : 0, g_mode_verified_hits, g_mode_best_objects,
              g_chain_checks, g_chain_probes, g_chain_skipped, g_seen_stable,
-             g_chain_best_own, g_chain_best_gid);
+             g_chain_best_own, g_chain_best_gid,
+             g_objvote_hits, g_objvote_skipped, g_owner_vote_count,
+             (void *)g_objvote_best_owner, g_objvote_best_gids, g_objvote_confirm,
+             g_objvote_dead_seen);
 
     tnx_logf("DIAG verdict: %s", verdict);
 
@@ -3695,6 +3997,13 @@ static void tnx_scan_heap_for_mode(void) {
 
     g_manager_probes = 0;
 
+    /* A fresh vote table per pass: the winner then belongs to one pass, and two passes can be
+       compared, which is what makes the confirmation below mean something. */
+    g_owner_vote_count = 0;
+    g_objvote_hits = 0;
+    g_objvote_skipped = 0;
+    g_objvote_dead_seen = 0;
+
     /* The chain probe needs the runtime bounds of __DATA_CONST, because the test it replaces was
        a hardcoded list of 37 vtable RVAs that the live mode's class is not in. */
     uintptr_t dcLo = 0;
@@ -3759,9 +4068,17 @@ static void tnx_scan_heap_for_mode(void) {
 
                         tnx_probe_manager(cursor, offset, buffer, chunk);
 
-                        tnx_vtprobe_note(vtable, offset);
+                        /* Absolute address, not the offset: see tnx_vtprobe_note. */
+                        tnx_vtprobe_note(vtable, cursor + offset);
 
-                        if (haveDC) tnx_probe_mode_chain(cursor, offset, buffer, chunk, dcLo, dcHi);
+                        if (haveDC) {
+                            tnx_probe_mode_chain(cursor, offset, buffer, chunk, dcLo, dcHi);
+
+                            /* The selector that needs no vtable list and no array-shape guess:
+                               it recognises game objects by the record layout the engine itself
+                               writes, and turns them into their manager by voting. */
+                            tnx_probe_object_vote(cursor, offset, buffer, chunk, dcLo, dcHi);
+                        }
 
                         /* Must also match the verified vtables: one of them (0xff5720) is
                            NOT in the 35-entry heuristic list, so looking only at that list
@@ -3820,14 +4137,40 @@ static void tnx_scan_heap_for_mode(void) {
         address = (vm_address_t)next;
     }
 
-    /* If the byte budget ran out, remember where: the next pass continues from there
-       instead of re-scanning the same low part of the address space every time. */
-    if (scanned >= TNX_HEAP_SCAN_BUDGET && regions >= 8192) {
-        g_heap_scan_next = 0;
-    } else if (scanned >= TNX_HEAP_SCAN_BUDGET) {
-        g_heap_scan_next = (uintptr_t)address;
+    /* WHERE THE NEXT PASS STARTS -- and the reason the previous version never got past 7% of the
+       heap.
+
+       titanox_42 reset this to zero whenever a pass ended without exhausting the byte budget, and
+       a pass ends that way the moment the region walk runs out of mapped memory in that
+       direction. On the 19:34 run that happened in pass 2 after 15 regions and 30 MB, so pass 3
+       restarted from 0x0 and re-scanned exactly the same 542 MB:
+
+           pass=1 from=0x0          scanned=541979872
+           pass=2 from=0x288000000  scanned=30605288
+           pass=3 from=0x0          scanned=542273600
+
+       against a window span of 7760 MB. The scan was pinned to the first 7% of the heap, and
+       every conclusion read off it -- `vtprobe=0` most of all -- was really a statement about
+       that 7%.
+
+       The cursor now only ever moves forward, and wraps to the low end of the WINDOW (never to
+       address zero) once it has passed the top. Budget exhaustion is no longer a special case:
+       the pass resumes exactly where it stopped. */
+    uintptr_t nextAddress = (uintptr_t)address;
+
+    if (regions >= 8192 || (g_heap_window_high && nextAddress >= g_heap_window_high)) {
+        g_heap_scan_next = g_heap_window_low;
+    } else if (nextAddress <= startAddress) {
+        /* The region walk could not advance at all. Jumping forward is safe exactly here,
+           because the kernel has just said there is no region at or after `startAddress`; the
+           only wrong outcome this avoids is spinning on the same address every pass forever,
+           which is what "cannot advance" would otherwise cost an entire run. */
+        uintptr_t jump = startAddress + (1ull << 30);
+
+        g_heap_scan_next = (g_heap_window_high && jump >= g_heap_window_high) ? g_heap_window_low
+                                                                             : jump;
     } else {
-        g_heap_scan_next = 0;
+        g_heap_scan_next = nextAddress;
     }
 
     g_heap_covered += (unsigned long long)scanned;
@@ -3844,14 +4187,22 @@ static void tnx_scan_heap_for_mode(void) {
 
     tnx_logf("votescan heap pass=%d from=%p scanned=%zu regions=%d hits=%d vfx=%d mgr=%p "
              "probes=%d/%d skipped=%d cap=%d/%d loose=%d window=%d bestCount=%d bestLive=%d "
-             "trailBest=%d stable=%d chain=%d/%d ready=%d skip=%d live=%d own=%d gid=%d vtprobe=%s",
+             "trailBest=%d stable=%d chain=%d/%d ready=%d skip=%d live=%d own=%d gid=%d vtprobe=%s "
+             "next=%p span=%lluMB",
              g_heap_passes, (void *)startAddress, scanned, regions, hits, verifiedHits,
              (void *)g_manager_object, g_manager_probes, TNX_MANAGER_PROBE_LIMIT,
              g_manager_skipped, g_manager_cap_rejects, g_manager_saw_cap,
              g_manager_loose_count, g_manager_window_rejects,
              g_manager_best_count, g_manager_best_live, g_trail_best, g_seen_stable,
              g_chain_checks, g_chain_probes, g_chain_ready, g_chain_skipped,
-             g_chain_best_live, g_chain_best_own, g_chain_best_gid, vtbuf);
+             g_chain_best_live, g_chain_best_own, g_chain_best_gid, vtbuf,
+             (void *)g_heap_scan_next,
+             (unsigned long long)(g_heap_window_high > g_heap_window_low
+                                  ? (g_heap_window_high - g_heap_window_low) / (1024ull * 1024ull)
+                                  : 0));
+
+    /* Runs after the summary line so the pass it belongs to is already in the log above it. */
+    tnx_object_vote_finish();
 }
 
 static void tnx_locate_battle_mode(void) {
@@ -5063,9 +5414,20 @@ static void setup(void) {
     tnx_slot_table_dump();
     tnx_struct_map_dump();
 
-    tnx_logf("build=%s slots=%d control=%d types>=%d scanEvery=%d heapEvery=%d attempts=%d",
+    tnx_logf("build=%s slots=%d control=%d types>=%d scanEvery=%d heapEvery=%d attempts=%d "
+             "arrayProbeLimit=%d chainProbeLimit=%d voteMin=%d voteConfirm=%d",
              TNX_BUILD_TAG, TNX_SLOT_COUNT - buildControls, buildControls, TNX_MODE_MIN_TYPES,
-             TNX_VOTESCAN_GLOBAL_EVERY, TNX_VOTESCAN_HEAP_EVERY, TNX_VOTESCAN_ATTEMPTS);
+             TNX_VOTESCAN_GLOBAL_EVERY, TNX_VOTESCAN_HEAP_EVERY, TNX_VOTESCAN_ATTEMPTS,
+             TNX_MANAGER_PROBE_LIMIT, TNX_CHAIN_PROBE_LIMIT, TNX_OWNER_VOTE_MIN,
+             TNX_OWNER_VOTE_CONFIRM);
+
+    /* Stated up front because it is the measurement the whole of v43 rests on, and because the
+       previous run's `vtprobe=0,0,0,0,0,0,0,0` was read as "those classes have no instances"
+       when the scan had only ever covered the first 7% of the heap. */
+    tnx_logf("plan: hook slots unchanged; the array-shaped manager test is kept only as a "
+             "diagnostic; the new sensor is the object vote (vtable in __DATA_CONST + fresh "
+             "global id + owner at +0x20 + team) and the heap cursor now advances monotonically "
+             "so a pass finally walks the whole window instead of the same first 542MB");
 
     tnx_start_timer();
 

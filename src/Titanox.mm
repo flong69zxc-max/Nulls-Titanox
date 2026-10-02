@@ -214,7 +214,7 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_61"
+#define TNX_BUILD_TAG "titanox_62"
 
 #define TNX_RVA_SETPREDICTION 0x00ac3f20ULL
 #define TNX_OBJ_X_OFF 0x30ULL
@@ -654,6 +654,15 @@ static int g_v60_class_rejects = 0;
 static int g_v61_class_logs = 0;
 static int g_v61_class_rejects = 0;
 static int g_v61_weak_logs = 0;
+static int g_v62_d6_hits = 0;
+static int g_v62_d6_logs = 0;
+static int g_v62_d6_never_logged = 0;
+static int g_v62_class_pass = 0;
+static int g_v62_alert_shown = 0;
+static int g_v62_alerts_off = 0;
+static uint64_t g_v62_d6_last_arg1 = 0;
+static uint64_t g_v62_d6_last_arg2 = 0;
+static const char *g_v62_mode_source = "none";
 static uint64_t g_v57_last_arg1 = 0;
 static uint64_t g_v57_last_arg2 = 0;
 
@@ -669,6 +678,8 @@ static void tnx_v57_owner_reject(uintptr_t owner);
 static void tnx_v57_hook_triage(int index);
 static void tnx_v57_drop_hook(int index);
 static void tnx_v59_chain_capture(uintptr_t modeObject, uintptr_t vtable, uintptr_t manager);
+static void tnx_v62_d6_note(void *self, uint64_t arg1, uint64_t arg2);
+static void tnx_v62_alert_menu(NSString *info);
 static void tnx_v59_hook_note(int index);
 static void tnx_v59_hook_summary(void);
 static uintptr_t tnx_v57_coord_x_off(void);
@@ -813,17 +824,7 @@ static uint64_t tnx_slot_repl_12(void *a0, uint64_t a1, uint64_t a2, uint64_t a3
     g_v52_setpred_calls++;
     g_v52_setpred_this = (uintptr_t)a0;
 
-    if (g_v52_setpred_calls == 1 || g_v57_last_arg1 != a1 || g_v57_last_arg2 != a2) {
-        g_v57_last_arg1 = a1;
-        g_v57_last_arg2 = a2;
-
-        tnx_logf("v61 setpred args x0=%p x1=%#llx x2=%#llx x3=%#llx x4=%#llx x5=%#llx x6=%#llx "
-                 "x7=%#llx", a0, (unsigned long long)a1, (unsigned long long)a2,
-                 (unsigned long long)a3, (unsigned long long)a4, (unsigned long long)a5,
-                 (unsigned long long)a6, (unsigned long long)a7);
-    }
-
-    tnx_v56_mode_capture((uintptr_t)a0);
+    tnx_v62_d6_note(a0, a1, a2);
 
     memcpy(&g_v52_setpred_x, &a1, sizeof(float));
     memcpy(&g_v52_setpred_y, &a2, sizeof(float));
@@ -2179,6 +2180,130 @@ static void tnx_alert_show(NSString *title, NSString *message) {
 
         [host presentViewController:alert animated:YES completion:nil];
     });
+}
+
+static void tnx_v62_alert_menu(NSString *info) {
+    NSString *text = [info copy];
+
+    if (g_v62_alert_shown || g_v62_alerts_off) return;
+
+    g_v62_alert_shown = 1;
+
+    tnx_logf("v62 battle entry alert shown src=D");
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIWindow *window = nil;
+        UIViewController *host = nil;
+
+        for (UIWindow *candidate in [UIApplication sharedApplication].windows) {
+            if (candidate.isKeyWindow) {
+                window = candidate;
+                break;
+            }
+        }
+
+        if (!window) window = [UIApplication sharedApplication].keyWindow;
+        if (!window) return;
+
+        host = window.rootViewController;
+        if (!host) return;
+
+        while (host.presentedViewController) host = host.presentedViewController;
+
+        UIAlertController *menu =
+            [UIAlertController alertControllerWithTitle:@"Titanox v62"
+                                                message:text
+                                         preferredStyle:UIAlertControllerStyleAlert];
+
+        [menu addAction:[UIAlertAction actionWithTitle:@"OK"
+                                                 style:UIAlertActionStyleDefault
+                                               handler:nil]];
+
+        [menu addAction:[UIAlertAction actionWithTitle:@"Состояние"
+                                                 style:UIAlertActionStyleDefault
+                                               handler:^(UIAlertAction *action) {
+            g_v62_alert_shown = 0;
+
+            tnx_v62_alert_menu([NSString stringWithFormat:
+                @"mode=%p source=%s d6Hits=%d\nchainHits=%d classesPass=%d\nmgr=%p count=%d",
+                (void *)g_mode_object, g_v62_mode_source, g_v62_d6_hits, g_v59_chain_hits,
+                g_v62_class_pass, (void *)g_manager_object, g_manager_count]);
+        }]];
+
+        [menu addAction:[UIAlertAction actionWithTitle:@"Скрыть алерты"
+                                                 style:UIAlertActionStyleDestructive
+                                               handler:^(UIAlertAction *action) {
+            g_v62_alerts_off = 1;
+        }]];
+
+        [host presentViewController:menu animated:YES completion:nil];
+    });
+}
+
+static void tnx_v62_d6_note(void *self, uint64_t arg1, uint64_t arg2) {
+    void *vt0 = NULL;
+    void *mgr = NULL;
+    void *array = NULL;
+    int32_t atEc = 0;
+    int32_t predX = 0;
+    int32_t predY = 0;
+    int32_t count = 0;
+    int32_t cap = 0;
+    float fArg1 = 0.0f;
+    float fArg2 = 0.0f;
+    int fresh = 0;
+
+    if (!self) return;
+
+    g_v62_d6_hits++;
+
+    if (g_mode_object != (uintptr_t)self) {
+        g_mode_object = (uintptr_t)self;
+        g_v62_mode_source = "d6";
+        fresh = 1;
+    }
+
+    tnx_read_ptr((uintptr_t)self, &vt0);
+    tnx_read_ptr((uintptr_t)self + TNX_MODE_MANAGER_OFF, &mgr);
+    tnx_read_i32((uintptr_t)self + 0xecULL, &atEc);
+    tnx_read_i32((uintptr_t)self + 0x1d4ULL, &predX);
+    tnx_read_i32((uintptr_t)self + 0x1d8ULL, &predY);
+
+    memcpy(&fArg1, &arg1, sizeof(float));
+    memcpy(&fArg2, &arg2, sizeof(float));
+
+    if (fresh || (g_v62_d6_logs < 12 &&
+                  (g_v62_d6_last_arg1 != arg1 || g_v62_d6_last_arg2 != arg2))) {
+        g_v62_d6_logs++;
+        g_v62_d6_last_arg1 = arg1;
+        g_v62_d6_last_arg2 = arg2;
+
+        tnx_logf("v62 d6 this=%p x0=%p x1=%d x2=%d [this+0x00]=%p [this+0x28]=%p [this+0xec]=%d "
+                 "[this+0x1d4]=%d [this+0x1d8]=%d fArg=(%.2f,%.2f) src=D", self, self,
+                 (int)(int32_t)arg1, (int)(int32_t)arg2, vt0, mgr, atEc, predX, predY,
+                 (double)fArg1, (double)fArg2);
+    }
+
+    if (mgr && ((uintptr_t)mgr & 7ULL) == 0 && tnx_pointer_plausible((uintptr_t)mgr) &&
+        tnx_read_ptr((uintptr_t)mgr + TNX_MGR_ARRAY_OFF, &array) && array &&
+        tnx_read_i32((uintptr_t)mgr + TNX_MGR_COUNT_OFF, &count) &&
+        tnx_read_i32((uintptr_t)mgr + TNX_MGR_CAP_OFF, &cap) && count >= 2 &&
+        count <= TNX_MANAGER_MAX_OBJECTS && cap >= count && cap <= TNX_MGR_CAP_MAX) {
+        if (g_manager_object != (uintptr_t)mgr) {
+            g_manager_object = (uintptr_t)mgr;
+            g_manager_count = count;
+
+            tnx_logf("v62 d6 container mode=%p mgr=%p array=%p count=%d cap=%d src=D", self, mgr,
+                     array, count, cap);
+        }
+    }
+
+    if (fresh) {
+        NSString *info = [NSString stringWithFormat:@"mode=%p mgr=%p count=%d\nd6Hits=%d",
+                                                    self, mgr, g_manager_count, g_v62_d6_hits];
+
+        tnx_v62_alert_menu(info);
+    }
 }
 
 typedef struct {
@@ -3600,7 +3725,7 @@ static void tnx_probe_manager(uintptr_t cursor, size_t offset, const uint8_t *bu
         if (g_v52_stringy_logs < 4) {
             g_v52_stringy_logs++;
 
-            tnx_logf("v61 trail: stringy container refused before scoring mgr=%p count=%u live=%d "
+            tnx_logf("v62 trail: stringy container refused before scoring mgr=%p count=%u live=%d "
                      "nonEmpty=%d firstTextSlot=%d - text never reaches the top eight",
                      (void *)candidate, count, g_manager_last_live, g_manager_last_nonempty,
                      g_v57_stringy_slot);
@@ -4387,7 +4512,7 @@ static void tnx_object_vote_finish(void) {
                 if (g_v57_reject_logs < 8) {
                     g_v57_reject_logs++;
 
-                    tnx_logf("v61 adopt refused owner=%p teams=%#x votes=%d distinctGids=%d "
+                    tnx_logf("v62 adopt refused owner=%p teams=%#x votes=%d distinctGids=%d "
                              "reason=%s count=%d cap=%d - the owner is excluded and the vote moves "
                              "to the next one", (void *)entry->owner, entry->teamMask, entry->votes,
                              entry->gidSeenCount, reason, owned, ownedCap);
@@ -5037,7 +5162,9 @@ static void tnx_dump_mode_refs(const char *tag) {
     tnx_logf("moderef[%s] mode=%p vt=%#llx", tag, (void *)g_mode_object,
              (unsigned long long)tnx_vtable_rva((void *)g_mode_object));
 
-    for (uint32_t off = 0; off < 0x60; off += 8) {
+    int altHits = 0;
+
+    for (uint32_t off = 0; off < 0x100 && altHits < 4; off += 8) {
         void *field = NULL;
 
         if (!tnx_read_ptr(g_mode_object + off, &field)) continue;
@@ -5047,8 +5174,10 @@ static void tnx_dump_mode_refs(const char *tag) {
         int32_t probe = 0;
         tnx_read_i32((uintptr_t)field + TNX_MODE_MODEVAR_OFF, &probe);
 
-        tnx_logf("moderef[%s] +%02x -> %p vt=%#llx int124=%d",
-                 tag, off, field, (unsigned long long)tnx_vtable_rva(field), probe);
+        altHits++;
+
+        tnx_logf("v62 modeAlt +%02x -> %p vt=%#llx int124=%d src=A", off, field,
+                 (unsigned long long)tnx_vtable_rva(field), probe);
     }
 
     for (int i = 0; i < 3; i++) {
@@ -6018,7 +6147,7 @@ static void tnx_v48_discriminate(uintptr_t manager) {
     }
 
     if (teamOff == (int)TNX_OBJ_X_OFF || teamOff == (int)TNX_OBJ_Y_OFF) {
-        tnx_logf("v61 walk error: teamOff=+0x%x equals the repository coordinate offset, so the "
+        tnx_logf("v62 walk error: teamOff=+0x%x equals the repository coordinate offset, so the "
                  "walk hit strings and not objects - the team offset is refused and left unset",
                  teamOff);
 
@@ -6027,7 +6156,7 @@ static void tnx_v48_discriminate(uintptr_t manager) {
     }
 
     if (teamOff < 0) {
-        tnx_logf("v61 teamOff unset after the walk, the engine's own +0x4c is used src=log-v55");
+        tnx_logf("v62 teamOff unset after the walk, the engine's own +0x4c is used src=log-v55");
     }
 
     {
@@ -6072,7 +6201,7 @@ static void tnx_v48_discriminate(uintptr_t manager) {
             if (dx == n && dy == n) {
                 intPairOff = w * 4;
 
-                tnx_logf("v61 coord pair int32 at +0x%02x,+0x%02x all %d distinct team=+0x%x "
+                tnx_logf("v62 coord pair int32 at +0x%02x,+0x%02x all %d distinct team=+0x%x "
                          "excluded from the candidates", w * 4, (w + 1) * 4, n, teamOff);
             }
         }
@@ -6126,10 +6255,10 @@ static void tnx_v48_discriminate(uintptr_t manager) {
             g_v57_coord_off = intPairOff;
 
             if ((uintptr_t)intPairOff == TNX_OBJ_X_OFF) {
-                tnx_logf("v61 coord pair chosen=+0x%x,+0x%x (%d distinct) = repository default, "
+                tnx_logf("v62 coord pair chosen=+0x%x,+0x%x (%d distinct) = repository default, "
                          "team=+0x%x excluded", intPairOff, intPairOff + 4, n, teamOff);
             } else {
-                tnx_logf("v61 coord pair chosen=+0x%x,+0x%x (%d distinct), repository default "
+                tnx_logf("v62 coord pair chosen=+0x%x,+0x%x (%d distinct), repository default "
                          "+0x%llx/+0x%llx did not pass, team=+0x%x excluded", intPairOff,
                          intPairOff + 4, n, (unsigned long long)TNX_OBJ_X_OFF,
                          (unsigned long long)TNX_OBJ_Y_OFF, teamOff);
@@ -6138,7 +6267,7 @@ static void tnx_v48_discriminate(uintptr_t manager) {
     } else if (coordOff >= 0 && g_v57_coord_off != coordOff) {
         g_v57_coord_off = coordOff;
 
-        tnx_logf("v61 coord offset chosen=+0x%x (%d distinct) single int32, team=+0x%x excluded",
+        tnx_logf("v62 coord offset chosen=+0x%x (%d distinct) single int32, team=+0x%x excluded",
                  coordOff, coordDistinct, teamOff);
     }
 }
@@ -6313,7 +6442,7 @@ static void tnx_v48_probe(uintptr_t manager, uintptr_t mode, int verbose) {
              "the offset the engine itself reads)",
              g_v47_team_off, distinctOld, distinctNew);
 
-    tnx_logf("v61 walk offsets team=+0x%x distinctOld=%d distinctNew=%d coord=+0x%llx/+0x%llx "
+    tnx_logf("v62 walk offsets team=+0x%x distinctOld=%d distinctNew=%d coord=+0x%llx/+0x%llx "
              "usable=%d distinct=%d inRange=%d - chosen from the measurements, not from a constant",
              g_v47_team_off, distinctOld, distinctNew,
              (unsigned long long)tnx_v57_coord_x_off(), (unsigned long long)tnx_v57_coord_y_off(),
@@ -6537,7 +6666,7 @@ static void tnx_autododge_v48(void) {
             if (!g_v59_idle_probe_logged) {
                 g_v59_idle_probe_logged = 1;
 
-                tnx_logf("v61 dodge idle probe modeCandidate=%p vt=%#llx whyRejected=%s hits=%d "
+                tnx_logf("v62 dodge idle probe modeCandidate=%p vt=%#llx whyRejected=%s hits=%d "
                          "fromChain=%d", (void *)g_v59_last_cand,
                          (unsigned long long)g_v59_last_vt,
                          g_v59_last_why[0] ? g_v59_last_why : "none-seen", g_v59_chain_hits,
@@ -6888,7 +7017,7 @@ static int tnx_v60_container_resolve(uintptr_t manager, uintptr_t *containerOut,
 
     if (count < 2) {
         if (arrayBase >= g_base && arrayBase < g_base + TNX_V60_IMAGE_SPAN) {
-            tnx_logf("v61 container image-resident count=%d reject-as-static-array mgr=%p array=%p "
+            tnx_logf("v62 container image-resident count=%d reject-as-static-array mgr=%p array=%p "
                      "src=B", count, (void *)manager, (void *)arrayBase);
         }
 
@@ -6930,7 +7059,7 @@ static void tnx_v59_chain_capture(uintptr_t modeObject, uintptr_t vtable, uintpt
     if (!tnx_read_ptr(modeObject, &vtRead) || (uintptr_t)vtRead != vtable) {
         snprintf(g_v59_last_why, sizeof(g_v59_last_why), "vtable-changed");
 
-        tnx_logf("v61 chain reject mode=%p whyRejected=vtable-changed now=%p", (void *)modeObject,
+        tnx_logf("v62 chain reject mode=%p whyRejected=vtable-changed now=%p", (void *)modeObject,
                  vtRead);
 
         return;
@@ -6939,7 +7068,7 @@ static void tnx_v59_chain_capture(uintptr_t modeObject, uintptr_t vtable, uintpt
     if (!tnx_v57_class_slot_ok(vtable)) {
         snprintf(g_v59_last_why, sizeof(g_v59_last_why), "not-a-class-table");
 
-        tnx_logf("v61 chain reject mode=%p vt=%#llx whyRejected=not-a-class-table",
+        tnx_logf("v62 chain reject mode=%p vt=%#llx whyRejected=not-a-class-table",
                  (void *)modeObject, (unsigned long long)vtable);
 
         return;
@@ -6948,7 +7077,7 @@ static void tnx_v59_chain_capture(uintptr_t modeObject, uintptr_t vtable, uintpt
     if (!tnx_v60_container_resolve(manager, &container, &count, &capacity, g_v59_last_why,
                                    sizeof(g_v59_last_why))) {
         if (g_v59_chain_hits <= 8) {
-            tnx_logf("v61 chain reject mode=%p vt=%#llx manager=%p whyRejected=%s src=A",
+            tnx_logf("v62 chain reject mode=%p vt=%#llx manager=%p whyRejected=%s src=A",
                      (void *)modeObject, (unsigned long long)vtable, (void *)manager,
                      g_v59_last_why[0] ? g_v59_last_why : "unknown");
         }
@@ -6959,7 +7088,7 @@ static void tnx_v59_chain_capture(uintptr_t modeObject, uintptr_t vtable, uintpt
     if (g_v59_chain_vt == vtable && g_v59_chain_mgr == manager) {
         g_v59_chain_stable++;
 
-        tnx_logf("v61 chain stable vt=%#llx mgr=%p sighting=%d/%d", (unsigned long long)vtable,
+        tnx_logf("v62 chain stable vt=%#llx mgr=%p sighting=%d/%d", (unsigned long long)vtable,
                  (void *)manager, g_v59_chain_stable, TNX_V61_CHAIN_STABLE_TICKS);
     } else {
         g_v59_chain_mode = modeObject;
@@ -6967,7 +7096,7 @@ static void tnx_v59_chain_capture(uintptr_t modeObject, uintptr_t vtable, uintpt
         g_v59_chain_mgr = manager;
         g_v59_chain_stable = 1;
 
-        tnx_logf("v61 chain stable vt=%#llx mgr=%p sighting=1/%d", (unsigned long long)vtable,
+        tnx_logf("v62 chain stable vt=%#llx mgr=%p sighting=1/%d", (unsigned long long)vtable,
                  (void *)manager, TNX_V61_CHAIN_STABLE_TICKS);
     }
 
@@ -6977,7 +7106,7 @@ static void tnx_v59_chain_capture(uintptr_t modeObject, uintptr_t vtable, uintpt
         if (g_v61_weak_logs < 6) {
             g_v61_weak_logs++;
 
-            tnx_logf("v61 chain captured-but-weak vt=%#llx mgr=%p count=%d -> continue",
+            tnx_logf("v62 chain would-capture-but-weak vt=%#llx mgr=%p count=%d -> diag only",
                      (unsigned long long)vtable, (void *)manager, count);
         }
 
@@ -6986,19 +7115,11 @@ static void tnx_v59_chain_capture(uintptr_t modeObject, uintptr_t vtable, uintpt
         return;
     }
 
-    g_mode_object = modeObject;
-    g_manager_object = manager;
-    g_manager_count = count;
-    g_mode_strong = YES;
-    g_v56_capture_done = 1;
-    g_v59_mode_from_chain = 1;
-    g_v56_mode_ticks = 0;
-    g_v56_array_logged = 0;
-    g_v56_walk_last = -1;
-    g_v57_stale_ticks = 0;
+    tnx_logf("v62 chain would-capture vt=%#llx mgr=%p array=%p count=%d cap=%d - diagnostics only, "
+             "the mode comes from D6", (unsigned long long)vtable, (void *)manager,
+             (void *)container, count, capacity);
 
-    tnx_logf("v61 mode captured from chain vt=%#llx mgr=%p array=%p count=%d cap=%d src=A+B",
-             (unsigned long long)vtable, (void *)manager, (void *)container, count, capacity);
+    g_v59_chain_stable = 0;
 }
 
 static const char *tnx_v57_header_reason(uintptr_t manager, int32_t *countOut, int32_t *capOut) {
@@ -7083,10 +7204,12 @@ static int tnx_v57_class_slot_ok(uintptr_t vtable) {
     }
 
     if (inText >= 2) {
+        g_v62_class_pass++;
+
         if (g_v61_class_logs < 4) {
             g_v61_class_logs++;
 
-            tnx_logf("v61 class-slot vt=%p rva=%#llx inText=%d/8 raw0=%#llx raw8=%#llx -> pass "
+            tnx_logf("v62 class-slot vt=%p rva=%#llx inText=%d/8 raw0=%#llx raw8=%#llx -> pass "
                      "src=A", (void *)vtable, (unsigned long long)rva, inText,
                      (unsigned long long)raw0, (unsigned long long)raw8);
         }
@@ -7097,7 +7220,7 @@ static int tnx_v57_class_slot_ok(uintptr_t vtable) {
     if (g_v61_class_rejects < 3) {
         g_v61_class_rejects++;
 
-        tnx_logf("v61 class-slot vt=%p rva=%#llx inText=%d/8 raw0=%#llx raw8=%#llx -> reject "
+        tnx_logf("v62 class-slot vt=%p rva=%#llx inText=%d/8 raw0=%#llx raw8=%#llx -> reject "
                  "reason=slots-in-text=%d/8 src=A", (void *)vtable, (unsigned long long)rva, inText,
                  (unsigned long long)raw0, (unsigned long long)raw8, inText);
     }
@@ -7130,7 +7253,7 @@ static uintptr_t tnx_v57_coord_y_off(void) {
 }
 
 static void tnx_v57_mode_drop(void) {
-    tnx_logf("v61 mode dropped this=%p - %d ticks without a class table and a manager, so it is "
+    tnx_logf("v62 mode dropped this=%p - %d ticks without a class table and a manager, so it is "
              "not the battle mode", (void *)g_mode_object, g_v57_stale_ticks);
 
     g_mode_object = 0;
@@ -7190,7 +7313,7 @@ static void tnx_v56_mode_capture(uintptr_t candidate) {
         if (g_v57_capture_rejects < 4) {
             g_v57_capture_rejects++;
 
-            tnx_logf("v61 mode reject this=%p vt=%#llx - not a class table in __DATA_CONST or "
+            tnx_logf("v62 mode reject this=%p vt=%#llx - not a class table in __DATA_CONST or "
                      "__DATA with two code entries", (void *)candidate,
                      (unsigned long long)(uintptr_t)vtable);
         }
@@ -7221,7 +7344,7 @@ static void tnx_v56_mode_capture(uintptr_t candidate) {
         g_v57_cand_vt = (uintptr_t)vtable;
         g_v57_cand_ticks = 1;
 
-        tnx_logf("v61 mode candidate this=%p vt=%#llx manager=%p count=%d cap=%d - it needs %d "
+        tnx_logf("v62 mode candidate this=%p vt=%#llx manager=%p count=%d cap=%d - it needs %d "
                  "matching ticks before it becomes the mode", (void *)candidate,
                  (unsigned long long)(uintptr_t)vtable, managerPtr, count, capacity,
                  TNX_V57_MODE_REVERIFY_TICKS);
@@ -7241,7 +7364,7 @@ static void tnx_v56_mode_capture(uintptr_t candidate) {
 
     tnx_battle_begin("setpred");
 
-    tnx_logf("v61 mode captured this=%p vt=%#llx manager=%p count=%d cap=%d ticks=%d",
+    tnx_logf("v62 mode captured this=%p vt=%#llx manager=%p count=%d cap=%d ticks=%d",
              (void *)candidate, (unsigned long long)(uintptr_t)vtable, managerPtr, count,
              capacity, g_v57_cand_ticks);
 }
@@ -7284,8 +7407,8 @@ static void tnx_v59_hook_summary(void) {
     tnx_v59_join(g_v59_drop_tags, g_v59_drop_count, drops, sizeof(drops));
     tnx_v59_join(g_v59_keep_tags, g_v59_keep_count, keeps, sizeof(keeps));
 
-    tnx_logf("v61 hooks dropped: %s reason=zero-entries-in-30-ticks", drops[0] ? drops : "none");
-    tnx_logf("v61 hooks kept: %s reason=real-pointer-slot-or-wide", keeps[0] ? keeps : "none");
+    tnx_logf("v62 hooks dropped: %s reason=zero-entries-in-30-ticks", drops[0] ? drops : "none");
+    tnx_logf("v62 hooks kept: %s reason=real-pointer-slot-or-wide", keeps[0] ? keeps : "none");
 }
 
 static void tnx_v59_hook_note(int index) {
@@ -7313,7 +7436,7 @@ static void tnx_v59_hook_note(int index) {
         tnx_v59_tag(g_v59_drop_tags, &g_v59_drop_count, g_slot_specs[index].shortTag);
         tnx_v57_drop_hook(index);
 
-        tnx_logf("v61 hook %s dropped reason=60-ticks-zero-hits", g_slot_specs[index].shortTag);
+        tnx_logf("v62 hook %s dropped reason=60-ticks-zero-hits", g_slot_specs[index].shortTag);
 
         return;
     }
@@ -7332,7 +7455,7 @@ static void tnx_v57_drop_hook(int index) {
 
     if (!target) return;
     if (!brk_remove((void *)target)) {
-        tnx_logf("v61 hook %s drop failed target=%p %s", g_slot_specs[index].shortTag,
+        tnx_logf("v62 hook %s drop failed target=%p %s", g_slot_specs[index].shortTag,
                  (void *)target, hook_last_error() ? hook_last_error() : "-");
 
         return;
@@ -7352,7 +7475,7 @@ static void tnx_v57_hook_triage(int index) {
     }
 
     if (g_slot_specs[index].slotRva) {
-        tnx_logf("v61 hook %s kept: slotRva=%#llx is a real pointer slot (%d slot(s)) and the "
+        tnx_logf("v62 hook %s kept: slotRva=%#llx is a real pointer slot (%d slot(s)) and the "
                  "function is simply not reached in this scenario - no re-slot needed",
                  g_slot_specs[index].shortTag, (unsigned long long)g_slot_specs[index].slotRva,
                  g_slot_slots[index]);
@@ -7420,7 +7543,7 @@ static int tnx_v56_man_walk(void) {
         if (tnx_v57_is_fn_start(candidate)) {
             g_v57_getown = candidate;
 
-            tnx_logf("v61 getown resolved at %#llx, function start confirmed",
+            tnx_logf("v62 getown resolved at %#llx, function start confirmed",
                      (unsigned long long)g_v57_getown);
         }
     }
@@ -7429,7 +7552,7 @@ static int tnx_v56_man_walk(void) {
         if (!g_v57_getown_logged) {
             g_v57_getown_logged = 1;
 
-            tnx_logf("v61 man walk blocked: getOwnCharacter candidate %#llx is not a function "
+            tnx_logf("v62 man walk blocked: getOwnCharacter candidate %#llx is not a function "
                      "start - resolve the real entry from xrefs before calling it",
                      (unsigned long long)(g_base + TNX_V57_GETOWN_RVA));
         }
@@ -7527,10 +7650,18 @@ static void tnx_v56_dodge_tick(void) {
     if (!g_mode_object) {
         g_v56_mode_ticks++;
 
-        tnx_logf("v61 mode pending tick=%d modeCandidate=%p vt=%#llx whyRejected=%s chainHits=%d "
-                 "src=A", g_v56_mode_ticks, (void *)g_v59_last_cand,
-                 (unsigned long long)g_v59_last_vt,
-                 g_v59_last_why[0] ? g_v59_last_why : "none-yet", g_v59_chain_hits);
+        if ((g_v56_mode_ticks % 10) == 0) {
+            tnx_logf("v62 mode state: g_mode=%p src=%s d6Hits=%d chainHits=%d classesPass=%d",
+                     (void *)g_mode_object, g_v62_mode_source, g_v62_d6_hits, g_v59_chain_hits,
+                     g_v62_class_pass);
+        }
+
+        if (g_v62_d6_hits == 0 && g_v56_mode_ticks >= TNX_V59_DROP_TICKS &&
+            !g_v62_d6_never_logged) {
+            g_v62_d6_never_logged = 1;
+
+            tnx_logf("v62 d6 never dispatched - setPredictionXY not called in this battle");
+        }
 
         if (g_v56_mode_ticks == TNX_V56_MODE_WAIT_TICKS && !g_v56_objhit_logged) {
             g_v56_objhit_logged = 1;
@@ -7647,7 +7778,7 @@ static void tnx_slot_pump(void) {
             reason = "vtable-garbage";
         }
 
-        tnx_logf("v61 slot %s reject reason=%s this=%p vt=%p", g_slot_specs[first].shortTag, reason,
+        tnx_logf("v62 slot %s reject reason=%s this=%p vt=%p", g_slot_specs[first].shortTag, reason,
                  (void *)object, vtable);
 
         if (strcmp(reason, "vtable-garbage") == 0) return;

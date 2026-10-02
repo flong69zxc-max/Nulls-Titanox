@@ -510,7 +510,7 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 
 /* Printed as the first line after "setup", so every log identifies the build that produced
    it. Two device logs were once spent comparing a new binary against an old one. */
-#define TNX_BUILD_TAG "titanox_48"
+#define TNX_BUILD_TAG "titanox_49"
 
 /* ---------------------------------------------------------------------------
    v47. THE OBJECT LAYOUT STOPS BEING A GUESS, BECAUSE THE ENGINE STATES IT.
@@ -667,7 +667,12 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
    so coverage of the whole address space comes from starting each pass where the
    previous one ran out of budget -- see g_heap_scan_next. */
 #define TNX_HEAP_SCAN_BUDGET (512ull * 1024ull * 1024ull)
-#define TNX_VOTESCAN_HEAP_EVERY 30
+/* v49: 30 -> 5. The timer runs at 1 Hz, so this was a heap pass every THIRTY SECONDS, and
+   both 20:51 and 21:28 show what that costs: the first real container in one run appears at
+   20:52:39, sixty-five seconds in, and in the other the log window closes before one is
+   recorded at all. The dodge and the battle alert both wait on a container, so this single
+   number was sitting in front of everything. Five seconds is still far longer than a pass. */
+#define TNX_VOTESCAN_HEAP_EVERY 5
 
 /* A battle is a container holding several live entities. Lobby look-alikes hold 0 or 1.
    This is the anchor now: not a vtable list, but a verifiable battle-shaped structure. */
@@ -2365,6 +2370,29 @@ static void tnx_overlay_update(void) {
     char text[192];
     double now = CFAbsoluteTimeGetCurrent();
 
+    /* v49. THE PANEL IS GONE -- removed on request, and removed for good.
+
+       This function is still called from the render path, but it no longer draws anything and
+       never will: the early return below IS its behaviour now, and the body underneath is kept
+       only as the record of what it used to print. The one thing it still does is take a label
+       down, because the label was added to the key window and nothing else ever removed it --
+       so if this process is running an earlier build's panel, this is what clears it.
+
+       Nothing visible replaces it. What the panel was for -- knowing when a battle is actually
+       on -- is now a single UIAlertController that appears at battle entry and stays out of the
+       way the rest of the time. */
+    if (g_overlay) {
+        UILabel *stale = g_overlay;
+
+        g_overlay = NULL;
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [stale removeFromSuperview];
+        });
+    }
+
+    return;
+
     if (now - g_overlay_last < 0.4) return;
 
     g_overlay_last = now;
@@ -2394,6 +2422,106 @@ static void tnx_overlay_update(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         tnx_overlay_attach(string);
     });
+}
+
+/* ---------------------------------------------------------------------------
+   v49. BATTLE ENTRY, SAID OUT LOUD INSTEAD OF IN A CORNER OF THE SCREEN.
+
+   The panel was the only indication that a battle had been recognised. It is gone, so the
+   same fact is now delivered once per battle as a UIAlertController.
+
+   WHERE THE TRIGGER COMES FROM, HONESTLY. No hook of ours has ever been dispatched
+   (`hooks fired=0 of 7` in every run, with the slots installed and held), so there is no
+   callback to hang "battle started" on. What the scan does produce is a container that
+   holds LIVE objects: in the 20:52 log the real one held four, with a vtable and a team on
+   each. In the lobby the scan finds array-shaped things too, which is exactly why the test
+   is `live` and not `count` -- a lobby list is not empty, it is not alive.
+
+   So the alert fires on the rising edge of "a container with at least two live objects
+   exists", which is the same signal the dodge works from. It is a detection, not a hook,
+   and it costs one comparison per frame.
+   --------------------------------------------------------------------------- */
+
+static int g_alert_shown = 0;
+static uint64_t g_alert_cleared_ms = 0;
+
+static void tnx_alert_show(NSString *title, NSString *message) {
+    /* A UIAlertController must be presented from the main thread and from a controller that
+       is actually on screen, so the whole thing is hop-once and then walk to the top of the
+       presentation stack: presenting onto an already-presented controller is what silently
+       does nothing. */
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIWindow *window = nil;
+        UIViewController *host = nil;
+
+        for (UIWindow *candidate in [UIApplication sharedApplication].windows) {
+            if (candidate.isKeyWindow) {
+                window = candidate;
+                break;
+            }
+        }
+
+        if (!window) window = [UIApplication sharedApplication].keyWindow;
+        if (!window) return;
+
+        host = window.rootViewController;
+
+        if (!host) return;
+
+        while (host.presentedViewController) host = host.presentedViewController;
+
+        UIAlertController *alert =
+            [UIAlertController alertControllerWithTitle:title
+                                               message:message
+                                        preferredStyle:UIAlertControllerStyleAlert];
+
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK"
+                                                 style:UIAlertActionStyleDefault
+                                               handler:nil]];
+
+        [host presentViewController:alert animated:YES completion:nil];
+    });
+}
+
+/* Called from the render hook, so: cheap, no allocation, no logging unless something
+   actually changed. */
+static void tnx_alert_battle_check(void) {
+    int inBattle = 0;
+    uint64_t now = (uint64_t)(CFAbsoluteTimeGetCurrent() * 1000.0);
+
+    /* Both halves have to hold, and neither comes from a hook: the scan has seen a container,
+       AND that container holds live objects. `g_manager_best_live` is the second half; the
+       first is `g_mode_object`/`g_manager_object`/`g_manager_best_count`.
+
+       The trail array is deliberately NOT consulted here even though the dodge uses it as a
+       fallback: it is declared further down the file than this function, and the number that
+       actually matters -- how many live objects the best candidate holds -- is already a
+       global that is populated from the same pass. */
+    inBattle = (((g_mode_object != 0) || (g_manager_object != 0) ||
+                 g_manager_best_count > 0) && g_manager_best_live >= 2) ? 1 : 0;
+
+    if (inBattle) {
+        g_alert_cleared_ms = 0;
+
+        if (!g_alert_shown && now > 3000) {
+            g_alert_shown = 1;
+
+            tnx_logf("battle entry: bestLive=%d bestCount=%d mode=%p manager=%p -- showing alert",
+                     g_manager_best_live, g_manager_best_count, (void *)g_mode_object,
+                     (void *)g_manager_object);
+
+            tnx_alert_show(@"Titanox", @"Вход в бой обнаружен");
+        }
+
+        return;
+    }
+
+    /* The flag clears only after the marker has been gone for a while, so a container that
+       flickers between frames does not re-announce the same battle. */
+    if (g_alert_shown) {
+        if (g_alert_cleared_ms == 0) g_alert_cleared_ms = now;
+        else if (now > g_alert_cleared_ms + 5000) g_alert_shown = 0;
+    }
 }
 
 static dispatch_source_t g_scan_timer = NULL;
@@ -2519,6 +2647,9 @@ static void tnx_run_workload(void) {
     tnx_run_autoaim();
     tnx_render_watermark();
     tnx_overlay_update();
+    /* Per frame, next to the dodge, because it reads exactly what the dodge reads and the
+       two must never disagree about whether a battle is on. */
+    tnx_alert_battle_check();
 }
 
 static void tnx_objc_rep0(id self, SEL _cmd) {
@@ -6343,13 +6474,13 @@ static int tnx_v47_verify_setprediction(void) {
 
     for (int i = 0; i < 3; i++) {
         if (words[i] != expected[i]) {
-            tnx_logf("v48 setprediction MISMATCH word[%d]=%08x expected=%08x at %#llx",
+            tnx_logf("v49 setprediction MISMATCH word[%d]=%08x expected=%08x at %#llx",
                      i, words[i], expected[i], (unsigned long long)TNX_RVA_SETPREDICTION);
             return 0;
         }
     }
 
-    tnx_logf("v48 setprediction verified at %#llx (str w1,[x0,#0x1d4]; str w2,[x0,#0x1d8]; ret)",
+    tnx_logf("v49 setprediction verified at %#llx (str w1,[x0,#0x1d4]; str w2,[x0,#0x1d8]; ret)",
              (unsigned long long)TNX_RVA_SETPREDICTION);
 
     return 1;
@@ -6485,7 +6616,7 @@ static void tnx_v48_discriminate(uintptr_t manager) {
     usable = tnx_v48_collect(manager, objects, TNX_V47_OBJECT_MAX, &rejected);
 
     if (usable <= 1) {
-        tnx_logf("v48 fields manager=%p usable=%d rejected=%d -- two elements are needed "
+        tnx_logf("v49 fields manager=%p usable=%d rejected=%d -- two elements are needed "
                  "before one field can be told from another",
                  (void *)manager, usable, rejected);
         return;
@@ -6495,13 +6626,13 @@ static void tnx_v48_discriminate(uintptr_t manager) {
 
     for (int i = 0; i < n; i++) {
         if (!tnx_read_bytes(objects[i].object, words[i], sizeof(words[i]))) {
-            tnx_logf("v48 fields element %d at %p unreadable over 0x%x bytes",
+            tnx_logf("v49 fields element %d at %p unreadable over 0x%x bytes",
                      i, (void *)objects[i].object, (unsigned)sizeof(words[i]));
             return;
         }
     }
 
-    tnx_logf("v48 fields manager=%p usable=%d rejected=%d sample=%d window=+0x0..+0x%x",
+    tnx_logf("v49 fields manager=%p usable=%d rejected=%d sample=%d window=+0x0..+0x%x",
              (void *)manager, usable, rejected, n, (unsigned)((TNX_V48_WORDS - 1) * 4));
 
     for (int w = 0; w < TNX_V48_WORDS; w++) {
@@ -6533,7 +6664,7 @@ static void tnx_v48_discriminate(uintptr_t manager) {
            the wrong array, and one summary line says that better than twenty silent ones. */
         if (distinct <= 1) continue;
 
-        tnx_logf("v48 off +0x%02x distinct=%d/%d min=%lld max=%lld small=%d tiny=%d %s%s",
+        tnx_logf("v49 off +0x%02x distinct=%d/%d min=%lld max=%lld small=%d tiny=%d %s%s",
                  w * 4, distinct, n, (long long)minV, (long long)maxV, allSmall, allTiny,
                  (allTiny && distinct >= 2 && distinct <= TNX_V48_TEAM_MAX) ? "TEAM? " : "",
                  (allSmall && distinct == n) ? "VARIES/PAIR-MEMBER?" : "");
@@ -6579,7 +6710,7 @@ static void tnx_v48_discriminate(uintptr_t manager) {
         if (dx == n && dy == n) {
             intPairOff = w * 4;
 
-            tnx_logf("v48 coord pair int32 at +0x%02x,+0x%02x all %d distinct",
+            tnx_logf("v49 coord pair int32 at +0x%02x,+0x%02x all %d distinct",
                      w * 4, (w + 1) * 4, n);
         }
     }
@@ -6616,11 +6747,11 @@ static void tnx_v48_discriminate(uintptr_t manager) {
 
         floatPairOff = w * 4;
 
-        tnx_logf("v48 coord pair float32 at +0x%02x,+0x%02x first=(%.3f,%.3f) distinct=%d/%d",
+        tnx_logf("v49 coord pair float32 at +0x%02x,+0x%02x first=(%.3f,%.3f) distinct=%d/%d",
                  w * 4, (w + 1) * 4, fx, fy, distinctPairs, n);
     }
 
-    tnx_logf("v48 named teamOff=%s0x%x distinct=%d | coordOff=%s0x%x distinct=%d | "
+    tnx_logf("v49 named teamOff=%s0x%x distinct=%d | coordOff=%s0x%x distinct=%d | "
              "intPair=%s0x%x | floatPair=%s0x%x",
              teamOff >= 0 ? "+" : "none:", teamOff >= 0 ? teamOff : 0, teamDistinct,
              coordOff >= 0 ? "+" : "none:", coordOff >= 0 ? coordOff : 0, coordDistinct,
@@ -6680,7 +6811,7 @@ static void tnx_v48_probe(uintptr_t manager, uintptr_t mode, int verbose) {
        engine's own offset, because that one is not a guess. */
     g_v47_team_off = (distinctOld > distinctNew) ? (int)TNX_OBJ_TEAM_OFF : (int)TNX_OBJ_TEAMENGINE_OFF;
 
-    tnx_logf("v48 man walk mode=%p manager=%p usable=%d rejected=%d mapOk=%d mapW=%d mapH=%d "
+    tnx_logf("v49 man walk mode=%p manager=%p usable=%d rejected=%d mapOk=%d mapW=%d mapH=%d "
              "inRange=%d distinct=%d teamsOld=%d teamsNew=%d teamOff=0x%x",
              (void *)mode, (void *)manager, usable, rejected, g_v47_map_ok, g_v47_map_w,
              g_v47_map_h, inRange, distinct, distinctOld, distinctNew, g_v47_team_off);
@@ -6689,7 +6820,7 @@ static void tnx_v48_probe(uintptr_t manager, uintptr_t mode, int verbose) {
        and the short form while the verdict is still failing, so a re-probe does not
        spend the log budget restating offsets that did not move. */
     if (verbose) {
-        tnx_logf("v48 offsets obj off=0x%llx/0x%llx x=0x%llx y=0x%llx teamOld=0x%llx teamNew=0x%llx "
+        tnx_logf("v49 offsets obj off=0x%llx/0x%llx x=0x%llx y=0x%llx teamOld=0x%llx teamNew=0x%llx "
                  "owner=0x%llx dead=0x%llx active=0x%llx tilemap=0x%llx w=0x%llx",
                  TNX_MGR_ARRAY_OFF, TNX_MGR_COUNT_OFF, TNX_OBJ_X_OFF, TNX_OBJ_Y_OFF,
                  TNX_OBJ_TEAM_OFF, TNX_OBJ_TEAMENGINE_OFF, TNX_OBJ_OWNERINDEX_OFF,
@@ -6697,7 +6828,7 @@ static void tnx_v48_probe(uintptr_t manager, uintptr_t mode, int verbose) {
                  TNX_MODE_TILEMAP_OFF, TNX_TILEMAP_WIDTH_OFF);
 
         for (int i = 0; i < usable && i < 16; i++) {
-            tnx_logf("v48 obj[%02d] at=%p gid=%d pos=(%d,%d) own=%d teamOld=%d teamNew=%d "
+            tnx_logf("v49 obj[%02d] at=%p gid=%d pos=(%d,%d) own=%d teamOld=%d teamNew=%d "
                      "dead=%d active=%d",
                      i, (void *)objects[i].object, objects[i].gid, objects[i].x, objects[i].y,
                      objects[i].ownerIndex, objects[i].teamOld, objects[i].teamNew,
@@ -6711,7 +6842,7 @@ static void tnx_v48_probe(uintptr_t manager, uintptr_t mode, int verbose) {
     g_v47_coord_ok = (usable >= 2 && inRange == usable && distinct >= 2 &&
                       (distinctOld >= 2 || distinctNew >= 2)) ? 1 : 0;
 
-    tnx_logf("v48 coords ok=%d (need >=2 objects, all in range, >=2 distinct positions, "
+    tnx_logf("v49 coords ok=%d (need >=2 objects, all in range, >=2 distinct positions, "
              "and a team field that splits them)",
              g_v47_coord_ok);
 }
@@ -6743,24 +6874,48 @@ static void tnx_autododge_v48(void) {
        filed it in `g_manager_object`. The manager is enough for the probe, because the
        engine's own code says the array hangs off IT. Only the WRITE needs the mode, since
        the actuator stores through it -- so that is the one thing held back. */
+    /* Three candidate sources, best first. `mode` is the only one the actuator can write
+       through, `manager` is the container the engine's own code reaches from `[mode+0x28]`,
+       and `trail` is the best array-shaped candidate the scan has seen -- which is often the
+       only one that exists before anything qualifies for adoption.
+
+       v48 stopped at the first two, so it spent both runs printing `manager=0x0` while the
+       scan was already holding a candidate with live objects in it. That is the whole reason
+       its field report never ran either. */
     sourceIsMode = (g_mode_object != 0);
-    source = sourceIsMode ? g_mode_object : g_manager_object;
+
+    if (sourceIsMode) {
+        source = g_mode_object;
+    } else if (g_manager_object) {
+        source = g_manager_object;
+    } else if (g_trail_count > 0 && g_trail_best >= 0 && g_trail_best < g_trail_count) {
+        source = (uintptr_t)g_trail[g_trail_best].manager;
+    }
 
     g_v48_ticks++;
 
     if (g_v48_entry_logs < 3) {
         g_v48_entry_logs++;
-        tnx_logf("v48 dodge ENTERED ticks=%llu mode=%p manager=%p source=%s setpred=%d",
+        tnx_logf("v49 dodge ENTERED ticks=%llu mode=%p manager=%p trailBest=%p source=%p kind=%s "
+                 "setpred=%d",
                  (unsigned long long)g_v48_ticks, (void *)g_mode_object,
-                 (void *)g_manager_object, sourceIsMode ? "mode" : "manager",
+                 (void *)g_manager_object,
+                 (g_trail_count > 0 && g_trail_best >= 0 && g_trail_best < g_trail_count)
+                     ? (void *)g_trail[g_trail_best].manager : (void *)0,
+                 (void *)source,
+                 sourceIsMode ? "mode" : (g_manager_object ? "manager" : "trail"),
                  g_v47_setpred_state);
     }
 
+    /* Status is periodic, not capped. v48 printed its idle reason eight times and then went
+       quiet for the rest of the run -- and silence with two possible causes gets read as the
+       wrong one, which is a mistake this project has already paid for more than once. */
     if (!source) {
-        if (g_v48_entry_logs < 8) {
-            g_v48_entry_logs++;
-            tnx_logf("v48 dodge idle: neither mode nor manager is known yet (setpred=%d)",
-                     g_v47_setpred_state);
+        if ((g_v48_ticks % 900) == 1) {
+            tnx_logf("v49 dodge idle ticks=%llu: no mode, no manager and no trail candidate yet "
+                     "(bestLive=%d bestCount=%d) setpred=%d",
+                     (unsigned long long)g_v48_ticks, g_manager_best_live,
+                     g_manager_best_count, g_v47_setpred_state);
         }
         return;
     }
@@ -6801,7 +6956,7 @@ static void tnx_autododge_v48(void) {
                    were being read out of the wrong fields. */
                 if (loud) tnx_v48_discriminate((uintptr_t)resolved);
             } else {
-                tnx_logf("v48 probe skipped: source %p (%s) has no manager at +0x%llx",
+                tnx_logf("v49 probe skipped: source %p (%s) has no manager at +0x%llx",
                          (void *)source, sourceIsMode ? "mode" : "manager",
                          (unsigned long long)TNX_MODE_MANAGER_OFF);
             }
@@ -6813,7 +6968,7 @@ static void tnx_autododge_v48(void) {
     if (!g_v47_setpred_state) {
         if (g_v47_giveup_logs < 3) {
             g_v47_giveup_logs++;
-            tnx_logf("v48 dodge idle: no verified actuator (setprediction state=%d)",
+            tnx_logf("v49 dodge idle: no verified actuator (setprediction state=%d)",
                      g_v47_setpred_state);
         }
         return;
@@ -6822,7 +6977,7 @@ static void tnx_autododge_v48(void) {
     if (!g_v47_coord_ok) {
         if (g_v47_giveup_logs < 3) {
             g_v47_giveup_logs++;
-            tnx_logf("v48 dodge idle: coordinates not confirmed (usable=%d distinct=%d) -- "
+            tnx_logf("v49 dodge idle: coordinates not confirmed (usable=%d distinct=%d) -- "
                      "read-only until they are", g_v47_coord_usable, g_v47_coord_distinct);
         }
         return;
@@ -6834,7 +6989,7 @@ static void tnx_autododge_v48(void) {
     if (!g_mode_object) {
         if (g_v47_giveup_logs < 9) {
             g_v47_giveup_logs++;
-            tnx_logf("v48 dodge idle: coordinates confirmed but the mode is unknown, so the "
+            tnx_logf("v49 dodge idle: coordinates confirmed but the mode is unknown, so the "
                      "actuator has no `this` -- nothing written");
         }
         return;
@@ -6876,7 +7031,7 @@ static void tnx_autododge_v48(void) {
     if (ownBest > TNX_V47_OWN_MAX_SQ) {
         if (g_v47_giveup_logs < 3) {
             g_v47_giveup_logs++;
-            tnx_logf("v48 dodge idle: prediction (%d,%d) is not near any object -- nearest "
+            tnx_logf("v49 dodge idle: prediction (%d,%d) is not near any object -- nearest "
                      "squared distance %lld -- so +0x30/+0x34 are not positions",
                      predictX, predictY, (long long)ownBest);
         }
@@ -6929,7 +7084,7 @@ static void tnx_autododge_v48(void) {
 
     if (threats == 0) {
         if (g_v47_ticks % 256 == 0) {
-            tnx_logf("v48 live ticks=%llu own=(%d,%d) team=%d pred=(%d,%d) hostilesAlive=%d "
+            tnx_logf("v49 live ticks=%llu own=(%d,%d) team=%d pred=(%d,%d) hostilesAlive=%d "
                      "enemiesActive=%d enemiesInRange=0 writes=%llu threatsTotal=%llu",
                      (unsigned long long)g_v47_ticks, ownX, ownY, ownTeam, predictX, predictY,
                      threatsAlive, threats, (unsigned long long)g_v47_writes,
@@ -6970,7 +7125,7 @@ static void tnx_autododge_v48(void) {
         g_v47_writes++;
 
         if (g_v47_writes <= TNX_V47_LOG_FIRST || (g_v47_writes % TNX_V47_LOG_EVERY) == 0) {
-            tnx_logf("v48 write #%llu own=(%d,%d) team=%d hostilesAlive=%d enemiesInRange=%d "
+            tnx_logf("v49 write #%llu own=(%d,%d) team=%d hostilesAlive=%d enemiesInRange=%d "
                      "step=(%d,%d) target=(%d,%d) predBefore=(%d,%d)",
                      (unsigned long long)g_v47_writes, ownX, ownY, ownTeam,
                      threatsAlive, threats, (int)(escapeX * DODGE_STEP),
@@ -7379,7 +7534,13 @@ static void setup(void) {
        because adoption never succeeds -- while g_manager_object held a real manager with
        four live objects the entire run. Unreachable code and absent code print the same
        nothing, which is a mistake this project has already paid for twice. So: */
-    tnx_logf("plan v48: (1) the dodge logs its OWN ENTRY unconditionally, so 'did it run' is "
+    tnx_logf("plan v49: (1) the left-hand panel is REMOVED -- the overlay draws nothing now -- "
+             "and replaced by a UIAlertController shown once per battle; (2) the dodge also "
+             "takes the scan's best trail candidate as its source, which is the one it was "
+             "missing: v48 printed manager=0x0 in both runs while a candidate with live objects "
+             "sat unread in the trail; (3) heap passes go from every 30 s to every 5 s, because "
+             "both logs show the first real container arriving 60+ s in and the log window "
+             "closing before that; (4) the dodge logs its OWN ENTRY unconditionally, so 'did it run' is "
              "printed rather than inferred; (2) the probe runs from whichever of mode/manager "
              "exists, because the array hangs off the MANAGER and only the actuator needs the "
              "mode; (3) a new field report walks a window of the elements and prints, per "

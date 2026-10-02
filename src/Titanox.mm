@@ -214,7 +214,7 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_55"
+#define TNX_BUILD_TAG "titanox_56"
 
 #define TNX_RVA_SETPREDICTION 0x00ac3f20ULL
 #define TNX_OBJ_X_OFF 0x30ULL
@@ -234,6 +234,11 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_V47_LOG_EVERY 64
 
 #define TNX_V47_REPROBE_MS 5000
+
+#define TNX_V56_COUNT_MAX 96
+#define TNX_V56_WALK_STEP 40
+#define TNX_V56_MODE_WAIT_TICKS 30
+#define TNX_V56_ROUTE_WAIT_TICKS 60
 
 #define TNX_V47_OWN_MAX_SQ 100000000LL
 
@@ -586,8 +591,27 @@ static uint64_t g_v50_ticks = 0;
 static uintptr_t g_slot_adopted = 0;
 static int g_ag_adopted = 0;
 
+static int g_v56_mode_ticks = 0;
+static int g_v56_capture_done = 0;
+static int g_v56_array_logged = 0;
+static int g_v56_walk_last = -1;
+static int g_v56_route_done = 0;
+static int g_v56_objhit_logged = 0;
+static uintptr_t g_v56_manager = 0;
+static uintptr_t g_v56_array = 0;
+static int g_v56_count = 0;
+static uintptr_t g_v56_player = 0;
+static int32_t g_v56_px = 0;
+static int32_t g_v56_py = 0;
+static int32_t g_v56_team = 0;
+static int32_t g_v56_enemy_x[TNX_V56_COUNT_MAX] = { 0 };
+static int32_t g_v56_enemy_y[TNX_V56_COUNT_MAX] = { 0 };
+static int32_t g_v56_enemy_count = 0;
+
 static void tnx_slot_diag(const char *why);
 static void tnx_slot_fired_report(void);
+static void tnx_v56_mode_capture(uintptr_t candidate);
+static void tnx_v56_dodge_tick(void);
 static BOOL tnx_read_ptr(uintptr_t address, void **out);
 
 static BOOL tnx_obj_slot_fn(uintptr_t object, uintptr_t slot, uintptr_t *rvaOut);
@@ -727,6 +751,8 @@ static uint64_t tnx_slot_repl_12(void *a0, uint64_t a1, uint64_t a2, uint64_t a3
 
     g_v52_setpred_calls++;
     g_v52_setpred_this = (uintptr_t)a0;
+
+    tnx_v56_mode_capture((uintptr_t)a0);
 
     memcpy(&g_v52_setpred_x, &a1, sizeof(float));
     memcpy(&g_v52_setpred_y, &a2, sizeof(float));
@@ -2333,6 +2359,7 @@ static void tnx_start_timer(void) {
     dispatch_source_set_event_handler(timer, ^{
         tnx_slot_pump();
         tnx_locate_battle_mode();
+        tnx_v56_dodge_tick();
 
         g_scan_ticks++;
         g_v50_ticks++;
@@ -6595,6 +6622,253 @@ static void tnx_dodge_all_teams(uintptr_t manager) {
     }
 }
 
+static BOOL tnx_v56_vtable_in_image(uintptr_t vtable) {
+    uintptr_t lo = 0;
+    uintptr_t hi = 0;
+
+    if (!vtable) return NO;
+    if (vtable >= g_base + TNX_DC_RVA_LO && vtable < g_base + TNX_DC_RVA_LO + TNX_DC_RVA_SIZE) {
+        return YES;
+    }
+
+    if (tnx_segment_range(TNX_VTABLE_SEGMENT_ALT, &lo, &hi) && vtable >= lo && vtable < hi) {
+        return YES;
+    }
+
+    return NO;
+}
+
+static void tnx_v56_mode_capture(uintptr_t candidate) {
+    void *vtable = NULL;
+
+    if (!candidate) return;
+    if (g_v56_capture_done) return;
+
+    if (g_mode_object) {
+        g_v56_capture_done = 1;
+        return;
+    }
+
+    if (!tnx_read_ptr(candidate, &vtable) || !vtable) return;
+    if (!tnx_v56_vtable_in_image((uintptr_t)vtable)) return;
+
+    g_mode_object = candidate;
+    g_v56_capture_done = 1;
+    g_v56_mode_ticks = 0;
+    g_v56_array_logged = 0;
+    g_v56_walk_last = -1;
+    g_v56_route_done = 0;
+
+    tnx_battle_begin("setpred");
+
+    tnx_logf("v56 mode captured from setprediction this=%p vt=%p", (void *)candidate, vtable);
+}
+
+static int tnx_v56_refresh_array(void) {
+    void *manager = NULL;
+    void *array = NULL;
+    int32_t count = 0;
+
+    if (!g_mode_object) return 0;
+    if (!tnx_read_ptr(g_mode_object + TNX_MODE_MANAGER_OFF, &manager) || !manager) return 0;
+
+    if ((uintptr_t)manager != g_v56_manager) {
+        g_v56_manager = (uintptr_t)manager;
+        g_v56_array = 0;
+        g_v56_count = 0;
+    }
+
+    if (!tnx_read_ptr((uintptr_t)manager + TNX_MGR_ARRAY_OFF, &array) || !array) return 0;
+    if (!tnx_read_i32((uintptr_t)manager + TNX_MGR_COUNT_OFF, &count)) return 0;
+
+    if (count <= 0 || count > TNX_V56_COUNT_MAX) {
+        int32_t alt = 0;
+
+        if (tnx_read_i32((uintptr_t)manager + 0x8ULL, &alt) && alt > 0 &&
+            alt <= TNX_V56_COUNT_MAX) {
+            count = alt;
+        } else if (tnx_read_i32((uintptr_t)manager + 0x10ULL, &alt) && alt > 0 &&
+                   alt <= TNX_V56_COUNT_MAX) {
+            count = alt;
+        } else {
+            return 0;
+        }
+    }
+
+    g_v56_array = (uintptr_t)array;
+    g_v56_count = count;
+
+    if (!g_v56_array_logged) {
+        g_v56_array_logged = 1;
+
+        tnx_logf("v56 array ready mode=%p manager=%p array=%p count=%d", (void *)g_mode_object,
+                 manager, array, count);
+    }
+
+    return 1;
+}
+
+static int tnx_v56_man_walk(void) {
+    void *(*getOwn)(void *) = (void *(*)(void *))g_addr_getownchar;
+    int32_t enemies = 0;
+
+    g_v56_enemy_count = 0;
+
+    if (!g_v56_array || g_v56_count <= 0) return 0;
+    if (!g_addr_getownchar) return 0;
+
+    g_v56_player = (uintptr_t)getOwn((void *)g_mode_object);
+    if (!g_v56_player) return 0;
+    if (!tnx_read_i32(g_v56_player + TNX_OBJ_X_OFF, &g_v56_px)) return 0;
+    if (!tnx_read_i32(g_v56_player + TNX_OBJ_Y_OFF, &g_v56_py)) return 0;
+    if (!tnx_read_i32(g_v56_player + TNX_OBJ_TEAM_OFF, &g_v56_team)) return 0;
+
+    for (int32_t i = 0; i < g_v56_count && i < TNX_V56_COUNT_MAX; i++) {
+        uintptr_t slot = g_v56_array + (uintptr_t)i * sizeof(void *);
+        void *obj = NULL;
+        int32_t x = 0;
+        int32_t y = 0;
+        int32_t team = 0;
+        uint8_t dead = 0;
+
+        if (!tnx_read_ptr(slot, &obj) || !obj) continue;
+        if ((uintptr_t)obj == g_v56_player) continue;
+        if (!tnx_read_i32((uintptr_t)obj + TNX_OBJ_X_OFF, &x)) continue;
+        if (!tnx_read_i32((uintptr_t)obj + TNX_OBJ_Y_OFF, &y)) continue;
+        if (x == 0 && y == 0) continue;
+        if (!tnx_read_i32((uintptr_t)obj + TNX_OBJ_TEAM_OFF, &team)) continue;
+        if (team == g_v56_team) continue;
+        if (!tnx_read_bytes((uintptr_t)obj + TNX_OBJ_DEADFLAG_OFF, &dead, sizeof(dead))) continue;
+        if (dead) continue;
+
+        g_v56_enemy_x[g_v56_enemy_count] = x;
+        g_v56_enemy_y[g_v56_enemy_count] = y;
+        g_v56_enemy_count++;
+        enemies++;
+    }
+
+    if (enemies != g_v56_walk_last) {
+        g_v56_walk_last = enemies;
+
+        tnx_logf("v56 walk player=(%d,%d) team=%d enemies=%d", g_v56_px, g_v56_py, g_v56_team,
+                 enemies);
+    }
+
+    return enemies;
+}
+
+static int tnx_v56_objhit_walk(void) {
+    int n = 0;
+
+    for (int i = 0; i < g_objhit_count; i++) {
+        int32_t x = 0;
+        int32_t y = 0;
+
+        if (!g_objhits[i].at) continue;
+        if (!tnx_read_i32(g_objhits[i].at + TNX_OBJ_X_OFF, &x)) continue;
+        if (!tnx_read_i32(g_objhits[i].at + TNX_OBJ_Y_OFF, &y)) continue;
+        if (x == 0 && y == 0) continue;
+
+        n++;
+    }
+
+    return n;
+}
+
+static void tnx_v56_route_clientinput(void) {
+    uintptr_t thisPtr = g_slot_object[12];
+    uint64_t result = 0;
+
+    if (g_v56_route_done) return;
+    if (!g_addr_setprediction) return;
+
+    for (int i = 0; !thisPtr && i < TNX_SLOT_COUNT; i++) {
+        thisPtr = g_slot_object[i];
+    }
+
+    if (!thisPtr) return;
+
+    g_v56_route_done = 1;
+
+    result = ((uint64_t (*)(void *, int, int))g_addr_setprediction)((void *)thisPtr, 0, 0);
+
+    tnx_logf("v56 route clientinput returned=%llu", (unsigned long long)result);
+}
+
+static void tnx_v56_dodge_tick(void) {
+    static uintptr_t setpredFn = 0;
+    int best = -1;
+    int64_t bestDist = 0;
+
+    if (!g_base) return;
+
+    if (!g_mode_object) {
+        g_v56_mode_ticks++;
+
+        if (g_v56_mode_ticks == TNX_V56_MODE_WAIT_TICKS && !g_v56_objhit_logged) {
+            g_v56_objhit_logged = 1;
+
+            tnx_logf("v56 dodge from objhit list n=%d", tnx_v56_objhit_walk());
+        }
+
+        if (g_v56_mode_ticks == TNX_V56_ROUTE_WAIT_TICKS) tnx_v56_route_clientinput();
+
+        return;
+    }
+
+    g_v56_mode_ticks = 0;
+
+    if (!tnx_v56_refresh_array()) {
+        if (!g_v56_objhit_logged) {
+            g_v56_objhit_logged = 1;
+
+            tnx_logf("v56 dodge from objhit list n=%d", tnx_v56_objhit_walk());
+        }
+
+        return;
+    }
+
+    if (tnx_v56_man_walk() <= 0) return;
+
+    for (int32_t i = 0; i < g_v56_enemy_count; i++) {
+        int64_t dx = (int64_t)g_v56_enemy_x[i] - (int64_t)g_v56_px;
+        int64_t dy = (int64_t)g_v56_enemy_y[i] - (int64_t)g_v56_py;
+        int64_t dist = dx * dx + dy * dy;
+
+        if (best < 0 || dist < bestDist) {
+            best = i;
+            bestDist = dist;
+        }
+    }
+
+    if (best < 0) return;
+
+    {
+        float dx = (float)(g_v56_enemy_x[best] - g_v56_px);
+        float dy = (float)(g_v56_enemy_y[best] - g_v56_py);
+        float len = sqrtf(dx * dx + dy * dy);
+        float perpX = 0.0f;
+        float perpY = 0.0f;
+        int newX = 0;
+        int newY = 0;
+
+        if (len <= 0.0001f) return;
+
+        perpX = -dy / len;
+        perpY = dx / len;
+        newX = g_v56_px + (int)(perpX * (float)TNX_V56_WALK_STEP);
+        newY = g_v56_py + (int)(perpY * (float)TNX_V56_WALK_STEP);
+
+        if (!setpredFn) setpredFn = g_base + TNX_RVA_SETPREDICTION;
+
+        ((tnx_v47_setpred_t)setpredFn)((void *)g_mode_object, newX, newY);
+
+        tnx_logf("v56 dodge write=(%d,%d) from=(%d,%d) near=(%d,%d) enemies=%d", newX, newY,
+                 g_v56_px, g_v56_py, g_v56_enemy_x[best], g_v56_enemy_y[best],
+                 g_v56_enemy_count);
+    }
+}
+
 static void tnx_slot_pump(void) {
     int first = -1;
 
@@ -6632,14 +6906,20 @@ static void tnx_slot_pump(void) {
     tnx_logf("slot pump object=%p source=%s installed=%d/%d",
              (void *)object, g_slot_specs[first].tag, installed, TNX_SLOT_COUNT);
 
-    tnx_battle_begin("slot");
+    {
+        void *vtable = NULL;
+        void *manager = NULL;
+        const char *reason = "vtable-not-in-image";
 
-    if (g_mode_object != object) {
-        g_mode_strong = NO;
-        g_mode_object = 0;
+        if (tnx_read_ptr(object, &vtable) && vtable &&
+            tnx_v56_vtable_in_image((uintptr_t)vtable)) {
+            reason = (tnx_read_ptr(object + TNX_MODE_MANAGER_OFF, &manager) && manager)
+                         ? "adopt-from-slot-banned"
+                         : "no-manager-at-0x28";
+        }
+
+        tnx_logf("v56 adopt reject source=slot this=%p reason=%s", (void *)object, reason);
     }
-
-    tnx_adopt_mode(object, YES, "slot");
 
     tnx_dump_hex("slotObj", object, 0x100);
 

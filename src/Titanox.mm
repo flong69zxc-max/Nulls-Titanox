@@ -244,6 +244,33 @@ static uintptr_t tnx_strip_imp(IMP imp) {
     return (uintptr_t)imp;
 }
 
+static FILE *g_battle_log = NULL;
+static BOOL g_battle_capture = NO;
+static BOOL g_battle_header = NO;
+
+static void tnx_battle_write(const char *utf8, size_t len) {
+    if (!g_battle_log) {
+        NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+
+        if (paths.count == 0) return;
+
+        NSString *path = [paths[0] stringByAppendingPathComponent:@"Titanox.battle.log"];
+        g_battle_log = fopen(path.UTF8String, "a");
+    }
+
+    if (!g_battle_log) return;
+
+    if (!g_battle_header) {
+        g_battle_header = YES;
+
+        const char *header = "---- battle capture started ----\n";
+        fwrite(header, 1, strlen(header), g_battle_log);
+    }
+
+    fwrite(utf8, 1, len, g_battle_log);
+    fflush(g_battle_log);
+}
+
 static FILE *tnx_log_handle(void) {
     if (!g_log) {
         NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
@@ -273,6 +300,14 @@ static void tnx_write_line(const char *text) {
     fflush(handle);
 
     g_log_written += (long)len;
+
+    /* Second, deliberately tiny file. Every report so far was truncated before the
+       battle, so the lines that matter got lost; once the first battle-shaped hit
+       appears everything is mirrored here, which keeps this file small enough to
+       always be sent whole. */
+    if (g_battle_capture && g_log_written < LOG_MAX_BYTES) {
+        tnx_battle_write(utf8, len);
+    }
 }
 
 static void tlog(NSString *msg) {
@@ -292,6 +327,16 @@ static void tnx_logf(const char *format, ...) {
     va_end(args);
 
     tnx_write_line(buffer);
+}
+
+/* Mirroring starts here and stays on: from the first battle-shaped hit every line also
+   lands in the small Titanox.battle.log. Defined after tnx_logf because it logs. */
+static void tnx_battle_begin(const char *why) {
+    if (g_battle_capture) return;
+
+    g_battle_capture = YES;
+
+    tnx_logf("battle capture ON (%s) -> Documents/Titanox.battle.log", why ? why : "?");
 }
 
 static BOOL tnx_query_region(uintptr_t address,
@@ -1886,6 +1931,8 @@ static void tnx_adopt_mode(uintptr_t object, BOOL strong, const char *tag) {
 
     if (strong) g_mode_strong = YES;
 
+    tnx_battle_begin(tag);
+
     tnx_logf("mode adopt tag=%s object=%p strong=%d maxObj=%d",
              tag, (void *)object, strong ? 1 : 0, g_mode_best_objects);
 
@@ -2051,6 +2098,8 @@ static void tnx_scan_globals_for_mode(const char *name) {
         if (vfx >= 0) {
             g_mode_verified_hits++;
             verifiedHits++;
+
+            tnx_battle_begin("globals");
         }
         if (vtMatch) vtHits++;
         if (score >= 1) shapeHits++;
@@ -2153,6 +2202,8 @@ static void tnx_scan_heap_for_mode(void) {
                         if (vfx >= 0) {
                             g_mode_verified_hits++;
                             verifiedHits++;
+
+                            tnx_battle_begin("heap");
                         }
 
                         if (score == 0 && vfx < 0) continue;

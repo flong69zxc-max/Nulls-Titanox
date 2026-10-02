@@ -147,6 +147,13 @@ static __thread BOOL g_inside_hook = NO;
 #define TNX_MGR_ARRAY_OFF 0x0ULL
 #define TNX_MGR_COUNT_OFF 0xcULL
 
+/* The input queue the working implementation hands its dodge to: BattleMode_clientInputManager
+   = 0x58, and a ClientInput carries x at 0xc and y at 0x10. Nothing is written here yet; the
+   pointer is printed on capture so the movement side has a target to aim at next. */
+#define TNX_MODE_INPUTMGR_OFF 0x58ULL
+#define TNX_INPUT_X_OFF 0xcULL
+#define TNX_INPUT_Y_OFF 0x10ULL
+
 /* A battle manager holds several live objects; every lobby container observed so far
    held 0 or 1. Used by the vtable-free manager probe. */
 #define TNX_MANAGER_MIN_OBJECTS 3
@@ -156,10 +163,20 @@ static __thread BOOL g_inside_hook = NO;
 /* THE correction that matters. REvengeBS: GameObj_team = 0x40, LogicGameObjectClient_ownerIndex
    = 0x3c, GameObj_deadFlag = 0xd0. We read team at 0x4c, which is why every "is this a game
    object" shape test failed and why the one container that was accepted had 71 entries all
-   reading team 0 -- we were reading a different field entirely. */
+   reading team 0 -- we were reading a different field entirely.
+
+   Widths, taken from the working implementation rather than guessed: team is read as a plain
+   int at +0x40 and compared against the own-player team, ownerIndex is an int, and DEADFLAG IS
+   A SINGLE BYTE -- the reference reads it as uint8_t. Reading it as an int was our own
+   invention and would have accepted garbage; a byte that must be 0 or 1 is a real filter. */
 #define TNX_OBJ_TEAM_OFF 0x40ULL
 #define TNX_OBJ_OWNERINDEX_OFF 0x3cULL
 #define TNX_OBJ_DEADFLAG_OFF 0xd0ULL
+
+/* The reference never bounds team: it compares it to the own-player team and moves on. Teams in
+   this game are small, so a wide sanity bound is kept -- the real filter is the dead flag, which
+   has to be a 0/1 byte. */
+#define TNX_OBJ_TEAM_MAX 7
 
 /* getX/getY/getZ are consecutive virtual slots: REvengeBS has them at 0xb5e44c / 0xb5e454 /
    0xb5e45c, i.e. 8 apart, and our own call site does ldr x8,[x8,#0x88] before blr. So slot
@@ -205,7 +222,7 @@ static __thread BOOL g_inside_hook = NO;
 
 /* Printed as the first line after "setup", so every log identifies the build that produced
    it. Two device logs were once spent comparing a new binary against an old one. */
-#define TNX_BUILD_TAG "titanox_33"
+#define TNX_BUILD_TAG "titanox_34"
 
 /* IN-LINE HOOKING IS IMPOSSIBLE ON THIS PROCESS -- measured, not assumed. The 17:38 log caught
    it directly:
@@ -515,6 +532,9 @@ static uintptr_t g_slot_adopted = 0;
 static int g_ag_adopted = 0;
 
 static void tnx_slot_diag(const char *why);
+
+/* Defined next to the object dump, but needed earlier by the manager dump too. */
+static BOOL tnx_obj_coord(uintptr_t object, uintptr_t slot, int32_t *value);
 
 /* Runs inside the game's thread. Two stores and a bounds check, nothing else. */
 static void tnx_slot_note(int index, void *self) {
@@ -2348,19 +2368,33 @@ static BOOL tnx_heap_resident(uintptr_t value) {
     return tnx_image_segment_name(value) ? NO : YES;
 }
 
+/* Re-verified against the working implementation, and two of the old tests are gone.
+
+   Dropped: "globalId > 0". The reference never tests the global id when it decides whether an
+   array entry is a live entity; it just walks the array. Requiring a positive id could have
+   thrown away a perfectly real object, which is the one failure mode that costs a whole run.
+
+   Dropped: "team <= 3". That bound was mine, not the reference's -- the reference compares team
+   to the own-player team and never bounds it. It is replaced by a wide sanity range so that a
+   garbage read is still caught, without any chance of rejecting a real team value.
+
+   Kept, because they are the two tests that actually killed the recorded false positives: the
+   object must live on the heap (never inside a mapped image segment) and its first word must be
+   a table in const data. Added: the dead flag at +0xd0 has to read as a 0/1 BYTE, which is how
+   the reference reads it. That byte is what a C string or a version vector can never produce. */
 static BOOL tnx_gameobject_shape(uintptr_t object) {
     void *vtable = NULL;
-    int32_t globalId = 0;
     int32_t team = 0;
+    uint8_t dead = 0;
 
     if (!tnx_pointer_plausible(object)) return NO;
     if (!tnx_heap_resident(object)) return NO;
     if (!tnx_read_ptr(object, &vtable)) return NO;
     if (!tnx_vtable_shaped((uintptr_t)vtable)) return NO;
-    if (!tnx_read_i32(object + TNX_OBJ_GLOBALID_OFF, &globalId)) return NO;
-    if (globalId <= 0) return NO;
     if (!tnx_read_i32(object + TNX_OBJ_TEAM_OFF, &team)) return NO;
-    if (team < 0 || team > 3) return NO;
+    if (team < 0 || team > TNX_OBJ_TEAM_MAX) return NO;
+    if (!tnx_read_u8(object + TNX_OBJ_DEADFLAG_OFF, &dead)) return NO;
+    if (dead > 1) return NO;
 
     return YES;
 }
@@ -2717,7 +2751,27 @@ static void tnx_dump_manager(uintptr_t manager, int count) {
         if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * sizeof(void *), &element)) return;
         if (!element) continue;
 
-        tnx_logf("mgr[%d] element=%p", i, element);
+        /* Reads the element the same way the mode path does, so a real battle container gives
+           real coordinates here instead of only a hex blob. This is the input a dodge needs. */
+        int32_t globalId = 0;
+        int32_t team = 0;
+        int32_t owner = 0;
+        uint8_t dead = 0;
+        int32_t x = 0;
+        int32_t y = 0;
+
+        tnx_read_i32((uintptr_t)element + TNX_OBJ_GLOBALID_OFF, &globalId);
+        tnx_read_i32((uintptr_t)element + TNX_OBJ_TEAM_OFF, &team);
+        tnx_read_i32((uintptr_t)element + TNX_OBJ_OWNERINDEX_OFF, &owner);
+        tnx_read_u8((uintptr_t)element + TNX_OBJ_DEADFLAG_OFF, &dead);
+
+        tnx_obj_coord((uintptr_t)element, TNX_OBJ_GETX_SLOT, &x);
+        tnx_obj_coord((uintptr_t)element, TNX_OBJ_GETY_SLOT, &y);
+
+        tnx_logf("mgr[%d] element=%p gameobj=%d gid=%d team=%d own=%d dead=%d x=%d y=%d",
+                 i, element, tnx_gameobject_shape((uintptr_t)element) ? 1 : 0,
+                 globalId, team, owner, dead, x, y);
+
         tnx_dump_hex("mgrObj", (uintptr_t)element, 0x100);
     }
 }
@@ -2751,6 +2805,13 @@ static int tnx_manager_live_count(uintptr_t manager) {
         if (!tnx_read_ptr((uintptr_t)element, &vtable)) continue;
         if (!vtable) continue;
         if (!tnx_vtable_shaped((uintptr_t)vtable)) continue;
+
+        /* The test that was missing, and it only has a chance of working now that team is read
+           at 0x40: a game object carries a team in range and a 0/1 byte dead flag at 0xd0.
+           Everything else can be faked -- the 17:51 run accepted a vector of version strings
+           (its dump spells out "Nulls Brawl" and "NB v69.225") because it had the right count,
+           live heap pointers and even two distinct vtables. */
+        if (!tnx_gameobject_shape((uintptr_t)element)) continue;
 
         live++;
 
@@ -3294,14 +3355,14 @@ static void tnx_dump_mode_objects(const char *tag) {
         int32_t globalId = 0;
         int32_t team = 0;
         int32_t owner = 0;
-        int32_t dead = 0;
+        uint8_t dead = 0;
         int32_t x = 0;
         int32_t y = 0;
 
         tnx_read_i32((uintptr_t)object + TNX_OBJ_GLOBALID_OFF, &globalId);
         tnx_read_i32((uintptr_t)object + TNX_OBJ_TEAM_OFF, &team);
         tnx_read_i32((uintptr_t)object + TNX_OBJ_OWNERINDEX_OFF, &owner);
-        tnx_read_i32((uintptr_t)object + TNX_OBJ_DEADFLAG_OFF, &dead);
+        tnx_read_u8((uintptr_t)object + TNX_OBJ_DEADFLAG_OFF, &dead);
 
         tnx_obj_coord((uintptr_t)object, TNX_OBJ_GETX_SLOT, &x);
         tnx_obj_coord((uintptr_t)object, TNX_OBJ_GETY_SLOT, &y);
@@ -3401,6 +3462,62 @@ static void tnx_slot_pump(void) {
     if (tnx_read_ptr(object + TNX_SLOT_LIST_OFF, &list) &&
         tnx_read_i32(object + TNX_SLOT_LISTCOUNT_OFF, &listCount)) {
         tnx_logf("slot +80 list=%p count=%d", list, listCount);
+    }
+
+    /* The chain the working implementation actually uses, printed for EVERY capture. It does
+       not matter which class the slot hooks caught: if the object owns a manager at +0x28 that
+       holds several live entities, that object is the battle mode and this line says so. Until
+       now the +0x28 layout was only ever probed on the scan path, never on a captured object. */
+    void *modeManager = NULL;
+
+    if (tnx_read_ptr(object + TNX_MODE_MANAGER_OFF, &modeManager) && modeManager) {
+        void *modeArray = NULL;
+        int32_t modeCount = 0;
+
+        tnx_logf("slot +28 mgr=%p vt=%#llx", modeManager,
+                 (unsigned long long)tnx_vtable_rva(modeManager));
+
+        if (tnx_read_ptr((uintptr_t)modeManager + TNX_MGR_ARRAY_OFF, &modeArray) &&
+            tnx_read_i32((uintptr_t)modeManager + TNX_MGR_COUNT_OFF, &modeCount)) {
+            tnx_logf("slot +28 arr=%p count=%d live=%d", modeArray, modeCount,
+                     tnx_manager_live_count((uintptr_t)modeManager));
+        }
+
+        tnx_dump_hex("slotMgr28", (uintptr_t)modeManager, 0x40);
+    }
+
+    /* The other half of the working implementation: the input queue the dodge is handed to,
+       [mode+0x58]. Printed on capture so the movement side has a real target next round. */
+    void *inputManager = NULL;
+
+    if (tnx_read_ptr(object + TNX_MODE_INPUTMGR_OFF, &inputManager) && inputManager) {
+        tnx_logf("slot +58 inputMgr=%p vt=%#llx", inputManager,
+                 (unsigned long long)tnx_vtable_rva(inputManager));
+
+        tnx_dump_hex("slotInMgr", (uintptr_t)inputManager, 0x40);
+    }
+
+    /* The captured object's own table, forty entries of it. Issuing a dodge needs a callable
+       entry point, and the only place one can be read from is here: the slot index of the
+       movement method is the last unknown, and this prints every candidate with its address. */
+    void *slotTable = NULL;
+
+    if (tnx_read_ptr(object, &slotTable) && slotTable) {
+        tnx_logf("slot vtable=%p", slotTable);
+
+        for (int k = 0; k < 40; k += 4) {
+            void *entry[4] = { NULL, NULL, NULL, NULL };
+
+            for (int j = 0; j < 4; j++) {
+                tnx_read_ptr((uintptr_t)slotTable + (uintptr_t)(k + j) * sizeof(void *), &entry[j]);
+            }
+
+            tnx_logf("slot vt[%02d..%02d] %#llx %#llx %#llx %#llx", k, k + 3,
+                     (unsigned long long)(uintptr_t)entry[0],
+                     (unsigned long long)(uintptr_t)entry[1],
+                     (unsigned long long)(uintptr_t)entry[2],
+                     (unsigned long long)(uintptr_t)entry[3]);
+        }
     }
 
     tnx_dump_mode_objects("slot");

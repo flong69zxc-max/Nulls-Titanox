@@ -249,7 +249,7 @@ static __thread BOOL g_inside_hook = NO;
 
 /* Printed as the first line after "setup", so every log identifies the build that produced
    it. Two device logs were once spent comparing a new binary against an old one. */
-#define TNX_BUILD_TAG "titanox_38"
+#define TNX_BUILD_TAG "titanox_39"
 
 /* IN-LINE HOOKING IS IMPOSSIBLE ON THIS PROCESS -- measured, not assumed. The 17:38 log caught
    it directly:
@@ -386,6 +386,7 @@ static int g_manager_last_nonempty = 0;
 static int g_manager_last_capacity = 0;
 static int g_manager_saw_cap = 0;
 static int g_manager_loose_count = 0;
+static int g_manager_window_rejects = 0;
 static int g_manager_cap_rejects = 0;
 static int g_manager_best_count = 0;
 static int g_manager_best_live = 0;
@@ -942,6 +943,7 @@ static BOOL tnx_query_region(uintptr_t address,
 
     return YES;
 }
+
 
 static BOOL tnx_addr_writable(uintptr_t address, size_t length) {
     if (!address || !length) return NO;
@@ -2419,6 +2421,126 @@ static const char *tnx_image_segment_name(uintptr_t value) {
     return NULL;
 }
 
+
+/* ======================================================================================
+   THE HEAP WINDOW. This is the filter that the previous four versions were missing, and
+   the numbers on the device say exactly why it was needed.
+
+   titanox_38 pre-filtered a candidate on: the 32-bit word at +0xc looks like a count, the
+   word at +0x8 looks like a capacity, and the pointer at +0x0 is above 0x10000, eight byte
+   aligned, sixteen byte aligned, and not inside the image. On the device that let
+   loose=616976 candidates through the tight bound and 1217701 through every free check,
+   against a probe budget of 65536 -- so the budget was gone inside the first pass and the
+   remaining heap was never examined at all.
+
+   The missing observation is embarrassingly simple: every heap pointer this process has ever
+   been seen to hold -- 0x1040cffa8, 0x1049c5710, 0x1054e5280, 0x12a41c140, 0x12a6765f8 --
+   and every heap pointer in every log across four different image slides, has its top thirty
+   two bits equal to 1. The process heap lives in one 4 GB window and the image and the guard
+   regions do not. Testing that costs one shift and one compare, no syscall, and it removes
+   the overwhelming majority of what was being probed.
+
+   The region list is the second half: built once from the kernel, it answers positively --
+   this address is inside a writable, non-image, ordinary sized region -- instead of the old
+   negative test, which only ever said "not in the image" and therefore accepted everything
+   else in a 385 GB address space.
+   ====================================================================================== */
+
+#define TNX_HEAP_REGION_MAX 512
+#define TNX_HEAP_REGION_MAX_SIZE 0x100000000ULL
+
+typedef struct {
+    uintptr_t low;
+    uintptr_t high;
+} tnx_region_t;
+
+static tnx_region_t g_heap_regions[TNX_HEAP_REGION_MAX];
+static int g_heap_region_count = 0;
+static uintptr_t g_heap_window_low = 0;
+static uintptr_t g_heap_window_high = 0;
+static int g_heap_window_ok = 0;
+
+static void tnx_heap_regions_refresh(void) {
+    uintptr_t cursor = 0x10000;
+    uintptr_t lowest = 0;
+    uintptr_t highest = 0;
+    int count = 0;
+
+    for (int guard = 0; guard < 8192 && count < TNX_HEAP_REGION_MAX; guard++) {
+        vm_prot_t protection = 0;
+        mach_vm_size_t size = 0;
+        uintptr_t start = 0;
+        uintptr_t next = 0;
+
+        if (!tnx_query_region(cursor, &protection, NULL, &size, &start)) break;
+        if (size == 0) break;
+
+        next = start + (uintptr_t)size;
+        if (next <= cursor) break;
+
+        if ((protection & VM_PROT_WRITE) &&
+            size <= TNX_HEAP_REGION_MAX_SIZE &&
+            start >= 0x10000 &&
+            !tnx_image_segment_name(start)) {
+            g_heap_regions[count].low = start;
+            g_heap_regions[count].high = next;
+            count++;
+
+            if (!lowest || start < lowest) lowest = start;
+            if (next > highest) highest = next;
+        }
+
+        cursor = next;
+    }
+
+    g_heap_region_count = count;
+    g_heap_window_low = lowest;
+    g_heap_window_high = highest;
+    g_heap_window_ok = count > 0 ? 1 : 0;
+}
+
+/* The cheap half: no syscall, one shift. The window is derived from the regions rather than
+   hard coded, so a build that puts its heap somewhere else still works. */
+static BOOL tnx_heap_window_shaped(uintptr_t value) {
+    if (!value) return NO;
+    if (!g_heap_window_ok) return YES;          /* nothing to compare against yet */
+    if (value < g_heap_window_low) return NO;
+    if (value >= g_heap_window_high) return NO;
+
+    return YES;
+}
+
+/* The positive half: is this address inside one of the regions the kernel actually gave this
+   process as writable, non-image memory of ordinary size. Regions come back in ascending
+   order, so the filtered copy stays sorted and a binary search is enough. */
+static BOOL tnx_heap_contains(uintptr_t value) {
+    int lo = 0;
+    int hi = g_heap_region_count - 1;
+
+    if (!value) return NO;
+
+    /* Fail open. If the kernel enumeration produced nothing, fall back to the weaker test the
+       earlier versions used rather than rejecting every candidate: a filter that silently
+       answers "no" to everything would look exactly like an absence of battles. */
+    if (!g_heap_region_count) return tnx_image_segment_name(value) ? NO : YES;
+
+    if (value < g_heap_window_low || value >= g_heap_window_high) return NO;
+
+    while (lo <= hi) {
+        int mid = lo + (hi - lo) / 2;
+
+        if (value < g_heap_regions[mid].low) {
+            hi = mid - 1;
+        } else if (value >= g_heap_regions[mid].high) {
+            lo = mid + 1;
+        } else {
+            return YES;
+        }
+    }
+
+    return NO;
+}
+
 /* Engine vtables are const data: they sit in __DATA_CONST, not in __DATA. */
 static BOOL tnx_vtable_shaped(uintptr_t value) {
     const char *segment = tnx_image_segment_name(value);
@@ -2862,14 +2984,23 @@ static int tnx_manager_live_count(uintptr_t manager) {
     int32_t capacity = 0;
     int live = 0;
 
+    /* Cleared up front. Every early return below leaves these at the values for THIS
+       candidate instead of the previous one -- which is why titanox_38 printed 65536 trail
+       entries that all read count/cap/live 27/27/6 and hid the real closest miss. */
+    g_manager_last_capacity = 0;
+    g_manager_last_live = 0;
+    g_manager_last_nonempty = 0;
+
     if (!tnx_pointer_plausible(manager)) return 0;
-    if (!tnx_heap_resident(manager)) return 0;
+    if (!tnx_heap_contains(manager)) return 0;
     if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array)) return 0;
     if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) return 0;
     if (!tnx_read_i32(manager + TNX_MGR_CAP_OFF, &capacity)) return 0;
+
+    g_manager_last_capacity = capacity;
     if (count < TNX_MANAGER_MIN_OBJECTS || count > TNX_MANAGER_MAX_OBJECTS) return 0;
     if (!array) return 0;
-    if (!tnx_heap_resident((uintptr_t)array)) return 0;
+    if (!tnx_heap_contains((uintptr_t)array)) return 0;
     if ((uintptr_t)array & 0xf) return 0;
 
     /* Header invariant taken from the engine's own append routine: count <= capacity, and a
@@ -2928,6 +3059,9 @@ static int tnx_manager_live_count(uintptr_t manager) {
     /* Three quarters of the occupied slots have to be real instances. A real object array is
        exactly that; a string or resource table decodes as instances in only a couple of slots,
        which is how the 18:16 run reached live=4 out of count=21 and then locked the scan. */
+    g_manager_last_live = live;
+    g_manager_last_nonempty = nonEmpty;
+
     if (live < TNX_MANAGER_MIN_OBJECTS || live * 4 < nonEmpty * 3) {
         g_manager_last_live = live;
         g_manager_last_nonempty = nonEmpty;
@@ -2992,8 +3126,17 @@ static void tnx_probe_manager(uintptr_t cursor, size_t offset, const uint8_t *bu
        pointer or plain garbage, and rejecting it here costs nothing -- no syscall. */
     if ((uintptr_t)arrayValue & 0xf) return;
 
-    /* And the object array can never live inside the image itself. */
-    if (!tnx_heap_resident((uintptr_t)arrayValue)) return;
+    /* The window test first: free, and it alone removes most of the flood. */
+    if (!tnx_heap_window_shaped((uintptr_t)arrayValue)) {
+        g_manager_window_rejects++;
+        return;
+    }
+
+    /* Then the positive test, which the previous versions did not have at all. */
+    if (!tnx_heap_contains((uintptr_t)arrayValue)) {
+        g_manager_window_rejects++;
+        return;
+    }
 
     /* Counted, not silently dropped: if this ever fires the pass line says so instead of the
        scan quietly going blind the way it did on the previous run. */
@@ -3397,12 +3540,13 @@ static void tnx_scan_heap_for_mode(void) {
     g_heap_covered += (unsigned long long)scanned;
 
     tnx_logf("votescan heap pass=%d from=%p scanned=%zu regions=%d hits=%d vfx=%d mgr=%p "
-             "probes=%d/%d skipped=%d cap=%d/%d loose=%d best%d/%d(live %d/%d cap %d)",
+             "probes=%d/%d skipped=%d cap=%d/%d loose=%d window=%d best%d/%d(live %d/%d cap %d)",
              g_heap_passes, (void *)startAddress, scanned, regions, hits, verifiedHits,
              (void *)g_manager_object, g_manager_probes, TNX_MANAGER_PROBE_LIMIT,
              g_manager_skipped, g_manager_cap_rejects, g_manager_saw_cap,
-             g_manager_loose_count, g_manager_best_count, g_manager_best_live,
-             g_manager_last_live, g_manager_last_nonempty, g_manager_last_capacity);
+             g_manager_loose_count, g_manager_window_rejects, g_manager_best_count,
+             g_manager_best_live, g_manager_last_live, g_manager_last_nonempty,
+             g_manager_last_capacity);
 }
 
 static void tnx_locate_battle_mode(void) {
@@ -3424,7 +3568,13 @@ static void tnx_locate_battle_mode(void) {
     g_votescan_attempts++;
 
     if (g_votescan_attempts == 1) {
-        tnx_logf("votescan candidates=%d interval=%.1f attempts=%d heapEvery=%d",
+        tnx_heap_regions_refresh();
+
+    tnx_logf("heapwin regions=%d lo=%p hi=%p span=%lluMB",
+             g_heap_region_count, (void *)g_heap_window_low, (void *)g_heap_window_high,
+             (unsigned long long)((g_heap_window_high - g_heap_window_low) / (1024ull * 1024ull)));
+
+    tnx_logf("votescan candidates=%d interval=%.1f attempts=%d heapEvery=%d",
                  (int)(sizeof(g_mode_vtables) / sizeof(g_mode_vtables[0]) - 1),
                  (double)TNX_VOTESCAN_INTERVAL, TNX_VOTESCAN_ATTEMPTS, TNX_VOTESCAN_HEAP_EVERY);
     }
@@ -3433,6 +3583,10 @@ static void tnx_locate_battle_mode(void) {
        candidate pointer). They now run on one attempt in TNX_VOTESCAN_GLOBAL_EVERY, which
        keeps the game responsive without giving up the fallback entirely. */
     if ((g_votescan_attempts % TNX_VOTESCAN_GLOBAL_EVERY) == 1) {
+        /* The heap grows as the app runs, so the region list is rebuilt on this cadence
+           instead of being frozen at startup. */
+        tnx_heap_regions_refresh();
+
         tnx_scan_globals_for_mode("__DATA");
 
         if (!g_mode_strong) tnx_scan_globals_for_mode("__DATA_CONST");

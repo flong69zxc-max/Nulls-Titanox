@@ -157,7 +157,19 @@ static __thread BOOL g_inside_hook = NO;
 /* A battle manager holds several live objects; every lobby container observed so far
    held 0 or 1. Used by the vtable-free manager probe. */
 #define TNX_MANAGER_MIN_OBJECTS 3
-#define TNX_MANAGER_PROBE_LIMIT 2048
+
+/* A real battle holds tens of entities, not hundreds. The previous band was 3..512 and the device
+   log shows exactly what that cost: bestCount=512 and probes=2048 -- the entire probe budget --
+   consumed before the pass had covered more than a few percent, after which every remaining
+   candidate was rejected without being looked at at all. The scan was blind for ~98% of the heap.
+   The band is now the one a battle actually occupies. */
+#define TNX_MANAGER_MAX_OBJECTS 96
+
+/* Raised from 2048. With the narrower band plus the alignment and residency pre-filters, a probe
+   is spent only on a candidate that could plausibly be a manager, so this budget is not expected
+   to be reached. It is a safety valve, and g_manager_skipped reports if it ever is. */
+#define TNX_MANAGER_PROBE_LIMIT 65536
+
 #define TNX_OBJ_GLOBALID_OFF 0x8ULL
 
 /* THE correction that matters. REvengeBS: GameObj_team = 0x40, LogicGameObjectClient_ownerIndex
@@ -222,7 +234,7 @@ static __thread BOOL g_inside_hook = NO;
 
 /* Printed as the first line after "setup", so every log identifies the build that produced
    it. Two device logs were once spent comparing a new binary against an old one. */
-#define TNX_BUILD_TAG "titanox_34"
+#define TNX_BUILD_TAG "titanox_35"
 
 /* IN-LINE HOOKING IS IMPOSSIBLE ON THIS PROCESS -- measured, not assumed. The 17:38 log caught
    it directly:
@@ -353,6 +365,7 @@ static uintptr_t g_manager_object = 0;
 static int g_manager_count = 0;
 static int g_manager_probes = 0;
 static int g_manager_probes_total = 0;
+static int g_manager_skipped = 0;
 static int g_manager_best_count = 0;
 static int g_manager_best_live = 0;
 static int g_heap_passes = 0;
@@ -2201,6 +2214,11 @@ static const tnx_rva_entry_t g_verified[] = {
     { "LogicBattleModeClient::slotB (this+0x220)", 0xac40e8 },
     { "LogicBattleModeClient::slotC (this+0x228)", 0xac40f8 },
     { "LogicBattleModeClient::getInt (this+0xec)", 0xac3500 },
+    { "LogicBattleModeClient::findOwningTeam (mgr+0x28,team@0x40)", 0xac3ddc },
+    { "LogicBattleModeClient::findOwningTeam2 (mgr+0x28)", 0xac3e74 },
+    { "LogicBattleModeClient::managerProgress (mgr+0x8c/0x90)", 0xac3f2c },
+    { "LogicBattleModeClient::setPredictionXY (this+0x1d4/0x1d8)", 0xac3f20 },
+    { "LogicGameObjectManager::findByTeam (mgr+0x0/+0xc)", 0xac3d80 },
     { "TABLE_RVA_MESSAGEMANAGER__RECEIVEMESSAGE", 0x7bace8 },
     { NULL, 0 }
 };
@@ -2433,7 +2451,7 @@ static BOOL tnx_manager_shape(uintptr_t manager) {
     if (!tnx_heap_resident(manager)) return NO;
     if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array)) return NO;
     if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) return NO;
-    if (count < 0 || count > 512) return NO;
+    if (count < 0 || count > TNX_MANAGER_MAX_OBJECTS) return NO;
 
     /* The array field is checked for residency even when the count is zero: the lobby
        false positives all had an image-resident array with count 0. */
@@ -2476,7 +2494,7 @@ static int tnx_mode_score(uintptr_t mode) {
     if (count > g_mode_best_objects) g_mode_best_objects = count;
 
     /* Every lobby look-alike observed so far held 0 or 1 entries. A battle holds several. */
-    if (count < TNX_MODE_MIN_OBJECTS || count > 512) return 0;
+    if (count < TNX_MODE_MIN_OBJECTS || count > TNX_MANAGER_MAX_OBJECTS) return 0;
     if (!array || !tnx_heap_resident((uintptr_t)array)) return 0;
 
     int verified = 0;
@@ -2788,7 +2806,7 @@ static int tnx_manager_live_count(uintptr_t manager) {
     if (!tnx_heap_resident(manager)) return 0;
     if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array)) return 0;
     if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) return 0;
-    if (count < TNX_MANAGER_MIN_OBJECTS || count > 512) return 0;
+    if (count < TNX_MANAGER_MIN_OBJECTS || count > TNX_MANAGER_MAX_OBJECTS) return 0;
     if (!array) return 0;
     if (!tnx_heap_resident((uintptr_t)array)) return 0;
 
@@ -2848,14 +2866,27 @@ static void tnx_probe_manager(uintptr_t cursor, size_t offset, const uint8_t *bu
     int live = 0;
 
     if (g_manager_object) return;
-    if (g_manager_probes >= TNX_MANAGER_PROBE_LIMIT) return;
     if (offset + 0x10 > chunk) return;
 
     memcpy(&arrayValue, buffer + offset, sizeof(arrayValue));
     memcpy(&count, buffer + offset + 0xc, sizeof(count));
 
-    if (count < TNX_MANAGER_MIN_OBJECTS || count > 512) return;
+    if (count < TNX_MANAGER_MIN_OBJECTS || count > TNX_MANAGER_MAX_OBJECTS) return;
     if (!tnx_pointer_plausible((uintptr_t)arrayValue)) return;
+
+    /* A heap allocation is 16-byte aligned. A word that is only 8-byte aligned is a field
+       pointer or plain garbage, and rejecting it here costs nothing -- no syscall. */
+    if ((uintptr_t)arrayValue & 0xf) return;
+
+    /* And the object array can never live inside the image itself. */
+    if (!tnx_heap_resident((uintptr_t)arrayValue)) return;
+
+    /* Counted, not silently dropped: if this ever fires the pass line says so instead of the
+       scan quietly going blind the way it did on the previous run. */
+    if (g_manager_probes >= TNX_MANAGER_PROBE_LIMIT) {
+        g_manager_skipped++;
+        return;
+    }
 
     g_manager_probes++;
     g_manager_probes_total++;
@@ -2934,18 +2965,27 @@ static void tnx_diag_report(const char *why) {
     } else if (g_manager_best_live >= 1) {
         verdict = "manager-shaped array seen, but too few live instances -> not a battle";
     } else if (g_manager_best_count >= TNX_MANAGER_MIN_OBJECTS) {
-        verdict = "count at +0xc is in rage but entries are not C++ instances -> wrong layout";
+        verdict = "count at +0xc is in range but entries are not C++ instances -> wrong layout";
+    } else if (g_manager_skipped > 0) {
+        verdict = "probe budget exhausted -> the pass was blind after that point, raise the limit";
     } else if (g_manager_probes_total == 0 && g_heap_passes > 0) {
         verdict = "no manager-like count at +0xc anywhere -> layout @+0xc wrong, or coverage short";
     } else if (g_heap_passes == 0) {
         verdict = "no heap pass completed yet";
     }
 
-    tnx_logf("DIAG(%s) attempts=%d/%d heapPasses=%d covered=%lluMB probes=%d "
+    /* The previous run reported "wrong layout" for a log in which mx never exceeded 1, i.e. in
+       which the game had not built a battle container at all. The two cases have to be told
+       apart by the log itself, or a correct layout gets blamed for an absent battle. */
+    if (!g_manager_object && g_mode_best_objects < TNX_MANAGER_MIN_OBJECTS && g_heap_passes > 0) {
+        verdict = "NO BATTLE IN WINDOW - nothing battle-shaped existed, this says nothing about the layout";
+    }
+
+    tnx_logf("DIAG(%s) attempts=%d/%d heapPasses=%d covered=%lluMB probes=%d/%d skipped=%d "
              "bestCount=%d bestLive=%d mgr=%p vfx=%d mx=%d",
              why ? why : "?", g_votescan_attempts, TNX_VOTESCAN_ATTEMPTS, g_heap_passes,
-             g_heap_covered / (1024ull * 1024ull), g_manager_probes_total,
-             g_manager_best_count, g_manager_best_live, (void *)g_manager_object,
+             g_heap_covered / (1024ull * 1024ull), g_manager_probes_total, TNX_MANAGER_PROBE_LIMIT,
+             g_manager_skipped, g_manager_best_count, g_manager_best_live, (void *)g_manager_object,
              g_mode_verified_hits, g_mode_best_objects);
 
     tnx_logf("DIAG verdict: %s", verdict);
@@ -3208,9 +3248,10 @@ static void tnx_scan_heap_for_mode(void) {
 
     g_heap_covered += (unsigned long long)scanned;
 
-    tnx_logf("votescan heap pass=%d from=%p scanned=%zu regions=%d hits=%d vfx=%d mgr=%p probes=%d best%d/%d",
+    tnx_logf("votescan heap pass=%d from=%p scanned=%zu regions=%d hits=%d vfx=%d mgr=%p probes=%d/%d skipped=%d best%d/%d",
              g_heap_passes, (void *)startAddress, scanned, regions, hits, verifiedHits,
-             (void *)g_manager_object, g_manager_probes, g_manager_best_count, g_manager_best_live);
+             (void *)g_manager_object, g_manager_probes, TNX_MANAGER_PROBE_LIMIT,
+             g_manager_skipped, g_manager_best_count, g_manager_best_live);
 }
 
 static void tnx_locate_battle_mode(void) {

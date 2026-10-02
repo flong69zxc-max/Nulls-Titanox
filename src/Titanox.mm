@@ -182,6 +182,38 @@ static __thread BOOL g_inside_hook = NO;
    to be reached. It is a safety valve, and g_manager_skipped reports if it ever is. */
 #define TNX_MANAGER_PROBE_LIMIT 65536
 
+/* THE CHAIN PROBE. titanox_41 and every version before it looked for the battle mode by its
+   vtable -- 37 hardcoded RVAs plus two verified ones -- and never found it, because the live
+   mode's class is in neither list. The vtable does not have to be known: the mode is
+   recognisable by its CHAIN, [mode+0x28] is the manager and that manager holds an array of
+   game objects, which is the layout our own disassembly of 0xac3dcc..0xac3f44 reads and which
+   no config table satisfies.
+
+   The limit below is only a safety valve for the render thread. The free tests in front of it
+   (first word inside __DATA_CONST, +0x28 a heap pointer, +0x124 a small integer,
+   +0x1d4/+0x1d8 plausible) are what keep the syscall-heavy part rare, and g_chain_skipped
+   reports if the valve is ever reached -- a probe limit that goes quiet is how the previous
+   scanner went blind without saying so. */
+#define TNX_CHAIN_PROBE_LIMIT 8192
+
+/* Range of __DATA_CONST at runtime, measured on the device: __TEXT is 0xf74000 long and the
+   segment list in every log reports __DATA_CONST with size 0xd4000 straight after it. A mode's
+   first word is its vtable and every vtable the engine uses lives here, so this one range test
+   is what replaces the hardcoded vtable list. */
+#define TNX_DC_RVA_LO 0xf74000ULL
+#define TNX_DC_RVA_SIZE 0xd4000ULL
+
+/* The vtables of the classes whose slots are hooked. Counting how many live heap objects carry
+   each of these addresses answers the question the previous runs could not: does
+   `hooks fired=0` mean the class is never instantiated, or that it exists and the slot we
+   rewrote is never dispatched? The two are indistinguishable in a log without this. */
+#define TNX_VTPROBE_COUNT 8
+
+static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
+    0x1002548,                                                            /* class A, A1 and A2 */
+    0xff5148, 0xff51f8, 0xff5500, 0xff5648, 0xff5720, 0xff57f8, 0xff58c8, /* class B, B1 to B3 */
+};
+
 #define TNX_OBJ_GLOBALID_OFF 0x8ULL
 
 /* THE correction that matters. REvengeBS: GameObj_team = 0x40, LogicGameObjectClient_ownerIndex
@@ -202,12 +234,32 @@ static __thread BOOL g_inside_hook = NO;
    has to be a 0/1 byte. */
 #define TNX_OBJ_TEAM_MAX 7
 
-/* getX/getY/getZ are consecutive virtual slots: REvengeBS has them at 0xb5e44c / 0xb5e454 /
-   0xb5e45c, i.e. 8 apart, and our own call site does ldr x8,[x8,#0x88] before blr. So slot
-   0x88 = getX, 0x90 = getY, 0x98 = getZ, and coordinates are int32 (fixed point). */
+/* The two object slots titanox_37..41 treated as getX and getY, and what they really are.
+
+   REvengeBS has getX/getY/getZ at 0xb5e44c / 0xb5e454 / 0xb5e45c, eight bytes apart, and on that
+   reference they are slots 0x88/0x90/0x98. That mapping does not hold on THIS build, and the
+   proof is the engine's own call site at RVA 0xae48f0 -- the very code the earlier claim rested
+   on. It loads an argument before every call:
+
+       ldr w1, [x20, #8] ; ldr x8, [x19] ; ldr x8, [x8, #0x88] ; mov x0, x19 ; blr x8
+
+   and repeats that five times with [x20+0x18], [x20+0x1c], [x20+0x20] and [x20+0x34]. A getter
+   takes no argument, so on this build the entry is setter-like, not getX.
+
+   The names stay because the offsets are still what matter, but nothing is called through them
+   any more: the reader only reports the RVA of the function found in the slot. A coordinate
+   source has to be found again, and the mode's own plain fields +0x1d4/+0x1d8 are the candidate
+   that needs no vtable at all. */
 #define TNX_OBJ_GETX_SLOT 0x88ULL
 #define TNX_OBJ_GETY_SLOT 0x90ULL
 #define TNX_MODE_MODEVAR_OFF 0x124ULL
+
+/* The mode's own predicted position, as a plain field pair: the only setter of +0x1d4/+0x1d8 in
+   the whole image is 0xac3f20, a void(pointer,int,int), and the offsets come from REvengeBS.
+   They are read directly out of the scan buffer in the chain probe, which is why the mode is
+   worth having: the dodge then needs no vtable call at all. */
+#define TNX_MODE_PREDICTX_OFF 0x1d4ULL
+#define TNX_MODE_PREDICTY_OFF 0x1d8ULL
 #define TNX_MODE_STARS0_OFF 0x1e8ULL
 #define TNX_MODE_STARS1_OFF 0x1ecULL
 #define TNX_MODE_SLOT_A 0x218ULL
@@ -249,7 +301,7 @@ static __thread BOOL g_inside_hook = NO;
 
 /* Printed as the first line after "setup", so every log identifies the build that produced
    it. Two device logs were once spent comparing a new binary against an old one. */
-#define TNX_BUILD_TAG "titanox_41"
+#define TNX_BUILD_TAG "titanox_42"
 
 /* IN-LINE HOOKING IS IMPOSSIBLE ON THIS PROCESS -- measured, not assumed. The 17:38 log caught
    it directly:
@@ -387,6 +439,19 @@ static int g_manager_last_capacity = 0;
 static int g_manager_saw_cap = 0;
 static int g_manager_loose_count = 0;
 static int g_manager_window_rejects = 0;
+
+/* The chain probe and the vtable probe. Every one of these is printed, so that "nothing was
+   found" can always be told apart from "nothing was looked at". */
+static int g_chain_checks = 0;    /* words whose first field points into __DATA_CONST */
+static int g_chain_ready = 0;     /* ... and that passed every free test before the syscalls */
+static int g_chain_probes = 0;    /* expensive manager tests actually run */
+static int g_chain_skipped = 0;   /* safety valve reached -- blindness has to be visible */
+static int g_chain_best_live = 0;
+static int g_chain_best_own = 0;
+static int g_chain_best_gid = 0;
+static int g_seen_stable = 0;     /* candidates that held the same count in two passes */
+static uintptr_t g_chain_vtable = 0;
+static unsigned long long g_vtprobe_hits[TNX_VTPROBE_COUNT];
 
 /* Declared here because the heap pass line reports it long before the trail itself exists. */
 static int g_trail_best = 0;
@@ -586,7 +651,7 @@ static int g_ag_adopted = 0;
 static void tnx_slot_diag(const char *why);
 
 /* Defined next to the object dump, but needed earlier by the manager dump too. */
-static BOOL tnx_obj_coord(uintptr_t object, uintptr_t slot, int32_t *value);
+static BOOL tnx_obj_slot_fn(uintptr_t object, uintptr_t slot, uintptr_t *rvaOut);
 static void tnx_trail_note(uintptr_t manager, int32_t count, int32_t capacity, int live,
                            int nonEmpty);
 static void tnx_trail_dump(void);
@@ -2968,12 +3033,17 @@ static void tnx_dump_manager(uintptr_t manager, int count) {
         tnx_read_i32((uintptr_t)element + TNX_OBJ_OWNERINDEX_OFF, &owner);
         tnx_read_u8((uintptr_t)element + TNX_OBJ_DEADFLAG_OFF, &dead);
 
-        tnx_obj_coord((uintptr_t)element, TNX_OBJ_GETX_SLOT, &x);
-        tnx_obj_coord((uintptr_t)element, TNX_OBJ_GETY_SLOT, &y);
+        uintptr_t s88 = 0;
+        uintptr_t s90 = 0;
 
-        tnx_logf("mgr[%d] element=%p gameobj=%d gid=%d team=%d own=%d dead=%d x=%d y=%d",
+        tnx_obj_slot_fn((uintptr_t)element, TNX_OBJ_GETX_SLOT, &s88);
+        tnx_obj_slot_fn((uintptr_t)element, TNX_OBJ_GETY_SLOT, &s90);
+
+        tnx_logf("mgr[%d] element=%p gameobj=%d gid=%d team=%d own=%d dead=%d "
+                 "s88=%#llx s90=%#llx",
                  i, element, tnx_gameobject_shape((uintptr_t)element) ? 1 : 0,
-                 globalId, team, owner, dead, x, y);
+                 globalId, team, owner, dead,
+                 (unsigned long long)s88, (unsigned long long)s90);
 
         tnx_dump_hex("mgrObj", (uintptr_t)element, 0x100);
     }
@@ -3089,7 +3159,12 @@ static void tnx_probe_manager(uintptr_t cursor, size_t offset, const uint8_t *bu
     uintptr_t candidate = 0;
     int live = 0;
 
-    if (g_manager_object) return;
+    /* titanox_41 bailed out here the moment a container had been adopted. On the 19:19 run that
+       happened 1.1 s after launch, and every later pass line then reported `probes=0/65536` --
+       passes 2 and 3 looked at nothing at all -- so a single false positive ended the scan
+       before the lobby had finished loading. The scan now stops only once the chain has
+       confirmed a mode, which is three levels of evidence instead of one. */
+    if (g_mode_strong) return;
     if (offset + 0x10 > chunk) return;
 
     uint32_t capacity = 0;
@@ -3172,17 +3247,192 @@ static void tnx_probe_manager(uintptr_t cursor, size_t offset, const uint8_t *bu
         return;
     }
 
-    g_manager_object = candidate;
-    g_manager_count = (int)count;
+    /* A CONTAINER THAT PASSED THE ARRAY TEST IS NOT A CAPTURE, and titanox_41 treated it as one.
 
-    tnx_logf("MANAGER found object=%p count=%u live=%d", (void *)candidate, count, live);
+       The 19:19 run adopted 0x112844d28 as the manager on the strength of count=4 live=4 and
+       capacity 7 -- every free test passed. Its four elements are config records, not game
+       objects: their fields from +0x0c to +0x9c are the float constants 1.0, 20.0, 100.0, 60.0,
+       0.075, 0.02, 0.15, 0.01, 2.0, 18.0, 3.0, 90.0 and 45.0, their +0x20 is 0 on all four, and
+       their global id is 1 on all four -- a value no two objects created by addGameObject can
+       share. One array test cannot tell such a table from a manager, so on this path the
+       candidate is recorded and reported but never adopted; adoption belongs to the chain, where
+       the mode, its [mode+0x28] manager and that manager's array have to agree at once. */
+    if (!g_manager_object) {
+        g_manager_object = candidate;
+        g_manager_count = (int)count;
 
-    tnx_dump_manager(candidate, (int)count);
+        tnx_logf("MANAGER candidate object=%p count=%u live=%d recorded, NOT adopted",
+                 (void *)candidate, count, live);
+
+        tnx_dump_manager(candidate, (int)count);
+    }
+}
+
+/* THE CHAIN PROBE: the missing link between everything already known and a live battle.
+
+   Every earlier version looked for the mode by its vtable -- 37 hardcoded RVAs plus the two
+   verified ones -- and never found it: all 194 candidates that `votescan __DATA` reports have
+   their first word in __TEXT, so they are not objects at all. Meanwhile the layout was already
+   known exactly: [mode+0x28] is the manager, the manager's [+0x0] is the array and its [+0xc]
+   the count. The mode can therefore be recognised by its CHAIN instead of by its identity, and
+   no vtable list is needed to find it.
+
+   The first two tests carry the meaning and are free: the first word has to point into
+   __DATA_CONST and +0x28 has to be a plausible heap pointer. The next two (+0x124 small,
+   +0x1d4/+0x1d8 plausible) are also read straight out of the buffer, so the syscall-heavy
+   manager test runs on very few words per pass. */
+static void tnx_probe_mode_chain(uintptr_t cursor, size_t offset, const uint8_t *buffer,
+                                 size_t chunk, uintptr_t dcLo, uintptr_t dcHi) {
+    uintptr_t vtable = 0;
+    uintptr_t manager = 0;
+    uintptr_t input = 0;
+    int32_t variation = 0;
+    int32_t px = 0;
+    int32_t py = 0;
+    int32_t count = 0;
+    void *array = NULL;
+
+    if (g_mode_strong) return;
+
+    /* One bound for every read below, decided by the largest of them: +0x1d8 plus four bytes is
+       the furthest word this function looks at, so +0x1dc is the guard. The buffer is exactly
+       `chunk` bytes -- the last chunk of a region is usually the short one -- and reading past
+       the end of it would be an out-of-bounds read on the render thread. */
+    if (offset + TNX_MODE_PREDICTY_OFF + 4 > chunk) return;
+
+    memcpy(&vtable, buffer + offset, sizeof(vtable));
+
+    if (!vtable || (vtable & 0x7)) return;
+    if (vtable < dcLo || vtable >= dcHi) return;
+
+    g_chain_checks++;
+
+    memcpy(&manager, buffer + offset + TNX_MODE_MANAGER_OFF, sizeof(manager));
+
+    if (!manager || (manager & 0xf)) return;
+    if (!tnx_pointer_plausible(manager)) return;
+    if (!tnx_heap_window_shaped(manager)) return;
+
+    /* The engine itself compares this field against 0x29 at 0xac3cfc, so it is a small integer
+       and requiring that costs nothing. */
+    memcpy(&variation, buffer + offset + TNX_MODE_MODEVAR_OFF, sizeof(variation));
+
+    if (variation < 0 || variation > 400) return;
+
+    memcpy(&px, buffer + offset + TNX_MODE_PREDICTX_OFF, sizeof(px));
+    memcpy(&py, buffer + offset + TNX_MODE_PREDICTY_OFF, sizeof(py));
+
+    if (px < -0x100000 || px > 0x100000) return;
+    if (py < -0x100000 || py > 0x100000) return;
+
+    memcpy(&input, buffer + offset + TNX_MODE_INPUTMGR_OFF, sizeof(input));
+
+    if (input && !tnx_heap_window_shaped(input)) return;
+
+    g_chain_ready++;
+
+    if (g_chain_probes >= TNX_CHAIN_PROBE_LIMIT) {
+        g_chain_skipped++;
+        return;
+    }
+
+    g_chain_probes++;
+
+    if (!tnx_manager_shape(manager)) return;
+    if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array)) return;
+    if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) return;
+    if (!array) return;
+    if (count < TNX_MODE_MIN_OBJECTS || count > TNX_MANAGER_MAX_OBJECTS) return;
+
+    /* The two identity tests that the observed false positive fails outright. addGameObject
+       hands every object a fresh global id at +0x8 (0xa278e4) and setOwner writes the manager
+       into +0x20 (str x1,[x0,#0x20]); that config table had id 1 on all four entries and 0 in
+       +0x20 on all four. Both are counted and printed BEFORE the decision, so a rejection is
+       visible in the log instead of silent. */
+    int live = 0;
+    int ownMatch = 0;
+    int gidDistinct = 0;
+    int32_t gids[TNX_MODE_TYPE_MAX];
+
+    for (int i = 0; i < TNX_MODE_TYPE_MAX; i++) gids[i] = -1;
+
+    for (int32_t i = 0; i < count; i++) {
+        void *element = NULL;
+        void *owner = NULL;
+        int32_t gid = 0;
+
+        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * sizeof(void *), &element)) break;
+        if (!element) continue;
+        if (!tnx_gameobject_shape((uintptr_t)element)) continue;
+
+        live++;
+
+        if (tnx_read_i32((uintptr_t)element + TNX_OBJ_GLOBALID_OFF, &gid)) {
+            BOOL known = NO;
+
+            for (int k = 0; k < gidDistinct; k++) {
+                if (gids[k] == gid) {
+                    known = YES;
+                    break;
+                }
+            }
+
+            if (!known && gidDistinct < TNX_MODE_TYPE_MAX) gids[gidDistinct++] = gid;
+        }
+
+        if (tnx_read_ptr((uintptr_t)element + TNX_SLOT_OWNER_OFF, &owner)) {
+            if ((uintptr_t)owner == manager) ownMatch++;
+        }
+    }
+
+    if (live > g_chain_best_live) g_chain_best_live = live;
+    if (ownMatch > g_chain_best_own) g_chain_best_own = ownMatch;
+    if (gidDistinct > g_chain_best_gid) g_chain_best_gid = gidDistinct;
+
+    uintptr_t object = cursor + offset;
+
+    tnx_logf("chain cand mode=%p vt=%#llx mgr=%p count=%d live=%d ownMatch=%d gidDistinct=%d "
+             "var=%d input=%p",
+             (void *)object, (unsigned long long)(vtable - g_base), (void *)manager, count,
+             live, ownMatch, gidDistinct, variation, (void *)input);
+
+    if (live < TNX_MODE_MIN_OBJECTS) return;
+    if (ownMatch < 1) return;
+    if (gidDistinct < 2) return;
+
+    g_chain_vtable = vtable;
+
+    tnx_adopt_mode(object, YES, "chain");
+}
+
+/* How many live heap objects carry the vtable of each hooked class.
+
+   This is the measurement that separates the two readings of `hooks fired=0`, which look
+   identical in every log so far: either no instance of those seven classes is ever created, or
+   instances exist and the slot we rewrote is never dispatched. Only a word at an object's own
+   start counts, i.e. one at a 16-byte aligned offset, because a stored pointer to some other
+   object's vtable would otherwise be counted as an instance. */
+static void tnx_vtprobe_note(uintptr_t vtable, size_t offset) {
+    uintptr_t rva = 0;
+
+    if (!vtable || !g_base) return;
+    if (offset & 0xf) return;
+    if (vtable < g_base + TNX_DC_RVA_LO) return;
+    if (vtable >= g_base + TNX_DC_RVA_LO + TNX_DC_RVA_SIZE) return;
+
+    rva = vtable - g_base;
+
+    for (int k = 0; k < TNX_VTPROBE_COUNT; k++) {
+        if (rva == g_vtprobe_rva[k]) {
+            g_vtprobe_hits[k]++;
+            return;
+        }
+    }
 }
 
 /* The line that has to be read first in every future log: how often each hook was entered, and
    whether the rewritten slot still holds our replacement. A slot that silently reverted would
-   make every other number meaningless, and "no capture" on its own could never tell the two
+   make every other number meaningless, and "no capture" on its own could not tell the two
    cases apart. */
 static void tnx_slot_diag(const char *why) {
     char buf[320];
@@ -3209,7 +3459,10 @@ static void tnx_slot_diag(const char *why) {
 
     /* addGameObject is the one signal that cannot be faked: it is in-line hooked, it is
        non-virtual, and the battle calls it only when it creates objects. */
-    tnx_logf("slotdiag(%s) %s AG=%llu/i%d mgr=%p objs=%d", why ? why : "?", buf,
+    /* agmgr, not mgr: this value is g_ag_manager, the in-line capture, and the 19:19 log printed
+       `slotdiag ... mgr=0x0` in the same heartbeat as `DIAG ... mgr=0x112844d28`. Two different
+       variables under one label is what made the log look self-contradictory. */
+    tnx_logf("slotdiag(%s) %s AG=%llu/i%d agmgr=%p objs=%d", why ? why : "?", buf,
              (unsigned long long)g_ag_hits, g_ag_installed, (void *)g_ag_manager,
              g_ag_objectCount);
 
@@ -3229,10 +3482,27 @@ static void tnx_slot_diag(const char *why) {
 static void tnx_diag_report(const char *why) {
     const char *verdict = "no battle-shaped structure in the memory scanned so far";
 
-    if (g_manager_object) {
-        verdict = "MANAGER FOUND - the objects exist, coordinates come from the mgrObj dump";
+    /* Ordered by what the run established, strongest conclusion first, and the overrides below
+       no longer contradict it.
+
+       titanox_41 printed "NO HOOK EVER FIRED and no manager found" as the final override, so the
+       19:19 log announced that no manager existed in the same heartbeat whose own DIAG line read
+       `mgr=0x112844d28`. A verdict that contradicts the numbers printed beside it is worse than
+       no verdict at all, because it is the line that gets read first. */
+    if (g_heap_passes == 0) {
+        verdict = "no heap pass completed yet";
+    } else if (g_manager_loose_count == 0 && g_manager_saw_cap == 0) {
+        verdict = "NO ARRAY-SHAPED WORD ANYWHERE - the header test itself matched nothing";
+    } else if (g_manager_skipped > 0 || g_manager_probes >= TNX_MANAGER_PROBE_LIMIT) {
+        verdict = "SCANNER BLIND - the manager probe budget was exhausted, this run proves nothing about the layout";
+    } else if (g_chain_skipped > 0 && !g_mode_object && !g_manager_object) {
+        verdict = "CHAIN BLIND - the chain probe hit its limit before the heap was covered, and it found nothing before that; this run proves nothing about the mode";
+    } else if (g_mode_strong) {
+        verdict = "MODE ADOPTED through the mode -> manager -> array chain, fields only, nothing called";
     } else if (g_mode_object) {
-        verdict = "an object was adopted but no battle-shaped manager around it";
+        verdict = "an object was adopted but the chain is not fully confirmed";
+    } else if (g_manager_best_live >= TNX_MANAGER_MIN_OBJECTS) {
+        verdict = "a container passed the array test and was recorded, NOT adopted - the chain never matched";
     } else if (g_manager_best_live >= 1) {
         verdict = "manager-shaped array seen, but too few live instances -> not a battle";
     } else if (g_manager_best_count >= TNX_MANAGER_MIN_OBJECTS) {
@@ -3241,27 +3511,23 @@ static void tnx_diag_report(const char *why) {
         verdict = "probe budget exhausted -> the pass was blind after that point, raise the limit";
     } else if (g_manager_probes_total == 0 && g_heap_passes > 0) {
         verdict = "no manager-like count at +0xc anywhere -> layout @+0xc wrong, or coverage short";
-    } else if (g_heap_passes == 0) {
-        verdict = "no heap pass completed yet";
-    }
-
-    /* The previous run reported "wrong layout" for a log in which mx never exceeded 1, i.e. in
-       which the game had not built a battle container at all. The two cases have to be told
-       apart by the log itself, or a correct layout gets blamed for an absent battle. */
-    /* A blind scanner outranks every other conclusion. titanox_37 printed "NO BATTLE IN
-       WINDOW" for a run in which the probe budget was exhausted at 65536 with 749,337
-       candidates skipped -- that verdict was not supported by the run and would have sent the
-       next iteration after the wrong thing entirely. */
-    if (g_manager_loose_count == 0 && g_manager_saw_cap == 0 && g_heap_passes > 0) {
-        verdict = "NO ARRAY-SHAPED WORD ANYWHERE - the header test itself matched nothing";
-    } else if (g_manager_skipped > 0 || g_manager_probes >= TNX_MANAGER_PROBE_LIMIT) {
-        verdict = "SCANNER BLIND - probe budget exhausted, this run proves nothing about the layout";
-    } else if (g_slot_hits_total == 0 && g_heap_passes > 0) {
-        verdict = "NO HOOK EVER FIRED and no manager found - the battle may never have started";
     } else if (!g_manager_object && g_mode_best_objects < TNX_MANAGER_MIN_OBJECTS &&
                g_heap_passes > 0) {
         verdict = "NO BATTLE IN WINDOW - nothing battle-shaped existed, this says nothing about the layout";
     }
+
+    /* The second, overriding chain that used to sit here is gone, and that is the point.
+
+       It existed so a blind scanner would outrank the other conclusions. That part was right --
+       titanox_37 printed "NO BATTLE IN WINDOW" for a run whose probe budget died at 65536 with
+       749,337 candidates skipped. What was wrong is that it also overrode a POSITIVE result: the
+       19:19 log announced "NO HOOK EVER FIRED and no manager found" in the very heartbeat whose
+       DIAG line read `mgr=0x112844d28`, and it is the overridden text that gets read first.
+
+       Blindness and "the header test matched nothing" are now the first two branches of the chain
+       above, where they outrank everything as intended. The hook count is reported as its own
+       line, because it is a fact about the mechanism, not about the layout -- the layout only
+       gets blamed for an absent battle when the battle really is absent. */
 
     g_slot_hits_total = 0;
     for (int i = 0; i < TNX_SLOT_COUNT; i++) g_slot_hits_total += (uint64_t)g_slot_hits[i];
@@ -3273,17 +3539,28 @@ static void tnx_diag_report(const char *why) {
              (unsigned long long)g_slot_hits[4], (unsigned long long)g_slot_hits[5],
              (unsigned long long)g_slot_hits[6]);
 
+    /* Said separately and without a claim about the battle, because the two are different
+       facts: the hooks were not dispatched, and that says nothing yet about whether a match
+       ran. The vtprobe numbers in the pass line decide whether the class even exists. */
+    if (g_slot_hits_total == 0 && g_heap_passes > 0) {
+        tnx_logf("DIAG note: none of the seven slots was ever dispatched; vtprobe says whether "
+                 "those classes have live instances at all");
+    }
+
     tnx_trail_dump();
 
     tnx_best_candidate_dump();
 
     tnx_logf("DIAG(%s) attempts=%d/%d heapPasses=%d covered=%lluMB probes=%d/%d skipped=%d "
-             "capRej=%d/%d bestCount=%d bestLive=%d mgr=%p vfx=%d mx=%d",
+             "capRej=%d/%d bestCount=%d bestLive=%d mgr=%p adopted=%d vfx=%d mx=%d "
+             "chain=%d/%d chainSkip=%d stable=%d own=%d gid=%d",
              why ? why : "?", g_votescan_attempts, TNX_VOTESCAN_ATTEMPTS, g_heap_passes,
              g_heap_covered / (1024ull * 1024ull), g_manager_probes_total, TNX_MANAGER_PROBE_LIMIT,
              g_manager_skipped, g_manager_cap_rejects, g_manager_saw_cap,
              g_manager_best_count, g_manager_best_live, (void *)g_manager_object,
-             g_mode_verified_hits, g_mode_best_objects);
+             g_mode_strong ? 1 : 0, g_mode_verified_hits, g_mode_best_objects,
+             g_chain_checks, g_chain_probes, g_chain_skipped, g_seen_stable,
+             g_chain_best_own, g_chain_best_gid);
 
     tnx_logf("DIAG verdict: %s", verdict);
 
@@ -3418,6 +3695,12 @@ static void tnx_scan_heap_for_mode(void) {
 
     g_manager_probes = 0;
 
+    /* The chain probe needs the runtime bounds of __DATA_CONST, because the test it replaces was
+       a hardcoded list of 37 vtable RVAs that the live mode's class is not in. */
+    uintptr_t dcLo = 0;
+    uintptr_t dcHi = 0;
+    BOOL haveDC = tnx_segment_range("__DATA_CONST", &dcLo, &dcHi);
+
     g_heap_passes++;
     int regions = 0;
     int hits = 0;
@@ -3475,6 +3758,10 @@ static void tnx_scan_heap_for_mode(void) {
                         memcpy(&vtable, buffer + offset, sizeof(vtable));
 
                         tnx_probe_manager(cursor, offset, buffer, chunk);
+
+                        tnx_vtprobe_note(vtable, offset);
+
+                        if (haveDC) tnx_probe_mode_chain(cursor, offset, buffer, chunk, dcLo, dcHi);
 
                         /* Must also match the verified vtables: one of them (0xff5720) is
                            NOT in the 35-entry heuristic list, so looking only at that list
@@ -3545,13 +3832,26 @@ static void tnx_scan_heap_for_mode(void) {
 
     g_heap_covered += (unsigned long long)scanned;
 
+    char vtbuf[160];
+    int vused = 0;
+
+    for (int k = 0; k < TNX_VTPROBE_COUNT; k++) {
+        if (vused > (int)sizeof(vtbuf) - 24) break;
+
+        vused += snprintf(vtbuf + vused, sizeof(vtbuf) - (size_t)vused, "%s%llu", k ? "," : "",
+                          g_vtprobe_hits[k]);
+    }
+
     tnx_logf("votescan heap pass=%d from=%p scanned=%zu regions=%d hits=%d vfx=%d mgr=%p "
-             "probes=%d/%d skipped=%d cap=%d/%d loose=%d window=%d bestCount=%d bestLive=%d trailBest=%d",
+             "probes=%d/%d skipped=%d cap=%d/%d loose=%d window=%d bestCount=%d bestLive=%d "
+             "trailBest=%d stable=%d chain=%d/%d ready=%d skip=%d live=%d own=%d gid=%d vtprobe=%s",
              g_heap_passes, (void *)startAddress, scanned, regions, hits, verifiedHits,
              (void *)g_manager_object, g_manager_probes, TNX_MANAGER_PROBE_LIMIT,
              g_manager_skipped, g_manager_cap_rejects, g_manager_saw_cap,
              g_manager_loose_count, g_manager_window_rejects,
-             g_manager_best_count, g_manager_best_live, g_trail_best);
+             g_manager_best_count, g_manager_best_live, g_trail_best, g_seen_stable,
+             g_chain_checks, g_chain_probes, g_chain_ready, g_chain_skipped,
+             g_chain_best_live, g_chain_best_own, g_chain_best_gid, vtbuf);
 }
 
 static void tnx_locate_battle_mode(void) {
@@ -3651,17 +3951,31 @@ static void tnx_dump_mode_refs(const char *tag) {
     }
 }
 
-/* Coordinates are int32 and sit behind consecutive virtual slots (0x88 = getX, 0x90 = getY,
-   proven by the call site ldr x8,[x8,#0x88] plus REvengeBS having getX/getY/getZ eight bytes
-   apart). Nothing is hardcoded: the callee comes out of the object's own vtable, which is what
-   the game itself does to read a position. This is the input every dodge calculation needs. */
-typedef int32_t (*tnx_coord_fn_t)(void *self);
+/* The slot reader, read-only. That is a correction, not a style choice.
 
-static BOOL tnx_obj_coord(uintptr_t object, uintptr_t slot, int32_t *value) {
+   titanox_41 CALLED the function it found in the slot. The justification was "slot 0x88 is
+   getX", and the call site that claim rested on has now been disassembled properly. At RVA
+   0xae48f0 the engine loads an ARGUMENT before every one of five consecutive calls:
+
+       ldr w1, [x20, #8]
+       ldr x8, [x19]
+       ldr x8, [x8, #0x88]
+       mov x0, x19
+       blr x8
+
+   and repeats it with [x20+0x18], [x20+0x1c], [x20+0x20] and [x20+0x34]. A getter takes no
+   argument, so on this build slot 0x88 is not getX, and invoking it with a single register as
+   if it were is exactly the "execute unknown code" hazard the read-only dump exists to avoid.
+   The 19:19 log records what came back: element=0x118943918 printed x=0 y=412367128, and
+   412367128 is 0x18943918 -- the low half of the element's own address, not a position.
+
+   What this returns instead is the RVA of the function sitting in the slot. That identifies the
+   class which actually defines it, and it executes nothing. */
+static BOOL tnx_obj_slot_fn(uintptr_t object, uintptr_t slot, uintptr_t *rvaOut) {
     void *vtable = NULL;
     void *function = NULL;
 
-    *value = 0;
+    if (rvaOut) *rvaOut = 0;
 
     if (!object) return NO;
     if (!tnx_read_ptr(object, &vtable) || !vtable) return NO;
@@ -3669,7 +3983,7 @@ static BOOL tnx_obj_coord(uintptr_t object, uintptr_t slot, int32_t *value) {
     if ((uintptr_t)function < g_base) return NO;
     if ((uintptr_t)function >= g_base + 0xf74000) return NO;
 
-    *value = ((tnx_coord_fn_t)function)((void *)object);
+    if (rvaOut) *rvaOut = (uintptr_t)function - g_base;
 
     return YES;
 }
@@ -3707,20 +4021,20 @@ static void tnx_dump_mode_objects(const char *tag) {
         int32_t team = 0;
         int32_t owner = 0;
         uint8_t dead = 0;
-        int32_t x = 0;
-        int32_t y = 0;
+        uintptr_t s88 = 0;
+        uintptr_t s90 = 0;
 
         tnx_read_i32((uintptr_t)object + TNX_OBJ_GLOBALID_OFF, &globalId);
         tnx_read_i32((uintptr_t)object + TNX_OBJ_TEAM_OFF, &team);
         tnx_read_i32((uintptr_t)object + TNX_OBJ_OWNERINDEX_OFF, &owner);
         tnx_read_u8((uintptr_t)object + TNX_OBJ_DEADFLAG_OFF, &dead);
 
-        tnx_obj_coord((uintptr_t)object, TNX_OBJ_GETX_SLOT, &x);
-        tnx_obj_coord((uintptr_t)object, TNX_OBJ_GETY_SLOT, &y);
+        tnx_obj_slot_fn((uintptr_t)object, TNX_OBJ_GETX_SLOT, &s88);
+        tnx_obj_slot_fn((uintptr_t)object, TNX_OBJ_GETY_SLOT, &s90);
 
-        tnx_logf("obj[%s][%d] %p vt=%#llx gid=%d team=%d own=%d dead=%d x=%d y=%d",
+        tnx_logf("obj[%s][%d] %p vt=%#llx gid=%d team=%d own=%d dead=%d s88=%#llx s90=%#llx",
                  tag, i, object, (unsigned long long)tnx_vtable_rva(object), globalId, team,
-                 owner, dead, x, y);
+                 owner, dead, (unsigned long long)s88, (unsigned long long)s90);
 
         for (uint32_t off = 0; off + 32 <= TNX_SNAPSHOT_BYTES; off += 32) {
             uint32_t words[8] = {0, 0, 0, 0, 0, 0, 0, 0};
@@ -3784,7 +4098,7 @@ static void tnx_report_manager(const char *tag, uintptr_t manager) {
        slot <name>: captured this=<object> arg1=<manager> hits=<n>
        slot arg1 mgr=<manager> array=<array> count=<n> cap=<n> live=<n>
        objtable array=... count=... cap=...
-       obj[00] ... gid= team= own= dead= pos=(x,y) s18= s28= s48= shape=1
+       obj[00] ... gid= team= own= dead= s88= s90= s18= s28= s48= shape=1
 
    `arg1` is the whole point. For B2 it is the object manager, handed over by the engine at
    the moment the first game object is created, and it costs nothing to get. `CAP-VIOLATION`
@@ -3851,48 +4165,56 @@ static uint64_t g_trail_total = 0;
    scanner is finding, it is scratch memory that is rewritten as the game runs, not a container
    that lives for the length of a match.
 
-   A real object manager is stable, so stability becomes a requirement: an address is only
-   worth reporting once it has held the same count in two different passes. This runs only for
-   candidates that already reached a probe, so it costs almost nothing. */
-#define TNX_SEEN_MAX 64
+   A real object manager is stable, so stability is the requirement: an address is only worth
+   reporting once it has held the same count in two different passes.
+
+   titanox_41 implemented that with two 64-entry lists and copied one into the other whenever the
+   pass number changed. It could therefore only ever compare the first 64 probed candidates of
+   two adjacent passes -- and because each pass continues where the previous one ran out
+   (`from=0x0`, then `from=0x2da000000`, then `from=0x0`), those two windows cover different
+   memory. That is exactly why the 19:19 and 19:20 runs printed the trail header with 10546
+   candidates and not one entry: the gate could not fire, and a gate that cannot fire is
+   indistinguishable from scratch memory not existing.
+
+   This is a 512-entry table stamped with the pass number instead, so a candidate is stable when
+   the same address is seen again with the same count in a LATER pass. g_seen_stable counts the
+   hits and is printed in every pass line, so the requirement is measurable rather than assumed. */
+#define TNX_SEEN_MAX 512
 
 typedef struct {
     uintptr_t address;
     int32_t count;
+    int pass;
 } tnx_seen_t;
 
-static tnx_seen_t g_seen_now[TNX_SEEN_MAX];
-static tnx_seen_t g_seen_prev[TNX_SEEN_MAX];
-static int g_seen_now_count = 0;
-static int g_seen_prev_count = 0;
-static int g_seen_pass = -1;
+static tnx_seen_t g_seen[TNX_SEEN_MAX];
 
 static BOOL tnx_candidate_is_stable(uintptr_t address, int32_t count) {
-    BOOL stable = NO;
+    size_t slot = (size_t)((address >> 4) % (uintptr_t)TNX_SEEN_MAX);
+    tnx_seen_t *entry = &g_seen[slot];
 
-    if (g_seen_pass != g_heap_passes) {
-        for (int i = 0; i < g_seen_now_count && i < TNX_SEEN_MAX; i++) {
-            g_seen_prev[i] = g_seen_now[i];
-        }
-        g_seen_prev_count = g_seen_now_count;
-        g_seen_now_count = 0;
-        g_seen_pass = g_heap_passes;
+    if (entry->address && entry->address == address) {
+        BOOL stable = (entry->count == count && entry->pass != g_heap_passes);
+
+        entry->count = count;
+        entry->pass = g_heap_passes;
+
+        if (stable) g_seen_stable++;
+
+        return stable;
     }
 
-    for (int i = 0; i < g_seen_prev_count; i++) {
-        if (g_seen_prev[i].address == address && g_seen_prev[i].count == count) {
-            stable = YES;
-            break;
-        }
+    /* While a different address from this same pass occupies the slot the first one keeps it, so
+       the table holds a deterministic sample of every pass instead of the last few words scanned.
+       An entry left over from an earlier pass is replaced: that is what keeps the sample aligned
+       with the current pass. */
+    if (!entry->address || entry->pass != g_heap_passes) {
+        entry->address = address;
+        entry->count = count;
+        entry->pass = g_heap_passes;
     }
 
-    if (g_seen_now_count < TNX_SEEN_MAX) {
-        g_seen_now[g_seen_now_count].address = address;
-        g_seen_now[g_seen_now_count].count = count;
-        g_seen_now_count++;
-    }
-
-    return stable;
+    return NO;
 }
 
 static void tnx_trail_note(uintptr_t manager, int32_t count, int32_t capacity, int live,
@@ -4041,8 +4363,9 @@ static void tnx_raw_object_hex(uintptr_t manager, int limit) {
        +0x018  setOwner, called by addGameObject with the manager in x1
        +0x028  int getter, used both as an aliveness test and as a type discriminator
        +0x048  int getter used to pick the per-type list inside addGameObject
-       +0x088  getX, int32, fixed point
-       +0x090  getY, int32, fixed point
+        +0x088  setter-like slot -- the engine's call site at 0xae48f0 passes it an int
+                argument, so it is NOT getX on this build, as titanox_37..41 assumed
+        +0x090  the neighbouring slot, same correction; both are read-only RVA probes now
        +0x098  getZ, int32, fixed point
 
    -- Addresses, each one verified on the device, not guessed ------------------------------
@@ -4112,7 +4435,7 @@ static const tnx_fact_t g_tnx_facts[] = {
     { "object+0x40 = team", "0x40", "two independent loops in the class code" },
     { "object+0xd0 = dead flag, byte", "0xd0", "REvengeBS reads uint8_t" },
     { "slot +0x18 = setOwner", "0x18", "addGameObject calls it with the manager in x1" },
-    { "slot +0x88 = getX", "0x88", "call site ldr x8,[x8,#0x88] and REvengeBS order" },
+    { "slot +0x88 = not getX", "0x88", "call site 0xae48f0 loads an int argument before blr" },
     { "slot +0x90 = getY", "0x90", "eight bytes after getX" },
     { "count ceiling", "96", "a real battle holds tens of entities" },
     { "capacity ceiling", "4096", "no real array is allocated four billion entries" },
@@ -4141,7 +4464,7 @@ static void tnx_struct_map_dump(void) {
              (unsigned long long)TNX_OBJ_GLOBALID_OFF,
              (unsigned long long)TNX_OBJ_OWNERINDEX_OFF);
 
-    tnx_logf("contract slots getX=%#llx getY=%#llx owner=%#llx list=%#llx listCount=%#llx",
+    tnx_logf("contract slots s88=%#llx s90=%#llx owner=%#llx list=%#llx listCount=%#llx",
              (unsigned long long)TNX_OBJ_GETX_SLOT,
              (unsigned long long)TNX_OBJ_GETY_SLOT,
              (unsigned long long)TNX_SLOT_OWNER_OFF,
@@ -4214,13 +4537,16 @@ static int tnx_object_detail(uintptr_t manager, int limit) {
         tnx_read_i32((uintptr_t)element + TNX_OBJ_TEAM_OFF, &team);
         tnx_read_i32((uintptr_t)element + TNX_OBJ_OWNERINDEX_OFF, &owner);
         tnx_read_u8((uintptr_t)element + TNX_OBJ_DEADFLAG_OFF, &dead);
-        tnx_obj_coord((uintptr_t)element, TNX_OBJ_GETX_SLOT, &x);
-        tnx_obj_coord((uintptr_t)element, TNX_OBJ_GETY_SLOT, &y);
+        uintptr_t s88 = 0;
+        uintptr_t s90 = 0;
 
-        tnx_logf("obj[%02d] %p vt=%#llx gid=%d team=%d own=%d dead=%d pos=(%d,%d) "
+        tnx_obj_slot_fn((uintptr_t)element, TNX_OBJ_GETX_SLOT, &s88);
+        tnx_obj_slot_fn((uintptr_t)element, TNX_OBJ_GETY_SLOT, &s90);
+
+        tnx_logf("obj[%02d] %p vt=%#llx gid=%d team=%d own=%d dead=%d s88=%#llx s90=%#llx "
                  "s18=%#llx s28=%#llx s48=%#llx shape=%d",
                  i, element, (unsigned long long)tnx_vtable_rva(element), globalId, team, owner,
-                 dead, x, y,
+                 dead, (unsigned long long)s88, (unsigned long long)s90,
                  (unsigned long long)(slotOwner ? (uintptr_t)slotOwner - g_base : 0),
                  (unsigned long long)(slotAlive ? (uintptr_t)slotAlive - g_base : 0),
                  (unsigned long long)(slotKind ? (uintptr_t)slotKind - g_base : 0),
@@ -4232,8 +4558,10 @@ static int tnx_object_detail(uintptr_t manager, int limit) {
 
 /* The same table, but read only.
 
-   The full dump calls the object's own getX and getY through its table, which is fine once an
-   object is known to be a game object and dangerous before that: a candidate that is really a
+   Nothing here calls into the game, and that is a change from titanox_41: that version invoked
+   the slot it believed to be getY, which is dangerous before an object is even known to be a
+   game object -- and what came back was not a position anyway, as the 19:19 log shows. The
+   distinction is still worth keeping, though: a candidate that is really a
    scene list or a resource table would be made to execute whatever sits at slot 0x88. This
    variant reads the fields and the slot values and executes nothing, so it can be pointed at
    any candidate at all -- which is exactly what is needed to find out what the closest miss
@@ -4326,121 +4654,71 @@ static void tnx_best_candidate_dump(void) {
     tnx_object_detail_readonly(g_trail[g_trail_best].manager, TNX_BEST_DETAIL_MAX);
 }
 
-/* The dodge, computed but not yet applied. Everything here is read-only, so it is safe to run
-   while the movement entry point is still unknown; when that is confirmed, the two numbers
-   this prints are the ones to hand to it.
+/* The dodge is DISABLED, and this says exactly why.
 
-   The shape of the calculation follows the working implementation: per threat, take the
-   direction away from it, weight it by one over the distance, sum, then normalise to a fixed
-   step so the result is a direction rather than a magnitude. It is done once per team present
-   in the match, because which team is ours is not known here and it does not need to be --
-   the vector for our team is in the log either way. */
+   titanox_37 through titanox_41 computed a dodge vector from the values returned by the
+   functions found in vtable slots 0x88 and 0x90. Two measurements now invalidate that, and the
+   second is the serious one:
+
+     1. slot 0x88 is not getX on this build. The engine's own call site at RVA 0xae48f0 loads an
+        argument before every call -- ldr w1,[x20,#8]; ldr x8,[x19]; ldr x8,[x8,#0x88];
+        mov x0,x19; blr x8 -- and repeats it five times with [x20+0x18], [x20+0x1c], [x20+0x20]
+        and [x20+0x34]. A getter takes no argument. What the 19:19 log shows is what calling it
+        produced: element=0x118943918 was reported as x=0 y=412367128, and 412367128 is
+        0x18943918 -- the low half of that element's own address, not a position.
+
+     2. the reader that produced those values CALLED the function. Executing a function pointer
+        lifted out of a heap object's table and chosen by a heuristic is the one thing the
+        read-only dump was introduced to avoid, and it has no place in the release path.
+
+   So no vector is computed here any more. What the log gets instead is what is needed to find
+   the real coordinate source: for every live element on this team, the RVA of the function in
+   slot 0x88 and the RVA in slot 0x90. Those RVAs are what identify the class defining them, and
+   the class has to be identified before a position can be read. It executes nothing.
+
+   The coordinates themselves need no vtable at all once the mode is adopted: the mode keeps its
+   own predicted position in the plain fields +0x1d4/+0x1d8 -- the only writer of that pair in
+   the image is 0xac3f20, a void(pointer,int,int) -- and the input manager at +0x58. Both are
+   read straight out of memory. */
 static void tnx_dodge_plan(uintptr_t manager, int32_t team) {
     void *array = NULL;
     int32_t count = 0;
-    int32_t ownX = 0;
-    int32_t ownY = 0;
-    int found = 0;
-    int threats = 0;
-    int32_t nearest = 0x7fffffff;
-    int64_t avoidX = 0;
-    int64_t avoidY = 0;
+    int live = 0;
 
     if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array) || !array) return;
     if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) return;
     if (count <= 0) return;
     if (count > TNX_MANAGER_MAX_OBJECTS) count = TNX_MANAGER_MAX_OBJECTS;
 
-    /* Our own position: the first object on this team that is not dead. Good enough for a
-       direction, and it does not commit to any assumption about owner indices. */
-    for (int32_t i = 0; i < count && !found; i++) {
+    for (int32_t i = 0; i < count; i++) {
         void *element = NULL;
+        int32_t gid = 0;
         int32_t t = 0;
         uint8_t dead = 0;
-        int32_t x = 0;
-        int32_t y = 0;
+        uintptr_t s88 = 0;
+        uintptr_t s90 = 0;
 
         if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * sizeof(void *), &element)) break;
         if (!element) continue;
         if (!tnx_gameobject_shape((uintptr_t)element)) continue;
+        if (!tnx_read_i32((uintptr_t)element + TNX_OBJ_GLOBALID_OFF, &gid)) continue;
         if (!tnx_read_i32((uintptr_t)element + TNX_OBJ_TEAM_OFF, &t)) continue;
-        if (t != team) continue;
         if (!tnx_read_u8((uintptr_t)element + TNX_OBJ_DEADFLAG_OFF, &dead)) continue;
-        if (dead) continue;
-        if (!tnx_obj_coord((uintptr_t)element, TNX_OBJ_GETX_SLOT, &x)) continue;
-        if (!tnx_obj_coord((uintptr_t)element, TNX_OBJ_GETY_SLOT, &y)) continue;
 
-        ownX = x;
-        ownY = y;
-        found = 1;
+        tnx_obj_slot_fn((uintptr_t)element, TNX_OBJ_GETX_SLOT, &s88);
+        tnx_obj_slot_fn((uintptr_t)element, TNX_OBJ_GETY_SLOT, &s90);
+
+        live++;
+
+        tnx_logf("dodge team=%d i=%d obj=%p gid=%d team=%d dead=%d s88=%#llx s90=%#llx",
+                 team, i, element, gid, t, dead,
+                 (unsigned long long)s88, (unsigned long long)s90);
     }
 
-    if (!found) {
-        tnx_logf("dodge team=%d no live object on this team", team);
-        return;
-    }
-
-    for (int32_t i = 0; i < count; i++) {
-        void *element = NULL;
-        int32_t t = 0;
-        uint8_t dead = 0;
-        int32_t x = 0;
-        int32_t y = 0;
-        int32_t dx = 0;
-        int32_t dy = 0;
-        int64_t dist = 0;
-
-        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * sizeof(void *), &element)) break;
-        if (!element) continue;
-        if (!tnx_read_i32((uintptr_t)element + TNX_OBJ_TEAM_OFF, &t)) continue;
-        if (t == team) continue;
-        if (!tnx_read_u8((uintptr_t)element + TNX_OBJ_DEADFLAG_OFF, &dead)) continue;
-        if (dead) continue;
-        if (!tnx_obj_coord((uintptr_t)element, TNX_OBJ_GETX_SLOT, &x)) continue;
-        if (!tnx_obj_coord((uintptr_t)element, TNX_OBJ_GETY_SLOT, &y)) continue;
-
-        dx = x - ownX;
-        dy = y - ownY;
-        dist = tnx_isqrt((int64_t)dx * (int64_t)dx + (int64_t)dy * (int64_t)dy);
-
-        if (dist < nearest) nearest = (int32_t)dist;
-        if (dist > TNX_DODGE_RADIUS) continue;
-
-        threats++;
-
-        /* Away from the threat, weighted by one over the distance, in a fixed scale so the
-           per-threat contribution stays an integer. */
-        if (dist > 0) {
-            avoidX += -((int64_t)dx * TNX_DODGE_SCALE) / (dist + 1);
-            avoidY += -((int64_t)dy * TNX_DODGE_SCALE) / (dist + 1);
-        }
-    }
-
-    {
-        int64_t norm = tnx_isqrt(avoidX * avoidX + avoidY * avoidY);
-        int64_t stepX = 0;
-        int64_t stepY = 0;
-        const char *verdict = "hold";
-
-        if (norm > 0) {
-            stepX = avoidX * TNX_DODGE_STEP / norm;
-            stepY = avoidY * TNX_DODGE_STEP / norm;
-            verdict = "move";
-        }
-
-        if (threats == 0) verdict = "no threat in radius";
-
-        tnx_logf("dodge team=%d own=(%d,%d) threats=%d nearest=%d raw=(%lld,%lld) "
-                 "step=(%lld,%lld) action=%s radius=%d stepLen=%d",
-                 team, ownX, ownY, threats, nearest == 0x7fffffff ? -1 : nearest,
-                 (long long)avoidX, (long long)avoidY,
-                 (long long)stepX, (long long)stepY, verdict,
-                 TNX_DODGE_RADIUS, TNX_DODGE_STEP);
-    }
+    tnx_logf("dodge team=%d live=%d DISABLED - no coordinate source: slot 0x88 takes an "
+             "argument at 0xae48f0, so it is not getX; the RVAs above identify the class",
+             team, live);
 }
-
-/* Runs the plan for every team the manager actually contains, so the log carries the answer
-   regardless of which team the player is on. */
 static void tnx_dodge_all_teams(uintptr_t manager) {
     int32_t teams[TNX_OBJ_TEAM_MAX + 1];
     int teamCount = 0;

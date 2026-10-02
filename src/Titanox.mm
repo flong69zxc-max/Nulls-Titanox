@@ -17,6 +17,13 @@
 #import "offsets.h"
 #import "lc_detect.h"
 
+/* The engine's hook library is compiled into this tweak (see the Makefile). brk_install
+   first tries an inline code patch and, when __TEXT cannot be written, falls back to
+   rewriting every pointer slot that holds the target address -- which is exactly what a
+   C++ vtable entry in __DATA_CONST is. A virtual method can therefore be intercepted
+   even though the text segment is read-only. */
+#include "hook.h"
+
 #if __has_include(<ptrauth.h>)
 #import <ptrauth.h>
 #endif
@@ -149,6 +156,33 @@ static __thread BOOL g_inside_hook = NO;
 #define TNX_MODE_SLOT_B 0x220ULL
 #define TNX_MODE_SLOT_C 0x228ULL
 
+/* Two virtual methods that belong to the battle object graph. Both were identified from
+   the binary itself, not from the offsets table, and both are reachable ONLY through a
+   single vtable slot -- 0 direct bl callers anywhere in the 16 MB of code:
+     0xad4ed0 -> vtable RVA 0x1002548 slot 10 (slot byte address RVA 0x1002598). It walks
+                 [this+0x80] with count [this+0x8c], creates objects and pushes each one
+                 with [[this+0x8]+0]->addGameObject(obj)                     (0xa278a8).
+     0xa2e5b8 -> vtable RVA 0xff5720 slot 5 (slot byte address RVA 0xff5748). Its body
+                 reads [this+0x20] and [this+0xf4], i.e. the manager layout used below.
+   Both end in a bare epilogue with no x0/s0 written, so both return void and a
+   replacement that merely forwards the incoming argument registers is ABI safe.
+   Intercepting either slot hands us the live battle object in x0 without any scan. */
+#define TNX_RVA_BATTLE_SLOT_A 0x00ad4ed0ULL
+#define TNX_RVA_BATTLE_SLOT_B 0x00a2e5b8ULL
+
+/* Slot A's object reaches the manager as [[this+0x8]+0x0]; its source list is [this+0x80]
+   with count [this+0x8c]. Slot B's object uses the familiar [this+0x20] path. Both
+   layouts are printed on capture so neither has to be guessed again. */
+#define TNX_SLOT_BRIDGE_OFF 0x8ULL
+#define TNX_SLOT_LIST_OFF 0x80ULL
+#define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
+
+/* A real battle manager holds several DIFFERENT classes -- brawlers, projectiles, walls --
+   while the static container that produced the last false positive held 71 objects of one
+   single class. Type diversity is therefore what raises a candidate to score 2. */
+#define TNX_MODE_MIN_TYPES 2
+#define TNX_MODE_TYPE_MAX 16
+
 #define TNX_SNAPSHOT_OBJECTS 12
 #define TNX_SNAPSHOT_BYTES 0x140
 #define TNX_SNAPSHOT_DELAY 1.2
@@ -201,6 +235,7 @@ static int tnx_verified_vtable(uintptr_t vtable) {
 static uintptr_t g_mode_object = 0;
 static BOOL g_mode_strong = NO;
 static int g_mode_best_objects = 0;
+static int g_mode_last_types = 0;
 static int g_mode_verified_hits = 0;
 static uintptr_t g_manager_object = 0;
 static int g_manager_count = 0;
@@ -350,6 +385,109 @@ static void tnx_battle_begin(const char *why) {
     g_battle_capture = YES;
 
     tnx_logf("battle capture ON (%s) -> Documents/Titanox.battle.log", why ? why : "?");
+}
+
+/* ---------------------------------------------------------------------------
+   Direct battle-object capture through a vtable pointer slot.
+
+   This path scans nothing. Two confirmed virtual methods are intercepted through their
+   single __DATA_CONST vtable entry, so the replacement runs on the game's own thread with
+   the battle object in x0. The replacement itself only stores a pointer -- all reading,
+   logging and dumping happens later on the 1 Hz timer -- so the game thread is never
+   blocked by this hook, which is what killed the previous attempts to report from here.
+   --------------------------------------------------------------------------- */
+
+typedef uint64_t (*tnx_slot_fn_t)(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
+                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7);
+
+static tnx_slot_fn_t g_slot_orig_a = NULL;
+static tnx_slot_fn_t g_slot_orig_b = NULL;
+static uintptr_t g_slot_object_a = 0;
+static uintptr_t g_slot_object_b = 0;
+static uintptr_t g_slot_reported = 0;
+static uint64_t g_slot_hits_a = 0;
+static uint64_t g_slot_hits_b = 0;
+static int g_slot_install_a = -1;
+static int g_slot_install_b = -1;
+
+static void tnx_slot_note(const char *tag, uintptr_t *store, uint64_t *hits, void *self) {
+    if (!self) return;
+
+    (*hits)++;
+
+    if (*store) return;
+
+    *store = (uintptr_t)self;
+
+    tnx_logf("slot %s captured this=%p hits=%llu", tag, self, (unsigned long long)*hits);
+
+    tnx_battle_begin("slot");
+}
+
+static uint64_t tnx_slot_repl_a(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
+                                uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
+    tnx_slot_note("A/ad4ed0", &g_slot_object_a, &g_slot_hits_a, a0);
+
+    if (g_slot_orig_a) return g_slot_orig_a(a0, a1, a2, a3, a4, a5, a6, a7);
+
+    return 0;
+}
+
+static uint64_t tnx_slot_repl_b(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
+                                uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
+    tnx_slot_note("B/a2e5b8", &g_slot_object_b, &g_slot_hits_b, a0);
+
+    if (g_slot_orig_b) return g_slot_orig_b(a0, a1, a2, a3, a4, a5, a6, a7);
+
+    return 0;
+}
+
+/* Installs one slot hook. The dry-run probe runs first: it reports whether a writable
+   slot really holds this address, so a failed install is a logged fact rather than a
+   silent one. */
+static void tnx_slot_install_one(const char *tag, uintptr_t rva, void *replacement,
+                                 tnx_slot_fn_t *original, int *status) {
+    uintptr_t target = g_base + rva;
+    int slots = 0;
+
+    *status = 0;
+
+    if (!target) return;
+
+    slots = hook_probe(target);
+
+    if (slots <= 0) {
+        tnx_logf("slot %s: no writable slot holds %p (%s)", tag, (void *)target,
+                 hook_last_error() ? hook_last_error() : "-");
+
+        return;
+    }
+
+    if (!brk_install((void *)target, replacement)) {
+        tnx_logf("slot %s: install failed target=%p (%s)", tag, (void *)target,
+                 hook_last_error() ? hook_last_error() : "-");
+
+        return;
+    }
+
+    *original = (tnx_slot_fn_t)brk_original_ptr((void *)target);
+    *status = 1;
+
+    tnx_logf("slot %s: installed target=%p original=%p slots=%d liveSlots=%d",
+             tag, (void *)target, (void *)*original, slots, brk_live_slot_count());
+}
+
+static void tnx_slot_hooks_install(void) {
+    if (!g_base) return;
+
+    tnx_logf("slot hooks: pointerSlots=%d limit=%d live=%d", hook_pointer_count(),
+             brk_slot_limit(), brk_live_slot_count());
+
+    tnx_slot_install_one("A/ad4ed0", TNX_RVA_BATTLE_SLOT_A, (void *)tnx_slot_repl_a,
+                         &g_slot_orig_a, &g_slot_install_a);
+
+    tnx_slot_install_one("B/a2e5b8", TNX_RVA_BATTLE_SLOT_B, (void *)tnx_slot_repl_b,
+                         &g_slot_orig_b, &g_slot_install_b);
 }
 
 static BOOL tnx_query_region(uintptr_t address,
@@ -1308,10 +1446,10 @@ static void tnx_overlay_update(void) {
 
     g_overlay_last = now;
 
-    snprintf(text, sizeof(text), "TNX t=%d a=%d/%d hp=%d\nmx=%d vfx=%d mgr=%d pr=%d bc=%d bl=%d",
+    snprintf(text, sizeof(text), "TNX t=%d a=%d/%d hp=%d\nmx=%d ty=%d sl=%d/%d obj=%d vfx=%d",
              g_scan_ticks, g_votescan_attempts, TNX_VOTESCAN_ATTEMPTS, g_heap_passes,
-             g_mode_best_objects, g_mode_verified_hits, g_manager_count,
-             g_manager_probes_total, g_manager_best_count, g_manager_best_live);
+             g_mode_best_objects, g_mode_last_types, (int)g_slot_hits_a, (int)g_slot_hits_b,
+             g_mode_object ? 1 : 0, g_mode_verified_hits);
 
     NSString *string = [NSString stringWithUTF8String:text];
 
@@ -1383,6 +1521,7 @@ static void tnx_render_watermark(void) {
 }
 
 static void tnx_locate_battle_mode(void);
+static void tnx_slot_pump(void);
 
 /* Defined here, right after the declaration above, so the call inside the timer block
    is not a use-before-declaration. The scan must not depend on the render hook: every
@@ -1406,6 +1545,7 @@ static void tnx_start_timer(void) {
                               interval, (uint64_t)(0.25 * NSEC_PER_SEC));
 
     dispatch_source_set_event_handler(timer, ^{
+        tnx_slot_pump();
         tnx_locate_battle_mode();
 
         g_scan_ticks++;
@@ -1951,6 +2091,8 @@ static int tnx_mode_score(uintptr_t mode) {
 
     int verified = 0;
     int live = 0;
+    uintptr_t types[TNX_MODE_TYPE_MAX] = {0};
+    int typeCount = 0;
 
     for (int32_t i = 0; i < count; i++) {
         void *element = NULL;
@@ -1962,13 +2104,38 @@ static int tnx_mode_score(uintptr_t mode) {
         live++;
 
         if (tnx_gameobject_shape((uintptr_t)element)) verified++;
+
+        /* Distinct vtables, not distinct objects. A battle holds several classes, while
+           the container that ended the previous run held 71 objects of a single class and
+           was accepted anyway -- that is the false positive this count removes. */
+        void *elementVtable = NULL;
+
+        if (!tnx_read_ptr((uintptr_t)element, &elementVtable)) continue;
+        if ((uintptr_t)elementVtable <= g_base) continue;
+
+        uintptr_t elementRva = (uintptr_t)elementVtable - g_base;
+        BOOL known = NO;
+
+        for (int k = 0; k < typeCount; k++) {
+            if (types[k] == elementRva) {
+                known = YES;
+                break;
+            }
+        }
+
+        if (!known && typeCount < TNX_MODE_TYPE_MAX) types[typeCount++] = elementRva;
     }
 
-    /* score 1: a real container of live C++ objects, but the game-object fields did not
-       all match. score 2: the fields matched too. Either way this is worth dumping. */
-    if (live < TNX_MODE_MIN_OBJECTS) return 0;
+    /* Kept in a global so the hit line and the on-screen overlay can report it. */
+    g_mode_last_types = typeCount;
 
-    return (verified >= TNX_MODE_MIN_OBJECTS) ? 2 : 1;
+    /* score 1: a real container of live C++ objects. score 2: the game-object fields
+       matched too AND the container is heterogeneous, i.e. it really holds a battle.
+       Either way this is worth dumping; only score 2 stops the scan. */
+    if (live < TNX_MODE_MIN_OBJECTS) return 0;
+    if (verified < TNX_MODE_MIN_OBJECTS) return 1;
+
+    return (typeCount >= TNX_MODE_MIN_TYPES) ? 2 : 1;
 }
 
 static const uintptr_t g_mode_vtables[] = {
@@ -2028,12 +2195,12 @@ static void tnx_report_mode_hit(const char *tag, uintptr_t slot, uintptr_t objec
     tnx_read_ptr((uintptr_t)array, &entry);
     tnx_read_bytes(object, words, sizeof(words));
 
-    tnx_logf("modehit[%s] slot=%p mode=%p mdSeg=%s vt=%p vtSeg=%s vtOff=%#llx inList=%d primary=%d score=%d var=%d mgr=%p mgr0Rva=%#llx mgrShape=%d array=%p entry0=%p count=%d",
+    tnx_logf("modehit[%s] slot=%p mode=%p mdSeg=%s vt=%p vtSeg=%s vtOff=%#llx inList=%d primary=%d score=%d types=%d var=%d mgr=%p mgr0Rva=%#llx mgrShape=%d array=%p entry0=%p count=%d",
              tag, (void *)slot, (void *)object, modeSeg ? modeSeg : "-",
              vtable, vtableSeg ? vtableSeg : "-", (unsigned long long)vtableOff,
              tnx_is_mode_vtable((uintptr_t)vtable, NULL) ? 1 : 0,
              tnx_verified_vtable((uintptr_t)vtable) >= 0 ? 1 : 0,
-             score, variation,
+             score, g_mode_last_types, variation,
              manager, (unsigned long long)managerVtableRva,
              tnx_manager_shape((uintptr_t)manager) ? 1 : 0, array, entry, count);
 
@@ -2691,6 +2858,63 @@ static void tnx_dump_mode_objects(const char *tag) {
     }
 }
 
+/* Runs on the 1 Hz timer, never inside the hook: the replacement itself only stores a
+   pointer, so the game thread is never asked to log, to read memory or to walk an array.
+   The first object seen is dumped once, in both possible layouts. */
+static void tnx_slot_pump(void) {
+    uintptr_t object = g_slot_object_a ? g_slot_object_a : g_slot_object_b;
+
+    if (!object) return;
+    if (g_slot_reported == object) return;
+
+    g_slot_reported = object;
+
+    tnx_logf("slot pump object=%p source=%s hitsA=%llu hitsB=%llu installA=%d installB=%d",
+             (void *)object, g_slot_object_a ? "A/ad4ed0" : "B/a2e5b8",
+             (unsigned long long)g_slot_hits_a, (unsigned long long)g_slot_hits_b,
+             g_slot_install_a, g_slot_install_b);
+
+    /* A slot capture outranks anything the scan produced: it IS the battle object. */
+    if (g_mode_object != object) {
+        g_mode_strong = NO;
+        g_mode_object = 0;
+    }
+
+    tnx_adopt_mode(object, YES, "slot");
+
+    /* The shot that was never available before: the real object with its own vtable,
+       read straight out of the live process. */
+    tnx_dump_hex("slotObj", object, 0x100);
+
+    /* Slot A's object reaches the manager through [this+0x8]; slot B's through the
+       familiar [this+0x20]. Both are printed, so neither has to be guessed again. */
+    void *bridge = NULL;
+
+    if (tnx_read_ptr(object + TNX_SLOT_BRIDGE_OFF, &bridge) && bridge) {
+        void *bridgeManager = NULL;
+
+        tnx_logf("slot +08 bridge=%p vt=%#llx", bridge,
+                 (unsigned long long)tnx_vtable_rva(bridge));
+
+        if (tnx_read_ptr((uintptr_t)bridge + TNX_MGR_ARRAY_OFF, &bridgeManager) && bridgeManager) {
+            tnx_logf("slot bridgeMgr=%p vt=%#llx", bridgeManager,
+                     (unsigned long long)tnx_vtable_rva(bridgeManager));
+
+            tnx_dump_hex("slotMgrA", (uintptr_t)bridgeManager, 0x40);
+        }
+    }
+
+    void *list = NULL;
+    int32_t listCount = 0;
+
+    if (tnx_read_ptr(object + TNX_SLOT_LIST_OFF, &list) &&
+        tnx_read_i32(object + TNX_SLOT_LISTCOUNT_OFF, &listCount)) {
+        tnx_logf("slot +80 list=%p count=%d", list, listCount);
+    }
+
+    tnx_dump_mode_objects("slot");
+}
+
 static void tnx_dump_objc_inventory(const char *tag) {
     int total = objc_getClassList(NULL, 0);
 
@@ -2811,6 +3035,10 @@ static void setup(void) {
 
     tnx_objc_arm("MetalView", "render");
     tnx_objc_arm("NullView", "render");
+
+    /* Armed before the timer: the slot hooks are the primary detector, the memory scan
+       below is only the fallback. */
+    tnx_slot_hooks_install();
 
     tnx_start_timer();
 

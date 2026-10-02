@@ -510,7 +510,81 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 
 /* Printed as the first line after "setup", so every log identifies the build that produced
    it. Two device logs were once spent comparing a new binary against an old one. */
-#define TNX_BUILD_TAG "titanox_46"
+#define TNX_BUILD_TAG "titanox_47"
+
+/* ---------------------------------------------------------------------------
+   v47. THE OBJECT LAYOUT STOPS BEING A GUESS, BECAUSE THE ENGINE STATES IT.
+
+   genebrawl-public -- a Frida mod for Brawl Stars 62.250/62.258, read 2026-10-02 --
+   publishes its STRUCT offsets unredacted: tools/remove_offsets.py rewrites only
+   `Libg.offset(a, b)` call sites, so every plain field offset in its classes survived.
+   Two of its claims were then checked against OUR binary, instruction by instruction,
+   and both hold:
+
+     0xac3d80   the engine's own findByTeam walk
+                ldrsw x10, [x0, #0xc]        count  is at +0xc
+                ldr   x11, [x0]              array  is at +0x0
+                ldr   x11, [x11, x9, lsl #3] element = array[i]
+                ldr   w12, [x11, #0x4c]      TEAM   is at +0x4c
+                ldrb  w11, [x11, #0x1e8]     active flag, bit 0
+     0xac3f48   ldr w8,[x0,#0x1fc] / ldr x8,[x0,#0xf8] / ldr w8,[x8,#0xc4]
+                madd w8, w8, w2, w1          tileIndex = y * mapWidth + x
+                (0xac3f2c reads [x0+0x28] then +0x8c/+0x90 -- the same manager)
+
+   Both sit in the LogicBattleModeClient region around 0xac3xxx and both read the very
+   offsets this file has used since v42, so three things are now settled by the engine
+   rather than by a shape test: `[mode+0x28]` IS the object manager, `[mgr+0x0]` IS its
+   element array with the count at `[mgr+0xc]`, and `[mode+0xf8]` IS the tile map with
+   the map width at `+0xc4`. The mode object we carry is therefore the LOGIC battle mode
+   client -- not the display one -- which is why the repository's `BattleMode` numbers
+   never fitted it.
+
+   What the repository adds on top:
+
+       LogicGameObjectClient   X = int32 @ +0x30      Y = int32 @ +0x34
+
+   v46 read the team from +0x40; the engine reads it from +0x4c. v47 prints BOTH for
+   every object instead of picking one, because exactly one of them is the team and the
+   log is what decides which.
+
+   THE ACTUATOR. 0xac3f20 is a complete function of three instructions:
+
+       str w1, [x0, #0x1d4]
+       str w2, [x0, #0x1d8]
+       ret
+
+   i.e. setPredictionXY(this, x, y) -- the only writer of those two fields anywhere in
+   the image, and the same destination the repository knows as
+   setClientPredictionMoveTo. It is called only after its three words are matched at
+   runtime, so a build that moves the function disables the dodge instead of landing in
+   the middle of whatever now lives there. The dodge itself is gated twice: the
+   fingerprint must match AND the coordinate probe below must have found real, distinct,
+   in-range positions on live objects. Nothing is written until both are true.
+   --------------------------------------------------------------------------- */
+#define TNX_RVA_SETPREDICTION 0x00ac3f20ULL
+#define TNX_OBJ_X_OFF 0x30ULL
+#define TNX_OBJ_Y_OFF 0x34ULL
+#define TNX_OBJ_TEAMENGINE_OFF 0x4cULL
+#define TNX_OBJ_ACTIVEFLAG_OFF 0x1e8ULL
+#define TNX_MODE_TILEMAP_OFF 0xf8ULL
+#define TNX_TILEMAP_WIDTH_OFF 0xc4ULL
+#define TNX_TILEMAP_HEIGHT_OFF 0xc8ULL
+/* The engine's own reads are trusted only up to a point: a coordinate that is not a
+   small number is not a coordinate. Map sizes seen so far are two-digit. */
+#define TNX_V47_COORD_ABS_MAX 1000000
+#define TNX_V47_MAP_MIN 4
+#define TNX_V47_MAP_MAX 512
+#define TNX_V47_OBJECT_MAX 64
+#define TNX_V47_DODGE_MIN_MS 100
+#define TNX_V47_LOG_FIRST 12
+#define TNX_V47_LOG_EVERY 64
+/* While the coordinate verdict is still failing the probe retries on this period, so a
+   battle that starts after the verdict was formed on a lobby object is still picked up. */
+#define TNX_V47_REPROBE_MS 5000
+/* The prediction pair has to land ON an object. 10000 units is far looser than any real
+   client prediction should be, and the point is exactly to reject the case where the two
+   fields are not a position at all: then the nearest object is arbitrarily far away. */
+#define TNX_V47_OWN_MAX_SQ 100000000LL
 
 /* IN-LINE HOOKING IS IMPOSSIBLE ON THIS PROCESS -- measured, not assumed. The 17:38 log caught
    it directly:
@@ -999,6 +1073,9 @@ static void tnx_best_candidate_dump(void);
    confirmed owner by name. */
 static void tnx_report_manager(const char *tag, uintptr_t manager);
 static int tnx_object_detail_readonly(uintptr_t manager, int limit);
+/* v47. The verified dodge is defined next to the object readers at the bottom of the
+   file, but the workload that drives it is far above, so it is declared here. */
+static void tnx_autododge_v47(void);
 
 /* Runs inside the game's thread. Two stores and a bounds check, nothing else. */
 static void tnx_slot_note(int index, void *self, uint64_t arg1) {
@@ -2008,7 +2085,14 @@ static void tnx_objc_add_wanted(tnx_objc_hook_t *hook, Class cls) {
     hook->wanted[hook->wantedCount++] = cls;
 }
 
-static void tnx_run_autododge(void) {
+/* v47 RETIRES this body without deleting the record of it. It was driven by RVA_*
+   constants taken from the community offsets table, 130 of whose 146 entries are
+   mid-function addresses; `tnx_callable` rejects those, so every pointer below stayed
+   zero and the function returned on its own first line in EVERY version that carried
+   it. That is why nothing ever dodged -- not because the layout was unknown. It is
+   renamed and kept compiled rather than called, so the numbers it used stay checkable
+   against a future build. */
+static void tnx_run_autododge_legacy(void) {
     if (!g_addr_getinstance || !g_addr_getownchar) return;
 
     void *battleMode = ((fn_get_inst_t)g_addr_getinstance)();
@@ -2121,6 +2205,13 @@ static void tnx_run_autododge(void) {
     if (!inputMgr) return;
 
     ((fn_send_movement_t)g_addr_sendmovement)(inputMgr, dodgeX, dodgeY);
+}
+
+/* v47. The only dodge entry point the workload calls. The reasoning lives in
+   tnx_autododge_v47, next to the object readers, where every helper it needs is already
+   defined. */
+static void tnx_run_autododge(void) {
+    tnx_autododge_v47();
 }
 
 static void tnx_run_autoaim(void) {
@@ -5450,6 +5541,25 @@ static void tnx_report_manager(const char *tag, uintptr_t manager) {
    hand to the movement entry point the moment that entry point is known; until then it is
    the proof that the geometry is right.
 
+   v47 supersedes that with the real thing, and says so in its own lines:
+
+       v47 setprediction verified|MISMATCH ...   the three instructions of 0xac3f20
+       v47 man walk manager=... usable=... mapW=... teamsOld=... teamsNew=... teamOff=...
+       v47 obj[00] at=... pos=(x,y) teamOld=... teamNew=... dead=... active=...
+       v47 coords ok=<0|1> (...)
+       v47 write #<n> own=(x,y) team=... step=(..) target=(x,y)
+       v47 live ticks=... own=(..) pred=(..) hostilesAlive=.. enemiesActive=.. enemiesInRange=0
+
+   `ok=0` means nothing is ever written, and the line above it carries the numbers that
+   decided it: how many objects were readable, whether their positions were distinct and in
+   range, and which of the two candidate team offsets actually split them into sides. The
+   probe is not one-shot -- it re-runs whenever the battle object changes and every five
+   seconds while it is still failing, so a verdict formed on a lobby object cannot outlive
+   the lobby. `hostilesAlive >= enemiesActive >= enemiesInRange` is strictly nested, and
+   that is the point: a zero in the middle names which test failed. An inverted +0x1e8 bit
+   on this build shows as `hostilesAlive` non-zero with `enemiesActive` zero, which is a
+   fact about the layout rather than an unexplained empty dodge.
+
    The verdict. `DIAG` ends with `capRej=<n>/<n>`, `bestCount/bestLive`, `mgr=` and `mx=`.
    `mx` is the largest object count ever seen in a battle-shaped container. `mx` of zero or
    one means no battle existed in the window and the run says nothing about the layout.
@@ -6132,6 +6242,450 @@ static void tnx_best_candidate_dump(void) {
    own predicted position in the plain fields +0x1d4/+0x1d8 -- the only writer of that pair in
    the image is 0xac3f20, a void(pointer,int,int) -- and the input manager at +0x58. Both are
    read straight out of memory. */
+/* ===========================================================================
+   v47. THE DODGE, ON OFFSETS THE ENGINE STATES RATHER THAN ON A SHAPE TEST.
+   ===========================================================================
+
+   Three claims, each of which the log can falsify on its own:
+
+     1. `[mode + 0x28]` is the object manager and `[mgr + 0x0]` / `[mgr + 0xc]` are its
+        element array and count. Not a hypothesis any more -- 0xac3d80 and 0xac3ddc walk
+        the manager exactly that way.
+     2. A live game object carries X at +0x30 and Y at +0x34, and its team at +0x4c.
+        +0x4c comes from the engine's own findByTeam; +0x30/+0x34 come from
+        genebrawl-public and are the one part of this that is still only a claim, so
+        both team offsets are printed and the coordinate verdict is printed with the
+        numbers it came from.
+     3. 0xac3f20 is setPredictionXY(this, x, y) -- three instructions, pinned to the word.
+
+   The dodge writes nothing unless (3) matches AND (2) produced at least two live objects
+   with distinct, in-range positions. That ordering matters: this is the first version
+   that can move the character, so the checks that decide it also have to be the checks
+   that fail closed. */
+
+typedef void (*tnx_v47_setpred_t)(void *self, int x, int y);
+
+typedef struct {
+    uintptr_t object;
+    int32_t   gid;        /* +0x8  */
+    int32_t   x;          /* +0x30 */
+    int32_t   y;          /* +0x34 */
+    int32_t   ownerIndex; /* +0x3c */
+    int32_t   teamOld;    /* +0x40  the offset this file used until v46 */
+    int32_t   teamNew;    /* +0x4c  the offset the engine's findByTeam reads */
+    uint8_t   dead;       /* +0xd0  */
+    uint8_t   activeFlag; /* +0x1e8, bit 0 */
+} tnx_v47_obj_t;
+
+static uintptr_t g_v47_setpred = 0;
+static int g_v47_setpred_state = -1;    /* -1 untested, 0 mismatch, 1 verified */
+static int g_v47_probe_done = 0;
+/* The probe is NOT a one-shot. A candidate adopted in the lobby is a different object
+   from the one a battle produces, and a verdict reached on the wrong object would be
+   permanent: `coord_ok=0` forever while a real battle runs. So the probe re-runs
+   whenever the mode object changes, and keeps retrying quietly while it fails. */
+static uintptr_t g_v47_probe_object = 0;
+static uint64_t g_v47_probe_last_ms = 0;
+static int g_v47_coord_ok = 0;
+static int g_v47_coord_usable = 0;
+static int g_v47_coord_distinct = 0;
+static int g_v47_team_off = 0x4c;
+static int g_v47_map_w = 0;
+static int g_v47_map_h = 0;
+static int g_v47_map_ok = 0;
+static uint64_t g_v47_ticks = 0;
+static uint64_t g_v47_threat_ticks = 0;
+static uint64_t g_v47_writes = 0;
+static uint64_t g_v47_last_write_ms = 0;
+static int g_v47_giveup_logs = 0;
+
+/* The whole of 0xac3f20 as the image holds it today:
+
+       b901d401   str w1, [x0, #0x1d4]
+       b901d802   str w2, [x0, #0x1d8]
+       d65f03c0   ret
+
+   A function three instructions long has no prologue to pattern-match, which is the
+   point: every one of its words is checkable, so "is this really the setter" has an
+   exact answer instead of a heuristic one. */
+static int tnx_v47_verify_setprediction(void) {
+    static const uint32_t expected[3] = { 0xb901d401u, 0xb901d802u, 0xd65f03c0u };
+    uint32_t words[3] = { 0, 0, 0 };
+    uintptr_t address = 0;
+
+    if (!g_base) return 0;
+
+    address = g_base + TNX_RVA_SETPREDICTION;
+
+    if (!tnx_addr_readable(address, sizeof(words))) return 0;
+    if (!tnx_read_bytes(address, words, sizeof(words))) return 0;
+
+    for (int i = 0; i < 3; i++) {
+        if (words[i] != expected[i]) {
+            tnx_logf("v47 setprediction MISMATCH word[%d]=%08x expected=%08x at %#llx",
+                     i, words[i], expected[i], (unsigned long long)TNX_RVA_SETPREDICTION);
+            return 0;
+        }
+    }
+
+    tnx_logf("v47 setprediction verified at %#llx (str w1,[x0,#0x1d4]; str w2,[x0,#0x1d8]; ret)",
+             (unsigned long long)TNX_RVA_SETPREDICTION);
+
+    return 1;
+}
+
+/* The tile map, whose two numbers are the only independent scale reference available:
+   if the object coordinates are real, they have to fit inside a map the engine
+   describes. Read through the same `[mode+0xf8]` path 0xac3f48 uses. */
+static void tnx_v47_read_map(uintptr_t mode) {
+    void *tileMap = NULL;
+    int32_t width = 0;
+    int32_t height = 0;
+
+    g_v47_map_ok = 0;
+    g_v47_map_w = 0;
+    g_v47_map_h = 0;
+
+    if (!tnx_read_ptr(mode + TNX_MODE_TILEMAP_OFF, &tileMap) || !tileMap) return;
+    if (!tnx_read_i32((uintptr_t)tileMap + TNX_TILEMAP_WIDTH_OFF, &width)) return;
+    if (!tnx_read_i32((uintptr_t)tileMap + TNX_TILEMAP_HEIGHT_OFF, &height)) return;
+
+    g_v47_map_w = width;
+    g_v47_map_h = height;
+    g_v47_map_ok = (width >= TNX_V47_MAP_MIN && width <= TNX_V47_MAP_MAX &&
+                    height >= TNX_V47_MAP_MIN && height <= TNX_V47_MAP_MAX) ? 1 : 0;
+}
+
+/* Walks the object manager the engine's own code walks. Returns how many elements were
+   readable; elements that fail are counted, not silently dropped, so a manager that has
+   moved shows up as `usable=0` rather than as an absent table. */
+static int tnx_v47_collect(uintptr_t mode, tnx_v47_obj_t *out, int capacity, int *rejected) {
+    void *manager = NULL;
+    void *data = NULL;
+    int32_t count = 0;
+    int usable = 0;
+    int bad = 0;
+
+    if (rejected) *rejected = 0;
+
+    if (!tnx_read_ptr(mode + TNX_MODE_MANAGER_OFF, &manager) || !manager) return 0;
+    if (!tnx_read_ptr((uintptr_t)manager + TNX_MGR_ARRAY_OFF, &data) || !data) return 0;
+    if (!tnx_read_i32((uintptr_t)manager + TNX_MGR_COUNT_OFF, &count)) return 0;
+    if (count <= 0) return 0;
+
+    if (count > capacity) count = capacity;
+
+    for (int32_t i = 0; i < count && usable < capacity; i++) {
+        void *element = NULL;
+        tnx_v47_obj_t entry;
+
+        memset(&entry, 0, sizeof(entry));
+
+        if (!tnx_read_ptr((uintptr_t)data + (uintptr_t)i * sizeof(void *), &element)) break;
+        if (!element) { bad++; continue; }
+
+        entry.object = (uintptr_t)element;
+
+        if (!tnx_read_i32(entry.object + TNX_OBJ_GLOBALID_OFF, &entry.gid)) { bad++; continue; }
+        if (!tnx_read_i32(entry.object + TNX_OBJ_X_OFF, &entry.x)) { bad++; continue; }
+        if (!tnx_read_i32(entry.object + TNX_OBJ_Y_OFF, &entry.y)) { bad++; continue; }
+        if (!tnx_read_i32(entry.object + TNX_OBJ_OWNERINDEX_OFF, &entry.ownerIndex)) { bad++; continue; }
+        if (!tnx_read_i32(entry.object + TNX_OBJ_TEAM_OFF, &entry.teamOld)) { bad++; continue; }
+        if (!tnx_read_i32(entry.object + TNX_OBJ_TEAMENGINE_OFF, &entry.teamNew)) { bad++; continue; }
+        if (!tnx_read_u8(entry.object + TNX_OBJ_DEADFLAG_OFF, &entry.dead)) { bad++; continue; }
+        if (!tnx_read_u8(entry.object + TNX_OBJ_ACTIVEFLAG_OFF, &entry.activeFlag)) { bad++; continue; }
+
+        out[usable++] = entry;
+    }
+
+    if (rejected) *rejected = bad;
+
+    return usable;
+}
+
+/* One read-only pass that prints the table and then says, in one line, whether the
+   coordinates are real. The verdict needs all of: at least two objects, every position
+   inside the guard, at least two distinct positions, and a team field that actually
+   separates them. */
+static void tnx_v47_probe(uintptr_t mode, int verbose) {
+    tnx_v47_obj_t objects[TNX_V47_OBJECT_MAX];
+    int rejected = 0;
+    int usable = 0;
+    int inRange = 0;
+    int distinct = 0;
+    int teamsOld[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+    int teamsNew[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+    int distinctOld = 0;
+    int distinctNew = 0;
+
+    memset(objects, 0, sizeof(objects));
+
+    g_v47_probe_done = 1;
+
+    tnx_v47_read_map(mode);
+
+    usable = tnx_v47_collect(mode, objects, TNX_V47_OBJECT_MAX, &rejected);
+
+    for (int i = 0; i < usable; i++) {
+        if (objects[i].x > -TNX_V47_COORD_ABS_MAX && objects[i].x < TNX_V47_COORD_ABS_MAX &&
+            objects[i].y > -TNX_V47_COORD_ABS_MAX && objects[i].y < TNX_V47_COORD_ABS_MAX) {
+            inRange++;
+        }
+
+        if (objects[i].teamOld >= 0 && objects[i].teamOld < 8) teamsOld[objects[i].teamOld] = 1;
+        if (objects[i].teamNew >= 0 && objects[i].teamNew < 8) teamsNew[objects[i].teamNew] = 1;
+
+        /* Distinct positions: an object is "new" if no earlier one shares its pair. */
+        {
+            int seen = 0;
+
+            for (int j = 0; j < i; j++) {
+                if (objects[j].x == objects[i].x && objects[j].y == objects[i].y) { seen = 1; break; }
+            }
+
+            if (!seen) distinct++;
+        }
+    }
+
+    for (int i = 0; i < 8; i++) {
+        if (teamsOld[i]) distinctOld++;
+        if (teamsNew[i]) distinctNew++;
+    }
+
+    /* Whichever field actually separates objects into sides wins; a tie keeps the
+       engine's own offset, because that one is not a guess. */
+    g_v47_team_off = (distinctOld > distinctNew) ? (int)TNX_OBJ_TEAM_OFF : (int)TNX_OBJ_TEAMENGINE_OFF;
+
+    tnx_logf("v47 man walk manager=%p usable=%d rejected=%d mapOk=%d mapW=%d mapH=%d "
+             "inRange=%d distinct=%d teamsOld=%d teamsNew=%d teamOff=0x%x",
+             (void *)mode, usable, rejected, g_v47_map_ok, g_v47_map_w, g_v47_map_h,
+             inRange, distinct, distinctOld, distinctNew, g_v47_team_off);
+
+    /* The long form is printed when the battle object changes -- i.e. once per match --
+       and the short form while the verdict is still failing, so a re-probe does not
+       spend the log budget restating offsets that did not move. */
+    if (verbose) {
+        tnx_logf("v47 offsets obj off=0x%llx/0x%llx x=0x%llx y=0x%llx teamOld=0x%llx teamNew=0x%llx "
+                 "owner=0x%llx dead=0x%llx active=0x%llx tilemap=0x%llx w=0x%llx",
+                 TNX_MGR_ARRAY_OFF, TNX_MGR_COUNT_OFF, TNX_OBJ_X_OFF, TNX_OBJ_Y_OFF,
+                 TNX_OBJ_TEAM_OFF, TNX_OBJ_TEAMENGINE_OFF, TNX_OBJ_OWNERINDEX_OFF,
+                 TNX_OBJ_DEADFLAG_OFF, TNX_OBJ_ACTIVEFLAG_OFF,
+                 TNX_MODE_TILEMAP_OFF, TNX_TILEMAP_WIDTH_OFF);
+
+        for (int i = 0; i < usable && i < 16; i++) {
+            tnx_logf("v47 obj[%02d] at=%p gid=%d pos=(%d,%d) own=%d teamOld=%d teamNew=%d "
+                     "dead=%d active=%d",
+                     i, (void *)objects[i].object, objects[i].gid, objects[i].x, objects[i].y,
+                     objects[i].ownerIndex, objects[i].teamOld, objects[i].teamNew,
+                     objects[i].dead, objects[i].activeFlag & 1);
+        }
+    }
+
+    g_v47_coord_usable = usable;
+    g_v47_coord_distinct = distinct;
+
+    g_v47_coord_ok = (usable >= 2 && inRange == usable && distinct >= 2 &&
+                      (distinctOld >= 2 || distinctNew >= 2)) ? 1 : 0;
+
+    tnx_logf("v47 coords ok=%d (need >=2 objects, all in range, >=2 distinct positions, "
+             "and a team field that splits them)",
+             g_v47_coord_ok);
+}
+
+static void tnx_autododge_v47(void) {
+    tnx_v47_obj_t objects[TNX_V47_OBJECT_MAX];
+    int32_t predictX = 0;
+    int32_t predictY = 0;
+    int rejected = 0;
+    int usable = 0;
+    int ownIndex = -1;
+    int32_t ownTeam = 0;
+    int ownX = 0;
+    int ownY = 0;
+    int64_t ownBest = 0;
+    float escapeX = 0.0f;
+    float escapeY = 0.0f;
+    int threats = 0;
+    int threatsAlive = 0;
+
+    if (!g_mode_object || !g_base) return;
+
+    if (g_v47_setpred_state < 0) {
+        g_v47_setpred_state = tnx_v47_verify_setprediction();
+        g_v47_setpred = g_v47_setpred_state ? (g_base + TNX_RVA_SETPREDICTION) : 0;
+    }
+
+    {
+        uint64_t probeNow = (uint64_t)(CFAbsoluteTimeGetCurrent() * 1000.0);
+        int changed = (g_v47_probe_object != g_mode_object);
+
+        if (!g_v47_probe_done || changed ||
+            (!g_v47_coord_ok && probeNow > g_v47_probe_last_ms + TNX_V47_REPROBE_MS)) {
+            g_v47_probe_object = g_mode_object;
+            g_v47_probe_last_ms = probeNow;
+            tnx_v47_probe(g_mode_object, changed || !g_v47_probe_done);
+        }
+    }
+
+    g_v47_ticks++;
+
+    if (!g_v47_setpred_state) {
+        if (g_v47_giveup_logs < 3) {
+            g_v47_giveup_logs++;
+            tnx_logf("v47 dodge idle: no verified actuator (setprediction state=%d)",
+                     g_v47_setpred_state);
+        }
+        return;
+    }
+
+    if (!g_v47_coord_ok) {
+        if (g_v47_giveup_logs < 3) {
+            g_v47_giveup_logs++;
+            tnx_logf("v47 dodge idle: coordinates not confirmed (usable=%d distinct=%d) -- "
+                     "read-only until they are", g_v47_coord_usable, g_v47_coord_distinct);
+        }
+        return;
+    }
+
+    memset(objects, 0, sizeof(objects));
+
+    usable = tnx_v47_collect(g_mode_object, objects, TNX_V47_OBJECT_MAX, &rejected);
+
+    if (usable < 2) return;
+
+    /* The prediction pair is where this client believes it is going. The object nearest
+       to it is our own character -- which is how "own" gets an identity without a
+       getter whose only known reference is for another build. */
+    if (!tnx_read_i32(g_mode_object + TNX_MODE_PREDICTX_OFF, &predictX)) return;
+    if (!tnx_read_i32(g_mode_object + TNX_MODE_PREDICTY_OFF, &predictY)) return;
+
+    if (predictX <= -TNX_V47_COORD_ABS_MAX || predictX >= TNX_V47_COORD_ABS_MAX) return;
+    if (predictY <= -TNX_V47_COORD_ABS_MAX || predictY >= TNX_V47_COORD_ABS_MAX) return;
+    if (predictX == 0 && predictY == 0) return;
+
+    for (int i = 0; i < usable; i++) {
+        int64_t dx = (int64_t)objects[i].x - (int64_t)predictX;
+        int64_t dy = (int64_t)objects[i].y - (int64_t)predictY;
+        int64_t distance = dx * dx + dy * dy;
+
+        if (ownIndex < 0 || distance < ownBest) {
+            ownIndex = i;
+            ownBest = distance;
+        }
+    }
+
+    if (ownIndex < 0) return;
+
+    /* The prediction has to land ON an object. If the nearest one is arbitrarily far,
+       then +0x30/+0x34 are not a position and the prediction is not a position either;
+       adding a step to that arithmetic and handing it to the setter would be steering by
+       noise. Failing here is the whole reason the actuator is safe to have at all. */
+    if (ownBest > TNX_V47_OWN_MAX_SQ) {
+        if (g_v47_giveup_logs < 3) {
+            g_v47_giveup_logs++;
+            tnx_logf("v47 dodge idle: prediction (%d,%d) is not near any object -- nearest "
+                     "squared distance %lld -- so +0x30/+0x34 are not positions",
+                     predictX, predictY, (long long)ownBest);
+        }
+        return;
+    }
+
+    /* A dead character has nowhere to dodge to. */
+    if (objects[ownIndex].dead) return;
+
+    ownTeam = (g_v47_team_off == (int)TNX_OBJ_TEAM_OFF) ? objects[ownIndex].teamOld
+                                                        : objects[ownIndex].teamNew;
+    ownX = objects[ownIndex].x;
+    ownY = objects[ownIndex].y;
+
+    for (int i = 0; i < usable; i++) {
+        int32_t team = 0;
+        float dx = 0.0f;
+        float dy = 0.0f;
+        float distance = 0.0f;
+        float weight = 0.0f;
+
+        if (i == ownIndex) continue;
+        if (objects[i].dead) continue;
+
+        team = (g_v47_team_off == (int)TNX_OBJ_TEAM_OFF) ? objects[i].teamOld
+                                                         : objects[i].teamNew;
+        if (team == ownTeam) continue;
+
+        /* Hostiles counted here, before the activity bit and before the range test, so
+           the three numbers in the log are strictly nested: hostilesAlive >=
+           enemiesActive >= enemiesInRange. A zero somewhere in that chain names which
+           test is wrong -- an inverted +0x1e8 bit shows as hostilesAlive non-zero with
+           enemiesActive zero, rather than as an unexplained empty dodge. */
+        threatsAlive++;
+
+        if ((objects[i].activeFlag & 1) == 0) continue;
+
+        dx = (float)(ownX - objects[i].x);
+        dy = (float)(ownY - objects[i].y);
+        distance = dx * dx + dy * dy;
+
+        if (distance > DODGE_RANGE_SQ || distance < 1.0f) continue;
+
+        /* Push directly away, weighted so the closest threat dominates the sum. */
+        weight = 1.0f / (sqrtf(distance) + 1.0f);
+        escapeX += dx * weight;
+        escapeY += dy * weight;
+        threats++;
+    }
+
+    if (threats == 0) {
+        if (g_v47_ticks % 256 == 0) {
+            tnx_logf("v47 live ticks=%llu own=(%d,%d) team=%d pred=(%d,%d) hostilesAlive=%d "
+                     "enemiesActive=%d enemiesInRange=0 writes=%llu threatsTotal=%llu",
+                     (unsigned long long)g_v47_ticks, ownX, ownY, ownTeam, predictX, predictY,
+                     threatsAlive, threats, (unsigned long long)g_v47_writes,
+                     (unsigned long long)g_v47_threat_ticks);
+        }
+        return;
+    }
+
+    g_v47_threat_ticks++;
+
+    {
+        float length = sqrtf(escapeX * escapeX + escapeY * escapeY);
+        uint64_t now = 0;
+        int targetX = 0;
+        int targetY = 0;
+
+        if (length <= 0.0001f) return;
+
+        escapeX /= length;
+        escapeY /= length;
+
+        now = (uint64_t)(CFAbsoluteTimeGetCurrent() * 1000.0);
+
+        if (now < g_v47_last_write_ms + (uint64_t)TNX_V47_DODGE_MIN_MS) return;
+
+        g_v47_last_write_ms = now;
+
+        targetX = ownX + (int)(escapeX * DODGE_STEP);
+        targetY = ownY + (int)(escapeY * DODGE_STEP);
+
+        if (targetX > TNX_V47_COORD_ABS_MAX) targetX = TNX_V47_COORD_ABS_MAX;
+        if (targetX < -TNX_V47_COORD_ABS_MAX) targetX = -TNX_V47_COORD_ABS_MAX;
+        if (targetY > TNX_V47_COORD_ABS_MAX) targetY = TNX_V47_COORD_ABS_MAX;
+        if (targetY < -TNX_V47_COORD_ABS_MAX) targetY = -TNX_V47_COORD_ABS_MAX;
+
+        ((tnx_v47_setpred_t)g_v47_setpred)((void *)g_mode_object, targetX, targetY);
+
+        g_v47_writes++;
+
+        if (g_v47_writes <= TNX_V47_LOG_FIRST || (g_v47_writes % TNX_V47_LOG_EVERY) == 0) {
+            tnx_logf("v47 write #%llu own=(%d,%d) team=%d hostilesAlive=%d enemiesInRange=%d "
+                     "step=(%d,%d) target=(%d,%d) predBefore=(%d,%d)",
+                     (unsigned long long)g_v47_writes, ownX, ownY, ownTeam,
+                     threatsAlive, threats, (int)(escapeX * DODGE_STEP),
+                     (int)(escapeY * DODGE_STEP), targetX, targetY, predictX, predictY);
+        }
+    }
+}
+
 static void tnx_dodge_plan(uintptr_t manager, int32_t team) {
     void *array = NULL;
     int32_t count = 0;

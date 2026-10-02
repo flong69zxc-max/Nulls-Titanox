@@ -366,6 +366,63 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_OBJ_HIT_DUMP_MAX 64
 #define TNX_OBJ_HIT_PRINT_MAX 24
 
+/* v46. THE VTABLE CENSUS -- and the reason the nine-entry list above stops being the question.
+
+   The 20:22 run answered what v45 was built for, in one dump. The live objects carry class tables
+   of their OWN and not one of them is in the probe list:
+
+       vt=0xf923e0   vt=0xf92468   vt=0x100a770   vt=0x1014f70   vt=0x1008be0   vt=0x1009290
+
+   and 0x100a770 alone appears under three separate heap-owned objects. The vote still could not
+   name an owner: `maxVotes=1` in all three passes, with a DIFFERENT topOwner in each, i.e. no
+   pointer at +0x20 ever collected a second vote. So the next hook cannot come from a list written
+   by hand -- the classes that exist have to be counted first, and that is all this does.
+
+   Every 16-byte aligned word of the pass whose value lands inside __DATA_CONST or __DATA is one
+   INSTANCE of the class table at that RVA, and the census counts them per table:
+
+     - random words cannot pollute it. __DATA_CONST is 868 KB and __DATA 1.1 MB, so an arbitrary
+       8-byte value lands in either with probability ~2e-13 -- far below one hit over the ~34
+       million aligned words of a pass;
+     - `count=` is the number of live instances of that class in the bytes this pass scanned, which
+       is the number that decides whether a class is worth hooking: tens of thousands is a leaf
+       object, five to fifty is a battle entity;
+     - `shaped=` counts how many of those instances ALSO passed the full object record layout (id,
+       team, owner index, 16-byte-aligned owner). Those are the instances that look like game
+       objects and not merely like C++ objects, and that column is the bridge from "a class exists"
+       to "a class is worth hooking";
+     - `ownerEqVt=` counts instances whose word at +0x20 is the SAME value as the word at +0x00.
+       That is the arithmetic signature of the 19:51 false-positive family, which until now existed
+       only as one hand-written equation in a comment. Here it is a count.
+
+   __DATA is included on purpose: the 20:22 log's `modehit[near]` lines show three __DATA slots
+   holding pointers into __TEXT (RVA 0x1b076c, 0x1b0920, 0x1b0a34), i.e. tables that live in
+   __DATA on this build. Counting only __DATA_CONST would have made them invisible.
+
+   The table is reset per pass for the same reason the vote table is: so the pass line and the dump
+   describe one pass and two passes can be compared. `spill=` means the entry table filled up,
+   which makes `distinct=` a floor rather than a count. */
+#define TNX_VTCENSUS_MAX 384
+#define TNX_VTCENSUS_PRINT 16
+#define TNX_VTCENSUS_SLOTS 12
+
+/* v46. THE READ BUDGET BECOMES A FUNCTION OF THE WINDOW.
+
+   The 20:22 log settles a question four versions got wrong. Both heap passes read ~540 MB and both
+   were cut off by the fixed 512 MB budget: pass 1 from 0x0 (which is ~520 MB of memory BELOW the
+   window plus a few MB of the window itself) and pass 3 from the window low. The two passes
+   therefore did not scan the same memory, and that is why the ninth vtprobe counter read 0 in
+   pass 1 and 92502 in pass 3 over two "identical" 540 MB sweeps. `next=0x2e6000000` on pass 1 was
+   never evidence of reaching the top of anything.
+
+   So the budget now follows the window: window span plus 64 MB, never below the old constant and
+   never above the cap. The window on this build is ~567 MB once the region list has been rebuilt,
+   so from then on one pass covers the whole of it -- which is the only condition under which
+   `vtprobe=0` means anything at all. The cap keeps a bogus 7776 MB window from turning one pass
+   into a minute of scanning, and `budget=`/`budgetHit=` in the pass line say which of the two
+   happened instead of leaving it to be inferred from `scanned=`. */
+#define TNX_HEAP_SCAN_BUDGET_MAX (768ull * 1024ull * 1024ull)
+
 #define TNX_OBJ_GLOBALID_OFF 0x8ULL
 
 /* THE correction that matters. REvengeBS: GameObj_team = 0x40, LogicGameObjectClient_ownerIndex
@@ -453,7 +510,7 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 
 /* Printed as the first line after "setup", so every log identifies the build that produced
    it. Two device logs were once spent comparing a new binary against an old one. */
-#define TNX_BUILD_TAG "titanox_45"
+#define TNX_BUILD_TAG "titanox_46"
 
 /* IN-LINE HOOKING IS IMPOSSIBLE ON THIS PROCESS -- measured, not assumed. The 17:38 log caught
    it directly:
@@ -661,8 +718,54 @@ static tnx_objhit_t g_objhits[TNX_OBJ_HIT_DUMP_MAX];
 static int g_objhit_count = 0;
 static int g_objhit_full = 0;                        /* more shaped words than the dump can hold */
 static unsigned long long g_objvote_owner_reg = 0;   /* +0x20 outside the image, in no kernel region */
+/* v46. ...and a fourth bucket, because the 20:22 run put 398 of its 597 shaped words in
+   `ownerNoRegion` and that number has two completely different explanations. The window is rebuilt
+   from the region list every tenth attempt and it SHRANK during that run -- 7776 MB at pass 1,
+   567 MB at pass 3 -- and one owner test rejects anything at or above the window high. An owner
+   above a window that moved is a WINDOW problem (the list is fine and the test's idea of "the heap"
+   is too narrow); an owner in no region at all is a REGION problem. Folding them together is the
+   same mistake v44 made with ownerImg, one level down. */
+static unsigned long long g_objvote_owner_above_win = 0;
 static int g_objvote_max_votes = 0;                  /* most votes any owner collected this pass */
 static uintptr_t g_objvote_top_owner = 0;            /* the owner behind that number */
+
+/* v46. Uncapped, and that is the point. `g_objhit_count` stops at the dump table's size, so the
+   identity `hits + skipped + ownerImg + ownerNoRegion = objShaped` could not be checked against it:
+   on the 20:22 run the left side came to 597 while the right side printed `64+`. A counter that is
+   allowed to stop counting turns the completeness check into decoration. */
+static unsigned long long g_objvote_shaped = 0;
+
+/* v46. The census. One entry per distinct class table seen at a 16-byte-aligned word of the pass,
+   in either data segment, with the three numbers that decide whether that class is interesting:
+   how many instances exist, how many of them passed the full object record layout, and how many
+   carry the same value at +0x00 and +0x20 (the 19:51 false-positive signature, now counted rather
+   than reasoned about). */
+typedef struct {
+    uintptr_t rva;
+    int seg;                                  /* 0 = __DATA_CONST, 1 = __DATA */
+    unsigned long long count;                 /* instances in the bytes this pass scanned */
+    unsigned long long shaped;                /* of those, how many passed the record layout */
+    unsigned long long ownerEqVt;             /* of those, how many read the same at +0x00 and +0x20 */
+    uintptr_t first;                          /* where the first instance was seen */
+} tnx_vtcensus_t;
+
+static tnx_vtcensus_t g_vtcensus[TNX_VTCENSUS_MAX];
+static int g_vtcensus_used = 0;
+static unsigned long long g_vtcensus_total = 0;
+static unsigned long long g_vtcensus_spill = 0;
+static uintptr_t g_vtcensus_dc_lo = 0;
+static uintptr_t g_vtcensus_dc_hi = 0;
+static uintptr_t g_vtcensus_d_lo = 0;
+static uintptr_t g_vtcensus_d_hi = 0;
+
+/* v46. The vtprobe counters accumulate across passes (that is what the pass line's `vtprobeAll=`
+   prints), so no single pass line can say what THAT pass counted. This snapshot turns the
+   difference into a printed number. The 20:22 run is exactly why it is needed: pass 1 printed nine
+   zeros and pass 3 printed 92502 on the ninth entry, over two passes that both reported ~540 MB
+   scanned, and nothing in the log said which pass produced which. `vtprobeFirst=` is the same idea
+   applied to the address: it names the first word that ever incremented each counter. */
+static unsigned long long g_vtprobe_pass[TNX_VTPROBE_COUNT];
+static uintptr_t g_vtprobe_first[TNX_VTPROBE_COUNT];
 
 /* v45. Why the pass line needs these. The walker drops any region larger than 1 GB (the process
    maps a ~385 GB guard) and its `continue` never touched a counter, so an arena hidden in one
@@ -3760,9 +3863,224 @@ static void tnx_vtprobe_note(uintptr_t vtable, uintptr_t absolute) {
     for (int k = 0; k < TNX_VTPROBE_COUNT; k++) {
         if (rva == g_vtprobe_rva[k]) {
             g_vtprobe_hits[k]++;
+
+            /* v46. Kept for the same reason the per-pass delta is kept: a running total that jumps
+               between two passes has to be attributable to an address, or the jump cannot be told
+               apart from a counter that is incrementing for the wrong reason. */
+            if (!g_vtprobe_first[k]) g_vtprobe_first[k] = absolute;
+
             return;
         }
     }
+}
+
+/* ---------------------------------------------------------------------------
+   v46. THE VTABLE CENSUS.
+
+   Why this replaces guessing. `hooks fired=0 of 7` had one candidate explanation left -- the hooked
+   classes are simply not instantiated -- and the vtprobe list could only test the nine tables
+   somebody had already named. The 20:22 run's objhit dump named six tables that DO exist and are
+   not in that list, and named them one instance at a time. The census counts every table instead:
+   whatever the live heap points at, in either data segment, ranked by how many instances carry it.
+
+   The cost is one range test per 16-byte aligned word of the pass and a linear scan only when a
+   word prints. The linear scan is over `g_vtcensus_used` entries, which is the number of DISTINCT
+   class tables, not the number of instances: 92502 instances of one table cost 92502 comparisons
+   against a list that stays a few dozen long.
+   --------------------------------------------------------------------------- */
+
+/* 0 = __DATA_CONST, 1 = __DATA, -1 = not a class table. Both ranges are captured once per pass from
+   the image's own Mach-O segments, never hard coded, so a different slide or a rebuilt image moves
+   them with it. */
+static int tnx_vtcensus_seg(uintptr_t value) {
+    if (!value || !g_base) return -1;
+    if (g_vtcensus_dc_lo && value >= g_vtcensus_dc_lo && value < g_vtcensus_dc_hi) return 0;
+    if (g_vtcensus_d_lo && value >= g_vtcensus_d_lo && value < g_vtcensus_d_hi) return 1;
+
+    return -1;
+}
+
+static void tnx_vtcensus_reset(void) {
+    g_vtcensus_used = 0;
+    g_vtcensus_total = 0;
+    g_vtcensus_spill = 0;
+
+    memset(g_vtcensus, 0, sizeof(g_vtcensus));
+}
+
+/* Found or, when asked, created. A NULL return with `create` set means the table is full, and that
+   is counted by the caller as spill -- an entry that cannot be created must never be silently
+   merged into another one. */
+static tnx_vtcensus_t *tnx_vtcensus_entry(uintptr_t rva, int seg, int create) {
+    for (int i = 0; i < g_vtcensus_used; i++) {
+        if (g_vtcensus[i].rva == rva && g_vtcensus[i].seg == seg) return &g_vtcensus[i];
+    }
+
+    if (!create) return NULL;
+    if (g_vtcensus_used >= TNX_VTCENSUS_MAX) {
+        g_vtcensus_spill++;
+
+        return NULL;
+    }
+
+    tnx_vtcensus_t *entry = &g_vtcensus[g_vtcensus_used++];
+
+    memset(entry, 0, sizeof(*entry));
+    entry->rva = rva;
+    entry->seg = seg;
+
+    return entry;
+}
+
+static void tnx_vtcensus_note(uintptr_t vtable, uintptr_t absolute, const uint8_t *buffer,
+                              size_t offset, size_t chunk) {
+    if (absolute & 0xf) return;
+    if (vtable & 7) return;
+
+    int seg = tnx_vtcensus_seg(vtable);
+
+    if (seg < 0) return;
+
+    tnx_vtcensus_t *entry = tnx_vtcensus_entry(vtable - g_base, seg, 1);
+
+    if (!entry) return;
+
+    entry->count++;
+    g_vtcensus_total++;
+
+    if (!entry->first) entry->first = absolute;
+
+    /* The +0x20 word is read only where the buffer really holds it. `w20 != vtable` is not an
+       error, it is the normal case; counting how often the two fields agree is what turns the
+       19:51 signature from an observation about one run into a number about every run. */
+    if (offset + TNX_SLOT_OWNER_OFF + sizeof(uintptr_t) <= chunk) {
+        uintptr_t w20 = 0;
+
+        memcpy(&w20, buffer + offset + TNX_SLOT_OWNER_OFF, sizeof(w20));
+
+        if (w20 == vtable) entry->ownerEqVt++;
+    }
+}
+
+/* Called from the object vote for every word that passed the WHOLE record layout. Looks up, never
+   creates: the word was already counted by the walk (the vote only ever runs on a word whose value
+   is a table in __DATA_CONST), so a missing entry would mean the two callers disagree, and creating
+   one here would hide exactly that. */
+static void tnx_vtcensus_shaped(uintptr_t vtable) {
+    int seg = tnx_vtcensus_seg(vtable);
+
+    if (seg < 0) return;
+
+    tnx_vtcensus_t *entry = tnx_vtcensus_entry(vtable - g_base, seg, 0);
+
+    if (entry) entry->shaped++;
+}
+
+/* The best entry by a chosen column. Used twice per pass: once for the most INSTANCES and once for
+   the most SHAPED instances. They answer different questions -- the first is the most common object
+   in the heap, the second is the class that most looks like a game object -- and on a build where
+   the two differ, the second is the one to hook. */
+static int tnx_vtcensus_top(int byShaped) {
+    int best = -1;
+
+    for (int i = 0; i < g_vtcensus_used; i++) {
+        unsigned long long here = byShaped ? g_vtcensus[i].shaped : g_vtcensus[i].count;
+
+        if (!here) continue;
+
+        if (best < 0) {
+            best = i;
+
+            continue;
+        }
+
+        unsigned long long there = byShaped ? g_vtcensus[best].shaped : g_vtcensus[best].count;
+
+        if (here > there) best = i;
+    }
+
+    return best;
+}
+
+/* The first slots of one class table, as RVAs. This is the line the NEXT version needs: a table
+   whose slots all resolve into __TEXT is a vtable and its slot RVAs are the hook targets, which is
+   how every hook in this file was chosen. Printed for at most two tables per pass, because the
+   interesting thing is not the volume but the first table that has instances and looks like a game
+   object. */
+static void tnx_vtcensus_slots(const tnx_vtcensus_t *entry) {
+    uint8_t bytes[TNX_VTCENSUS_SLOTS * sizeof(uintptr_t)];
+    char listed[512];
+    int used = 0;
+
+    if (!entry) return;
+    if (!tnx_copy(g_base + entry->rva, bytes, sizeof(bytes))) {
+        tnx_logf("vtslots rva=%#llx seg=%c unreadable - the table moved or is not mapped",
+                 (unsigned long long)entry->rva, entry->seg ? 'D' : 'C');
+
+        return;
+    }
+
+    for (int i = 0; i < TNX_VTCENSUS_SLOTS; i++) {
+        uintptr_t slot = 0;
+
+        memcpy(&slot, bytes + (size_t)i * sizeof(uintptr_t), sizeof(slot));
+
+        if (used > (int)sizeof(listed) - 24) break;
+
+        used += snprintf(listed + used, sizeof(listed) - (size_t)used, "%s%#llx", i ? "," : "",
+                         (unsigned long long)(slot > g_base ? slot - g_base : 0));
+    }
+
+    tnx_logf("vtslots rva=%#llx seg=%c count=%llu shaped=%llu slotRvas=%s",
+             (unsigned long long)entry->rva, entry->seg ? 'D' : 'C', entry->count, entry->shaped,
+             listed);
+}
+
+static void tnx_vtcensus_dump(void) {
+    int chosen[TNX_VTCENSUS_PRINT];
+    int nchosen = 0;
+
+    /* Printed even when empty: `vtcensus empty` and no vtcensus line at all are different facts,
+       and the 20:22 run's whole problem was a number that could not be told apart from its absence. */
+    tnx_logf("vtcensus pass=%d distinct=%d%s total=%llu spill=%llu dc=%p..%p data=%p..%p",
+             g_heap_passes, g_vtcensus_used, g_vtcensus_spill ? "+" : "", g_vtcensus_total,
+             g_vtcensus_spill, (void *)g_vtcensus_dc_lo, (void *)g_vtcensus_dc_hi,
+             (void *)g_vtcensus_d_lo, (void *)g_vtcensus_d_hi);
+
+    for (int k = 0; k < TNX_VTCENSUS_PRINT; k++) {
+        int best = -1;
+
+        for (int i = 0; i < g_vtcensus_used; i++) {
+            int taken = 0;
+
+            for (int j = 0; j < nchosen; j++) {
+                if (chosen[j] == i) {
+                    taken = 1;
+
+                    break;
+                }
+            }
+
+            if (taken) continue;
+            if (best < 0 || g_vtcensus[i].count > g_vtcensus[best].count) best = i;
+        }
+
+        if (best < 0) break;
+
+        chosen[nchosen++] = best;
+
+        const tnx_vtcensus_t *entry = &g_vtcensus[best];
+
+        tnx_logf("vtcensus #%d rva=%#llx seg=%c count=%llu shaped=%llu ownerEqVt=%llu first=%p", k,
+                 (unsigned long long)entry->rva, entry->seg ? 'D' : 'C', entry->count,
+                 entry->shaped, entry->ownerEqVt, (void *)entry->first);
+    }
+
+    int most = tnx_vtcensus_top(0);
+    int mostShaped = tnx_vtcensus_top(1);
+
+    if (most >= 0) tnx_vtcensus_slots(&g_vtcensus[most]);
+    if (mostShaped >= 0 && mostShaped != most) tnx_vtcensus_slots(&g_vtcensus[mostShaped]);
 }
 
 /* ---------------------------------------------------------------------------
@@ -3864,12 +4182,12 @@ static void tnx_objhit_note(uintptr_t at, uintptr_t vt, uintptr_t owner, int32_t
    contain the words that could become a capture, so the order is not the scan order. `vt=` is the
    class table as an RVA, the only form in which it can be compared with the vtprobe list. */
 static void tnx_objhit_dump(void) {
-    static const char *const names[3] = { "heap", "image", "noRegion" };
+    static const char *const names[4] = { "heap", "image", "noRegion", "aboveWin" };
     int printed = 0;
 
     if (!g_objhit_count) return;
 
-    for (int want = 0; want < 3 && printed < TNX_OBJ_HIT_PRINT_MAX; want++) {
+    for (int want = 0; want < 4 && printed < TNX_OBJ_HIT_PRINT_MAX; want++) {
         for (int i = 0; i < g_objhit_count && printed < TNX_OBJ_HIT_PRINT_MAX; i++) {
             const tnx_objhit_t *hit = &g_objhits[i];
 
@@ -3887,7 +4205,8 @@ static void tnx_objhit_dump(void) {
 
     if (g_objhit_full || printed < g_objhit_count) {
         tnx_logf("objhit truncated: shown=%d recorded=%d%s - the real number of shaped words is the "
-                 "objvote line's hits+skipped+ownerImg+ownerNoRegion", printed, g_objhit_count,
+                 "objvote line's hits+skipped+ownerImg+ownerNoRegion+ownerAboveWin", printed,
+                 g_objhit_count,
                  g_objhit_full ? "+" : "");
     }
 }
@@ -3966,23 +4285,44 @@ static void tnx_probe_object_vote(uintptr_t cursor, size_t offset, const uint8_t
        owner=0x109fd8d30 -- __DATA_CONST -- with `vt0` equal to owner minus base. The positive
        residency test replaces it.
 
-       v45 counts the two ways that test can fail SEPARATELY. An owner inside the image span is
-       static data; an owner outside the image but inside no region the kernel reported is a heap
-       pointer the region list failed to cover. v44 folded both into `ownerImg`, which is exactly
-       the kind of merged counter that lets a broken region enumeration hide behind a
-       correct-looking number -- the 20:06 run printed `ownerImg=45` and no log could tell which of
-       the two it was. */
+        v45 counts the ways that test can fail SEPARATELY, and v46 finds one more of them. An owner
+        inside the image span is static data; an owner outside the image but inside no region the
+        kernel reported is a heap pointer the region list failed to cover; and an owner above the
+        window high, on a run whose window was rebuilt halfway through and got 7200 MB smaller, is
+        neither -- it is a real pointer outside a window that is too small. v44 folded all of this
+        into `ownerImg`, which is exactly the kind of merged counter that lets a broken enumeration
+        hide behind a correct-looking number -- the 20:06 run printed `ownerImg=45` and no log could
+        tell which of the causes it was. */
     /* Judged once and kept: tnx_owner_is_heap walks to the Mach-O header through
        tnx_heap_resident, and doing that three times per shaped word would cost more than the whole
        buffer-local test it belongs to. */
     ownerClass = tnx_owner_is_heap(owner) ? 0 : (tnx_in_image_span(owner) ? 1 : 2);
 
+    /* The image span is tested before the window on purpose: an address inside the loaded program
+       is static data whether or not it is also above the window high, and reporting it as "above
+       the window" would turn the one case that is a real false positive into an arithmetic quirk.
+       Only what is left -- outside the image, above the window, in no region -- gets the new
+       bucket, and that combination points at the window rather than at the region list. */
+    if (ownerClass == 2 && g_heap_window_high && owner >= g_heap_window_high) ownerClass = 3;
+
     if (ownerClass == 1) g_objvote_owner_img++;
     else if (ownerClass == 2) g_objvote_owner_reg++;
+    else if (ownerClass == 3) g_objvote_owner_above_win++;
 
     /* Recorded whether or not it goes on to vote: the dump's job is to say what the word IS, and
        the rejected ones are what a truncated dump is allowed to drop first. */
     tnx_objhit_note(absolute, vtable, owner, gid, team, ownerIdx, deadOk, ownerClass);
+
+    /* v46. Counted here, where the word has passed EVERY field, so `objShaped=` in the objvote line
+       is the true number and the identity hits + skipped + ownerImg + ownerNoRegion + ownerAboveWin
+       = objShaped can actually be checked. The dump's own count stays capped, and says so
+       separately as objhitRec=. */
+    g_objvote_shaped++;
+
+    /* And the class table is credited with one game-object-shaped instance. The census entry already
+       exists -- this word was counted by the walk one line earlier, and the vote only runs on values
+       inside __DATA_CONST -- so this lookup never creates. */
+    tnx_vtcensus_shaped(vtable);
 
     if (ownerClass != 0) return;
 
@@ -4056,18 +4396,23 @@ static void tnx_object_vote_finish(void) {
     }
 
     /* Always printed, even at zero. `objvote hits=0` and `objvote hits=4000` mean completely
-       different things and no log should be able to confuse the two. The two reject counters are
-       here for the same purpose: they are what turns a small `owners=` from a mystery into a
-       measurement. `gids=64+` means the distinct-id list was full and the printed number is a
+       different things and no log should be able to confuse the two. The reject counters are here
+       for the same purpose -- ownerImg / ownerNoRegion / ownerAboveWin are three different reasons
+       for a word not to vote, and each has a different fix -- and `objShaped=` is their sum with
+       `hits=` and `skipped=`, which is what turns a small `owners=` from a mystery into a
+       measurement. `gids=64+` means the distinct-id list was full, so the printed number is a
        floor, not a count. */
     tnx_logf("objvote pass=%d hits=%llu skipped=%llu owners=%d deadOk=%d best=%p gids=%d%s "
-             "confirm=%d teamCount=%d ownerImg=%llu ownerNoRegion=%llu objImg=%llu objShaped=%d%s "
+             "confirm=%d teamCount=%d ownerImg=%llu ownerNoRegion=%llu ownerAboveWin=%llu "
+             "objImg=%llu objShaped=%llu "
+             "objhitRec=%d%s "
              "maxVotes=%d topOwner=%p teamsMin=%d",
              g_heap_passes, g_objvote_hits, g_objvote_skipped, g_owner_vote_count,
              g_objvote_dead_seen, (void *)g_objvote_best_owner, g_objvote_best_gids,
              g_objvote_best_gids_full ? "+" : "", g_objvote_confirm, g_objvote_best_teamcount,
-             g_objvote_owner_img, g_objvote_owner_reg, g_objvote_obj_img, g_objhit_count,
-             g_objhit_full ? "+" : "", g_objvote_max_votes, (void *)g_objvote_top_owner,
+             g_objvote_owner_img, g_objvote_owner_reg, g_objvote_owner_above_win, g_objvote_obj_img,
+             g_objvote_shaped,
+             g_objhit_count, g_objhit_full ? "+" : "", g_objvote_max_votes, (void *)g_objvote_top_owner,
              TNX_OWNER_VOTE_TEAMS_MIN);
 
     /* The objects themselves, not just how many there were. Printed before the pass line so the two
@@ -4187,6 +4532,10 @@ static void tnx_slot_diag(const char *why) {
 static void tnx_diag_report(const char *why) {
     const char *verdict = "no battle-shaped structure in the memory scanned so far";
 
+    /* v46. One branch below names the measured class instead of describing the shape of a vote, and
+       a verdict built from numbers has to live somewhere that outlives the call. */
+    char verdictBuf[512] = {0};
+
     /* Ordered by what the run established, strongest conclusion first, and the overrides below
        no longer contradict it.
 
@@ -4224,8 +4573,31 @@ static void tnx_diag_report(const char *why) {
            next. */
         /* The numbers are not hard coded into this sentence: it has to be true for any run that
            lands here, and a verdict that quotes the shape of one old log is a verdict that lies on
-           the next one. The counts are in the objvote line printed beside it. */
-        verdict = "OBJECT VOTE matched real objects but the pointer at +0x20 never repeated - almost as many owners as objects, so +0x20 is not the shared owning manager on this build; read the objhit dump for the class tables the live objects carry";
+           the next one. The counts are in the objvote line printed beside it.
+
+           v46 goes one step further and NAMES the class, because v45's version of this sentence
+           ended with "read the objhit dump and work it out". The census already worked it out: the
+           table with the most game-object-shaped instances is a measured fact by the time this line
+           is built, and its slot RVAs are on the vtslots line. */
+        int cidx = tnx_vtcensus_top(1);
+
+        if (cidx < 0) cidx = tnx_vtcensus_top(0);
+
+        if (cidx >= 0) {
+            snprintf(verdictBuf, sizeof(verdictBuf),
+                     "OBJECT VOTE matched real objects but +0x20 never repeated (%d owners for %llu "
+                     "objects), so +0x20 is not the shared owning manager on this build. The class "
+                     "tables the live heap really carries are in the vtcensus lines; the one with the "
+                     "most game-object-shaped instances is RVA %#llx (%llu instances, %llu shaped) "
+                     "and its first slot RVAs are on the vtslots line - that is where the next hook "
+                     "goes",
+                     g_owner_vote_count, g_objvote_hits,
+                     (unsigned long long)g_vtcensus[cidx].rva, g_vtcensus[cidx].count,
+                     g_vtcensus[cidx].shaped);
+            verdict = verdictBuf;
+        } else {
+            verdict = "OBJECT VOTE matched real objects but +0x20 never repeated - almost as many owners as objects, so +0x20 is not the shared owning manager on this build; and no table of theirs survived in the census, which is itself the finding - read the objhit dump for the class tables the live objects carry";
+        }
     } else if (g_objvote_hits > 0) {
         verdict = "OBJECT VOTE matched object-shaped words but no owner reached the distinct-id minimum - the layout is partly recognised";
     } else if (g_mode_object) {
@@ -4278,17 +4650,30 @@ static void tnx_diag_report(const char *why) {
        facts: the hooks were not dispatched, and that says nothing yet about whether a match
        ran. The vtprobe numbers in the pass line decide whether the class even exists. */
     if (g_slot_hits_total == 0 && g_heap_passes > 0) {
-        /* The caveat is part of the sentence now. `vtprobe=0` is a statement about the bytes
-           that were actually scanned, and on the 19:34 run those were 542 MB of a 7760 MB span
-           -- 7% -- because the cursor kept resetting to 0x0. The pass line carries `next=` and
-           `span=` so the coverage behind any vtprobe verdict can be checked directly. */
-        tnx_logf("DIAG note: none of the seven slots was ever dispatched, and from v45 that is an "
-                 "answered question rather than an open one: on the 20:06 run vtprobe read 0 for all "
-                 "nine class tables over a COMPLETE sweep (pass 1 reached the top of the address "
-                 "space, pass 2 finished it and wrapped). `scanned=` is the bytes actually read; "
-                 "`winSpan=` is only hi minus lo of the window and is not coverage. The seven hooked "
-                 "classes have no live instance, so read the `objhit pass=` lines: the `vt=` there "
-                 "is the class table the real objects carry, and it is the one to hook next");
+        /* v46 RETRACTS the sentence that stood here. v45 announced that the 20:06 run had made
+           `vtprobe=0` an answered question by covering the address space completely, and the 20:22
+           run refutes it with two numbers from one build: the ninth counter read 0 on a pass that
+           scanned 540 MB from 0x0 and 92502 on a pass that scanned 539 MB from the window low. Both
+           were cut off by the same fixed 512 MB budget, and because the two passes started in
+           different places they were cut off over DIFFERENT memory. Neither was complete, so
+           `vtprobe=0` was never the statement it was advertised as -- and the same applies to the
+           20:06 conclusion this project has been carrying since.
+
+           The counters accumulate, so a zero is only readable next to its per-pass delta and its
+           budget flag: it means something once a pass with budgetHit=0 has covered the window. What
+           does answer the question directly is the census, which counts every table the live heap
+           points at rather than testing nine names somebody chose by hand. */
+        tnx_logf("DIAG note: none of the seven slots was ever dispatched - which is NOT the same as "
+                 "the seven classes being absent. The 20:22 run measured a pass from 0x0 and a pass "
+                 "from the window low, both cut off by the same byte budget, and the ninth vtprobe "
+                 "counter read 0 on the first and 92502 on the second. A zero counts only when that "
+                 "pass reports budgetHit=0, which is why the pass line now carries budget=, "
+                 "budgetHit= and readTo= beside scanned= and winSpan=. `vtprobePass=` is this pass, "
+                 "`vtprobeAll=` the running total, `vtprobeFirst=` the address behind each non-zero "
+                 "counter. The classes that DO exist are enumerated by the `vtcensus` lines: "
+                 "`count=` is live instances, `shaped=` how many of them also passed the full object "
+                 "record layout, and `vtslots` gives the first slot RVAs of the two most interesting "
+                 "tables - that is where the next hook goes");
     }
 
     tnx_trail_dump();
@@ -4299,8 +4684,9 @@ static void tnx_diag_report(const char *why) {
              "capRej=%d/%d bestCount=%d bestLive=%d mgr=%p adopted=%d vfx=%d mx=%d "
              "chain=%d/%d chainSkip=%d stable=%d own=%d gid=%d "
              "objvote=%llu skipped=%llu owners=%d best=%p gids=%d%s confirm=%d teamCount=%d "
-             "deadOk=%d ownerImg=%llu ownerNoRegion=%llu objImg=%llu objShaped=%d maxVotes=%d "
-             "bigSkip=%d",
+             "deadOk=%d ownerImg=%llu ownerNoRegion=%llu ownerAboveWin=%llu objImg=%llu "
+             "objShaped=%llu maxVotes=%d "
+             "bigSkip=%d vtcensus=%d/%llu",
              why ? why : "?", g_votescan_attempts, TNX_VOTESCAN_ATTEMPTS, g_heap_passes,
              g_heap_covered / (1024ull * 1024ull), g_manager_probes_total, TNX_MANAGER_PROBE_LIMIT,
              g_manager_skipped, g_manager_cap_rejects, g_manager_saw_cap,
@@ -4311,8 +4697,10 @@ static void tnx_diag_report(const char *why) {
              g_objvote_hits, g_objvote_skipped, g_owner_vote_count,
              (void *)g_objvote_best_owner, g_objvote_best_gids,
              g_objvote_best_gids_full ? "+" : "", g_objvote_confirm, g_objvote_best_teamcount,
-             g_objvote_dead_seen, g_objvote_owner_img, g_objvote_owner_reg, g_objvote_obj_img,
-             g_objhit_count, g_objvote_max_votes, g_heap_big_skip);
+              g_objvote_dead_seen, g_objvote_owner_img, g_objvote_owner_reg,
+              g_objvote_owner_above_win, g_objvote_obj_img,
+              g_objvote_shaped, g_objvote_max_votes, g_heap_big_skip,
+              g_vtcensus_used, g_vtcensus_total);
 
     tnx_logf("DIAG verdict: %s", verdict);
 
@@ -4455,16 +4843,26 @@ static void tnx_scan_heap_for_mode(void) {
     g_objvote_dead_seen = 0;
     g_objvote_owner_img = 0;
     g_objvote_owner_reg = 0;
+    g_objvote_owner_above_win = 0;
     g_objvote_obj_img = 0;
     g_objvote_max_votes = 0;
     g_objvote_top_owner = 0;
     g_objhit_count = 0;
     g_objhit_full = 0;
+    g_objvote_shaped = 0;
     g_heap_img_skip = 0;
     g_heap_ro_skip = 0;
     g_heap_big_skip = 0;
     g_heap_big_bytes = 0;
     g_heap_huge_skip = 0;
+
+    /* v46. The census is per pass for the same reason the vote table is, and the vtprobe snapshot is
+       what separates this pass's contribution from the running total. Both are reset/snapshotted
+       here, before a single byte is read, so neither can describe a different pass from the line
+       that prints it. */
+    tnx_vtcensus_reset();
+
+    for (int k = 0; k < TNX_VTPROBE_COUNT; k++) g_vtprobe_pass[k] = g_vtprobe_hits[k];
 
     /* The window is captured here and printed with the pass, instead of being read at print time.
        tnx_heap_regions_refresh runs again every tenth attempt, so v43's `span` changed between
@@ -4473,11 +4871,30 @@ static void tnx_scan_heap_for_mode(void) {
     uintptr_t winLo = g_heap_window_low;
     uintptr_t winHi = g_heap_window_high;
 
+    /* v46. THE READ BUDGET, pinned to the pass. The fixed 512 MB constant cut both 20:22 passes
+       short, and because the two passes started at different addresses they were cut short on
+       DIFFERENT memory -- pass 1 from 0x0, which is mostly memory below the window, and pass 3 from
+       the window low. The two `scanned=` values agreed to within 1 MB and the two vtprobe readings
+       did not, which is what that disagreement looks like from the outside. Following the window
+       makes one pass cover the whole of it, and `budget=`/`budgetHit=` say whether it did. */
+    uint64_t budgetNow = (winHi > winLo ? (uint64_t)(winHi - winLo) : 0) + (64ull << 20);
+
+    if (budgetNow < TNX_HEAP_SCAN_BUDGET) budgetNow = TNX_HEAP_SCAN_BUDGET;
+    if (budgetNow > TNX_HEAP_SCAN_BUDGET_MAX) budgetNow = TNX_HEAP_SCAN_BUDGET_MAX;
+
     /* The chain probe needs the runtime bounds of __DATA_CONST, because the test it replaces was
-       a hardcoded list of 37 vtable RVAs that the live mode's class is not in. */
+       a hardcoded list of 37 vtable RVAs that the live mode's class is not in. v46 uses the same
+       call to give the census its two ranges, so a census entry and an object-vote field-1 test can
+       never disagree about what "a table in const data" means. */
     uintptr_t dcLo = 0;
     uintptr_t dcHi = 0;
     BOOL haveDC = tnx_segment_range("__DATA_CONST", &dcLo, &dcHi);
+
+    g_vtcensus_dc_lo = dcLo;
+    g_vtcensus_dc_hi = dcHi;
+    g_vtcensus_d_lo = 0;
+    g_vtcensus_d_hi = 0;
+    tnx_segment_range("__DATA", &g_vtcensus_d_lo, &g_vtcensus_d_hi);
 
     g_heap_passes++;
     int regions = 0;
@@ -4486,7 +4903,15 @@ static void tnx_scan_heap_for_mode(void) {
     int strongHits = 0;
     int verifiedHits = 0;
 
-    while (regions < 8192 && scanned < TNX_HEAP_SCAN_BUDGET) {
+    /* v46. Where the reading actually stopped, and how many words that was. `scanned=` alone could
+       not distinguish "read the whole window" from "read 540 MB of something", which is the exact
+       confusion the 20:22 run produced. `readStop` is only set when the budget cut a region short;
+       when it is set the cursor resumes THERE, so the unread tail of a region is no longer thrown
+       away with it -- the old code advanced to the end of the region and lost that tail forever. */
+    uintptr_t readStop = 0;
+    size_t words = 0;
+
+    while (regions < 8192 && scanned < budgetNow) {
         vm_size_t size = 0;
         vm_region_basic_info_data_64_t info;
         mach_msg_type_number_t infoCount = VM_REGION_BASIC_INFO_COUNT_64;
@@ -4544,7 +4969,7 @@ static void tnx_scan_heap_for_mode(void) {
             uint64_t remaining = (uint64_t)size;
             uintptr_t cursor = (uintptr_t)address;
 
-            while (remaining >= 16 && scanned < TNX_HEAP_SCAN_BUDGET) {
+            while (remaining >= 16 && scanned < budgetNow) {
                 size_t chunk = (size_t)(remaining < TNX_HEAP_CHUNK ? remaining : (uint64_t)TNX_HEAP_CHUNK);
                 uint8_t *buffer = (uint8_t *)malloc(chunk);
 
@@ -4560,6 +4985,11 @@ static void tnx_scan_heap_for_mode(void) {
 
                         /* Absolute address, not the offset: see tnx_vtprobe_note. */
                         tnx_vtprobe_note(vtable, cursor + offset);
+
+                        /* v46. The same word, counted by class instead of matched against nine
+                           names. Runs for every 16-byte aligned word of the pass, next to the probe
+                           it generalises, so the two can never disagree about which words they saw. */
+                        tnx_vtcensus_note(vtable, cursor + offset, buffer, offset, chunk);
 
                         if (haveDC) {
                             tnx_probe_mode_chain(cursor, offset, buffer, chunk, dcLo, dcHi);
@@ -4618,7 +5048,14 @@ static void tnx_scan_heap_for_mode(void) {
                 scanned += step;
                 cursor += step;
                 remaining -= step;
+                words += chunk / sizeof(uintptr_t);
             }
+
+            /* The budget cut this region short: remember exactly where, because the tail of the
+               region is memory this pass did not read and the next pass has to start here rather
+               than past the whole region. Only set when the region was NOT consumed, so a pass that
+               ends on a region boundary keeps the plain cursor. */
+            if (scanned >= budgetNow && remaining >= 16) readStop = cursor;
         } else {
             /* Counted, not skipped-in-silence: regions that are neither the image, nor writable, nor
                at least one page. With this the pass line closes exactly -- regions = imgSkip + roSkip
@@ -4649,10 +5086,16 @@ static void tnx_scan_heap_for_mode(void) {
        every conclusion read off it -- `vtprobe=0` most of all -- was really a statement about
        that 7%.
 
-       The cursor now only ever moves forward, and wraps to the low end of the WINDOW (never to
-       address zero) once it has passed the top. Budget exhaustion is no longer a special case:
-       the pass resumes exactly where it stopped. */
-    uintptr_t nextAddress = (uintptr_t)address;
+        The cursor now only ever moves forward, and wraps to the low end of the WINDOW (never to
+        address zero) once it has passed the top. Budget exhaustion is no longer a special case:
+        the pass resumes exactly where it stopped.
+
+        v46 closes the last hole in that sentence. `next=` was the end of the region the budget
+        died in, so the unread TAIL of that region was skipped by every future pass as well -- the
+        resume point was past memory nobody had looked at. When the budget cuts a region short the
+        cursor is now the address where reading stopped, and `readTo=` in the pass line is that
+        same address, so the claim and the number cannot drift apart. */
+    uintptr_t nextAddress = readStop ? readStop : (uintptr_t)address;
 
     if (regions >= 8192 || (g_heap_window_high && nextAddress >= g_heap_window_high)) {
         g_heap_scan_next = g_heap_window_low;
@@ -4672,37 +5115,66 @@ static void tnx_scan_heap_for_mode(void) {
     g_heap_covered += (unsigned long long)scanned;
 
     char vtbuf[160];
+    char vtpass[160];
     int vused = 0;
+    int pused = 0;
 
     for (int k = 0; k < TNX_VTPROBE_COUNT; k++) {
-        if (vused > (int)sizeof(vtbuf) - 24) break;
+        if (vused > (int)sizeof(vtbuf) - 24 || pused > (int)sizeof(vtpass) - 24) break;
 
         vused += snprintf(vtbuf + vused, sizeof(vtbuf) - (size_t)vused, "%s%llu", k ? "," : "",
                           g_vtprobe_hits[k]);
+        pused += snprintf(vtpass + pused, sizeof(vtpass) - (size_t)pused, "%s%llu", k ? "," : "",
+                          g_vtprobe_hits[k] - g_vtprobe_pass[k]);
     }
 
     /* Runs BEFORE the summary line, so every field of that line belongs to the pass being
        reported. v43 ran it after, which is why the pass line printed the previous pass's winner:
        on the 19:51 run it said `best=0x0` while the `objvote owner=` line directly below it named
-       0x109fda770, and on the next pass the two swapped. */
+       0x109fda770, and on the next pass the two swapped. Same rule for the census, which is dumped
+       here and not after: its `shaped=` column is filled in by the vote that just ran. */
     tnx_object_vote_finish();
+    tnx_vtcensus_dump();
 
-    tnx_logf("votescan heap pass=%d from=%p scanned=%zu regions=%d imgSkip=%d roSkip=%d bigSkip=%d "
-             "bigBytes=%lluMB hugeSkip=%d hits=%d vfx=%d mgr=%p "
+    tnx_logf("votescan heap pass=%d from=%p scanned=%zu words=%zu regions=%d imgSkip=%d roSkip=%d "
+             "bigSkip=%d "
+             "bigBytes=%lluMB hugeSkip=%d budget=%lluMB budgetHit=%d readTo=%p hits=%d vfx=%d mgr=%p "
              "probes=%d/%d skipped=%d cap=%d/%d loose=%d window=%d bestCount=%d bestLive=%d "
-             "trailBest=%d stable=%d chain=%d/%d ready=%d skip=%d live=%d own=%d gid=%d vtprobe=%s "
+             "trailBest=%d stable=%d chain=%d/%d ready=%d skip=%d live=%d own=%d gid=%d "
+             "vtprobePass=%s vtprobeAll=%s vtcensus=%d/%llu vtSpill=%llu "
              "next=%p win=%p..%p winSpan=%lluMB",
-             g_heap_passes, (void *)startAddress, scanned, regions, g_heap_img_skip, g_heap_ro_skip,
-             g_heap_big_skip, g_heap_big_bytes / (1024ull * 1024ull), g_heap_huge_skip, hits,
+             g_heap_passes, (void *)startAddress, scanned, words, regions, g_heap_img_skip,
+             g_heap_ro_skip,
+             g_heap_big_skip, g_heap_big_bytes / (1024ull * 1024ull), g_heap_huge_skip,
+             budgetNow / (1024ull * 1024ull), readStop ? 1 : 0, (void *)readStop, hits,
              verifiedHits,
              (void *)g_manager_object, g_manager_probes, TNX_MANAGER_PROBE_LIMIT,
              g_manager_skipped, g_manager_cap_rejects, g_manager_saw_cap,
              g_manager_loose_count, g_manager_window_rejects,
              g_manager_best_count, g_manager_best_live, g_trail_best, g_seen_stable,
              g_chain_checks, g_chain_probes, g_chain_ready, g_chain_skipped,
-             g_chain_best_live, g_chain_best_own, g_chain_best_gid, vtbuf,
+             g_chain_best_live, g_chain_best_own, g_chain_best_gid, vtpass, vtbuf,
+             g_vtcensus_used, g_vtcensus_total, g_vtcensus_spill,
              (void *)g_heap_scan_next, (void *)winLo, (void *)winHi,
              (unsigned long long)(winHi > winLo ? (winHi - winLo) / (1024ull * 1024ull) : 0));
+
+    /* v46. The first word that ever incremented each non-zero counter, on its own line and only
+       when there is something to name. This is the line that makes a jump between two passes
+       auditable: `vtprobeAll=...92502` says a number, this says which address produced it. */
+    {
+        char firsts[320];
+        int fused = 0;
+
+        for (int k = 0; k < TNX_VTPROBE_COUNT; k++) {
+            if (!g_vtprobe_first[k]) continue;
+            if (fused > (int)sizeof(firsts) - 40) break;
+
+            fused += snprintf(firsts + fused, sizeof(firsts) - (size_t)fused, "%s%d@%p",
+                              fused ? " " : "", k, (void *)g_vtprobe_first[k]);
+        }
+
+        if (fused) tnx_logf("vtprobeFirst pass=%d %s", g_heap_passes, firsts);
+    }
 }
 
 static void tnx_locate_battle_mode(void) {
@@ -5034,13 +5506,20 @@ static void tnx_report_manager(const char *tag, uintptr_t manager) {
                  is the direct answer to `hooks fired=0`. These are printed for the WINNER only, so
                  below the id minimum the line does not exist at all; use `objhit` instead.
 
-      ownerNoRegion= owners outside the image span but inside no region the kernel reported. This is
-                 NOT static data: a large value means the region list does not cover writable
-                 memory (see `capped=` on the heapwin line), and that would reject real managers
-                 while looking exactly like a table.
-      objShaped= how many shaped words the dump recorded. The identity to check is
-                 hits + skipped + ownerImg + ownerNoRegion = objShaped; if it does not hold, a
-                 filter dropped a word without printing why.
+      ownerNoRegion/ownerAboveWin= the two ways the positive owner test can fail without the owner
+                 being static data, and v46 keeps them apart because their fixes are opposite. An
+                 owner ABOVE the window high is a window problem: the window is rebuilt from the
+                 region list every tenth attempt and it SHRANK during the 20:22 run, from 7776 MB to
+                 567 MB, so owners of real objects fell outside it. An owner in no region at all is a
+                 REGION problem (`capped=` on the heapwin line, or regions wider than
+                 TNX_HEAP_REGION_MAX_SIZE, which the list drops). v45 merged both into one number,
+                 which is the same mistake v44 made with ownerImg.
+      objShaped= how many shaped words there were, counted UNCAPPED. The identity to check is
+                 hits + skipped + ownerImg + ownerNoRegion + ownerAboveWin = objShaped; if it does
+                 not hold, a filter dropped a word without printing why. objhitRec= is only how many
+                 of them the dump table could remember, so it is a floor and by design not the
+                 number the identity uses -- v45 printed the capped count as objShaped, which made
+                 the check impossible exactly when there was something to check.
       maxVotes/topOwner= the owner with the most votes REGARDLESS of the id minimum, so a `best=0x0`
                  line still names the strongest candidate the pass had instead of nothing.
 
@@ -5050,7 +5529,8 @@ static void tnx_report_manager(const char *tag, uintptr_t manager) {
         objhit pass=1 #1 at=0x12a41c2b0 vt=0x1008d30 gid=1 team=0 own=0 dead=0 owner=0x109fd8d30 ownerClass=image
         objhit truncated: shown=24 recorded=64+ - ...
 
-    One line per object-shaped word, heap-owned first, then `image`, then `noRegion`. `vt=` is the
+    One line per object-shaped word, heap-owned first, then `image`, `noRegion` and `aboveWin`.
+    `vt=` is the
     class table as an RVA, and it is the number that ends the `hooks fired=0` question: it is what
     the LIVE objects carry, and it is none of the nine entries of the vtprobe list. `dead=` is the
     byte at +0xd0 -- counted, never required, because its offset is the one that comes only from the
@@ -5059,20 +5539,51 @@ static void tnx_report_manager(const char *tag, uintptr_t manager) {
     the vote can never win however many objects exist: that is a conclusion the dump reaches at a
     glance and the vote report could not reach at all.
 
-    THE PASS LINE, in the terms v45 fixed:
+    v46: THE CENSUS -- the lines that replace the question "which class should be hooked".
+
+        vtcensus pass=1 distinct=23 total=140233 spill=0 dc=0x106744000..0x106818000 data=...
+        vtcensus #0 rva=0x1008d30 seg=C count=92502 shaped=7 ownerEqVt=92502 first=0x102178390
+        vtslots rva=0x100a770 seg=C count=41 shaped=3 slotRvas=0x1b076c,0x1b0818,...
+
+    Every 16-byte aligned word of the pass whose value lands in __DATA_CONST or __DATA is one
+    instance of the class table at that RVA. `count=` is how many instances exist in the bytes this
+    pass read, `shaped=` how many of them also passed the full object record layout (so they look
+    like game objects and not merely like C++ objects), and `ownerEqVt=` how many read the same value
+    at +0x00 and +0x20 -- the arithmetic signature of the 19:51 false positive, as a count. `seg=D`
+    entries are tables in __DATA, which this build has: the 20:22 run's modehit lines show __DATA
+    slots holding pointers into __TEXT. `vtslots` resolves the first slots of the two most
+    interesting tables into RVAs, and a table whose slots all land in __TEXT is a vtable whose slot
+    RVAs are the hook targets -- which is how every hook in this file was chosen.
+
+    THE PASS LINE, in the terms v45 fixed and v46 corrected:
 
         scanned=   bytes actually read this pass. This is the coverage number.
+        words=     the same figure counted rather than multiplied: aligned words examined. Printed
+                   because `scanned=` alone could not tell "read the whole window" from "read 540 MB
+                   of something", which is exactly what the 20:22 run confused.
+        budget=    the byte budget this pass was allowed, now derived from the window instead of
+                   being a fixed 512 MB. budgetHit=1 means the pass stopped early, so every zero on
+                   the line describes only the part it reached; readTo= is the address it stopped at,
+                   and the next pass resumes there -- including the tail of the region it was in,
+                   which the old code skipped for good.
         winSpan=   hi minus lo of the heap WINDOW -- not coverage, and not the size of writable
-                   memory either (7720 MB on a run whose whole writable heap was ~536 MB).
+                   memory either (7776 MB on a run whose whole writable heap was under 600 MB).
         regions=   regions walked, closed exactly by imgSkip= + roSkip= + the ones actually read.
         roSkip=    neither the image, nor writable, nor one page long.
         bigSkip=   WRITABLE regions over 1 GB, with bigBytes= saying how much that was. These are
                    heap this scan can never read, so if bigBytes is large the sweep is partial no
                    matter how complete the rest of the line looks. hugeSkip= is the same test for
                    regions that are not writable -- the ~385 GB guard -- and means nothing.
-        vtprobe=   live instances of the nine class tables, in the bytes scanned. With a completed
-                   sweep this is a real statement about the process -- on 20:06 all nine were zero,
-                   which is why no slot fired.
+        vtprobePass= instances of the nine class tables found BY THIS PASS, and the number to read.
+        vtprobeAll=  the same counters accumulated over every pass since launch. It is cumulative
+                   on purpose (the class census has to be able to see a class that only exists
+                   during a match), which is precisely why the per-pass delta exists: on the 20:22
+                   run `vtprobeAll` read 0 after pass 1 and 92502 after pass 3, and nothing said
+                   which pass produced it. Read them as a pair, with budgetHit= for the coverage.
+        vtSpill=   census entries that could not be created because the table was full. Non-zero
+                   makes vtcensus distinct= a floor.
+        vtcensus=  distinct class tables seen this pass / total instances counted. Full report on
+                   the `vtcensus` and `vtslots` lines.
     ====================================================================================== */
 
 #define TNX_DODGE_RADIUS 320
@@ -6006,31 +6517,48 @@ static void setup(void) {
 
     tnx_logf("build=%s slots=%d control=%d types>=%d scanEvery=%d heapEvery=%d attempts=%d "
              "arrayProbeLimit=%d chainProbeLimit=%d voteMin=%d voteConfirm=%d voteTeamsMin=%d "
-             "ownerVoteMax=%d gidMax=%d objhitDump=%d",
+             "ownerVoteMax=%d gidMax=%d objhitDump=%d censusMax=%d censusPrint=%d censusSlots=%d "
+             "budgetMin=%lluMB budgetMax=%lluMB",
              TNX_BUILD_TAG, TNX_SLOT_COUNT - buildControls, buildControls, TNX_MODE_MIN_TYPES,
              TNX_VOTESCAN_GLOBAL_EVERY, TNX_VOTESCAN_HEAP_EVERY, TNX_VOTESCAN_ATTEMPTS,
              TNX_MANAGER_PROBE_LIMIT, TNX_CHAIN_PROBE_LIMIT, TNX_OWNER_VOTE_MIN,
              TNX_OWNER_VOTE_CONFIRM, TNX_OWNER_VOTE_TEAMS_MIN, TNX_OWNER_VOTE_MAX,
-             TNX_OWNER_VOTE_GID_MAX, TNX_OBJ_HIT_PRINT_MAX);
+             TNX_OWNER_VOTE_GID_MAX, TNX_OBJ_HIT_PRINT_MAX, TNX_VTCENSUS_MAX, TNX_VTCENSUS_PRINT,
+             TNX_VTCENSUS_SLOTS, TNX_HEAP_SCAN_BUDGET / (1024ull * 1024ull),
+             TNX_HEAP_SCAN_BUDGET_MAX / (1024ull * 1024ull));
 
-    /* Stated up front because it is the one measurement this build is built on: v43's object vote
-       did fire and did confirm an owner, and that owner was static image data, because the only
-       owner test was a window whose lower edge sits below the image base. Everything changed here
-       is a correction of that, and nothing else was touched. */
-    tnx_logf("plan: the v44 log answered two questions and left one open. ANSWERED: no gate was "
-             "wrong - imgSkip=44 regions dropped, objImg=0, ownerImg=45 rejected, and vtprobe read 0 "
-             "for all nine class tables over a complete sweep, so the seven hooked classes have no "
-             "live instance and no slot can ever fire 0 of 7. The shape test is not matching noise "
-             "either: ~54 words matched a record layout whose two small-int fields make a random "
-             "match ~1e-14 likely per word, so those are real engine objects. OPEN, and what v45 "
-             "answers: `hits=9 owners=8 best=0x0` names NOTHING - eight distinct owners behind nine "
-             "objects means +0x20 does not repeat and so is not the shared manager here, and with "
-             "the id count below the minimum the vote printed best=0x0 and no class table at all. "
-             "v45 prints one line per shaped word (objhit) with its class table RVA, id, team, owner "
-             "index, dead byte and owner class, heap-owned first, and always reports the top owner "
-             "by votes. It also separates the two owner rejections (ownerImg / ownerNoRegion) and "
-             "closes the pass-line arithmetic with roSkip/bigSkip/bigBytes so no region can vanish "
-             "uncounted");
+    /* Stated up front because it is the measurement this build is built on: the 20:22 run's own
+       pass lines prove that the "complete sweep" this project has been quoting since 20:06 never
+       happened, and the objhit dump names classes that the nine-entry probe list does not contain. */
+    tnx_logf("plan: the v45 log answered the question v45 was built for and broke one assumption "
+             "underneath it. ANSWERED, from the objhit dump: the live objects carry class tables of "
+             "their own - 0x100a770 under three heap-owned objects, plus 0xf923e0, 0xf92468, "
+             "0x1014f70, 0x1008be0, 0x1009290 - and none of them is in the nine-entry vtprobe list, "
+             "which is the whole explanation of hooks fired=0 of 7. Also answered: +0x20 never "
+             "repeats (maxVotes=1 in all three passes, a different topOwner each time), so no vote "
+             "can ever name the manager through that field, and the 0x1008d30 family that fooled the "
+             "19:51 run is now correctly classified image instead of becoming a capture. BROKEN: the "
+             "20:06 conclusion that vtprobe=0 was measured over a COMPLETE sweep. Both 20:22 passes "
+             "scanned ~540 MB and both were cut off by the fixed 512 MB budget, but pass 1 started "
+             "at 0x0 (mostly memory BELOW the window) and pass 3 at the window low, so they were cut "
+             "off over different memory - and the ninth counter duly read 0 on the first and 92502 "
+             "on the second. So v46 (1) makes the budget follow the window and prints budget=/"
+             "budgetHit=/readTo=, (2) resumes a budget-cut pass at the exact address it stopped "
+             "instead of past the whole region, (3) splits the accumulated vtprobe= into "
+             "vtprobePass=/vtprobeAll= and names the first address behind each non-zero counter, and "
+             "(4) replaces the nine-name list with a census: every 16-byte aligned word pointing into "
+             "__DATA_CONST or __DATA is counted per class table, with the number of instances, how "
+             "many of them passed the full object record layout (shaped=), and how many read the same "
+             "at +0x00 and +0x20 (ownerEqVt=, the 19:51 signature as a count). vtslots then prints "
+             "the first slot RVAs of the two most interesting tables - the hook targets for v47. And "
+             "(5) one more split, because the 20:22 run put 398 of its 597 shaped words in "
+             "ownerNoRegion and that number has two opposite explanations: the window is rebuilt "
+             "every tenth attempt and it SHRANK during that run from 7776 MB to 567 MB, so an owner "
+             "above the window high is a WINDOW problem while an owner in no region at all is a "
+             "REGION problem. They are now ownerAboveWin= and ownerNoRegion=, and objShaped= is "
+             "counted uncapped so the identity hits+skipped+ownerImg+ownerNoRegion+ownerAboveWin = "
+             "objShaped can actually be checked - v45 printed the dump's capped count there, which "
+             "made the check impossible exactly when there was something to check");
 
     tnx_start_timer();
 

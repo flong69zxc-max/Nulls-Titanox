@@ -249,7 +249,7 @@ static __thread BOOL g_inside_hook = NO;
 
 /* Printed as the first line after "setup", so every log identifies the build that produced
    it. Two device logs were once spent comparing a new binary against an old one. */
-#define TNX_BUILD_TAG "titanox_39"
+#define TNX_BUILD_TAG "titanox_40"
 
 /* IN-LINE HOOKING IS IMPOSSIBLE ON THIS PROCESS -- measured, not assumed. The 17:38 log caught
    it directly:
@@ -387,6 +387,9 @@ static int g_manager_last_capacity = 0;
 static int g_manager_saw_cap = 0;
 static int g_manager_loose_count = 0;
 static int g_manager_window_rejects = 0;
+
+/* Declared here because the heap pass line reports it long before the trail itself exists. */
+static int g_trail_best = 0;
 static int g_manager_cap_rejects = 0;
 static int g_manager_best_count = 0;
 static int g_manager_best_live = 0;
@@ -587,6 +590,7 @@ static BOOL tnx_obj_coord(uintptr_t object, uintptr_t slot, int32_t *value);
 static void tnx_trail_note(uintptr_t manager, int32_t count, int32_t capacity, int live,
                            int nonEmpty);
 static void tnx_trail_dump(void);
+static void tnx_best_candidate_dump(void);
 
 /* Runs inside the game's thread. Two stores and a bounds check, nothing else. */
 static void tnx_slot_note(int index, void *self, uint64_t arg1) {
@@ -3271,6 +3275,8 @@ static void tnx_diag_report(const char *why) {
 
     tnx_trail_dump();
 
+    tnx_best_candidate_dump();
+
     tnx_logf("DIAG(%s) attempts=%d/%d heapPasses=%d covered=%lluMB probes=%d/%d skipped=%d "
              "capRej=%d/%d bestCount=%d bestLive=%d mgr=%p vfx=%d mx=%d",
              why ? why : "?", g_votescan_attempts, TNX_VOTESCAN_ATTEMPTS, g_heap_passes,
@@ -3540,13 +3546,12 @@ static void tnx_scan_heap_for_mode(void) {
     g_heap_covered += (unsigned long long)scanned;
 
     tnx_logf("votescan heap pass=%d from=%p scanned=%zu regions=%d hits=%d vfx=%d mgr=%p "
-             "probes=%d/%d skipped=%d cap=%d/%d loose=%d window=%d best%d/%d(live %d/%d cap %d)",
+             "probes=%d/%d skipped=%d cap=%d/%d loose=%d window=%d bestCount=%d bestLive=%d trailBest=%d",
              g_heap_passes, (void *)startAddress, scanned, regions, hits, verifiedHits,
              (void *)g_manager_object, g_manager_probes, TNX_MANAGER_PROBE_LIMIT,
              g_manager_skipped, g_manager_cap_rejects, g_manager_saw_cap,
-             g_manager_loose_count, g_manager_window_rejects, g_manager_best_count,
-             g_manager_best_live, g_manager_last_live, g_manager_last_nonempty,
-             g_manager_last_capacity);
+             g_manager_loose_count, g_manager_window_rejects,
+             g_manager_best_count, g_manager_best_live, g_trail_best);
 }
 
 static void tnx_locate_battle_mode(void) {
@@ -3820,6 +3825,7 @@ static void tnx_report_manager(const char *tag, uintptr_t manager) {
 #define TNX_DODGE_SCALE 4096
 #define TNX_OBJECT_DETAIL_MAX 8
 #define TNX_TRAIL_MAX 8
+#define TNX_BEST_DETAIL_MAX 12
 
 /* Candidates that passed the header invariant but failed the instance test. The scanner used
    to swallow these silently; without them a run that finds nothing cannot be told apart from
@@ -3843,6 +3849,22 @@ static void tnx_trail_note(uintptr_t manager, int32_t count, int32_t capacity, i
 
     g_trail_total++;
 
+    if (live > g_manager_best_live) g_manager_best_live = live;
+
+    /* One entry per address. Without this the same structure was recorded over and over and
+       filled all eight slots -- on the 18:55 run every slot held 0x108846678, so the list that
+       exists to show the best candidates could only ever show one of them. */
+    for (int i = 0; i < g_trail_count; i++) {
+        if (g_trail[i].manager == manager) {
+            g_trail[i].count = count;
+            g_trail[i].capacity = capacity;
+            g_trail[i].live = live;
+            g_trail[i].nonEmpty = nonEmpty;
+            slot = i;
+            goto best;
+        }
+    }
+
     if (g_trail_count < TNX_TRAIL_MAX) {
         slot = g_trail_count++;
     } else {
@@ -3860,6 +3882,12 @@ static void tnx_trail_note(uintptr_t manager, int32_t count, int32_t capacity, i
     g_trail[slot].capacity = capacity;
     g_trail[slot].live = live;
     g_trail[slot].nonEmpty = nonEmpty;
+
+best:
+    g_trail_best = 0;
+    for (int i = 1; i < g_trail_count; i++) {
+        if (g_trail[i].live > g_trail[g_trail_best].live) g_trail_best = i;
+    }
 }
 
 static void tnx_trail_dump(void) {
@@ -4143,6 +4171,102 @@ static int tnx_object_detail(uintptr_t manager, int limit) {
     }
 
     return shown;
+}
+
+/* The same table, but read only.
+
+   The full dump calls the object's own getX and getY through its table, which is fine once an
+   object is known to be a game object and dangerous before that: a candidate that is really a
+   scene list or a resource table would be made to execute whatever sits at slot 0x88. This
+   variant reads the fields and the slot values and executes nothing, so it can be pointed at
+   any candidate at all -- which is exactly what is needed to find out what the closest miss
+   actually holds. */
+static int tnx_object_detail_readonly(uintptr_t manager, int limit) {
+    void *array = NULL;
+    int32_t count = 0;
+    int32_t capacity = 0;
+    int shown = 0;
+    int instances = 0;
+    int teams[TNX_OBJ_TEAM_MAX + 1];
+
+    for (int i = 0; i <= TNX_OBJ_TEAM_MAX; i++) teams[i] = 0;
+
+    if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array) || !array) return 0;
+    if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) return 0;
+    if (!tnx_read_i32(manager + TNX_MGR_CAP_OFF, &capacity)) return 0;
+    if (count <= 0) return 0;
+    if (count > TNX_MANAGER_MAX_OBJECTS) count = TNX_MANAGER_MAX_OBJECTS;
+    if (limit > 0 && count > limit) count = limit;
+
+    tnx_logf("best array=%p count=%d cap=%d", array, count, capacity);
+
+    for (int32_t i = 0; i < count; i++) {
+        void *element = NULL;
+        void *vtable = NULL;
+        void *slotOwner = NULL;
+        void *slotAlive = NULL;
+        void *slotKind = NULL;
+        void *slotX = NULL;
+        void *slotY = NULL;
+        int32_t globalId = 0;
+        int32_t team = 0;
+        int32_t owner = 0;
+        uint8_t dead = 0;
+        int shaped = 0;
+
+        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * sizeof(void *), &element)) break;
+        if (!element) continue;
+
+        if (!tnx_read_ptr((uintptr_t)element, &vtable)) continue;
+
+        shaped = tnx_gameobject_shape((uintptr_t)element) ? 1 : 0;
+        if (shaped) instances++;
+
+        tnx_read_ptr((uintptr_t)vtable + TNX_SLOT_OWNER_OFF, &slotOwner);
+        tnx_read_ptr((uintptr_t)vtable + 0x28, &slotAlive);
+        tnx_read_ptr((uintptr_t)vtable + 0x48, &slotKind);
+        tnx_read_ptr((uintptr_t)vtable + TNX_OBJ_GETX_SLOT, &slotX);
+        tnx_read_ptr((uintptr_t)vtable + TNX_OBJ_GETY_SLOT, &slotY);
+
+        tnx_read_i32((uintptr_t)element + TNX_OBJ_GLOBALID_OFF, &globalId);
+        tnx_read_i32((uintptr_t)element + TNX_OBJ_TEAM_OFF, &team);
+        tnx_read_i32((uintptr_t)element + TNX_OBJ_OWNERINDEX_OFF, &owner);
+        tnx_read_u8((uintptr_t)element + TNX_OBJ_DEADFLAG_OFF, &dead);
+
+        if (team >= 0 && team <= TNX_OBJ_TEAM_MAX) teams[team]++;
+
+        tnx_logf("best[%02d] %p vt=%#llx gid=%d team=%d own=%d dead=%d shape=%d "
+                 "s18=%#llx s28=%#llx s48=%#llx s88=%#llx s90=%#llx",
+                 i, element, (unsigned long long)tnx_vtable_rva(element), globalId, team, owner,
+                 dead, shaped,
+                 (unsigned long long)(slotOwner ? (uintptr_t)slotOwner - g_base : 0),
+                 (unsigned long long)(slotAlive ? (uintptr_t)slotAlive - g_base : 0),
+                 (unsigned long long)(slotKind ? (uintptr_t)slotKind - g_base : 0),
+                 (unsigned long long)(slotX ? (uintptr_t)slotX - g_base : 0),
+                 (unsigned long long)(slotY ? (uintptr_t)slotY - g_base : 0));
+
+        shown++;
+    }
+
+    tnx_logf("best summary shown=%d instances=%d teams=%d/%d/%d/%d",
+             shown, instances, teams[0], teams[1], teams[2], teams[3]);
+
+    return shown;
+}
+
+/* What the closest miss actually holds. Until now the log could only say "live 18 of 30"; it
+   could not say whether those eighteen things are game objects with a team and a position or,
+   say, a scene list. This answers that without executing anything. */
+static void tnx_best_candidate_dump(void) {
+    if (g_trail_count <= 0) return;
+    if (g_trail_best < 0 || g_trail_best >= g_trail_count) return;
+
+    tnx_logf("best candidate index=%d mgr=%p count=%d cap=%d live=%d nonEmpty=%d",
+             g_trail_best, (void *)g_trail[g_trail_best].manager,
+             g_trail[g_trail_best].count, g_trail[g_trail_best].capacity,
+             g_trail[g_trail_best].live, g_trail[g_trail_best].nonEmpty);
+
+    tnx_object_detail_readonly(g_trail[g_trail_best].manager, TNX_BEST_DETAIL_MAX);
 }
 
 /* The dodge, computed but not yet applied. Everything here is read-only, so it is safe to run

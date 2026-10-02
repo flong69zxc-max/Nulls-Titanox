@@ -188,7 +188,7 @@ static __thread BOOL g_inside_hook = NO;
 
 /* Printed as the first line after "setup", so every log identifies the build that produced
    it. Two device logs were once spent comparing a new binary against an old one. */
-#define TNX_BUILD_TAG "titanox_27"
+#define TNX_BUILD_TAG "titanox_28"
 
 /* The per-attempt global segment scan walks 2 MB and then probes every candidate pointer in
    it. On the device that made one tick take ~4 s, which is why the game felt stuck and the
@@ -418,13 +418,14 @@ static void tnx_battle_begin(const char *why) {
    file I/O -- because it runs on the game's thread. Everything else happens on the 1 Hz
    timer in the slot pump below, so a slow hook can never stall a frame.
 
-   Five slots rather than one, because the guarantee we need is "the object exists and is
+   Several slots rather than one, because the guarantee we need is "the object exists and is
    alive", not "this particular method is on the hot path". Slot B1 increments [this+0x2e8]
    on entry, which reads as a per-update counter, and slot B2 walks a collection -- between
-   them they should fire for any live battle instance.
+   them they should fire for any live battle instance. Two further slots are controls whose
+   only job is to answer whether this kind of hook is dispatched to at all.
    --------------------------------------------------------------------------- */
 
-#define TNX_SLOT_COUNT 6
+#define TNX_SLOT_COUNT 7
 
 typedef uint64_t (*tnx_slot_fn_t)(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                   uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7);
@@ -432,9 +433,11 @@ typedef uint64_t (*tnx_slot_fn_t)(void *a0, uint64_t a1, uint64_t a2, uint64_t a
 static tnx_slot_fn_t g_slot_orig[TNX_SLOT_COUNT] = { NULL };
 static uintptr_t g_slot_object[TNX_SLOT_COUNT] = { 0 };
 static uint64_t g_slot_hits[TNX_SLOT_COUNT] = { 0 };
-static int g_slot_installed[TNX_SLOT_COUNT] = { -1, -1, -1, -1, -1, -1 };
+static int g_slot_installed[TNX_SLOT_COUNT] = { -1, -1, -1, -1, -1, -1, -1 };
 static uint32_t g_slot_reported_mask = 0;
 static uintptr_t g_slot_adopted = 0;
+
+static void tnx_slot_diag(const char *why);
 
 /* Runs inside the game's thread. Two stores and a bounds check, nothing else. */
 static void tnx_slot_note(int index, void *self) {
@@ -504,28 +507,46 @@ static uint64_t tnx_slot_repl_5(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
     return 0;
 }
 
+static uint64_t tnx_slot_repl_6(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
+                                uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
+    tnx_slot_note(6, a0);
+
+    if (g_slot_orig[6]) return g_slot_orig[6](a0, a1, a2, a3, a4, a5, a6, a7);
+
+    return 0;
+}
+
+/* slotRva is the byte address of the single rewritten entry inside the vtable, relative to the
+   image. It is only filled in where the device log has confirmed the exact address; the
+   readback in the diagnostics needs it, and a slot that silently reverted would make every
+   other number in the log meaningless. */
 static const struct {
     const char *tag;
+    const char *shortTag;
     uintptr_t rva;
+    uintptr_t slotRva;
     tnx_slot_fn_t replacement;
     int control;
 } g_slot_specs[TNX_SLOT_COUNT] = {
     /* class A: vtable 0x1002548, manager reached as [[this+0x8]+0x0] */
-    { "A1/vt1002548+10/ad4ed0", 0x00ad4ed0ULL, tnx_slot_repl_0, 0 },
-    { "A2/vt1002548+07/ad521c", 0x00ad521cULL, tnx_slot_repl_1, 0 },
-    /* class B: vtable 0xff5720, manager reached as [this+0x20] */
-    { "B1/vt0ff5720+05/a2e5b8", 0x00a2e5b8ULL, tnx_slot_repl_2, 0 },
-    { "B2/vt0ff5720+03/a2d250", 0x00a2d250ULL, tnx_slot_repl_3, 0 },
-    { "B3/vt0ff5720+07/a2d6ac", 0x00a2d6acULL, tnx_slot_repl_4, 0 },
-    /* CONTROL, never adopted. Stage::addChild is the only anchor resolved out of the offsets
-       table that turned out to be virtual at all (its address sits in exactly one vtable slot,
-       byte RVA 0x1011f50), and its class is alive in the lobby, not just in battle. Hitting it
-       proves that a rewritten pointer slot is really dispatched to on this device. That is the
-       one question no device log so far could answer: if this stays at zero, the mechanism is
-       at fault; if it counts up while A/B stay at zero, the mechanism works and the two battle
-       classes are simply not what we think they are. It returns an integer or void and never
-       touches s0/q0, so the same forwarding replacement is safe. */
-    { "C/Stage::addChild @c33690", 0x00c33690ULL, tnx_slot_repl_5, 1 },
+    { "A1/vt1002548+10/ad4ed0", "A1", 0x00ad4ed0ULL, 0x01002598ULL, tnx_slot_repl_0, 0 },
+    { "A2/vt1002548+07/ad521c", "A2", 0x00ad521cULL, 0x01002580ULL, tnx_slot_repl_1, 0 },
+    /* class B: vtable 0xff5720, manager reached as [this+0x20]. B2 and B3 each resolved to
+       SEVEN slots, i.e. seven sibling vtables around 0xff5xxx share them, so those two hooks
+       cover a whole family of derived classes, not one class. */
+    { "B1/vt0ff5720+05/a2e5b8", "B1", 0x00a2e5b8ULL, 0x00ff5748ULL, tnx_slot_repl_2, 0 },
+    { "B2/vt0ff5720+03/a2d250", "B2", 0x00a2d250ULL, 0x00ff5738ULL, tnx_slot_repl_3, 0 },
+    { "B3/vt0ff5720+07/a2d6ac", "B3", 0x00a2d6acULL, 0x00ff5758ULL, tnx_slot_repl_4, 0 },
+    /* CONTROLS, never adopted.
+       C1 Stage::addChild is the only anchor resolved out of the offsets table that turned out
+       to be virtual at all (one vtable slot, byte RVA 0x1011f50). C2 is a flag getter that
+       occupies offset 0x88 of 443 vtables, i.e. a base-class virtual that the logic must call
+       constantly. C1 stayed at zero for ten minutes on 2026-10-02 16:59, which proves nothing
+       about the mechanism because that method is only called when display objects are added.
+       C2 exists so the question "is a rewritten pointer slot ever dispatched to at all" gets a
+       real answer. Both return an integer or void and never touch s0/q0. */
+    { "C1/Stage::addChild @c33690", "C1", 0x00c33690ULL, 0x01011f50ULL, tnx_slot_repl_5, 1 },
+    { "C2/hotflag @b9dc24", "C2", 0x00b9dc24ULL, 0, tnx_slot_repl_6, 1 },
 };
 
 /* Installs one slot hook. The dry-run probe runs first: it reports whether a writable slot
@@ -588,6 +609,10 @@ static void tnx_slot_hooks_install(void) {
              hook_pointer_count(), brk_slot_limit(), brk_live_slot_count());
 
     for (int i = 0; i < TNX_SLOT_COUNT; i++) tnx_slot_install_one(i);
+
+    /* Read every rewritable slot straight back out of memory: this is what proves the write
+       took, separately from whether the game ever calls through it. */
+    tnx_slot_diag("install");
 }
 
 static BOOL tnx_query_region(uintptr_t address,
@@ -2497,6 +2522,9 @@ static int tnx_manager_live_count(uintptr_t manager) {
     if (!array) return 0;
     if (!tnx_heap_resident((uintptr_t)array)) return 0;
 
+    uintptr_t types[TNX_MODE_TYPE_MAX] = {0};
+    int typeCount = 0;
+
     for (int32_t i = 0; i < count && i < 8; i++) {
         void *element = NULL;
         void *vtable = NULL;
@@ -2509,7 +2537,26 @@ static int tnx_manager_live_count(uintptr_t manager) {
         if (!tnx_vtable_shaped((uintptr_t)vtable)) continue;
 
         live++;
+
+        /* Distinct element classes, the same rule the mode path already uses. Without it a
+           struct whose first field is a string passes: the 2026-10-02 16:59 run adopted
+           0x12c48b8e0 exactly that way -- [mgr+0] pointed at "gacha_vfx_epic", and the string
+           bytes happened to decode as three live pointers. It then locked the scan for the
+           remaining seven minutes. */
+        uintptr_t elementRva = (uintptr_t)vtable - g_base;
+        BOOL known = NO;
+
+        for (int k = 0; k < typeCount; k++) {
+            if (types[k] == elementRva) {
+                known = YES;
+                break;
+            }
+        }
+
+        if (!known && typeCount < TNX_MODE_TYPE_MAX) types[typeCount++] = elementRva;
     }
+
+    if (typeCount < TNX_MODE_MIN_TYPES) return 0;
 
     return live;
 }
@@ -2554,6 +2601,36 @@ static void tnx_probe_manager(uintptr_t cursor, size_t offset, const uint8_t *bu
     tnx_dump_manager(candidate, (int)count);
 }
 
+/* The line that has to be read first in every future log: how often each hook was entered, and
+   whether the rewritten slot still holds our replacement. A slot that silently reverted would
+   make every other number meaningless, and "no capture" on its own could never tell the two
+   cases apart. */
+static void tnx_slot_diag(const char *why) {
+    char buf[320];
+    int used = 0;
+
+    for (int i = 0; i < TNX_SLOT_COUNT; i++) {
+        const char *state = "n/a";
+        void *current = NULL;
+
+        if (g_slot_specs[i].slotRva && g_slot_installed[i] == 1) {
+            state = "unreadable";
+
+            if (tnx_read_ptr(g_base + g_slot_specs[i].slotRva, &current)) {
+                state = ((uintptr_t)current == (uintptr_t)g_slot_specs[i].replacement)
+                            ? "held" : "LOST";
+            }
+        }
+
+        if (used > (int)sizeof(buf) - 40) break;
+
+        used += snprintf(buf + used, sizeof(buf) - (size_t)used, "%s=%llu/%s ",
+                         g_slot_specs[i].shortTag, (unsigned long long)g_slot_hits[i], state);
+    }
+
+    tnx_logf("slotdiag(%s) %s", why ? why : "?", buf);
+}
+
 /* Prints the conclusion, not the raw numbers: this is the line that has to be read. */
 static void tnx_diag_report(const char *why) {
     const char *verdict = "no battle-shaped structure in the memory scanned so far";
@@ -2580,6 +2657,8 @@ static void tnx_diag_report(const char *why) {
              g_mode_verified_hits, g_mode_best_objects);
 
     tnx_logf("DIAG verdict: %s", verdict);
+
+    tnx_slot_diag(why);
 }
 
 static void tnx_scan_globals_for_mode(const char *name) {
@@ -3011,11 +3090,14 @@ static void tnx_slot_pump(void) {
 
     g_slot_adopted = object;
 
-    tnx_logf("slot pump object=%p source=%s installed=%d/%d/%d/%d/%d/%d controlHits=%llu",
-             (void *)object, g_slot_specs[first].tag,
-             g_slot_installed[0], g_slot_installed[1], g_slot_installed[2],
-             g_slot_installed[3], g_slot_installed[4], g_slot_installed[5],
-             (unsigned long long)g_slot_hits[TNX_SLOT_COUNT - 1]);
+    int installed = 0;
+
+    for (int i = 0; i < TNX_SLOT_COUNT; i++) {
+        if (g_slot_installed[i] == 1) installed++;
+    }
+
+    tnx_logf("slot pump object=%p source=%s installed=%d/%d",
+             (void *)object, g_slot_specs[first].tag, installed, TNX_SLOT_COUNT);
 
     tnx_battle_begin("slot");
 
@@ -3185,9 +3267,15 @@ static void setup(void) {
        below is only the fallback. */
     tnx_slot_hooks_install();
 
-    tnx_logf("build=%s slots=%d control=1 scanEvery=%d heapEvery=%d attempts=%d",
-             TNX_BUILD_TAG, TNX_SLOT_COUNT - 1, TNX_VOTESCAN_GLOBAL_EVERY,
-             TNX_VOTESCAN_HEAP_EVERY, TNX_VOTESCAN_ATTEMPTS);
+    int buildControls = 0;
+
+    for (int i = 0; i < TNX_SLOT_COUNT; i++) {
+        if (g_slot_specs[i].control) buildControls++;
+    }
+
+    tnx_logf("build=%s slots=%d control=%d types>=%d scanEvery=%d heapEvery=%d attempts=%d",
+             TNX_BUILD_TAG, TNX_SLOT_COUNT - buildControls, buildControls, TNX_MODE_MIN_TYPES,
+             TNX_VOTESCAN_GLOBAL_EVERY, TNX_VOTESCAN_HEAP_EVERY, TNX_VOTESCAN_ATTEMPTS);
 
     tnx_start_timer();
 

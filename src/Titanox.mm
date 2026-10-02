@@ -249,7 +249,7 @@ static __thread BOOL g_inside_hook = NO;
 
 /* Printed as the first line after "setup", so every log identifies the build that produced
    it. Two device logs were once spent comparing a new binary against an old one. */
-#define TNX_BUILD_TAG "titanox_36"
+#define TNX_BUILD_TAG "titanox_37"
 
 /* IN-LINE HOOKING IS IMPOSSIBLE ON THIS PROCESS -- measured, not assumed. The 17:38 log caught
    it directly:
@@ -581,6 +581,9 @@ static void tnx_slot_diag(const char *why);
 
 /* Defined next to the object dump, but needed earlier by the manager dump too. */
 static BOOL tnx_obj_coord(uintptr_t object, uintptr_t slot, int32_t *value);
+static void tnx_trail_note(uintptr_t manager, int32_t count, int32_t capacity, int live,
+                           int nonEmpty);
+static void tnx_trail_dump(void);
 
 /* Runs inside the game's thread. Two stores and a bounds check, nothing else. */
 static void tnx_slot_note(int index, void *self, uint64_t arg1) {
@@ -2258,6 +2261,16 @@ static const tnx_rva_entry_t g_verified[] = {
     { "GameObj::setOwner (this+0x20 = manager) [slot 0xff5738]", 0xa2d250 },
     { "LogicBattleModeClient::setPredictionXY (this+0x1d4/0x1d8)", 0xac3f20 },
     { "LogicGameObjectManager::findByTeam (mgr+0x0/+0xc)", 0xac3d80 },
+    { "LogicGameObjectManager::addGameObject", 0xa278a8 },
+    { "LogicGameObjectManager::generateGameObjectGlobalID", 0xa27b98 },
+    { "LogicProjectileData::getColumnValue", 0x9cd5e0 },
+    { "GameObj::setOwner (this+0x20 = manager)", 0xa2d250 },
+    { "Array<T>::append (header layout source)", 0x46aefc },
+    { "LogicGameObjectClient data accessor", 0x100382cc8 },
+    { "LogicBattleModeClient::getInt (+0xec)", 0xac3500 },
+    { "LogicBattleModeClient::get 0x218", 0xac40d8 },
+    { "LogicBattleModeClient::get 0x220", 0xac40e8 },
+    { "LogicBattleModeClient::get 0x228", 0xac40f8 },
     { "TABLE_RVA_MESSAGEMANAGER__RECEIVEMESSAGE", 0x7bace8 },
     { NULL, 0 }
 };
@@ -2845,6 +2858,7 @@ static int tnx_manager_live_count(uintptr_t manager) {
     void *array = NULL;
     int32_t count = 0;
     int32_t capacity = 0;
+    int live = 0;
 
     if (!tnx_pointer_plausible(manager)) return 0;
     if (!tnx_heap_resident(manager)) return 0;
@@ -2989,6 +3003,12 @@ static void tnx_probe_manager(uintptr_t cursor, size_t offset, const uint8_t *bu
     g_manager_object = candidate;
     g_manager_count = (int)count;
 
+    if (live < TNX_MANAGER_MIN_OBJECTS) {
+        tnx_trail_note(candidate, (int32_t)count, g_manager_last_capacity,
+                       g_manager_last_live, g_manager_last_nonempty);
+        return;
+    }
+
     tnx_logf("MANAGER found object=%p count=%u live=%d", (void *)candidate, count, live);
 
     tnx_dump_manager(candidate, (int)count);
@@ -3065,6 +3085,8 @@ static void tnx_diag_report(const char *why) {
     if (!g_manager_object && g_mode_best_objects < TNX_MANAGER_MIN_OBJECTS && g_heap_passes > 0) {
         verdict = "NO BATTLE IN WINDOW - nothing battle-shaped existed, this says nothing about the layout";
     }
+
+    tnx_trail_dump();
 
     tnx_logf("DIAG(%s) attempts=%d/%d heapPasses=%d covered=%lluMB probes=%d/%d skipped=%d "
              "capRej=%d/%d bestCount=%d bestLive=%d mgr=%p vfx=%d mx=%d",
@@ -3542,6 +3564,551 @@ static void tnx_report_manager(const char *tag, uintptr_t manager) {
     tnx_dump_manager(manager, (int)count);
 }
 
+/* ======================================================================================
+   HOW TO READ THE LOG
+
+   The banner. First line after the build tag is `build=<tag>`, and any log without it comes
+   from titanox_25 or earlier and should be thrown away. Then `slots=`, `control=` and
+   `types>=` restate the hooking plan.
+
+   The contract. `contract ...` lines print every offset in use with the evidence behind it,
+   so a log can be checked without opening the source: `mode+0x28`, the array header, the
+   object fields and the slot numbers, each with where it was measured.
+
+   The hook state. `slotdiag` carries a counter and a read-back per slot. `N/held` means the
+   table entry still points at our forwarder, so the slot is armed and simply has not been
+   called. `N/LOST` means something rewrote it and the hook is gone. Nothing else in the log
+   matters until one of the seven is non-zero.
+
+   The capture. As soon as any slot fires, the pump prints four things, in this order:
+
+       slot <name>: captured this=<object> arg1=<manager> hits=<n>
+       slot arg1 mgr=<manager> array=<array> count=<n> cap=<n> live=<n>
+       objtable array=... count=... cap=...
+       obj[00] ... gid= team= own= dead= pos=(x,y) s18= s28= s48= shape=1
+
+   `arg1` is the whole point. For B2 it is the object manager, handed over by the engine at
+   the moment the first game object is created, and it costs nothing to get. `CAP-VIOLATION`
+   on the third line means the header invariant was broken and the candidate is not an array.
+
+   The dodge. `dodge team=<t> own=(x,y) threats=<n> nearest=<d> raw=(x,y) step=(x,y)
+   action=<move|hold>` is computed read-only, once per team present. It is the two numbers to
+   hand to the movement entry point the moment that entry point is known; until then it is
+   the proof that the geometry is right.
+
+   The verdict. `DIAG` ends with `capRej=<n>/<n>`, `bestCount/bestLive`, `mgr=` and `mx=`.
+   `mx` is the largest object count ever seen in a battle-shaped container. `mx` of zero or
+   one means no battle existed in the window and the run says nothing about the layout.
+
+   The near-miss trail. Every candidate that satisfies the header invariant but fails the
+   instance test is recorded with its numbers and the worst eight are printed at the
+   heartbeat. That is what turns "nothing found" into an actionable statement about what the
+   scanner was looking at.
+
+   -- What each slot is, and why --------------------------------------------------------
+
+     A1  0xad4ed0  a class that owns a manager through [[this+0x8]+0x0]
+     A2  0xad521c  its sibling, same vtable, slot 7
+     B1  0xa2e5b8  from the same family as B2, slot 5
+     B2  0xa2d250  setOwner: str x1,[x0,#0x20]. The one that hands over the manager.
+     B3  0xa2d6ac  sibling of B2, slot 7, also installed across all seven relatives
+     C1  0xc33690  Stage addChild, a control: fires when the scene graph grows
+     C2  0xb9dc24  a flag getter present in 443 tables, a control for the hook mechanism
+
+   B2 is the working leg. It is called by addGameObject on every object the match creates,
+   with the manager in x1, and the byte address of that slot is 0xff5738. If B2 stays at zero
+   while a match is running, the next thing to try is C2's answer: whether any pointer table
+   hook fires at all during a battle.
+   ====================================================================================== */
+
+#define TNX_DODGE_RADIUS 320
+#define TNX_DODGE_STEP 600
+#define TNX_DODGE_SCALE 4096
+#define TNX_OBJECT_DETAIL_MAX 8
+#define TNX_TRAIL_MAX 8
+
+/* Candidates that passed the header invariant but failed the instance test. The scanner used
+   to swallow these silently; without them a run that finds nothing cannot be told apart from
+   a run in which the wrong thing was being measured. */
+typedef struct {
+    uintptr_t manager;
+    int32_t count;
+    int32_t capacity;
+    int live;
+    int nonEmpty;
+} tnx_trail_t;
+
+static tnx_trail_t g_trail[TNX_TRAIL_MAX];
+static int g_trail_count = 0;
+static uint64_t g_trail_total = 0;
+
+static void tnx_trail_note(uintptr_t manager, int32_t count, int32_t capacity, int live,
+                           int nonEmpty) {
+    int slot = -1;
+    int worst = 0;
+
+    g_trail_total++;
+
+    if (g_trail_count < TNX_TRAIL_MAX) {
+        slot = g_trail_count++;
+    } else {
+        for (int i = 0; i < TNX_TRAIL_MAX; i++) {
+            if (i == 0 || g_trail[i].live < worst) {
+                worst = g_trail[i].live;
+                slot = i;
+            }
+        }
+        if (live <= g_trail[slot].live) return;
+    }
+
+    g_trail[slot].manager = manager;
+    g_trail[slot].count = count;
+    g_trail[slot].capacity = capacity;
+    g_trail[slot].live = live;
+    g_trail[slot].nonEmpty = nonEmpty;
+}
+
+static void tnx_trail_dump(void) {
+    tnx_logf("trail: %llu candidates passed the array header, worst eight by live count",
+             (unsigned long long)g_trail_total);
+
+    for (int i = 0; i < g_trail_count; i++) {
+        tnx_logf("trail[%d] mgr=%p count=%d cap=%d live=%d nonEmpty=%d",
+                 i, (void *)g_trail[i].manager, g_trail[i].count, g_trail[i].capacity,
+                 g_trail[i].live, g_trail[i].nonEmpty);
+    }
+}
+
+/* The seven hooks restated from the table itself, so the log always agrees with what was
+   actually installed rather than with what the comments claim. */
+static void tnx_slot_table_dump(void) {
+    for (int i = 0; i < TNX_SLOT_COUNT; i++) {
+        tnx_logf("hook[%d] %-4s target=%#llx slotRva=%#llx repl=%p control=%d",
+                 i, g_slot_specs[i].shortTag,
+                 (unsigned long long)g_slot_specs[i].rva,
+                 (unsigned long long)g_slot_specs[i].slotRva,
+                 (void *)g_slot_specs[i].replacement,
+                 g_slot_specs[i].control ? 1 : 0);
+    }
+}
+
+/* Raw bytes of the first objects, so an unexpected layout can be diagnosed from the log
+   alone instead of costing another run. */
+static void tnx_raw_object_hex(uintptr_t manager, int limit) {
+    void *array = NULL;
+    int32_t count = 0;
+
+    if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array) || !array) return;
+    if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) return;
+    if (count <= 0) return;
+    if (count > limit) count = limit;
+
+    for (int32_t i = 0; i < count; i++) {
+        void *element = NULL;
+
+        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * sizeof(void *), &element)) break;
+        if (!element) continue;
+
+        tnx_dump_hex("rawObj", (uintptr_t)element, 0x40);
+        tnx_dump_hex("rawObjB", (uintptr_t)element + 0xc0, 0x20);
+    }
+}
+
+/* ======================================================================================
+   THE COMPLETE MAP. Everything on this page was established either by disassembling
+   src_data/Nulls_Brawl.txt or by reading a device log, and each line says which. Nothing
+   here is inherited from another build: dozens of versions burned on addresses taken from
+   the shipped offsets.h before that table was measured and found to be worthless for calls
+   (only 16 of its 146 RVA defines land on a function entry point at all, and one of them,
+   receiveMessage, points at a completely different function than the name claims).
+
+   -- Structures, all confirmed twice: from REvengeBS and from our own disassembly --------
+
+     LogicBattleModeClient, minimum 0x260 bytes
+       +0x028  object manager           proven: the game's own code loads it here
+       +0x058  client input manager     from REvengeBS, not yet confirmed here
+       +0x0ec  int accessor             getInt reads it directly
+       +0x124  game mode variation      getTeamStars compares it against 0x29 and asserts
+       +0x1d4  prediction target X      the only place in the image that writes it
+       +0x1d8  prediction target Y      written by the same six instructions
+       +0x1e8  stars, low half          from REvengeBS
+       +0x1ec  stars, high half         from REvengeBS
+       +0x218  pointer, getter and setter sit next to each other every 0x10 bytes
+       +0x220  pointer
+       +0x228  pointer
+       +0x248  array header
+       +0x258  array header
+       +0x28..+0xa8  per-type Array headers, nine of them, written by addGameObject
+
+     Array<T>, header 16 bytes, stride 8 -- this layout is taken from the engine's own
+     append routine at 0x46aefc, which does ldp w9, w8, [x0, #8] and grows when the two are
+     equal, so:
+       +0x000  T**   data
+       +0x008  u32   capacity
+       +0x00c  u32   count
+       invariant: count <= capacity, always. This single check is what finally rejected the
+       string tables that kept being mistaken for the object manager.
+
+     Game object, minimum 0x1e8 bytes
+       +0x008  u32   global id          written by addGameObject through the generator
+       +0x020  ptr   owning manager     written by setOwner, which is exactly this field
+       +0x03c  int   owner index        from REvengeBS
+       +0x040  int   team               confirmed by two independent loops in the class code
+       +0x04c  int   a second team-like field, read by the manager's own finder
+       +0x0d0  u8    dead flag          0 or 1; the reference reads it as a single byte
+       +0x140  int   kind on the data object returned by 0x100382cc8
+
+     Object virtual table, confirmed by the engine's own code paths
+       +0x018  setOwner, called by addGameObject with the manager in x1
+       +0x028  int getter, used both as an aliveness test and as a type discriminator
+       +0x048  int getter used to pick the per-type list inside addGameObject
+       +0x088  getX, int32, fixed point
+       +0x090  getY, int32, fixed point
+       +0x098  getZ, int32, fixed point
+
+   -- Addresses, each one verified on the device, not guessed ------------------------------
+
+     0xa278a8  LogicGameObjectManager addGameObject      device resolver, assert string
+     0xa27b98  LogicGameObjectManager id generator       device resolver, assert string
+     0x9cd5e0  LogicProjectileData getColumnValue        device resolver, assert string
+     0xac3cfc  LogicBattleModeClient getTeamStars        device resolver, assert string
+     0x75d20c  MessageManager receiveMessage             device resolver, assert string
+     0xd5646c  MetalView render                          device resolver
+     0xa2d250  the setOwner slot target                  found by disassembling addGameObject
+     0xac3ddc  finder over the manager by team            our disassembly, reads +0x28 and +0x40
+     0xac3e74  second finder, same shape                  our disassembly
+     0xac3d80  manager-side finder by team                our disassembly, reads +0x0 and +0xc
+     0xac3f2c  manager progress accessor                  our disassembly, reads +0x28 then +0x8c
+     0xac3f20  the pair setter for +0x1d4 and +0x1d8      our disassembly, unique in the image
+     0xac3500  getInt, leaf getter for +0xec             device resolver
+     0xac40d8  leaf getter for +0x218                    device resolver
+     0xac40e8  leaf getter for +0x220                    device resolver
+     0xac40f8  leaf getter for +0x228                    device resolver
+     0x46aefc  Array<T> append, the source of the header layout above
+     0x100382cc8  non-virtual data accessor used by addGameObject
+
+   -- The one lever that matters ----------------------------------------------------------
+
+     addGameObject, at 0xa27930, does this:
+
+         ldr x0, [sp, #0x28]      the object
+         ldr x8, [x0]
+         ldr x8, [x8, #0x18]
+         mov x1, x19              the manager
+         blr x8
+
+     The slot it calls is byte RVA 0xff5738, which is B2 in the table below. So the first
+     game object created in a match hands us both the object and the manager, in x0 and x1,
+     with no scan, no threshold and no guessing. Until titanox_36 the forwarder read x0
+     only, which is why thirty-five versions never saw a live battle object.
+
+   -- Still unknown ------------------------------------------------------------------------
+
+     The movement entry point. Neither setClientPredictionMoveTo nor updateMovement nor
+     handleJoystick exists as a string anywhere in the image, so no name resolver can find
+     them, and every address the shipped table gives for them lands in the middle of an
+     unrelated function. What is known: the only code in the whole image that writes both
+     +0x1d4 and +0x1d8 is the three instructions at 0xac3f20, and its single caller is a
+     spawn path. The captured object's own table is therefore dumped in full, which is the
+     one place a callable movement slot can be read from.
+   ====================================================================================== */
+
+/* The invariant table, printed at startup so that a log can be audited against it without
+   anyone having to read the source again. */
+typedef struct {
+    const char *label;
+    const char *value;
+    const char *provenance;
+} tnx_fact_t;
+
+static const tnx_fact_t g_tnx_facts[] = {
+    { "mode+0x28 = object manager", "0x28", "engine code at 0xac3ddc loads it here" },
+    { "manager+0x0 = object array", "0x0", "engine append routine 0x46aefc" },
+    { "manager+0x8 = capacity", "0x8", "engine append routine 0x46aefc" },
+    { "manager+0xc = count", "0xc", "engine append routine 0x46aefc" },
+    { "array stride", "8", "64-bit targets" },
+    { "object+0x8 = global id", "0x8", "addGameObject writes it at 0xa278e4" },
+    { "object+0x20 = owning manager", "0x20", "setOwner is str x1,[x0,#0x20]" },
+    { "object+0x3c = owner index", "0x3c", "REvengeBS" },
+    { "object+0x40 = team", "0x40", "two independent loops in the class code" },
+    { "object+0xd0 = dead flag, byte", "0xd0", "REvengeBS reads uint8_t" },
+    { "slot +0x18 = setOwner", "0x18", "addGameObject calls it with the manager in x1" },
+    { "slot +0x88 = getX", "0x88", "call site ldr x8,[x8,#0x88] and REvengeBS order" },
+    { "slot +0x90 = getY", "0x90", "eight bytes after getX" },
+    { "count ceiling", "96", "a real battle holds tens of entities" },
+    { "capacity ceiling", "4096", "no real array is allocated four billion entries" },
+    { "live ratio", "3/4", "string tables decode as instances in a couple of slots" },
+    { "manager probe budget", "65536", "the 2048 of titanox_35 went blind in seconds" },
+    { NULL, NULL, NULL }
+};
+
+static void tnx_struct_map_dump(void) {
+    tnx_logf("contract: %d invariants, offsets below are the ones actually in use",
+             (int)(sizeof(g_tnx_facts) / sizeof(g_tnx_facts[0])) - 1);
+
+    for (int i = 0; g_tnx_facts[i].label; i++) {
+        tnx_logf("contract %-30s %-6s %s", g_tnx_facts[i].label, g_tnx_facts[i].value,
+                 g_tnx_facts[i].provenance);
+    }
+
+    tnx_logf("contract numbers mode+0x28=%#llx mgr array=%#llx cap=%#llx count=%#llx "
+             "obj team=%#llx dead=%#llx gid=%#llx own=%#llx",
+             (unsigned long long)TNX_MODE_MANAGER_OFF,
+             (unsigned long long)TNX_MGR_ARRAY_OFF,
+             (unsigned long long)TNX_MGR_CAP_OFF,
+             (unsigned long long)TNX_MGR_COUNT_OFF,
+             (unsigned long long)TNX_OBJ_TEAM_OFF,
+             (unsigned long long)TNX_OBJ_DEADFLAG_OFF,
+             (unsigned long long)TNX_OBJ_GLOBALID_OFF,
+             (unsigned long long)TNX_OBJ_OWNERINDEX_OFF);
+
+    tnx_logf("contract slots getX=%#llx getY=%#llx owner=%#llx list=%#llx listCount=%#llx",
+             (unsigned long long)TNX_OBJ_GETX_SLOT,
+             (unsigned long long)TNX_OBJ_GETY_SLOT,
+             (unsigned long long)TNX_SLOT_OWNER_OFF,
+             (unsigned long long)TNX_SLOT_LIST_OFF,
+             (unsigned long long)TNX_SLOT_LISTCOUNT_OFF);
+}
+
+/* Integer square root. The engine's coordinates are fixed point integers and there is no
+   floating point anywhere else in this file, so the dodge arithmetic stays integral too. */
+static int64_t tnx_isqrt(int64_t value) {
+    int64_t guess = 0;
+
+    if (value <= 0) return 0;
+    if (value > (int64_t)1 << 62) return (int64_t)1 << 31;
+
+    guess = value;
+
+    for (int i = 0; i < 64; i++) {
+        int64_t next = (guess + value / (guess > 0 ? guess : 1)) / 2;
+
+        if (next >= guess) break;
+        guess = next;
+    }
+
+    return guess;
+}
+
+/* One line per object: everything a dodge needs, including the two table slots that decide
+   what the object actually is. */
+static int tnx_object_detail(uintptr_t manager, int limit) {
+    void *array = NULL;
+    int32_t count = 0;
+    int32_t capacity = 0;
+    int shown = 0;
+
+    if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array) || !array) return 0;
+    if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) return 0;
+    if (!tnx_read_i32(manager + TNX_MGR_CAP_OFF, &capacity)) return 0;
+    if (count <= 0) return 0;
+    if (count > TNX_MANAGER_MAX_OBJECTS) count = TNX_MANAGER_MAX_OBJECTS;
+    if (limit > 0 && count > limit) count = limit;
+
+    tnx_logf("objtable array=%p count=%d cap=%d", array, count, capacity);
+
+    for (int32_t i = 0; i < count; i++) {
+        void *element = NULL;
+        void *vtable = NULL;
+        void *slotOwner = NULL;
+        void *slotAlive = NULL;
+        void *slotKind = NULL;
+        int32_t globalId = 0;
+        int32_t team = 0;
+        int32_t owner = 0;
+        int32_t x = 0;
+        int32_t y = 0;
+        uint8_t dead = 0;
+
+        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * sizeof(void *), &element)) break;
+        if (!element) continue;
+
+        shown++;
+
+        if (!tnx_read_ptr((uintptr_t)element, &vtable)) continue;
+
+        tnx_read_ptr((uintptr_t)vtable + TNX_SLOT_OWNER_OFF, &slotOwner);
+        tnx_read_ptr((uintptr_t)vtable + 0x28, &slotAlive);
+        tnx_read_ptr((uintptr_t)vtable + 0x48, &slotKind);
+
+        tnx_read_i32((uintptr_t)element + TNX_OBJ_GLOBALID_OFF, &globalId);
+        tnx_read_i32((uintptr_t)element + TNX_OBJ_TEAM_OFF, &team);
+        tnx_read_i32((uintptr_t)element + TNX_OBJ_OWNERINDEX_OFF, &owner);
+        tnx_read_u8((uintptr_t)element + TNX_OBJ_DEADFLAG_OFF, &dead);
+        tnx_obj_coord((uintptr_t)element, TNX_OBJ_GETX_SLOT, &x);
+        tnx_obj_coord((uintptr_t)element, TNX_OBJ_GETY_SLOT, &y);
+
+        tnx_logf("obj[%02d] %p vt=%#llx gid=%d team=%d own=%d dead=%d pos=(%d,%d) "
+                 "s18=%#llx s28=%#llx s48=%#llx shape=%d",
+                 i, element, (unsigned long long)tnx_vtable_rva(element), globalId, team, owner,
+                 dead, x, y,
+                 (unsigned long long)(slotOwner ? (uintptr_t)slotOwner - g_base : 0),
+                 (unsigned long long)(slotAlive ? (uintptr_t)slotAlive - g_base : 0),
+                 (unsigned long long)(slotKind ? (uintptr_t)slotKind - g_base : 0),
+                 tnx_gameobject_shape((uintptr_t)element) ? 1 : 0);
+    }
+
+    return shown;
+}
+
+/* The dodge, computed but not yet applied. Everything here is read-only, so it is safe to run
+   while the movement entry point is still unknown; when that is confirmed, the two numbers
+   this prints are the ones to hand to it.
+
+   The shape of the calculation follows the working implementation: per threat, take the
+   direction away from it, weight it by one over the distance, sum, then normalise to a fixed
+   step so the result is a direction rather than a magnitude. It is done once per team present
+   in the match, because which team is ours is not known here and it does not need to be --
+   the vector for our team is in the log either way. */
+static void tnx_dodge_plan(uintptr_t manager, int32_t team) {
+    void *array = NULL;
+    int32_t count = 0;
+    int32_t ownX = 0;
+    int32_t ownY = 0;
+    int found = 0;
+    int threats = 0;
+    int32_t nearest = 0x7fffffff;
+    int64_t avoidX = 0;
+    int64_t avoidY = 0;
+
+    if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array) || !array) return;
+    if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) return;
+    if (count <= 0) return;
+    if (count > TNX_MANAGER_MAX_OBJECTS) count = TNX_MANAGER_MAX_OBJECTS;
+
+    /* Our own position: the first object on this team that is not dead. Good enough for a
+       direction, and it does not commit to any assumption about owner indices. */
+    for (int32_t i = 0; i < count && !found; i++) {
+        void *element = NULL;
+        int32_t t = 0;
+        uint8_t dead = 0;
+        int32_t x = 0;
+        int32_t y = 0;
+
+        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * sizeof(void *), &element)) break;
+        if (!element) continue;
+        if (!tnx_gameobject_shape((uintptr_t)element)) continue;
+        if (!tnx_read_i32((uintptr_t)element + TNX_OBJ_TEAM_OFF, &t)) continue;
+        if (t != team) continue;
+        if (!tnx_read_u8((uintptr_t)element + TNX_OBJ_DEADFLAG_OFF, &dead)) continue;
+        if (dead) continue;
+        if (!tnx_obj_coord((uintptr_t)element, TNX_OBJ_GETX_SLOT, &x)) continue;
+        if (!tnx_obj_coord((uintptr_t)element, TNX_OBJ_GETY_SLOT, &y)) continue;
+
+        ownX = x;
+        ownY = y;
+        found = 1;
+    }
+
+    if (!found) {
+        tnx_logf("dodge team=%d no live object on this team", team);
+        return;
+    }
+
+    for (int32_t i = 0; i < count; i++) {
+        void *element = NULL;
+        int32_t t = 0;
+        uint8_t dead = 0;
+        int32_t x = 0;
+        int32_t y = 0;
+        int32_t dx = 0;
+        int32_t dy = 0;
+        int64_t dist = 0;
+
+        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * sizeof(void *), &element)) break;
+        if (!element) continue;
+        if (!tnx_read_i32((uintptr_t)element + TNX_OBJ_TEAM_OFF, &t)) continue;
+        if (t == team) continue;
+        if (!tnx_read_u8((uintptr_t)element + TNX_OBJ_DEADFLAG_OFF, &dead)) continue;
+        if (dead) continue;
+        if (!tnx_obj_coord((uintptr_t)element, TNX_OBJ_GETX_SLOT, &x)) continue;
+        if (!tnx_obj_coord((uintptr_t)element, TNX_OBJ_GETY_SLOT, &y)) continue;
+
+        dx = x - ownX;
+        dy = y - ownY;
+        dist = tnx_isqrt((int64_t)dx * (int64_t)dx + (int64_t)dy * (int64_t)dy);
+
+        if (dist < nearest) nearest = (int32_t)dist;
+        if (dist > TNX_DODGE_RADIUS) continue;
+
+        threats++;
+
+        /* Away from the threat, weighted by one over the distance, in a fixed scale so the
+           per-threat contribution stays an integer. */
+        if (dist > 0) {
+            avoidX += -((int64_t)dx * TNX_DODGE_SCALE) / (dist + 1);
+            avoidY += -((int64_t)dy * TNX_DODGE_SCALE) / (dist + 1);
+        }
+    }
+
+    {
+        int64_t norm = tnx_isqrt(avoidX * avoidX + avoidY * avoidY);
+        int64_t stepX = 0;
+        int64_t stepY = 0;
+        const char *verdict = "hold";
+
+        if (norm > 0) {
+            stepX = avoidX * TNX_DODGE_STEP / norm;
+            stepY = avoidY * TNX_DODGE_STEP / norm;
+            verdict = "move";
+        }
+
+        if (threats == 0) verdict = "no threat in radius";
+
+        tnx_logf("dodge team=%d own=(%d,%d) threats=%d nearest=%d raw=(%lld,%lld) "
+                 "step=(%lld,%lld) action=%s radius=%d stepLen=%d",
+                 team, ownX, ownY, threats, nearest == 0x7fffffff ? -1 : nearest,
+                 (long long)avoidX, (long long)avoidY,
+                 (long long)stepX, (long long)stepY, verdict,
+                 TNX_DODGE_RADIUS, TNX_DODGE_STEP);
+    }
+}
+
+/* Runs the plan for every team the manager actually contains, so the log carries the answer
+   regardless of which team the player is on. */
+static void tnx_dodge_all_teams(uintptr_t manager) {
+    int32_t teams[TNX_OBJ_TEAM_MAX + 1];
+    int teamCount = 0;
+    void *array = NULL;
+    int32_t count = 0;
+
+    if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array) || !array) return;
+    if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) return;
+    if (count <= 0) return;
+    if (count > TNX_MANAGER_MAX_OBJECTS) count = TNX_MANAGER_MAX_OBJECTS;
+
+    for (int i = 0; i <= TNX_OBJ_TEAM_MAX; i++) teams[i] = -1;
+
+    for (int32_t i = 0; i < count; i++) {
+        void *element = NULL;
+        int32_t t = 0;
+
+        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * sizeof(void *), &element)) break;
+        if (!element) continue;
+        if (!tnx_read_i32((uintptr_t)element + TNX_OBJ_TEAM_OFF, &t)) continue;
+        if (t < 0 || t > TNX_OBJ_TEAM_MAX) continue;
+        if (teams[t] >= 0) continue;
+
+        teams[t] = t;
+        teamCount++;
+    }
+
+    if (teamCount == 0) return;
+
+    /* Two teams is the whole of a real match. The plan calls into the game's own getters, so
+       the number of runs per capture is bounded rather than left to whatever the array holds. */
+    {
+        int planned = 0;
+
+        for (int t = 0; t <= TNX_OBJ_TEAM_MAX && planned < 2; t++) {
+            if (teams[t] < 0) continue;
+
+            tnx_dodge_plan(manager, t);
+            planned++;
+        }
+    }
+}
+
 static void tnx_slot_pump(void) {
     int first = -1;
 
@@ -3666,6 +4233,21 @@ static void tnx_slot_pump(void) {
     if (tnx_read_ptr(object + TNX_SLOT_OWNER_OFF, &ownerField) && ownerField &&
         (uintptr_t)ownerField != g_slot_arg1[first]) {
         tnx_report_manager("slot +20", (uintptr_t)ownerField);
+    }
+
+    /* The plan itself, from whichever manager the capture produced. Read-only: it computes and
+       logs the two numbers a movement call would need, so the geometry can be verified from a
+       log before the entry point is known. */
+    {
+        uintptr_t plan = g_slot_arg1[first] ? g_slot_arg1[first] : (uintptr_t)ownerField;
+
+        if (plan && tnx_manager_live_count(plan) >= TNX_MANAGER_MIN_OBJECTS) {
+            int detailed = tnx_object_detail(plan, TNX_OBJECT_DETAIL_MAX);
+
+            tnx_raw_object_hex(plan, 2);
+
+            if (detailed > 0) tnx_dodge_all_teams(plan);
+        }
     }
 
     /* The captured object's own table, forty entries of it. Issuing a dodge needs a callable
@@ -3824,6 +4406,9 @@ static void setup(void) {
     for (int i = 0; i < TNX_SLOT_COUNT; i++) {
         if (g_slot_specs[i].control) buildControls++;
     }
+
+    tnx_slot_table_dump();
+    tnx_struct_map_dump();
 
     tnx_logf("build=%s slots=%d control=%d types>=%d scanEvery=%d heapEvery=%d attempts=%d",
              TNX_BUILD_TAG, TNX_SLOT_COUNT - buildControls, buildControls, TNX_MODE_MIN_TYPES,

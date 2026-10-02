@@ -214,7 +214,7 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_50"
+#define TNX_BUILD_TAG "titanox_51"
 
 #define TNX_RVA_SETPREDICTION 0x00ac3f20ULL
 #define TNX_OBJ_X_OFF 0x30ULL
@@ -564,6 +564,7 @@ static int g_ag_adopted = 0;
 
 static void tnx_slot_diag(const char *why);
 static void tnx_slot_fired_report(void);
+static BOOL tnx_read_ptr(uintptr_t address, void **out);
 
 static BOOL tnx_obj_slot_fn(uintptr_t object, uintptr_t slot, uintptr_t *rvaOut);
 static void tnx_trail_note(uintptr_t manager, int32_t count, int32_t capacity, int live,
@@ -693,7 +694,7 @@ static void tnx_slot_fired_report(void) {
             state = "install-failed";
         }
 
-        tnx_logf("v50 hook %s %s armed=%d slotRva=%#llx liveSlots=%d firstCallTick=%llu hits=%llu "
+        tnx_logf("v51 hook %s %s armed=%d slotRva=%#llx liveSlots=%d firstCallTick=%llu hits=%llu "
                  "tick=%llu",
                  g_slot_specs[i].shortTag, state, armed,
                  (unsigned long long)g_slot_specs[i].slotRva, brk_live_slot_count(),
@@ -704,7 +705,7 @@ static void tnx_slot_fired_report(void) {
             if (!(g_v50_never_dispatched_mask & (1u << (unsigned)i))) {
                 g_v50_never_dispatched_mask |= (1u << (unsigned)i);
 
-                tnx_logf("v50 hook %s never dispatched: zero entries after %llu ticks (armed=%d "
+                tnx_logf("v51 hook %s never dispatched: zero entries after %llu ticks (armed=%d "
                          "liveSlots=%d slotRva=%#llx) - the slot is installed and has not been "
                          "reached, which is not the same as the class being absent",
                          g_slot_specs[i].shortTag, (unsigned long long)g_v50_ticks, armed,
@@ -713,7 +714,7 @@ static void tnx_slot_fired_report(void) {
         }
     }
 
-    tnx_logf("v50 hooks total fired=%llu of %d slots at tick=%llu",
+    tnx_logf("v51 hooks total fired=%llu of %d slots at tick=%llu",
              (unsigned long long)(g_slot_hits[0] + g_slot_hits[1] + g_slot_hits[2] + g_slot_hits[3] +
                                   g_slot_hits[4] + g_slot_hits[5] + g_slot_hits[6]),
              TNX_SLOT_COUNT, (unsigned long long)g_v50_ticks);
@@ -2051,7 +2052,7 @@ static void tnx_alert_battle_check(void) {
         if (g_v50_alert_withheld_logs < 5 || (g_v50_alert_calls % 1800) == 0) {
             g_v50_alert_withheld_logs++;
 
-            tnx_logf("v50 alert withheld: %s bestLive=%d bestCount=%d mode=%p manager=%p "
+            tnx_logf("v51 alert withheld: %s bestLive=%d bestCount=%d mode=%p manager=%p "
                      "candidate=%p live=%d elements=%d teamCount=%d distinctGids=%d deadOk=%d "
                      "vt0=%#llx sightings=%d",
                      why, g_manager_best_live, g_manager_best_count, (void *)g_mode_object,
@@ -2076,7 +2077,7 @@ static void tnx_alert_battle_check(void) {
     if (!g_alert_shown && now > 3000) {
         g_alert_shown = 1;
 
-        tnx_logf("v50 battle entry: live=%d teamCount=%d distinctGids=%d deadOk=%d vt0=%#llx "
+        tnx_logf("v51 battle entry: live=%d teamCount=%d distinctGids=%d deadOk=%d vt0=%#llx "
                  "sightings=%d bestLive=%d bestCount=%d mode=%p manager=%p candidate=%p -- showing "
                  "alert",
                  facts.live, facts.teamCount, facts.distinctGids, facts.deadOk,
@@ -3525,15 +3526,15 @@ static void tnx_v50_table_probe(const tnx_vtcensus_t *entry) {
     if (!entry) return;
     if (entry->rva != TNX_V50_WATCH_RVA) return;
 
-    tnx_logf("v50 table probe rva=%#llx seg=%c count=%llu shaped=%llu instances=%d -- before this "
+    tnx_logf("v51 table probe rva=%#llx seg=%c count=%llu shaped=%llu instances=%d -- before this "
              "table is hooked",
              (unsigned long long)entry->rva, entry->seg ? 'D' : 'C', entry->count, entry->shaped,
              entry->instCount);
 
     for (int i = 0; i < entry->instCount; i++) {
         uintptr_t object = entry->inst[i];
-        uintptr_t vtable = 0;
-        uintptr_t owner = 0;
+        void *vtable = NULL;
+        void *owner = NULL;
         int32_t gid = 0;
         int32_t team = 0;
         int32_t teamEngine = 0;
@@ -3546,7 +3547,7 @@ static void tnx_v50_table_probe(const tnx_vtcensus_t *entry) {
         int isShaped = 0;
 
         if (!tnx_read_ptr(object, &vtable)) {
-            tnx_logf("v50 table elem[%d] %p unreadable - no verdict from this element",
+            tnx_logf("v51 table elem[%d] %p unreadable - no verdict from this element",
                      i, (void *)object);
 
             continue;
@@ -3569,18 +3570,19 @@ static void tnx_v50_table_probe(const tnx_vtcensus_t *entry) {
         if (i == 0) firstGid = gid;
         else if (gid != firstGid) sameGid = 0;
 
-        tnx_logf("v50 table elem[%d] %p vt=%#llx gid=%d team=%d team4c=%d own=%d dead=%d owner=%p "
+        tnx_logf("v51 table elem[%d] %p vt=%#llx gid=%d team=%d team4c=%d own=%d dead=%d owner=%p "
                  "w08=%d w40=%d w4c=%d wd0=%d shape=%d",
-                 i, (void *)object, (unsigned long long)(vtable - g_base), gid, team, teamEngine,
+                 i, (void *)object, (unsigned long long)((uintptr_t)vtable - g_base), gid, team,
+                 teamEngine,
                  ownIndex, dead, (void *)owner, w08, w40, w4c, wd0, isShaped);
     }
 
     if (entry->instCount >= 2 && sameGid) {
-        tnx_logf("v50 table verdict rva=%#llx: all %d instances share gid=%d - this is a proxy or a "
+        tnx_logf("v51 table verdict rva=%#llx: all %d instances share gid=%d - this is a proxy or a "
                  "cache, NOT a battle container; hooking it would be pointless",
                  (unsigned long long)entry->rva, entry->instCount, firstGid);
     } else if (entry->instCount >= 1) {
-        tnx_logf("v50 table verdict rva=%#llx: shaped=%d instances=%d and the ids differ - a real "
+        tnx_logf("v51 table verdict rva=%#llx: shaped=%d instances=%d and the ids differ - a real "
                  "object family, safe to hook",
                  (unsigned long long)entry->rva, shaped, entry->instCount);
     }
@@ -5128,7 +5130,7 @@ static int tnx_object_detail_readonly(uintptr_t manager, int limit) {
     }
 
 summary:
-    tnx_logf("v50 best summary shown=%d instances=%d teams=%d/%d/%d/%d reasons: noArray=%d "
+    tnx_logf("v51 best summary shown=%d instances=%d teams=%d/%d/%d/%d reasons: noArray=%d "
              "noCount=%d unreadable=%d noVt=%d noTeam=%d allDead=%d outOfRange=%d",
              shown, instances, teams[0], teams[1], teams[2], teams[3], noArray, noCount,
              unreadable, noVt, noTeam, allDead, outOfRange);
@@ -5157,20 +5159,20 @@ static void tnx_best_candidate_dump(void) {
     if (chosen < 0) {
         g_trail_best = -1;
 
-        tnx_logf("v50 best not chosen: none of the %d recorded candidates yielded a single instance "
+        tnx_logf("v51 best not chosen: none of the %d recorded candidates yielded a single instance "
                  "- the reason is in the summary lines above", n);
 
         return;
     }
 
     if (chosen != g_trail_best) {
-        tnx_logf("v50 best moved from index %d to index %d: the higher-ranked candidate's summary "
+        tnx_logf("v51 best moved from index %d to index %d: the higher-ranked candidate's summary "
                  "extracted nothing", g_trail_best, chosen);
     }
 
     g_trail_best = chosen;
 
-    tnx_logf("v50 best candidate index=%d mgr=%p count=%d cap=%d live=%d nonEmpty=%d",
+    tnx_logf("v51 best candidate index=%d mgr=%p count=%d cap=%d live=%d nonEmpty=%d",
              g_trail_best, (void *)g_trail[g_trail_best].manager,
              g_trail[g_trail_best].count, g_trail[g_trail_best].capacity,
              g_trail[g_trail_best].live, g_trail[g_trail_best].nonEmpty);
@@ -5227,13 +5229,13 @@ static int tnx_v47_verify_setprediction(void) {
 
     for (int i = 0; i < 3; i++) {
         if (words[i] != expected[i]) {
-            tnx_logf("v50 setprediction fingerprint MISMATCH word[%d]=%08x expected=%08x at %#llx",
+            tnx_logf("v51 setprediction fingerprint MISMATCH word[%d]=%08x expected=%08x at %#llx",
                      i, words[i], expected[i], (unsigned long long)TNX_RVA_SETPREDICTION);
             return 0;
         }
     }
 
-    tnx_logf("v50 setprediction fingerprint verified at %#llx (str w1,[x0,#0x1d4]; str w2,[x0,#0x1d8]; "
+    tnx_logf("v51 setprediction fingerprint verified at %#llx (str w1,[x0,#0x1d4]; str w2,[x0,#0x1d8]; "
              "ret) - the BYTES match; nothing has been written yet",
              (unsigned long long)TNX_RVA_SETPREDICTION);
 
@@ -5429,10 +5431,10 @@ static void tnx_v48_discriminate(uintptr_t manager) {
         char reasons[320];
 
         if (rejected > 0 || g_v50_reject.elementsRead > 0) {
-            tnx_logf("v50 fields manager=%p usable=0 rejected=%d -- all elements rejected: %s",
+            tnx_logf("v51 fields manager=%p usable=0 rejected=%d -- all elements rejected: %s",
                      (void *)manager, rejected, tnx_v50_reject_text(reasons, sizeof(reasons)));
         } else {
-            tnx_logf("v50 fields manager=%p usable=0 rejected=0 -- no elements in container",
+            tnx_logf("v51 fields manager=%p usable=0 rejected=0 -- no elements in container",
                      (void *)manager);
         }
 
@@ -5442,7 +5444,7 @@ static void tnx_v48_discriminate(uintptr_t manager) {
     if (usable == 1) {
         char reasons[320];
 
-        tnx_logf("v50 fields manager=%p usable=1 rejected=%d -- one element is not enough to tell "
+        tnx_logf("v51 fields manager=%p usable=1 rejected=%d -- one element is not enough to tell "
                  "one field from another: %s",
                  (void *)manager, rejected, tnx_v50_reject_text(reasons, sizeof(reasons)));
 
@@ -5453,13 +5455,13 @@ static void tnx_v48_discriminate(uintptr_t manager) {
 
     for (int i = 0; i < n; i++) {
         if (!tnx_read_bytes(objects[i].object, words[i], sizeof(words[i]))) {
-            tnx_logf("v50 fields element %d at %p unreadable over 0x%x bytes",
+            tnx_logf("v51 fields element %d at %p unreadable over 0x%x bytes",
                      i, (void *)objects[i].object, (unsigned)sizeof(words[i]));
             return;
         }
     }
 
-    tnx_logf("v50 fields manager=%p usable=%d rejected=%d sample=%d window=+0x0..+0x%x",
+    tnx_logf("v51 fields manager=%p usable=%d rejected=%d sample=%d window=+0x0..+0x%x",
              (void *)manager, usable, rejected, n, (unsigned)((TNX_V48_WORDS - 1) * 4));
 
     for (int w = 0; w < TNX_V48_WORDS; w++) {
@@ -5489,7 +5491,7 @@ static void tnx_v48_discriminate(uintptr_t manager) {
 
         if (distinct <= 1) continue;
 
-        tnx_logf("v50 off +0x%02x distinct=%d/%d min=%lld max=%lld small=%d tiny=%d %s%s",
+        tnx_logf("v51 off +0x%02x distinct=%d/%d min=%lld max=%lld small=%d tiny=%d %s%s",
                  w * 4, distinct, n, (long long)minV, (long long)maxV, allSmall, allTiny,
                  (allTiny && distinct >= 2 && distinct <= TNX_V48_TEAM_MAX) ? "TEAM? " : "",
                  (allSmall && distinct == n) ? "VARIES/PAIR-MEMBER?" : "");
@@ -5533,7 +5535,7 @@ static void tnx_v48_discriminate(uintptr_t manager) {
         if (dx == n && dy == n) {
             intPairOff = w * 4;
 
-            tnx_logf("v50 coord pair int32 at +0x%02x,+0x%02x all %d distinct",
+            tnx_logf("v51 coord pair int32 at +0x%02x,+0x%02x all %d distinct",
                      w * 4, (w + 1) * 4, n);
         }
     }
@@ -5568,11 +5570,11 @@ static void tnx_v48_discriminate(uintptr_t manager) {
 
         floatPairOff = w * 4;
 
-        tnx_logf("v50 coord pair float32 at +0x%02x,+0x%02x first=(%.3f,%.3f) distinct=%d/%d",
+        tnx_logf("v51 coord pair float32 at +0x%02x,+0x%02x first=(%.3f,%.3f) distinct=%d/%d",
                  w * 4, (w + 1) * 4, fx, fy, distinctPairs, n);
     }
 
-    tnx_logf("v50 named teamOff=%s0x%x distinct=%d | coordOff=%s0x%x distinct=%d | "
+    tnx_logf("v51 named teamOff=%s0x%x distinct=%d | coordOff=%s0x%x distinct=%d | "
              "intPair=%s0x%x | floatPair=%s0x%x",
              teamOff >= 0 ? "+" : "none:", teamOff >= 0 ? teamOff : 0, teamDistinct,
              coordOff >= 0 ? "+" : "none:", coordOff >= 0 ? coordOff : 0, coordDistinct,
@@ -5608,7 +5610,7 @@ static void tnx_v50_raw_team_probe(uintptr_t manager) {
         int seenNew = 0;
 
         if (!tnx_read_ptr((uintptr_t)data + (uintptr_t)i * sizeof(void *), &element) || !element) {
-            tnx_logf("v50 raw[%d] element unreadable - the container cannot be walked at all", i);
+            tnx_logf("v51 raw[%d] element unreadable - the container cannot be walked at all", i);
 
             continue;
         }
@@ -5618,7 +5620,7 @@ static void tnx_v50_raw_team_probe(uintptr_t manager) {
         tnx_read_i32((uintptr_t)element + TNX_OBJ_GLOBALID_OFF, &gid);
         tnx_read_u8((uintptr_t)element + TNX_OBJ_DEADFLAG_OFF, &dead);
 
-        tnx_logf("v50 raw[%d] %p gid=%d plus40=%d plus4c=%d dead=%d", i, (void *)element, gid,
+        tnx_logf("v51 raw[%d] %p gid=%d plus40=%d plus4c=%d dead=%d", i, (void *)element, gid,
                  plus40, plus4c, dead);
 
         for (int j = 0; j < shown; j++) {
@@ -5636,7 +5638,7 @@ static void tnx_v50_raw_team_probe(uintptr_t manager) {
 
     if (shown <= 0) return;
 
-    tnx_logf("v50 team probe raw=%d distinct(+0x40)=%d distinct(+0x4c)=%d", shown, oldDistinct,
+    tnx_logf("v51 team probe raw=%d distinct(+0x40)=%d distinct(+0x4c)=%d", shown, oldDistinct,
              newDistinct);
 }
 
@@ -5689,14 +5691,14 @@ static void tnx_v48_probe(uintptr_t manager, uintptr_t mode, int verbose) {
     {
         char reasons[320];
 
-        tnx_logf("v50 man walk mode=%p manager=%p usable=%d rejected=%d (%s) mapOk=%d mapW=%d "
+        tnx_logf("v51 man walk mode=%p manager=%p usable=%d rejected=%d (%s) mapOk=%d mapW=%d "
                  "mapH=%d inRange=%d distinct=%d teamsOld=%d teamsNew=%d teamOff=0x%x",
                  (void *)mode, (void *)manager, usable, rejected,
                  tnx_v50_reject_text(reasons, sizeof(reasons)), g_v47_map_ok, g_v47_map_w,
                  g_v47_map_h, inRange, distinct, distinctOld, distinctNew, g_v47_team_off);
     }
 
-    tnx_logf("v50 teamOff chosen=+0x%x because distinct(+0x40)=%d distinct(+0x4c)=%d (the field "
+    tnx_logf("v51 teamOff chosen=+0x%x because distinct(+0x40)=%d distinct(+0x4c)=%d (the field "
              "that splits the elements into more sides wins; a tie keeps the engine's own +0x4c, which is "
              "the offset the engine itself reads)",
              g_v47_team_off, distinctOld, distinctNew);
@@ -5704,7 +5706,7 @@ static void tnx_v48_probe(uintptr_t manager, uintptr_t mode, int verbose) {
     tnx_v50_raw_team_probe(manager);
 
     if (verbose) {
-        tnx_logf("v50 offsets obj off=0x%llx/0x%llx x=0x%llx y=0x%llx teamOld=0x%llx teamNew=0x%llx "
+        tnx_logf("v51 offsets obj off=0x%llx/0x%llx x=0x%llx y=0x%llx teamOld=0x%llx teamNew=0x%llx "
                  "owner=0x%llx dead=0x%llx active=0x%llx tilemap=0x%llx w=0x%llx",
                  TNX_MGR_ARRAY_OFF, TNX_MGR_COUNT_OFF, TNX_OBJ_X_OFF, TNX_OBJ_Y_OFF,
                  TNX_OBJ_TEAM_OFF, TNX_OBJ_TEAMENGINE_OFF, TNX_OBJ_OWNERINDEX_OFF,
@@ -5712,7 +5714,7 @@ static void tnx_v48_probe(uintptr_t manager, uintptr_t mode, int verbose) {
                  TNX_MODE_TILEMAP_OFF, TNX_TILEMAP_WIDTH_OFF);
 
         for (int i = 0; i < usable && i < 16; i++) {
-            tnx_logf("v50 obj[%02d] at=%p gid=%d pos=(%d,%d) own=%d teamOld=%d teamNew=%d "
+            tnx_logf("v51 obj[%02d] at=%p gid=%d pos=(%d,%d) own=%d teamOld=%d teamNew=%d "
                      "dead=%d active=%d",
                      i, (void *)objects[i].object, objects[i].gid, objects[i].x, objects[i].y,
                      objects[i].ownerIndex, objects[i].teamOld, objects[i].teamNew,
@@ -5726,7 +5728,7 @@ static void tnx_v48_probe(uintptr_t manager, uintptr_t mode, int verbose) {
     g_v47_coord_ok = (usable >= 2 && inRange == usable && distinct >= 2 &&
                       (distinctOld >= 2 || distinctNew >= 2)) ? 1 : 0;
 
-    tnx_logf("v50 coords ok=%d (need >=2 objects, all in range, >=2 distinct positions, "
+    tnx_logf("v51 coords ok=%d (need >=2 objects, all in range, >=2 distinct positions, "
              "and a team field that splits them)",
              g_v47_coord_ok);
 }
@@ -5735,8 +5737,8 @@ static int g_v50_setpred_blocked_logs = 0;
 
 static int tnx_v50_mode_is_real(uintptr_t mode, uintptr_t expectedManager, uintptr_t *vtOut,
                                 uintptr_t *chainOut) {
-    uintptr_t vtable = 0;
-    uintptr_t chain = 0;
+    void *vtable = NULL;
+    void *chain = NULL;
     uintptr_t rva = 0;
 
     if (vtOut) *vtOut = 0;
@@ -5746,7 +5748,7 @@ static int tnx_v50_mode_is_real(uintptr_t mode, uintptr_t expectedManager, uintp
 
     if (!tnx_read_ptr(mode, &vtable) || !vtable) return 0;
 
-    rva = vtable - g_base;
+    rva = (uintptr_t)vtable - g_base;
 
     if (vtOut) *vtOut = rva;
 
@@ -5793,7 +5795,7 @@ static void tnx_autododge_v48(void) {
     if (!sourceIsMode && !g_manager_object && source &&
         g_trail_best >= 0 && g_trail_best < g_trail_count && g_trail[g_trail_best].live == 0) {
         if ((g_v48_ticks % 900) == 1) {
-            tnx_logf("v50 dodge idle ticks=%llu: best trail candidate has live=0, waiting "
+            tnx_logf("v51 dodge idle ticks=%llu: best trail candidate has live=0, waiting "
                      "(trailBest=%p nonEmpty=%d count=%d stable=%d)",
                      (unsigned long long)g_v48_ticks, (void *)source,
                      g_trail[g_trail_best].nonEmpty, g_trail[g_trail_best].count,
@@ -5805,7 +5807,7 @@ static void tnx_autododge_v48(void) {
 
     if (g_v48_entry_logs < 3) {
         g_v48_entry_logs++;
-        tnx_logf("v50 dodge ENTERED ticks=%llu mode=%p manager=%p trailBest=%p source=%p kind=%s "
+        tnx_logf("v51 dodge ENTERED ticks=%llu mode=%p manager=%p trailBest=%p source=%p kind=%s "
                  "setpredFn=%d writes=%llu",
                  (unsigned long long)g_v48_ticks, (void *)g_mode_object,
                  (void *)g_manager_object,
@@ -5818,7 +5820,7 @@ static void tnx_autododge_v48(void) {
 
     if (!source) {
         if ((g_v48_ticks % 900) == 1) {
-            tnx_logf("v50 dodge idle ticks=%llu: no mode, no manager and no trail candidate yet "
+            tnx_logf("v51 dodge idle ticks=%llu: no mode, no manager and no trail candidate yet "
                      "(bestLive=%d bestCount=%d) setpred=%d",
                      (unsigned long long)g_v48_ticks, g_manager_best_live,
                      g_manager_best_count, g_v47_setpred_state);
@@ -5857,7 +5859,7 @@ static void tnx_autododge_v48(void) {
 
                 if (loud) tnx_v48_discriminate((uintptr_t)resolved);
             } else {
-                tnx_logf("v50 probe skipped: source %p (%s) has no manager at +0x%llx",
+                tnx_logf("v51 probe skipped: source %p (%s) has no manager at +0x%llx",
                          (void *)source, sourceIsMode ? "mode" : "manager",
                          (unsigned long long)TNX_MODE_MANAGER_OFF);
             }
@@ -5869,7 +5871,7 @@ static void tnx_autododge_v48(void) {
     if (!g_v47_setpred_state) {
         if (g_v47_giveup_logs < 3) {
             g_v47_giveup_logs++;
-            tnx_logf("v50 dodge idle: no verified actuator (fingerprint state=%d -- this is the "
+            tnx_logf("v51 dodge idle: no verified actuator (fingerprint state=%d -- this is the "
                      "byte check of the function, not a write)", g_v47_setpred_state);
         }
         return;
@@ -5878,7 +5880,7 @@ static void tnx_autododge_v48(void) {
     if (!g_v47_coord_ok) {
         if (g_v47_giveup_logs < 3) {
             g_v47_giveup_logs++;
-            tnx_logf("v50 dodge idle: coordinates not confirmed (usable=%d distinct=%d) -- "
+            tnx_logf("v51 dodge idle: coordinates not confirmed (usable=%d distinct=%d) -- "
                      "read-only until they are", g_v47_coord_usable, g_v47_coord_distinct);
         }
         return;
@@ -5887,7 +5889,7 @@ static void tnx_autododge_v48(void) {
     if (!g_mode_object) {
         if (g_v47_giveup_logs < 9) {
             g_v47_giveup_logs++;
-            tnx_logf("v50 dodge idle: coordinates confirmed but the mode is unknown, so the "
+            tnx_logf("v51 dodge idle: coordinates confirmed but the mode is unknown, so the "
                      "actuator has no `this` -- nothing written");
         }
         return;
@@ -5922,7 +5924,7 @@ static void tnx_autododge_v48(void) {
     if (ownBest > TNX_V47_OWN_MAX_SQ) {
         if (g_v47_giveup_logs < 3) {
             g_v47_giveup_logs++;
-            tnx_logf("v50 dodge idle: prediction (%d,%d) is not near any object -- nearest "
+            tnx_logf("v51 dodge idle: prediction (%d,%d) is not near any object -- nearest "
                      "squared distance %lld -- so +0x30/+0x34 are not positions",
                      predictX, predictY, (long long)ownBest);
         }
@@ -5968,7 +5970,7 @@ static void tnx_autododge_v48(void) {
 
     if (threats == 0) {
         if (g_v47_ticks % 256 == 0) {
-            tnx_logf("v50 live ticks=%llu own=(%d,%d) team=%d pred=(%d,%d) hostilesAlive=%d "
+            tnx_logf("v51 live ticks=%llu own=(%d,%d) team=%d pred=(%d,%d) hostilesAlive=%d "
                      "enemiesActive=%d enemiesInRange=0 writes=%llu threatsTotal=%llu",
                      (unsigned long long)g_v47_ticks, ownX, ownY, ownTeam, predictX, predictY,
                      threatsAlive, threats, (unsigned long long)g_v47_writes,
@@ -6013,7 +6015,7 @@ static void tnx_autododge_v48(void) {
                 if (g_v50_setpred_blocked_logs < 6) {
                     g_v50_setpred_blocked_logs++;
 
-                    tnx_logf("v50 setprediction BLOCKED: this=%p vt=%#llx chain[this+0x%llx]=%p "
+                    tnx_logf("v51 setprediction BLOCKED: this=%p vt=%#llx chain[this+0x%llx]=%p "
                              "!= manager=%p -- not the battle mode, nothing written",
                              (void *)g_mode_object, (unsigned long long)thisVt,
                              (unsigned long long)TNX_MODE_MANAGER_OFF, (void *)thisChain,
@@ -6024,7 +6026,7 @@ static void tnx_autododge_v48(void) {
             }
 
             if (g_v47_writes == 0) {
-                tnx_logf("v50 setprediction about to write: this=%p vt=%#llx chain=%p manager=%p "
+                tnx_logf("v51 setprediction about to write: this=%p vt=%#llx chain=%p manager=%p "
                          "target=(%d,%d)", (void *)g_mode_object, (unsigned long long)thisVt,
                          (void *)thisChain, (void *)g_v48_manager, targetX, targetY);
             }
@@ -6035,7 +6037,7 @@ static void tnx_autododge_v48(void) {
         g_v47_writes++;
 
         if (g_v47_writes <= TNX_V47_LOG_FIRST || (g_v47_writes % TNX_V47_LOG_EVERY) == 0) {
-            tnx_logf("v50 write #%llu own=(%d,%d) team=%d hostilesAlive=%d enemiesInRange=%d "
+            tnx_logf("v51 write #%llu own=(%d,%d) team=%d hostilesAlive=%d enemiesInRange=%d "
                      "step=(%d,%d) target=(%d,%d) predBefore=(%d,%d)",
                      (unsigned long long)g_v47_writes, ownX, ownY, ownTeam,
                      threatsAlive, threats, (int)(escapeX * DODGE_STEP),

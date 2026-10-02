@@ -1248,6 +1248,7 @@ static void tnx_run_autoaim(void) {
 
 static UILabel *g_overlay = NULL;
 static double g_overlay_last = 0.0;
+static int g_scan_ticks = 0;
 
 static void tnx_overlay_attach(NSString *text) {
     UIWindow *window = nil;
@@ -1294,9 +1295,9 @@ static void tnx_overlay_update(void) {
 
     g_overlay_last = now;
 
-    snprintf(text, sizeof(text), "TNX %d/%d mx=%d vfx=%d strong=%d obj=%s",
-             g_votescan_attempts, TNX_VOTESCAN_ATTEMPTS, g_mode_best_objects,
-             g_mode_verified_hits, g_mode_strong ? 1 : 0, g_mode_object ? "ok" : "-");
+    snprintf(text, sizeof(text), "TNX t=%d a=%d/%d mx=%d vfx=%d obj=%s",
+             g_scan_ticks, g_votescan_attempts, TNX_VOTESCAN_ATTEMPTS,
+             g_mode_best_objects, g_mode_verified_hits, g_mode_object ? "ok" : "-");
 
     NSString *string = [NSString stringWithUTF8String:text];
 
@@ -1305,6 +1306,17 @@ static void tnx_overlay_update(void) {
     });
 }
 
+static dispatch_source_t g_scan_timer = NULL;
+
+/* The scan must not depend on the render hook.
+
+   Every log so far stops ~30 s after launch -- right when a battle starts -- and the
+   last line is usually a heap-pass summary, so "nothing grows" could equally mean
+   "nothing runs". A plain 1 Hz timer keeps ticking as long as the process is alive,
+   independent of which view the engine renders through, and its tick count is shown
+   on screen: if t= and a= advance while the game is in a battle, the scan really ran
+   and the anchor is what is wrong. If they freeze, the app is gone (crash/suspend) and
+   the problem is stability, not offsets. */
 static void tnx_render_watermark(void) {
     if (!g_base || g_wm_failed) return;
 
@@ -1357,6 +1369,42 @@ static void tnx_render_watermark(void) {
 }
 
 static void tnx_locate_battle_mode(void);
+
+/* Defined here, right after the declaration above, so the call inside the timer block
+   is not a use-before-declaration. The scan must not depend on the render hook: every
+   log so far stops ~30 s after launch -- right when a battle starts -- and its last
+   line is usually a heap-pass summary, so "nothing grows" could equally mean "nothing
+   runs". A 1 Hz timer keeps ticking as long as the process is alive, whatever view the
+   engine renders through, and its tick count is printed on screen: if t= and a= advance
+   during a battle then the scan really ran and the anchor is what is wrong; if they
+   freeze, the app is gone (crash or suspend) and the problem is stability, not offsets. */
+static void tnx_start_timer(void) {
+    if (g_scan_timer) return;
+
+    dispatch_queue_t queue = dispatch_get_global_queue(QOS_CLASS_UTILITY, 0);
+    dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, queue);
+
+    if (!timer) return;
+
+    uint64_t interval = (uint64_t)(1.0 * NSEC_PER_SEC);
+
+    dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)interval),
+                              interval, (uint64_t)(0.25 * NSEC_PER_SEC));
+
+    dispatch_source_set_event_handler(timer, ^{
+        tnx_locate_battle_mode();
+
+        g_scan_ticks++;
+
+        tnx_overlay_update();
+    });
+
+    dispatch_resume(timer);
+
+    g_scan_timer = timer;
+
+    tnx_logf("scan timer started (1 Hz, render hook no longer drives the scan)");
+}
 static void tnx_dump_mode_objects(const char *tag);
 
 static void tnx_run_workload(void) {
@@ -2239,6 +2287,18 @@ static void tnx_scan_heap_for_mode(void) {
         if (objectName != MACH_PORT_NULL) mach_port_deallocate(mach_task_self(), objectName);
         if (result != KERN_SUCCESS || size == 0) break;
 
+        /* The process maps a ~385 GB guard region; walking it is what produced the
+           earlier crash (far=0x14c). Nothing we need lives in a region that large. */
+        if (size > (1ull << 30)) {
+            uintptr_t beyond = (uintptr_t)address + (uintptr_t)size;
+
+            if (beyond <= (uintptr_t)address) break;
+
+            address = (vm_address_t)beyond;
+
+            continue;
+        }
+
         regions++;
 
         if ((info.protection & VM_PROT_WRITE) != 0 && size >= 0x1000) {
@@ -2583,6 +2643,8 @@ static void setup(void) {
 
     tnx_objc_arm("MetalView", "render");
     tnx_objc_arm("NullView", "render");
+
+    tnx_start_timer();
 
     tlog([NSString stringWithFormat:@"setup completed successfully armed=%d", g_objc_armed]);
 }

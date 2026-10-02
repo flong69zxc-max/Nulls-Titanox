@@ -1236,6 +1236,75 @@ static void tnx_run_autoaim(void) {
     *(int32_t *)fireY = targetY;
 }
 
+/* ---------------------------------------------------------------------------
+   On-screen status overlay.
+
+   Every report so far ended 30-90 s after launch, before a battle was covered:
+   the log stops being written as soon as the app is no longer in the foreground,
+   and the render hook is the only driver we have -- so reading the log always
+   costs the exact window we need. A plain UILabel needs no engine offsets, keeps
+   working while the game runs, and can simply be photographed mid-battle.
+   --------------------------------------------------------------------------- */
+
+static UILabel *g_overlay = NULL;
+static double g_overlay_last = 0.0;
+
+static void tnx_overlay_attach(NSString *text) {
+    UIWindow *window = nil;
+
+    for (UIWindow *candidate in [UIApplication sharedApplication].windows) {
+        if (candidate.isKeyWindow) {
+            window = candidate;
+            break;
+        }
+    }
+
+    if (!window) window = [UIApplication sharedApplication].keyWindow;
+    if (!window) return;
+
+    if (g_overlay && g_overlay.superview != window) {
+        [g_overlay removeFromSuperview];
+        g_overlay = nil;
+    }
+
+    if (!g_overlay) {
+        UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(10.0, 44.0, 480.0, 20.0)];
+
+        label.font = [UIFont monospacedSystemFontOfSize:12.0 weight:UIFontWeightBold];
+        label.textColor = [UIColor colorWithRed:1.0 green:0.32 blue:0.32 alpha:1.0];
+        label.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.55];
+        label.userInteractionEnabled = NO;
+        label.numberOfLines = 1;
+
+        g_overlay = label;
+    }
+
+    g_overlay.text = text;
+
+    if (!g_overlay.superview) [window addSubview:g_overlay];
+
+    [g_overlay.superview bringSubviewToFront:g_overlay];
+}
+
+static void tnx_overlay_update(void) {
+    char text[192];
+    double now = CFAbsoluteTimeGetCurrent();
+
+    if (now - g_overlay_last < 0.4) return;
+
+    g_overlay_last = now;
+
+    snprintf(text, sizeof(text), "TNX %d/%d mx=%d vfx=%d strong=%d obj=%s",
+             g_votescan_attempts, TNX_VOTESCAN_ATTEMPTS, g_mode_best_objects,
+             g_mode_verified_hits, g_mode_strong ? 1 : 0, g_mode_object ? "ok" : "-");
+
+    NSString *string = [NSString stringWithUTF8String:text];
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        tnx_overlay_attach(string);
+    });
+}
+
 static void tnx_render_watermark(void) {
     if (!g_base || g_wm_failed) return;
 
@@ -1309,6 +1378,7 @@ static void tnx_run_workload(void) {
     tnx_run_autododge();
     tnx_run_autoaim();
     tnx_render_watermark();
+    tnx_overlay_update();
 }
 
 static void tnx_objc_rep0(id self, SEL _cmd) {

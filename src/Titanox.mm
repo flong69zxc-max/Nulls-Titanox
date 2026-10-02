@@ -188,7 +188,21 @@ static __thread BOOL g_inside_hook = NO;
 
 /* Printed as the first line after "setup", so every log identifies the build that produced
    it. Two device logs were once spent comparing a new binary against an old one. */
-#define TNX_BUILD_TAG "titanox_28"
+#define TNX_BUILD_TAG "titanox_29"
+
+/* Inline (non-virtual) hook target. LogicGameObjectManager::addGameObject is non-virtual: it
+   has no vtable slot at all, so a pointer-slot hook can never reach it. It is called only
+   when the battle creates game objects, so patching its prologue once catches all 38 of its
+   direct bl callers and hands us the manager in x0 and the new object in x1 -- both a battle
+   oracle and the object graph, from a single patch. The address was confirmed independently
+   by its own assert string "LogicGameObjectManager::addGameObject(null)" via tools/strmap.py. */
+#define TNX_RVA_ADDGAMEOBJECT 0x00a278a8ULL
+#define TNX_AG_OBJECT_MAX 16
+
+/* The engine's trampoline cave finder walks __TEXT from the start and has landed on byte RVA
+   0xdcea48 on every run so far, so that window is pre-armed as well. */
+#define TNX_RVA_CAVE_WINDOW 0x00dc0000ULL
+#define TNX_CAVE_WINDOW_SIZE 0x10000U
 
 /* The per-attempt global segment scan walks 2 MB and then probes every candidate pointer in
    it. On the device that made one tick take ~4 s, which is why the game felt stuck and the
@@ -436,6 +450,7 @@ static uint64_t g_slot_hits[TNX_SLOT_COUNT] = { 0 };
 static int g_slot_installed[TNX_SLOT_COUNT] = { -1, -1, -1, -1, -1, -1, -1 };
 static uint32_t g_slot_reported_mask = 0;
 static uintptr_t g_slot_adopted = 0;
+static int g_ag_adopted = 0;
 
 static void tnx_slot_diag(const char *why);
 
@@ -553,6 +568,84 @@ static const struct {
    really holds this address, so a failed install is a logged fact rather than a silent one.
    The original address is kept so the forwarders can call it; nothing is ever patched in
    place, so the original code bytes stay untouched. */
+/* ---------------------------------------------------------------------------
+   In-line hook on a NON-VIRTUAL function, with EXECUTE kept the whole time.
+   --------------------------------------------------------------------------- */
+
+static tnx_slot_fn_t g_ag_orig = NULL;
+static int g_ag_installed = -1;
+static uint64_t g_ag_hits = 0;
+static uintptr_t g_ag_manager = 0;
+static uintptr_t g_ag_objects[TNX_AG_OBJECT_MAX] = { 0 };
+static int g_ag_objectCount = 0;
+
+/* Adds WRITE without giving up EXECUTE. Dropping EXECUTE cannot be undone on this process
+   (mprotect back to r-x returns kr=2), which is precisely why the engine's own writable step
+   is a dead end; adding WRITE to a page whose maxprot already allows it succeeds. */
+static void tnx_make_rwx(uintptr_t address, size_t length) {
+    uintptr_t page = address & ~(uintptr_t)0x3fff;
+    uintptr_t last = (address + length + 0x3fff) & ~(uintptr_t)0x3fff;
+    kern_return_t result = vm_protect(mach_task_self(), (vm_address_t)page,
+                                      (vm_size_t)(last - page), FALSE,
+                                      VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE);
+
+    tnx_logf("rwx %p..%p kr=%d", (void *)page, (void *)last, (int)result);
+}
+
+/* Runs on the game's thread: record only, never log or read memory here. */
+static uint64_t tnx_ag_repl(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
+                            uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
+    g_ag_hits++;
+
+    if (a0 && !g_ag_manager) g_ag_manager = (uintptr_t)a0;
+
+    if (a1 && g_ag_objectCount < TNX_AG_OBJECT_MAX) {
+        uintptr_t object = (uintptr_t)a1;
+        BOOL known = NO;
+
+        for (int i = 0; i < g_ag_objectCount; i++) {
+            if (g_ag_objects[i] == object) {
+                known = YES;
+                break;
+            }
+        }
+
+        if (!known) g_ag_objects[g_ag_objectCount++] = object;
+    }
+
+    if (g_ag_orig) return g_ag_orig(a0, a1, a2, a3, a4, a5, a6, a7);
+
+    return 0;
+}
+
+/* Pre-arms the pages as RWX, then lets the engine patch in line: it finds a trampoline cave,
+   writes the trampoline, and redirects the prologue. brk_original_ptr then returns that
+   trampoline, which is the only way to reach the original body of an in-line hook. */
+static void tnx_inline_install(uintptr_t rva, const char *tag, void *replacement,
+                               tnx_slot_fn_t *original, int *status) {
+    uintptr_t target = g_base + rva;
+
+    *status = 0;
+
+    if (!target) return;
+
+    tnx_make_rwx(target, 0x4000);
+    tnx_make_rwx(g_base + TNX_RVA_CAVE_WINDOW, TNX_CAVE_WINDOW_SIZE);
+
+    if (!brk_install((void *)target, replacement)) {
+        tnx_logf("inline %s: install failed target=%p (%s)", tag, (void *)target,
+                 hook_last_error() ? hook_last_error() : "-");
+
+        return;
+    }
+
+    *original = (tnx_slot_fn_t)brk_original_ptr((void *)target);
+    *status = 1;
+
+    tnx_logf("inline %s: installed target=%p trampoline=%p", tag, (void *)target,
+             (void *)*original);
+}
+
 static void tnx_slot_install_one(int index) {
     uintptr_t target = 0;
     int slots = 0;
@@ -591,16 +684,25 @@ static void tnx_slot_install_one(int index) {
 
 /* brk_install first tries an inline trampoline and carves it out of __TEXT. That path
    cannot restore EXECUTE on this process (it reports kr=2 and then "lost EXECUTE"), so it
-   leaves a writable, non-executable page behind and writes into whichever section the cave
-   finder picked -- on the 2026-10-02 05:52 run that was __TEXT,__objc_methlist. The engine
-   exposes TITANOX_ALLOW_CODE_PATCH for exactly this case, so the pointer-slot path is
-   selected up front: no byte of __TEXT is ever touched and each install is instant. */
+    leaves a writable, non-executable page behind and writes into whichever section the cave
+   finder picked -- on the 2026-10-02 05:52 run that was __TEXT,__objc_methlist.
+
+   v29 turns that around instead of avoiding it. hook_page_writable() starts with
+
+       if (prot & VM_PROT_WRITE) return true;
+
+   so if the page is ALREADY writable the engine never touches the protection itself, and the
+   protection it later restores to is the one it found -- ours. Setting the page to
+   READ|WRITE|EXECUTE up front therefore keeps EXECUTE the whole time: nothing is ever lost,
+   the restore is a no-op, and the engine's own inline patcher runs to completion. That is
+   what makes a non-virtual function hookable on this process, with no engine change. */
 static void tnx_slot_hooks_install(void) {
     const char *flag = NULL;
 
     if (!g_base) return;
 
-    setenv("TITANOX_ALLOW_CODE_PATCH", "0", 1);
+    /* Keep EXECUTE; do not use the engine's rw- path. */
+    setenv("TITANOX_ALLOW_CODE_PATCH", "1", 1);
 
     flag = getenv("TITANOX_ALLOW_CODE_PATCH");
 
@@ -609,6 +711,9 @@ static void tnx_slot_hooks_install(void) {
              hook_pointer_count(), brk_slot_limit(), brk_live_slot_count());
 
     for (int i = 0; i < TNX_SLOT_COUNT; i++) tnx_slot_install_one(i);
+
+    tnx_inline_install(TNX_RVA_ADDGAMEOBJECT, "addGameObject", (void *)tnx_ag_repl,
+                       &g_ag_orig, &g_ag_installed);
 
     /* Read every rewritable slot straight back out of memory: this is what proves the write
        took, separately from whether the game ever calls through it. */
@@ -2628,7 +2733,22 @@ static void tnx_slot_diag(const char *why) {
                          g_slot_specs[i].shortTag, (unsigned long long)g_slot_hits[i], state);
     }
 
-    tnx_logf("slotdiag(%s) %s", why ? why : "?", buf);
+    /* addGameObject is the one signal that cannot be faked: it is in-line hooked, it is
+       non-virtual, and the battle calls it only when it creates objects. */
+    tnx_logf("slotdiag(%s) %s AG=%llu/i%d mgr=%p objs=%d", why ? why : "?", buf,
+             (unsigned long long)g_ag_hits, g_ag_installed, (void *)g_ag_manager,
+             g_ag_objectCount);
+
+    if (g_ag_objectCount > 0 && !g_ag_adopted) {
+        g_ag_adopted = 1;
+
+        tnx_logf("AG dump manager=%p objects=%d", (void *)g_ag_manager, g_ag_objectCount);
+
+        for (int i = 0; i < g_ag_objectCount; i++) {
+            tnx_logf("AG obj[%d]=%p", i, (void *)g_ag_objects[i]);
+            tnx_dump_hex("AGobj", g_ag_objects[i], 0x80);
+        }
+    }
 }
 
 /* Prints the conclusion, not the raw numbers: this is the line that has to be read. */

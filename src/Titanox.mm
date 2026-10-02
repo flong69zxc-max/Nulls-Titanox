@@ -3559,7 +3559,7 @@ static void tnx_v55_layout_dump(const char *tag, uintptr_t address, int words) {
 
             snprintf(verdict[k], sizeof(verdict[k]), "-");
 
-            if (!tnx_read_ptr(address + (uintptr_t)(base + k) * 8, &word[k])) continue;
+            if (!tnx_read_ptr(address + (uintptr_t)(base + k) * 8, (void**)&word[k])) continue;
 
             if (!tnx_pointer_plausible(word[k])) continue;
 

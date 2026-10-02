@@ -510,7 +510,7 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 
 /* Printed as the first line after "setup", so every log identifies the build that produced
    it. Two device logs were once spent comparing a new binary against an old one. */
-#define TNX_BUILD_TAG "titanox_47"
+#define TNX_BUILD_TAG "titanox_48"
 
 /* ---------------------------------------------------------------------------
    v47. THE OBJECT LAYOUT STOPS BEING A GUESS, BECAUSE THE ENGINE STATES IT.
@@ -1073,9 +1073,10 @@ static void tnx_best_candidate_dump(void);
    confirmed owner by name. */
 static void tnx_report_manager(const char *tag, uintptr_t manager);
 static int tnx_object_detail_readonly(uintptr_t manager, int limit);
-/* v47. The verified dodge is defined next to the object readers at the bottom of the
-   file, but the workload that drives it is far above, so it is declared here. */
-static void tnx_autododge_v47(void);
+/* v48. The verified dodge is defined next to the object readers at the bottom of the
+   file, but the workload that drives it -- which runs on every rendered frame, not on the
+   1 Hz scan timer -- is far above, so it is declared here. */
+static void tnx_autododge_v48(void);
 
 /* Runs inside the game's thread. Two stores and a bounds check, nothing else. */
 static void tnx_slot_note(int index, void *self, uint64_t arg1) {
@@ -2211,7 +2212,7 @@ static void tnx_run_autododge_legacy(void) {
    tnx_autododge_v47, next to the object readers, where every helper it needs is already
    defined. */
 static void tnx_run_autododge(void) {
-    tnx_autododge_v47();
+    tnx_autododge_v48();
 }
 
 static void tnx_run_autoaim(void) {
@@ -5541,14 +5542,27 @@ static void tnx_report_manager(const char *tag, uintptr_t manager) {
    hand to the movement entry point the moment that entry point is known; until then it is
    the proof that the geometry is right.
 
-   v47 supersedes that with the real thing, and says so in its own lines:
+   v48 supersedes that with the real thing, and says so in its own lines:
 
-       v47 setprediction verified|MISMATCH ...   the three instructions of 0xac3f20
-       v47 man walk manager=... usable=... mapW=... teamsOld=... teamsNew=... teamOff=...
-       v47 obj[00] at=... pos=(x,y) teamOld=... teamNew=... dead=... active=...
-       v47 coords ok=<0|1> (...)
-       v47 write #<n> own=(x,y) team=... step=(..) target=(x,y)
-       v47 live ticks=... own=(..) pred=(..) hostilesAlive=.. enemiesActive=.. enemiesInRange=0
+       v48 dodge ENTERED ticks=... mode=... manager=... source=<mode|manager> setpred=...
+       v48 setprediction verified|MISMATCH ...   the three instructions of 0xac3f20
+       v48 fields manager=... sample=... window=+0x0..+0x5c
+       v48 off +0x40 distinct=4/4 min=0 max=3 small=1 tiny=1 TEAM?
+       v48 coord pair int32 at +0x30,+0x34 all 4 distinct
+       v48 coord pair float32 at +0x20,+0x24 first=(57.250,23.200) distinct=4/4
+       v48 named teamOff=+0x.. | coordOff=+0x.. | intPair=+0x.. | floatPair=+0x..
+       v48 man walk mode=... manager=... usable=... mapW=... teamsOld=... teamsNew=... teamOff=...
+       v48 obj[00] at=... pos=(x,y) teamOld=... teamNew=... dead=... active=...
+       v48 coords ok=<0|1> (...)
+       v48 write #<n> own=(x,y) team=... step=(..) target=(x,y)
+       v48 live ticks=... own=(..) pred=(..) hostilesAlive=.. enemiesActive=.. enemiesInRange=0
+
+   `v48 dodge ENTERED` exists because v47's silence was indistinguishable from v47 not being
+   called at all -- it returned on `if (!g_mode_object)`, and g_mode_object is zero in every
+   run because adoption never succeeds. `source=` says which of the two reachable objects the
+   probe is working from. The `fields`/`off`/`coord pair`/`named` group is the part that
+   answers what no earlier version could: which offsets are the team and the position, decided
+   by counting DISTINCT values across the elements rather than by trusting a name.
 
    `ok=0` means nothing is ever written, and the line above it carries the numbers that
    decided it: how many objects were readable, whether their positions were distinct and in
@@ -6298,6 +6312,13 @@ static uint64_t g_v47_threat_ticks = 0;
 static uint64_t g_v47_writes = 0;
 static uint64_t g_v47_last_write_ms = 0;
 static int g_v47_giveup_logs = 0;
+/* v48. `g_v48_entry_logs` exists so that "did the dodge even run" is a printed fact rather
+   than an inference: v47 printed nothing at all, and nothing is indistinguishable from
+   unreachable. `g_v48_manager` is whichever manager the probe resolved, so the dodge body
+   reuses it instead of resolving it a second time. */
+static uint64_t g_v48_ticks = 0;
+static int g_v48_entry_logs = 0;
+static uintptr_t g_v48_manager = 0;
 
 /* The whole of 0xac3f20 as the image holds it today:
 
@@ -6322,13 +6343,13 @@ static int tnx_v47_verify_setprediction(void) {
 
     for (int i = 0; i < 3; i++) {
         if (words[i] != expected[i]) {
-            tnx_logf("v47 setprediction MISMATCH word[%d]=%08x expected=%08x at %#llx",
+            tnx_logf("v48 setprediction MISMATCH word[%d]=%08x expected=%08x at %#llx",
                      i, words[i], expected[i], (unsigned long long)TNX_RVA_SETPREDICTION);
             return 0;
         }
     }
 
-    tnx_logf("v47 setprediction verified at %#llx (str w1,[x0,#0x1d4]; str w2,[x0,#0x1d8]; ret)",
+    tnx_logf("v48 setprediction verified at %#llx (str w1,[x0,#0x1d4]; str w2,[x0,#0x1d8]; ret)",
              (unsigned long long)TNX_RVA_SETPREDICTION);
 
     return 1;
@@ -6359,8 +6380,11 @@ static void tnx_v47_read_map(uintptr_t mode) {
 /* Walks the object manager the engine's own code walks. Returns how many elements were
    readable; elements that fail are counted, not silently dropped, so a manager that has
    moved shows up as `usable=0` rather than as an absent table. */
-static int tnx_v47_collect(uintptr_t mode, tnx_v47_obj_t *out, int capacity, int *rejected) {
-    void *manager = NULL;
+/* v48: this takes the MANAGER, not the mode. A manager is reachable two ways -- through
+   `[mode+0x28]` and directly from the array-shape scan -- and requiring the mode was
+   exactly the mistake that left every v47 line unprinted while a real manager with four
+   live objects sat in `g_manager_object` the whole run. */
+static int tnx_v48_collect(uintptr_t manager, tnx_v47_obj_t *out, int capacity, int *rejected) {
     void *data = NULL;
     int32_t count = 0;
     int usable = 0;
@@ -6368,8 +6392,8 @@ static int tnx_v47_collect(uintptr_t mode, tnx_v47_obj_t *out, int capacity, int
 
     if (rejected) *rejected = 0;
 
-    if (!tnx_read_ptr(mode + TNX_MODE_MANAGER_OFF, &manager) || !manager) return 0;
-    if (!tnx_read_ptr((uintptr_t)manager + TNX_MGR_ARRAY_OFF, &data) || !data) return 0;
+    if (!manager) return 0;
+    if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &data) || !data) return 0;
     if (!tnx_read_i32((uintptr_t)manager + TNX_MGR_COUNT_OFF, &count)) return 0;
     if (count <= 0) return 0;
 
@@ -6407,7 +6431,204 @@ static int tnx_v47_collect(uintptr_t mode, tnx_v47_obj_t *out, int capacity, int
    coordinates are real. The verdict needs all of: at least two objects, every position
    inside the guard, at least two distinct positions, and a team field that actually
    separates them. */
-static void tnx_v47_probe(uintptr_t mode, int verbose) {
+/* ---------------------------------------------------------------------------
+   v48. WHICH OFFSETS ARE THEY -- ASKED OF THE OBJECTS THEMSELVES.
+
+   The 20:51 dump is why this exists. It printed a real manager with four live objects
+   next to the reader's idea of them: `team` came out 0,1,2,3 -- a slot index, and a value
+   a team field cannot take in a two-team match -- while `dead` was 0 on all four. On the
+   same four objects, the pair the repository points at (+0x30/+0x34) read as a heap
+   pointer and a 1. So the offsets in use were simply the wrong ones, and re-reading them
+   under the same names would never have said so.
+
+   This walks a window of the elements instead and reports, per four-byte offset, how many
+   DISTINCT values appear. That names both fields without prior knowledge: in a two-team
+   match exactly one offset splits the elements in two, and a position is two adjacent
+   offsets where every element differs and every value is small. Floats are tested as
+   well, because three of those four objects held plausible tile coordinates as float
+   pairs (57.25, 23.2) -- a reading the integer view of +0x30 could never have produced.
+   --------------------------------------------------------------------------- */
+#define TNX_V48_ELEMS 8
+#define TNX_V48_WORDS 24          /* +0x00 .. +0x5c in four-byte steps */
+#define TNX_V48_VALUE_MAX 1000000
+#define TNX_V48_FLOAT_MAX 10000.0f
+#define TNX_V48_TEAM_MAX 8
+
+static int tnx_v48_small(long value) {
+    return (value > -TNX_V48_VALUE_MAX && value < TNX_V48_VALUE_MAX) ? 1 : 0;
+}
+
+static float tnx_v48_as_float(uint32_t bits) {
+    union { uint32_t u; float f; } view;
+
+    view.u = bits;
+
+    return view.f;
+}
+
+static void tnx_v48_discriminate(uintptr_t manager) {
+    tnx_v47_obj_t objects[TNX_V47_OBJECT_MAX];
+    uint32_t words[TNX_V48_ELEMS][TNX_V48_WORDS];
+    int rejected = 0;
+    int usable = 0;
+    int n = 0;
+    int teamOff = -1;
+    int teamDistinct = 0;
+    int coordOff = -1;
+    int coordDistinct = 0;
+    int intPairOff = -1;
+    int floatPairOff = -1;
+
+    memset(objects, 0, sizeof(objects));
+    memset(words, 0, sizeof(words));
+
+    usable = tnx_v48_collect(manager, objects, TNX_V47_OBJECT_MAX, &rejected);
+
+    if (usable <= 1) {
+        tnx_logf("v48 fields manager=%p usable=%d rejected=%d -- two elements are needed "
+                 "before one field can be told from another",
+                 (void *)manager, usable, rejected);
+        return;
+    }
+
+    n = (usable < TNX_V48_ELEMS) ? usable : TNX_V48_ELEMS;
+
+    for (int i = 0; i < n; i++) {
+        if (!tnx_read_bytes(objects[i].object, words[i], sizeof(words[i]))) {
+            tnx_logf("v48 fields element %d at %p unreadable over 0x%x bytes",
+                     i, (void *)objects[i].object, (unsigned)sizeof(words[i]));
+            return;
+        }
+    }
+
+    tnx_logf("v48 fields manager=%p usable=%d rejected=%d sample=%d window=+0x0..+0x%x",
+             (void *)manager, usable, rejected, n, (unsigned)((TNX_V48_WORDS - 1) * 4));
+
+    for (int w = 0; w < TNX_V48_WORDS; w++) {
+        int distinct = 0;
+        int allSmall = 1;
+        int allTiny = 1;
+        int64_t minV = 0;
+        int64_t maxV = 0;
+
+        for (int i = 0; i < n; i++) {
+            int32_t value = (int32_t)words[i][w];
+            int seen = 0;
+
+            for (int j = 0; j < i; j++) {
+                if (words[j][w] == words[i][w]) { seen = 1; break; }
+            }
+
+            if (!seen) distinct++;
+
+            if (i == 0) { minV = value; maxV = value; }
+            if (value < minV) minV = value;
+            if (value > maxV) maxV = value;
+
+            if (!tnx_v48_small(value)) allSmall = 0;
+            if (value < 0 || value > 15) allTiny = 0;
+        }
+
+        /* Only offsets that vary are worth a line. A window of constants is the signature of
+           the wrong array, and one summary line says that better than twenty silent ones. */
+        if (distinct <= 1) continue;
+
+        tnx_logf("v48 off +0x%02x distinct=%d/%d min=%lld max=%lld small=%d tiny=%d %s%s",
+                 w * 4, distinct, n, (long long)minV, (long long)maxV, allSmall, allTiny,
+                 (allTiny && distinct >= 2 && distinct <= TNX_V48_TEAM_MAX) ? "TEAM? " : "",
+                 (allSmall && distinct == n) ? "VARIES/PAIR-MEMBER?" : "");
+
+        if (teamOff < 0 && allTiny && distinct >= 2 && distinct <= TNX_V48_TEAM_MAX) {
+            teamOff = w * 4;
+            teamDistinct = distinct;
+        }
+
+        if (coordOff < 0 && allSmall && distinct == n) {
+            coordOff = w * 4;
+            coordDistinct = distinct;
+        }
+    }
+
+    /* A position is two ADJACENT words, both varying across every element. Integer first,
+       because the repository says so; float second, because the dump says so. */
+    for (int w = 0; w + 1 < TNX_V48_WORDS && intPairOff < 0; w++) {
+        int ok = 1;
+        int dx = 0;
+        int dy = 0;
+
+        for (int i = 0; i < n && ok; i++) {
+            if (!tnx_v48_small((int32_t)words[i][w])) ok = 0;
+            if (!tnx_v48_small((int32_t)words[i][w + 1])) ok = 0;
+        }
+
+        if (!ok) continue;
+
+        for (int i = 0; i < n; i++) {
+            int seenX = 0;
+            int seenY = 0;
+
+            for (int j = 0; j < i; j++) {
+                if (words[j][w] == words[i][w]) seenX = 1;
+                if (words[j][w + 1] == words[i][w + 1]) seenY = 1;
+            }
+
+            if (!seenX) dx++;
+            if (!seenY) dy++;
+        }
+
+        if (dx == n && dy == n) {
+            intPairOff = w * 4;
+
+            tnx_logf("v48 coord pair int32 at +0x%02x,+0x%02x all %d distinct",
+                     w * 4, (w + 1) * 4, n);
+        }
+    }
+
+    for (int w = 0; w + 1 < TNX_V48_WORDS && floatPairOff < 0; w++) {
+        int ok = 1;
+        int anyNonZero = 0;
+        int distinctPairs = 0;
+        int seenAny = 0;
+        float fx = 0.0f;
+        float fy = 0.0f;
+
+        for (int i = 0; i < n; i++) {
+            float ax = tnx_v48_as_float(words[i][w]);
+            float ay = tnx_v48_as_float(words[i][w + 1]);
+            int seen = 0;
+
+            if (!(ax > -TNX_V48_FLOAT_MAX && ax < TNX_V48_FLOAT_MAX)) ok = 0;
+            if (!(ay > -TNX_V48_FLOAT_MAX && ay < TNX_V48_FLOAT_MAX)) ok = 0;
+            if (words[i][w] != 0 || words[i][w + 1] != 0) anyNonZero = 1;
+
+            if (i == 0) { fx = ax; fy = ay; }
+
+            for (int j = 0; j < i; j++) {
+                if (words[j][w] == words[i][w] && words[j][w + 1] == words[i][w + 1]) { seen = 1; break; }
+            }
+
+            if (!seen) { distinctPairs++; if (i > 0) seenAny = 1; }
+        }
+
+        /* Both words zero on every element is "a valid float" and means nothing; so is a
+           pair that never varies. */
+        if (!ok || !anyNonZero || !seenAny) continue;
+
+        floatPairOff = w * 4;
+
+        tnx_logf("v48 coord pair float32 at +0x%02x,+0x%02x first=(%.3f,%.3f) distinct=%d/%d",
+                 w * 4, (w + 1) * 4, fx, fy, distinctPairs, n);
+    }
+
+    tnx_logf("v48 named teamOff=%s0x%x distinct=%d | coordOff=%s0x%x distinct=%d | "
+             "intPair=%s0x%x | floatPair=%s0x%x",
+             teamOff >= 0 ? "+" : "none:", teamOff >= 0 ? teamOff : 0, teamDistinct,
+             coordOff >= 0 ? "+" : "none:", coordOff >= 0 ? coordOff : 0, coordDistinct,
+             intPairOff >= 0 ? "+" : "none:", intPairOff >= 0 ? intPairOff : 0,
+             floatPairOff >= 0 ? "+" : "none:", floatPairOff >= 0 ? floatPairOff : 0);
+}
+
+static void tnx_v48_probe(uintptr_t manager, uintptr_t mode, int verbose) {
     tnx_v47_obj_t objects[TNX_V47_OBJECT_MAX];
     int rejected = 0;
     int usable = 0;
@@ -6422,9 +6643,12 @@ static void tnx_v47_probe(uintptr_t mode, int verbose) {
 
     g_v47_probe_done = 1;
 
-    tnx_v47_read_map(mode);
+    /* The map only means anything through a real mode; with only a manager in hand there
+       is nothing to read it from, and pretending otherwise would print mapW=0 as if it
+       were a measurement. */
+    if (mode) tnx_v47_read_map(mode);
 
-    usable = tnx_v47_collect(mode, objects, TNX_V47_OBJECT_MAX, &rejected);
+    usable = tnx_v48_collect(manager, objects, TNX_V47_OBJECT_MAX, &rejected);
 
     for (int i = 0; i < usable; i++) {
         if (objects[i].x > -TNX_V47_COORD_ABS_MAX && objects[i].x < TNX_V47_COORD_ABS_MAX &&
@@ -6456,16 +6680,16 @@ static void tnx_v47_probe(uintptr_t mode, int verbose) {
        engine's own offset, because that one is not a guess. */
     g_v47_team_off = (distinctOld > distinctNew) ? (int)TNX_OBJ_TEAM_OFF : (int)TNX_OBJ_TEAMENGINE_OFF;
 
-    tnx_logf("v47 man walk manager=%p usable=%d rejected=%d mapOk=%d mapW=%d mapH=%d "
+    tnx_logf("v48 man walk mode=%p manager=%p usable=%d rejected=%d mapOk=%d mapW=%d mapH=%d "
              "inRange=%d distinct=%d teamsOld=%d teamsNew=%d teamOff=0x%x",
-             (void *)mode, usable, rejected, g_v47_map_ok, g_v47_map_w, g_v47_map_h,
-             inRange, distinct, distinctOld, distinctNew, g_v47_team_off);
+             (void *)mode, (void *)manager, usable, rejected, g_v47_map_ok, g_v47_map_w,
+             g_v47_map_h, inRange, distinct, distinctOld, distinctNew, g_v47_team_off);
 
     /* The long form is printed when the battle object changes -- i.e. once per match --
        and the short form while the verdict is still failing, so a re-probe does not
        spend the log budget restating offsets that did not move. */
     if (verbose) {
-        tnx_logf("v47 offsets obj off=0x%llx/0x%llx x=0x%llx y=0x%llx teamOld=0x%llx teamNew=0x%llx "
+        tnx_logf("v48 offsets obj off=0x%llx/0x%llx x=0x%llx y=0x%llx teamOld=0x%llx teamNew=0x%llx "
                  "owner=0x%llx dead=0x%llx active=0x%llx tilemap=0x%llx w=0x%llx",
                  TNX_MGR_ARRAY_OFF, TNX_MGR_COUNT_OFF, TNX_OBJ_X_OFF, TNX_OBJ_Y_OFF,
                  TNX_OBJ_TEAM_OFF, TNX_OBJ_TEAMENGINE_OFF, TNX_OBJ_OWNERINDEX_OFF,
@@ -6473,7 +6697,7 @@ static void tnx_v47_probe(uintptr_t mode, int verbose) {
                  TNX_MODE_TILEMAP_OFF, TNX_TILEMAP_WIDTH_OFF);
 
         for (int i = 0; i < usable && i < 16; i++) {
-            tnx_logf("v47 obj[%02d] at=%p gid=%d pos=(%d,%d) own=%d teamOld=%d teamNew=%d "
+            tnx_logf("v48 obj[%02d] at=%p gid=%d pos=(%d,%d) own=%d teamOld=%d teamNew=%d "
                      "dead=%d active=%d",
                      i, (void *)objects[i].object, objects[i].gid, objects[i].x, objects[i].y,
                      objects[i].ownerIndex, objects[i].teamOld, objects[i].teamNew,
@@ -6487,13 +6711,15 @@ static void tnx_v47_probe(uintptr_t mode, int verbose) {
     g_v47_coord_ok = (usable >= 2 && inRange == usable && distinct >= 2 &&
                       (distinctOld >= 2 || distinctNew >= 2)) ? 1 : 0;
 
-    tnx_logf("v47 coords ok=%d (need >=2 objects, all in range, >=2 distinct positions, "
+    tnx_logf("v48 coords ok=%d (need >=2 objects, all in range, >=2 distinct positions, "
              "and a team field that splits them)",
              g_v47_coord_ok);
 }
 
-static void tnx_autododge_v47(void) {
+static void tnx_autododge_v48(void) {
     tnx_v47_obj_t objects[TNX_V47_OBJECT_MAX];
+    uintptr_t source = 0;
+    int sourceIsMode = 0;
     int32_t predictX = 0;
     int32_t predictY = 0;
     int rejected = 0;
@@ -6508,7 +6734,36 @@ static void tnx_autododge_v47(void) {
     int threats = 0;
     int threatsAlive = 0;
 
-    if (!g_mode_object || !g_base) return;
+    if (!g_base) return;
+
+    /* v47 RETURNED ON THIS LINE whenever g_mode_object was zero -- and it has been zero in
+       every run, because adoption never succeeds. So all of v47, fingerprint check
+       included, was unreachable, and that silence read like evidence that the offsets were
+       wrong. They were not: the 20:51 log found a real manager with four live objects and
+       filed it in `g_manager_object`. The manager is enough for the probe, because the
+       engine's own code says the array hangs off IT. Only the WRITE needs the mode, since
+       the actuator stores through it -- so that is the one thing held back. */
+    sourceIsMode = (g_mode_object != 0);
+    source = sourceIsMode ? g_mode_object : g_manager_object;
+
+    g_v48_ticks++;
+
+    if (g_v48_entry_logs < 3) {
+        g_v48_entry_logs++;
+        tnx_logf("v48 dodge ENTERED ticks=%llu mode=%p manager=%p source=%s setpred=%d",
+                 (unsigned long long)g_v48_ticks, (void *)g_mode_object,
+                 (void *)g_manager_object, sourceIsMode ? "mode" : "manager",
+                 g_v47_setpred_state);
+    }
+
+    if (!source) {
+        if (g_v48_entry_logs < 8) {
+            g_v48_entry_logs++;
+            tnx_logf("v48 dodge idle: neither mode nor manager is known yet (setpred=%d)",
+                     g_v47_setpred_state);
+        }
+        return;
+    }
 
     if (g_v47_setpred_state < 0) {
         g_v47_setpred_state = tnx_v47_verify_setprediction();
@@ -6517,13 +6772,39 @@ static void tnx_autododge_v47(void) {
 
     {
         uint64_t probeNow = (uint64_t)(CFAbsoluteTimeGetCurrent() * 1000.0);
-        int changed = (g_v47_probe_object != g_mode_object);
+        int changed = (g_v47_probe_object != source);
 
         if (!g_v47_probe_done || changed ||
             (!g_v47_coord_ok && probeNow > g_v47_probe_last_ms + TNX_V47_REPROBE_MS)) {
-            g_v47_probe_object = g_mode_object;
+            void *resolved = NULL;
+
+            g_v47_probe_object = source;
             g_v47_probe_last_ms = probeNow;
-            tnx_v47_probe(g_mode_object, changed || !g_v47_probe_done);
+
+            if (sourceIsMode) {
+                if (!tnx_read_ptr(source + TNX_MODE_MANAGER_OFF, &resolved) || !resolved) resolved = NULL;
+            } else {
+                resolved = (void *)source;
+            }
+
+            g_v48_manager = (uintptr_t)resolved;
+
+            if (resolved) {
+                int loud = (changed || !g_v47_probe_done);
+
+                tnx_v48_probe((uintptr_t)resolved, g_mode_object, loud);
+
+                /* The known offsets say whether the numbers are usable. This says which
+                   offsets they are, from the elements themselves -- which is what the 20:51
+                   dump showed we still do not know: on that array +0x40 ran 0,1,2,3 (a slot
+                   index, not a team) and +0xd0 was zero on all four, so `team` and `dead`
+                   were being read out of the wrong fields. */
+                if (loud) tnx_v48_discriminate((uintptr_t)resolved);
+            } else {
+                tnx_logf("v48 probe skipped: source %p (%s) has no manager at +0x%llx",
+                         (void *)source, sourceIsMode ? "mode" : "manager",
+                         (unsigned long long)TNX_MODE_MANAGER_OFF);
+            }
         }
     }
 
@@ -6532,7 +6813,7 @@ static void tnx_autododge_v47(void) {
     if (!g_v47_setpred_state) {
         if (g_v47_giveup_logs < 3) {
             g_v47_giveup_logs++;
-            tnx_logf("v47 dodge idle: no verified actuator (setprediction state=%d)",
+            tnx_logf("v48 dodge idle: no verified actuator (setprediction state=%d)",
                      g_v47_setpred_state);
         }
         return;
@@ -6541,15 +6822,27 @@ static void tnx_autododge_v47(void) {
     if (!g_v47_coord_ok) {
         if (g_v47_giveup_logs < 3) {
             g_v47_giveup_logs++;
-            tnx_logf("v47 dodge idle: coordinates not confirmed (usable=%d distinct=%d) -- "
+            tnx_logf("v48 dodge idle: coordinates not confirmed (usable=%d distinct=%d) -- "
                      "read-only until they are", g_v47_coord_usable, g_v47_coord_distinct);
+        }
+        return;
+    }
+
+    /* Separate from "coordinates not confirmed", because the two have opposite fixes. Here
+       the geometry is known and correct and there is simply no `this` to write through:
+       the actuator stores into the mode, and the mode has never been identified. */
+    if (!g_mode_object) {
+        if (g_v47_giveup_logs < 9) {
+            g_v47_giveup_logs++;
+            tnx_logf("v48 dodge idle: coordinates confirmed but the mode is unknown, so the "
+                     "actuator has no `this` -- nothing written");
         }
         return;
     }
 
     memset(objects, 0, sizeof(objects));
 
-    usable = tnx_v47_collect(g_mode_object, objects, TNX_V47_OBJECT_MAX, &rejected);
+    usable = tnx_v48_collect(g_v48_manager, objects, TNX_V47_OBJECT_MAX, &rejected);
 
     if (usable < 2) return;
 
@@ -6583,7 +6876,7 @@ static void tnx_autododge_v47(void) {
     if (ownBest > TNX_V47_OWN_MAX_SQ) {
         if (g_v47_giveup_logs < 3) {
             g_v47_giveup_logs++;
-            tnx_logf("v47 dodge idle: prediction (%d,%d) is not near any object -- nearest "
+            tnx_logf("v48 dodge idle: prediction (%d,%d) is not near any object -- nearest "
                      "squared distance %lld -- so +0x30/+0x34 are not positions",
                      predictX, predictY, (long long)ownBest);
         }
@@ -6636,7 +6929,7 @@ static void tnx_autododge_v47(void) {
 
     if (threats == 0) {
         if (g_v47_ticks % 256 == 0) {
-            tnx_logf("v47 live ticks=%llu own=(%d,%d) team=%d pred=(%d,%d) hostilesAlive=%d "
+            tnx_logf("v48 live ticks=%llu own=(%d,%d) team=%d pred=(%d,%d) hostilesAlive=%d "
                      "enemiesActive=%d enemiesInRange=0 writes=%llu threatsTotal=%llu",
                      (unsigned long long)g_v47_ticks, ownX, ownY, ownTeam, predictX, predictY,
                      threatsAlive, threats, (unsigned long long)g_v47_writes,
@@ -6677,7 +6970,7 @@ static void tnx_autododge_v47(void) {
         g_v47_writes++;
 
         if (g_v47_writes <= TNX_V47_LOG_FIRST || (g_v47_writes % TNX_V47_LOG_EVERY) == 0) {
-            tnx_logf("v47 write #%llu own=(%d,%d) team=%d hostilesAlive=%d enemiesInRange=%d "
+            tnx_logf("v48 write #%llu own=(%d,%d) team=%d hostilesAlive=%d enemiesInRange=%d "
                      "step=(%d,%d) target=(%d,%d) predBefore=(%d,%d)",
                      (unsigned long long)g_v47_writes, ownX, ownY, ownTeam,
                      threatsAlive, threats, (int)(escapeX * DODGE_STEP),
@@ -7080,6 +7373,24 @@ static void setup(void) {
              TNX_OWNER_VOTE_GID_MAX, TNX_OBJ_HIT_PRINT_MAX, TNX_VTCENSUS_MAX, TNX_VTCENSUS_PRINT,
              TNX_VTCENSUS_SLOTS, TNX_HEAP_SCAN_BUDGET / (1024ull * 1024ull),
              TNX_HEAP_SCAN_BUDGET_MAX / (1024ull * 1024ull));
+
+    /* v48 states its own premise, because the 20:51 log is a titanox_47 build with not one
+       v47 line in it. It returned on `if (!g_mode_object)`, and g_mode_object is zero
+       because adoption never succeeds -- while g_manager_object held a real manager with
+       four live objects the entire run. Unreachable code and absent code print the same
+       nothing, which is a mistake this project has already paid for twice. So: */
+    tnx_logf("plan v48: (1) the dodge logs its OWN ENTRY unconditionally, so 'did it run' is "
+             "printed rather than inferred; (2) the probe runs from whichever of mode/manager "
+             "exists, because the array hangs off the MANAGER and only the actuator needs the "
+             "mode; (3) a new field report walks a window of the elements and prints, per "
+             "four-byte offset, how many DISTINCT values appear, naming the team offset (the "
+             "one that splits them) and the position pair (two adjacent offsets, all values "
+             "small, all elements different) without assuming either -- the 20:51 dump shows "
+             "why that is needed: on its four objects +0x40 ran 0,1,2,3 which is a slot index "
+             "and not a team, +0xd0 was 0 on all four, and the repository's +0x30/+0x34 read "
+             "as a heap pointer and a 1; (4) the actuator is still pinned to its three "
+             "instructions and still gated, but 'no mode' and 'no coordinates' are now "
+             "reported as the different failures they are");
 
     /* Stated up front because it is the measurement this build is built on: the 20:22 run's own
        pass lines prove that the "complete sweep" this project has been quoting since 20:06 never

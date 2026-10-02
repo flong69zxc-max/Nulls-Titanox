@@ -188,7 +188,16 @@ static __thread BOOL g_inside_hook = NO;
 
 /* Printed as the first line after "setup", so every log identifies the build that produced
    it. Two device logs were once spent comparing a new binary against an old one. */
-#define TNX_BUILD_TAG "titanox_29"
+#define TNX_BUILD_TAG "titanox_30"
+
+/* The whole __text region, pre-armed READ|WRITE|EXECUTE before the first install. The engine's
+   trampoline cave finder searches this region and its choice is NOT stable between runs: byte
+   RVA 0xdcea48 on the 05:52 / 16:31 / 16:59 / 17:19 runs, but 0xd73648 on the 17:28 run -- and
+   the engine keeps the address it found first, so arming a fixed window around one of them is
+   useless. Arming the whole region is not, and the early-out in hook_page_writable() then
+   makes every cave and every patched prologue writable without EXECUTE ever being dropped. */
+#define TNX_TEXT_RVA_LO 0x4000ULL
+#define TNX_TEXT_RVA_SIZE 0xf70000U
 
 /* Inline (non-virtual) hook target. LogicGameObjectManager::addGameObject is non-virtual: it
    has no vtable slot at all, so a pointer-slot hook can never reach it. It is called only
@@ -709,6 +718,10 @@ static void tnx_slot_hooks_install(void) {
     tnx_logf("slot hooks: codePatch=%d flag=%s pointerSlots=%d limit=%d live=%d",
              hook_code_patch_allowed() ? 1 : 0, flag ? flag : "-",
              hook_pointer_count(), brk_slot_limit(), brk_live_slot_count());
+
+    /* Must happen before the FIRST install: the cave address is chosen on the first attempt and
+       reused afterwards, so arming later only helps if that same page gets armed. */
+    tnx_make_rwx(g_base + TNX_TEXT_RVA_LO, TNX_TEXT_RVA_SIZE);
 
     for (int i = 0; i < TNX_SLOT_COUNT; i++) tnx_slot_install_one(i);
 

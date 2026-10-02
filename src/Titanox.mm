@@ -139,7 +139,11 @@ static BOOL g_aim_rejected = NO;
 
 static __thread BOOL g_inside_hook = NO;
 
-#define TNX_MODE_MANAGER_OFF 0x20ULL
+/* Corrected against a working implementation of the same game (sonREvenge/REvengeBS,
+   Brawl Stars v68.250): BattleMode_objectManagerPtr = 0x28, ObjectManager_objectsArray = 0x0,
+   ObjectManager_count = 0xc, ObjectManager_ptrStride = 8. The manager slot is 0x28, not 0x20 --
+   the 0x20 came from one disassembled code path and never matched a real battle container. */
+#define TNX_MODE_MANAGER_OFF 0x28ULL
 #define TNX_MGR_ARRAY_OFF 0x0ULL
 #define TNX_MGR_COUNT_OFF 0xcULL
 
@@ -148,7 +152,20 @@ static __thread BOOL g_inside_hook = NO;
 #define TNX_MANAGER_MIN_OBJECTS 3
 #define TNX_MANAGER_PROBE_LIMIT 2048
 #define TNX_OBJ_GLOBALID_OFF 0x8ULL
-#define TNX_OBJ_TEAM_OFF 0x4cULL
+
+/* THE correction that matters. REvengeBS: GameObj_team = 0x40, LogicGameObjectClient_ownerIndex
+   = 0x3c, GameObj_deadFlag = 0xd0. We read team at 0x4c, which is why every "is this a game
+   object" shape test failed and why the one container that was accepted had 71 entries all
+   reading team 0 -- we were reading a different field entirely. */
+#define TNX_OBJ_TEAM_OFF 0x40ULL
+#define TNX_OBJ_OWNERINDEX_OFF 0x3cULL
+#define TNX_OBJ_DEADFLAG_OFF 0xd0ULL
+
+/* getX/getY/getZ are consecutive virtual slots: REvengeBS has them at 0xb5e44c / 0xb5e454 /
+   0xb5e45c, i.e. 8 apart, and our own call site does ldr x8,[x8,#0x88] before blr. So slot
+   0x88 = getX, 0x90 = getY, 0x98 = getZ, and coordinates are int32 (fixed point). */
+#define TNX_OBJ_GETX_SLOT 0x88ULL
+#define TNX_OBJ_GETY_SLOT 0x90ULL
 #define TNX_MODE_MODEVAR_OFF 0x124ULL
 #define TNX_MODE_STARS0_OFF 0x1e8ULL
 #define TNX_MODE_STARS1_OFF 0x1ecULL
@@ -188,7 +205,29 @@ static __thread BOOL g_inside_hook = NO;
 
 /* Printed as the first line after "setup", so every log identifies the build that produced
    it. Two device logs were once spent comparing a new binary against an old one. */
-#define TNX_BUILD_TAG "titanox_31"
+#define TNX_BUILD_TAG "titanox_33"
+
+/* IN-LINE HOOKING IS IMPOSSIBLE ON THIS PROCESS -- measured, not assumed. The 17:38 log caught
+   it directly:
+
+       rwx 0x1081f4000..0x1081fc000 kr=0                  <- vm_protect(R|W|X) returned SUCCESS
+       [hook] install: target 0x1081f78a8 not executable (prot=3)
+
+   prot=3 is READ|WRITE: the kernel accepted the call but granted WRITE only and silently
+   dropped EXECUTE, and EXECUTE can never be added back to a writable page (every attempt
+   returns kr=2). A page here is therefore writable or executable, never both:
+
+     - patching live code needs a writable code page, and that page then stops executing, so
+       the process dies: arming the page holding addGameObject crashed the 17:38 run while it
+       was still loading, at 50%; arming all 971 __text pages killed the 17:30 run outright.
+     - a trampoline in a data page needs an executable data page, which cannot exist.
+     - the engine's own mmap fallback hits the same wall, and says so: its trampoline page
+       ends up "cur=rw- ... executable=0" after "exec: vm_protect RX failed kr=2".
+
+   v32 therefore touches no code page at all: code patching is off and the in-line target is
+   gone. The pointer-slot hooks stay, because those write to __DATA_CONST -- data -- and the
+   readback already showed they hold. The open question remains the one the C2 control was
+   built for: whether a rewritten vtable entry is ever dispatched to. */
 
 /* Arming the WHOLE __text as RWX kills the process: the 17:32 run ends right after
    "slot hooks: codePatch=1 flag=1 ..." and before the arming line itself could be printed,
@@ -765,17 +804,19 @@ static void tnx_slot_install_one(int index) {
        if (prot & VM_PROT_WRITE) return true;
 
    so if the page is ALREADY writable the engine never touches the protection itself, and the
-   protection it later restores to is the one it found -- ours. Setting the page to
-   READ|WRITE|EXECUTE up front therefore keeps EXECUTE the whole time: nothing is ever lost,
-   the restore is a no-op, and the engine's own inline patcher runs to completion. That is
-   what makes a non-virtual function hookable on this process, with no engine change. */
+    protection it later restores to is the one it found -- ours. That was the theory, and the
+   device disproved it: vm_protect(R|W|X) reports success while actually granting READ|WRITE and
+   dropping EXECUTE, so "arming" a code page makes it stop executing. See the note by
+   TNX_BUILD_TAG. Code patching is switched back OFF and no page of __TEXT is touched: every
+   install goes straight to the pointer slot, which writes into __DATA_CONST and is proven to
+   hold. The in-line helper and the cave-page arming below are kept only as the record of what
+   was tried and measured -- neither is called. */
 static void tnx_slot_hooks_install(void) {
     const char *flag = NULL;
 
     if (!g_base) return;
 
-    /* Keep EXECUTE; do not use the engine's rw- path. */
-    setenv("TITANOX_ALLOW_CODE_PATCH", "1", 1);
+    setenv("TITANOX_ALLOW_CODE_PATCH", "0", 1);
 
     flag = getenv("TITANOX_ALLOW_CODE_PATCH");
 
@@ -783,14 +824,7 @@ static void tnx_slot_hooks_install(void) {
              hook_code_patch_allowed() ? 1 : 0, flag ? flag : "-",
              hook_pointer_count(), brk_slot_limit(), brk_live_slot_count());
 
-    /* Must happen before the FIRST install: the cave address is chosen on the first attempt and
-       reused afterwards, so arming later only helps if that same page gets armed. */
-    tnx_arm_cave_pages();
-
     for (int i = 0; i < TNX_SLOT_COUNT; i++) tnx_slot_install_one(i);
-
-    tnx_inline_install(TNX_RVA_ADDGAMEOBJECT, "addGameObject", (void *)tnx_ag_repl,
-                       &g_ag_orig, &g_ag_installed);
 
     /* Read every rewritable slot straight back out of memory: this is what proves the write
        took, separately from whether the game ever calls through it. */
@@ -3205,6 +3239,29 @@ static void tnx_dump_mode_refs(const char *tag) {
     }
 }
 
+/* Coordinates are int32 and sit behind consecutive virtual slots (0x88 = getX, 0x90 = getY,
+   proven by the call site ldr x8,[x8,#0x88] plus REvengeBS having getX/getY/getZ eight bytes
+   apart). Nothing is hardcoded: the callee comes out of the object's own vtable, which is what
+   the game itself does to read a position. This is the input every dodge calculation needs. */
+typedef int32_t (*tnx_coord_fn_t)(void *self);
+
+static BOOL tnx_obj_coord(uintptr_t object, uintptr_t slot, int32_t *value) {
+    void *vtable = NULL;
+    void *function = NULL;
+
+    *value = 0;
+
+    if (!object) return NO;
+    if (!tnx_read_ptr(object, &vtable) || !vtable) return NO;
+    if (!tnx_read_ptr((uintptr_t)vtable + slot, &function) || !function) return NO;
+    if ((uintptr_t)function < g_base) return NO;
+    if ((uintptr_t)function >= g_base + 0xf74000) return NO;
+
+    *value = ((tnx_coord_fn_t)function)((void *)object);
+
+    return YES;
+}
+
 static void tnx_dump_mode_objects(const char *tag) {
     if (!g_mode_object) return;
 
@@ -3236,12 +3293,22 @@ static void tnx_dump_mode_objects(const char *tag) {
 
         int32_t globalId = 0;
         int32_t team = 0;
+        int32_t owner = 0;
+        int32_t dead = 0;
+        int32_t x = 0;
+        int32_t y = 0;
 
         tnx_read_i32((uintptr_t)object + TNX_OBJ_GLOBALID_OFF, &globalId);
         tnx_read_i32((uintptr_t)object + TNX_OBJ_TEAM_OFF, &team);
+        tnx_read_i32((uintptr_t)object + TNX_OBJ_OWNERINDEX_OFF, &owner);
+        tnx_read_i32((uintptr_t)object + TNX_OBJ_DEADFLAG_OFF, &dead);
 
-        tnx_logf("obj[%s][%d] %p vt=%#llx gid=%d team=%d", tag, i, object,
-                 (unsigned long long)tnx_vtable_rva(object), globalId, team);
+        tnx_obj_coord((uintptr_t)object, TNX_OBJ_GETX_SLOT, &x);
+        tnx_obj_coord((uintptr_t)object, TNX_OBJ_GETY_SLOT, &y);
+
+        tnx_logf("obj[%s][%d] %p vt=%#llx gid=%d team=%d own=%d dead=%d x=%d y=%d",
+                 tag, i, object, (unsigned long long)tnx_vtable_rva(object), globalId, team,
+                 owner, dead, x, y);
 
         for (uint32_t off = 0; off + 32 <= TNX_SNAPSHOT_BYTES; off += 32) {
             uint32_t words[8] = {0, 0, 0, 0, 0, 0, 0, 0};

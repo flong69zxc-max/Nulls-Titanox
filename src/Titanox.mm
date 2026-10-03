@@ -214,7 +214,7 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_104"
+#define TNX_BUILD_TAG "titanox_105"
 
 #define TNX_RVA_SETPREDICTION 0x00ac3f20ULL
 #define TNX_OBJ_X_OFF 0x30ULL
@@ -3557,6 +3557,125 @@ static void tnx_v82_hop_dump(uintptr_t client, uintptr_t inner) {
     }
 }
 
+static int g_v105_score_logs = 0;
+static int g_v105_last_choice = -2;
+static int g_v105_hop_logs = 0;
+static int g_v105_start_logged = 0;
+
+static int tnx_v105_container_score(uintptr_t container) {
+    void *array = NULL;
+    int32_t count = 0;
+    int32_t own = -1;
+    int32_t ownTeam = -1;
+    int32_t gid = 0;
+    int32_t team = 0;
+    int samples = 0;
+    int gidOk = 0;
+    int teamOk = 0;
+    int score = 0;
+    int i;
+
+    if (!container) return -1;
+    if (!tnx_read_ptr(container + TNX_MGR_ARRAY_OFF, &array) || !array) return -1;
+    if (!tnx_read_i32(container + TNX_MGR_COUNT_OFF, &count)) return -1;
+    if (count <= 0 || count > TNX_V56_COUNT_MAX) return -1;
+    if (!tnx_read_i32(container + TNX_V102_OWNIDX_OFF, &own)) return -1;
+
+    tnx_read_i32(container + TNX_V102_OWNTEAM_OFF, &ownTeam);
+
+    if (own < 0 || own >= count) return -1;
+
+    score = 6;
+
+    if (ownTeam >= 0 && ownTeam <= 15) score += 2;
+
+    for (i = 0; i < count && samples < 4; i++) {
+        void *element = NULL;
+
+        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * 8ULL, &element) || !element) continue;
+
+        samples++;
+        gid = 0;
+        team = 0;
+        tnx_read_i32((uintptr_t)element + TNX_OBJ_GLOBALID_OFF, &gid);
+        tnx_read_i32((uintptr_t)element + TNX_V91_TEAM_OFF, &team);
+        if (gid) gidOk++;
+        if (team >= 0 && team <= 7) teamOk++;
+    }
+
+    if (gidOk) score += 3;
+    if (teamOk) score += 1;
+
+    if (g_v105_score_logs < 12) {
+        g_v105_score_logs++;
+
+        tnx_logf("v105 score container=%p array=%p count=%d own=%d ownTeam=%d gidOk=%d teamOk=%d "
+                 "samples=%d score=%d - a container only counts as the player list while its own slot "
+                 "is a valid index into its own array, the same field the engine indexes at rva "
+                 "0xac3910, so a list whose +0xe0 is garbage can never win the hop",
+                 (void *)container, array, count, own, ownTeam, gidOk, teamOk, samples, score);
+    }
+
+    return score;
+}
+
+static int tnx_v105_own_verdict(uintptr_t element, char *why, size_t whyLen) {
+    void *vtable = NULL;
+    uintptr_t vtRva = 0;
+    int32_t gid = 0;
+    int32_t x = 0;
+    int32_t y = 0;
+    int32_t teamOld = 0;
+    int32_t teamNew = 0;
+    uint8_t dead = 0;
+
+    if (why) why[0] = 0;
+    if (!element) {
+        if (why) snprintf(why, whyLen, "null");
+        return 0;
+    }
+
+    if (tnx_v75_element_ascii(element)) {
+        if (why) snprintf(why, whyLen, "ascii");
+        return 0;
+    }
+
+    if (!tnx_read_ptr(element, &vtable) || !vtable) {
+        if (why) snprintf(why, whyLen, "noVtRead");
+        return 0;
+    }
+
+    vtRva = (uintptr_t)vtable - g_base;
+
+    if (vtRva < TNX_DC_RVA_LO || vtRva >= TNX_DC_RVA_LO + TNX_DC_RVA_SIZE) {
+        if (why) snprintf(why, whyLen, "vtOutsideImage vtRva=%#llx", (unsigned long long)vtRva);
+        return 0;
+    }
+
+    if (!tnx_read_i32(element + TNX_OBJ_GLOBALID_OFF, &gid) ||
+        !tnx_read_i32(element + tnx_v57_coord_x_off(), &x) ||
+        !tnx_read_i32(element + tnx_v57_coord_y_off(), &y) ||
+        !tnx_read_i32(element + TNX_OBJ_TEAM_OFF, &teamOld) ||
+        !tnx_read_i32(element + TNX_V91_TEAM_OFF, &teamNew) ||
+        !tnx_read_u8(element + TNX_OBJ_DEADFLAG_OFF, &dead)) {
+        if (why) snprintf(why, whyLen, "unreadable vtRva=%#llx", (unsigned long long)vtRva);
+        return 0;
+    }
+
+    if (x <= -TNX_V47_COORD_ABS_MAX || x >= TNX_V47_COORD_ABS_MAX ||
+        y <= -TNX_V47_COORD_ABS_MAX || y >= TNX_V47_COORD_ABS_MAX) {
+        if (why) snprintf(why, whyLen, "coordsOutOfRange gid=%d pos=(%d,%d)", gid, x, y);
+        return 0;
+    }
+
+    if (why) {
+        snprintf(why, whyLen, "ok gid=%d pos=(%d,%d) t40=%d t4c=%d dead=%d gidZeroTaken=%d",
+                 gid, x, y, teamOld, teamNew, dead, gid ? 0 : 1);
+    }
+
+    return 1;
+}
+
 static int tnx_v80_state_tick(void) {
     uintptr_t slot = (uintptr_t)tnx_read_global_ptr(TNX_V80_STATE_RVA);
     int32_t state = -1;
@@ -3572,6 +3691,7 @@ static int tnx_v80_state_tick(void) {
     int32_t hopCount[TNX_V82_HOPS] = { 0 };
     int32_t hopCap[TNX_V82_HOPS] = { 0 };
     int hopOk[TNX_V82_HOPS] = { 0 };
+    int score[TNX_V82_HOPS];
     char hopWhy[TNX_V82_HOPS][96] = { { 0 } };
     int chosen = -1;
 
@@ -3653,9 +3773,32 @@ static int tnx_v80_state_tick(void) {
     hopOk[1] = tnx_v82_container_header(inner, &hopArray[1], &hopCount[1], &hopCap[1], hopWhy[1],
                                         sizeof(hopWhy[1]));
 
-    if (hopOk[1]) g_v82_hop_sticky = 1;
+    score[0] = hopOk[0] ? tnx_v105_container_score(client) : -1;
+    score[1] = hopOk[1] ? tnx_v105_container_score(inner) : -1;
 
-    chosen = hopOk[1] ? 1 : (hopOk[0] && !g_v82_hop_sticky ? 0 : -1);
+    if (score[1] > score[0]) {
+        chosen = 1;
+        g_v82_hop_sticky = 1;
+    } else if (score[0] > score[1]) {
+        chosen = 0;
+        g_v82_hop_sticky = 0;
+    } else {
+        chosen = hopOk[1] ? 1 : (hopOk[0] && !g_v82_hop_sticky ? 0 : -1);
+    }
+
+    if (chosen != g_v105_last_choice) {
+        g_v105_last_choice = chosen;
+
+        tnx_logf("v105 hop-select chosen=%d score0=%d score1=%d hopOk=%d/%d sticky=%d - the hop is "
+                 "re-decided every tick from the own slot inside each candidate, so it can leave the "
+                 "object that carried a header first and go back to the client hop",
+                 chosen, score[0], score[1], hopOk[0], hopOk[1], g_v82_hop_sticky);
+    } else if (g_v105_hop_logs < 6) {
+        g_v105_hop_logs++;
+
+        tnx_logf("v105 hop-select steady chosen=%d score0=%d score1=%d - container=%p count=%d",
+                 chosen, score[0], score[1], (void *)g_players_object, g_players_count);
+    }
 
     if (scene != g_v82_hop_scene) {
         g_v82_hop_scene = scene;
@@ -9940,7 +10083,7 @@ static void tnx_v102_own_probe(void) {
             }
         }
 
-        if (sig) valid = tnx_v102_elem_verdict((uintptr_t)elem, why, sizeof(why));
+        if (sig) valid = tnx_v105_own_verdict((uintptr_t)elem, why, sizeof(why));
         else snprintf(why, sizeof(why), "noSignature idx=%d eid=%d ownTeam=%d elemTeam=%d",
                       idx, eid, team, eteam);
 
@@ -10241,6 +10384,15 @@ static void tnx_v103_read_mgr(void) {
 
     g_v103_mgr = (uintptr_t)mgr;
 
+    if (!g_v105_start_logged && g_v103_prev_state == 5) {
+        g_v105_start_logged = 1;
+
+        tnx_logf("v105 battle-start scene=%p mgr=%p attempt=%d tick=%llu - logged once the scene and "
+                 "the manager word are both live, because on the state edge the scene is still null",
+                 (void *)g_scene_object, (void *)g_v103_mgr, g_v103_attempt,
+                 (unsigned long long)g_v103_tick);
+    }
+
     if (tnx_read_ptr((uintptr_t)mgr + TNX_V103_MGR_QUEUE_OFF, &queue) && queue) {
         tnx_read_i32((uintptr_t)queue + 0xc, &count);
     }
@@ -10484,8 +10636,7 @@ static void tnx_v103_state_note(int state) {
     if (state == 5 && g_v103_prev_state != 5) {
         g_v103_attempt++;
 
-        tnx_logf("v103 battle-start scene=%p attempt=%d tick=%llu", (void *)g_scene_object,
-                 g_v103_attempt, (unsigned long long)g_v103_tick);
+        g_v105_start_logged = 0;
     }
 
     g_v103_prev_state = state;

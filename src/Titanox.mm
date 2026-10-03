@@ -292,7 +292,7 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_V122_OWN_GETTER_RVA 0x7b9050ULL
 #define TNX_V122_PRE_FRAMES 300
 #define TNX_V123_MAX_SLOTS 32
-#define TNX_V123_HOP2_DEFER 1
+#define TNX_V123_HOP2_DEFER 0
 #define TNX_V123_WRITE_WAIT 5
 #define TNX_V123_STEP 10
 #define TNX_V123_OWN_IDX_OFF 0xe0ULL
@@ -314,6 +314,27 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_V126_WATCH_TICKS 600
 #define TNX_V126_WATCH_EVERY 30
 #define TNX_V126_WATCH_LOGS 20
+
+#define TNX_V127_GIDLESS 1
+#define TNX_V127_POS_BONUS 4
+#define TNX_V127_ACT_QUEUE 1
+#define TNX_V127_ACT_SETTER 1
+#define TNX_V127_ACT_ELEM 1
+#define TNX_V127_DX_QUEUE 300
+#define TNX_V127_DX_SETTER 600
+#define TNX_V127_DX_ELEM 900
+#define TNX_V127_DY_QUEUE 0
+#define TNX_V127_DY_SETTER 120
+#define TNX_V127_DY_ELEM 240
+#define TNX_V127_READBACK_TICKS 6
+#define TNX_V127_READBACK_LOGS 8
+#define TNX_V127_FRAME_EVERY 2
+#define TNX_V127_SETFLAG 1
+#define TNX_V127_OWN_ALIVE_OFF 0x140ULL
+#define TNX_V127_GATE_FLAG_OFF 0xacULL
+#define TNX_V127_GATE_X_OFF 0x10cULL
+#define TNX_V127_GATE_Y_OFF 0x110ULL
+#define TNX_V127_GATE_B_OFF 0x114ULL
 
 static int g_v123_defer_logs = 0;
 #define TNX_V115_GATE_BYTE_OFF 0x7aULL
@@ -353,7 +374,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_126"
+#define TNX_BUILD_TAG "titanox_127"
 
 #define TNX_RVA_SETPREDICTION 0x00ac3f20ULL
 #define TNX_OBJ_X_OFF 0x30ULL
@@ -4234,6 +4255,9 @@ static int tnx_v105_container_score(uintptr_t container) {
     int samples = 0;
     int gidOk = 0;
     int teamOk = 0;
+    int posOk = 0;
+    int32_t px = 0;
+    int32_t py = 0;
     int score = 0;
     int i;
 
@@ -4258,25 +4282,43 @@ static int tnx_v105_container_score(uintptr_t container) {
 
         samples++;
         team = 0;
+        px = 0;
+        py = 0;
         gid = tnx_v106_gid((uintptr_t)element, NULL);
         tnx_read_i32((uintptr_t)element + TNX_V91_TEAM_OFF, &team);
+
+        if (tnx_read_i32((uintptr_t)element + TNX_OBJ_X_OFF, &px) &&
+            tnx_read_i32((uintptr_t)element + TNX_OBJ_Y_OFF, &py) &&
+            px > -TNX_V75_COORD_MAX && px < TNX_V75_COORD_MAX &&
+            py > -TNX_V75_COORD_MAX && py < TNX_V75_COORD_MAX && (px != 0 || py != 0)) {
+            posOk++;
+        }
+
         if (gid) gidOk++;
         if (team >= 0 && team <= 7) teamOk++;
     }
 
-    if (gidOk) score += 3;
+    if (gidOk) score += 1;
     if (teamOk) score += 1;
     if (count >= 3) score += 2;
     if (count >= 6) score += 2;
+
+    score += posOk * TNX_V127_POS_BONUS;
 
     if (g_v105_score_logs < 12) {
         g_v105_score_logs++;
 
         tnx_logf("v105 score container=%p array=%p count=%d own=%d ownTeam=%d gidOk=%d teamOk=%d "
-                 "samples=%d score=%d - a container only counts as the player list while its own slot "
-                 "is a valid index into its own array, the same field the engine indexes at rva "
-                 "0xac3910, so a list whose +0xe0 is garbage can never win the hop",
-                 (void *)container, array, count, own, ownTeam, gidOk, teamOk, samples, score);
+                 "posOk=%d samples=%d score=%d - a container only counts as the player list while its "
+                 "own slot is a valid index into its own array, the same field the engine indexes at "
+                 "rva 0xac3910, so a list whose +0xe0 is garbage can never win the hop; posOk is the "
+                 "number of sampled elements whose int pair at +%#llx/+%#llx is in range and not both "
+                 "zero, and it is now weighted %d per element against one point for an id, because the "
+                 "v125 run had the roster win on four ids while every one of its positions was (0,0) "
+                 "and the brawler list that carries the real positions lost on an id it does not have",
+                 (void *)container, array, count, own, ownTeam, gidOk, teamOk, posOk, samples, score,
+                 (unsigned long long)TNX_OBJ_X_OFF, (unsigned long long)TNX_OBJ_Y_OFF,
+                 TNX_V127_POS_BONUS);
     }
 
     return score;
@@ -8943,6 +8985,53 @@ static const char *tnx_v50_reject_text(char *buf, size_t size) {
     return buf;
 }
 
+static int g_v127_gidless = 0;
+static int g_v127_gidless_logs = 0;
+
+static void tnx_v127_gidless_scan(uintptr_t manager) {
+    void *data = NULL;
+    int32_t count = 0;
+    int32_t i = 0;
+    int seen = 0;
+    int withGid = 0;
+
+    g_v127_gidless = 0;
+
+    if (!TNX_V127_GIDLESS) return;
+    if (!manager) return;
+    if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &data) || !data) return;
+    if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) return;
+
+    for (i = 0; i < count && i < 8; i++) {
+        void *element = NULL;
+
+        if (!tnx_read_ptr((uintptr_t)data + (uintptr_t)i * 8ULL, &element) || !element) continue;
+
+        seen++;
+
+        if (tnx_v106_gid((uintptr_t)element, NULL) != 0) withGid++;
+    }
+
+    if (seen > 0 && withGid == 0) {
+        g_v127_gidless = 1;
+
+        if (g_v127_gidless_logs < 2) {
+            g_v127_gidless_logs++;
+
+            tnx_logf("v127 gidless container=%p seen=%d withGid=0 - every sampled element of this list "
+                     "has no global id at either +%#llx or +%#llx, which is the brawler class %#llx and "
+                     "not the roster class %#llx, so rejGidZero is switched off for this container and "
+                     "an element with gid 0 is kept: the id is what made the hop prefer the roster, and "
+                     "the roster is the list that carries no coordinates at all",
+                     (void *)manager, seen, (unsigned long long)TNX_OBJ_GLOBALID_OFF,
+                     (unsigned long long)TNX_V106_GID_FALLBACK_OFF, (unsigned long long)0xff5440ULL,
+                     (unsigned long long)0xf9e248ULL);
+        }
+
+        return;
+    }
+}
+
 static int tnx_v48_collect(uintptr_t manager, tnx_v47_obj_t *out, int capacity, int *rejected) {
     void *data = NULL;
     int32_t count = 0;
@@ -8950,6 +9039,8 @@ static int tnx_v48_collect(uintptr_t manager, tnx_v47_obj_t *out, int capacity, 
     int bad = 0;
 
     memset(&g_v50_reject, 0, sizeof(g_v50_reject));
+
+    tnx_v127_gidless_scan(manager);
 
     if (rejected) *rejected = 0;
 
@@ -9025,7 +9116,7 @@ static int tnx_v48_collect(uintptr_t manager, tnx_v47_obj_t *out, int capacity, 
             continue;
         }
 
-        if (entry.gid == 0) {
+        if (entry.gid == 0 && !g_v127_gidless) {
             g_v50_reject.rejGidZero++;
             bad++;
 
@@ -11336,6 +11427,89 @@ static void *tnx_v126_q_last(void) {
     return e;
 }
 
+static uintptr_t g_v127_own_obj = 0;
+static uintptr_t g_v127_elem = 0;
+static int32_t g_v127_elem_x0 = 0;
+static int32_t g_v127_elem_y0 = 0;
+static int32_t g_v127_own_before_x = 0;
+static int32_t g_v127_own_before_y = 0;
+static int g_v127_setter_called = 0;
+static int g_v127_elem_called = 0;
+static int g_v127_rb_logs = 0;
+
+static uintptr_t tnx_v127_own_obj(void) {
+    void *p = NULL;
+    void *q = NULL;
+
+    if (g_scene_object && tnx_read_ptr(g_scene_object + TNX_V126_OWN_OFF, &p) && p &&
+        tnx_read_ptr((uintptr_t)p + TNX_V126_OWN_INNER_OFF, &q) && q) {
+        return (uintptr_t)q;
+    }
+
+    if (g_players_object && tnx_read_ptr(g_players_object + TNX_V126_OWN_OFF, &p) && p &&
+        tnx_read_ptr((uintptr_t)p + TNX_V126_OWN_INNER_OFF, &q) && q) {
+        return (uintptr_t)q;
+    }
+
+    return 0;
+}
+
+static void tnx_v127_setter(int32_t vx, int32_t vy) {
+    uintptr_t fn = tnx_v113_entry(TNX_V112_SETPRED4_RVA);
+    uintptr_t own = tnx_v127_own_obj();
+    int32_t alive = 0;
+
+    g_v127_setter_called = 0;
+
+    if (!TNX_V127_ACT_SETTER) return;
+    if (!fn || !own) return;
+    if (!tnx_read_i32(own + TNX_V127_GATE_X_OFF, &g_v127_own_before_x)) return;
+    if (!tnx_read_i32(own + TNX_V127_GATE_Y_OFF, &g_v127_own_before_y)) return;
+    if (!tnx_read_i32(own + TNX_V127_OWN_ALIVE_OFF, &alive)) return;
+
+    g_v127_own_obj = own;
+
+    ((void (*)(void *, int, int, int))fn)((void *)own, vx, vy, TNX_V127_SETFLAG);
+
+    g_v127_setter_called = 1;
+
+    tnx_logf("v127 setter own=%p x=%d y=%d flag=%d in10c was=%d in110 was=%d alive140=%d - this is the "
+             "exact call the engine makes for itself at %#llx, where it passes the getOwnCharacter "
+             "result and the clamped stick pair; the receiver is read the same way here (%#llx then its "
+             "+%#llx) and never guessed, and the pair is never (0,0) because the apply path has to see a "
+             "movement and not a release",
+             (void *)own, vx, vy, TNX_V127_SETFLAG, g_v127_own_before_x, g_v127_own_before_y, alive,
+             (unsigned long long)0x79de14ULL, (unsigned long long)TNX_V126_OWN_OFF,
+             (unsigned long long)TNX_V126_OWN_INNER_OFF);
+}
+
+static void tnx_v127_elem_write(uintptr_t element, int32_t vx, int32_t vy) {
+    int32_t was = 0;
+
+    g_v127_elem_called = 0;
+
+    if (!TNX_V127_ACT_ELEM) return;
+    if (!element) return;
+    if (!tnx_read_i32(element + TNX_OBJ_X_OFF, &g_v127_elem_x0)) return;
+    if (!tnx_read_i32(element + TNX_OBJ_Y_OFF, &g_v127_elem_y0)) return;
+
+    g_v127_elem = element;
+    was = g_v127_elem_x0;
+
+    if (!tnx_write_bytes(element + TNX_OBJ_X_OFF, &vx, sizeof(vx))) return;
+    if (!tnx_write_bytes(element + TNX_OBJ_Y_OFF, &vy, sizeof(vy))) return;
+
+    g_v127_elem_called = 1;
+
+    tnx_logf("v127 elemwrite elem=%p x=%d y=%d was=(%d,%d) - the int pair at +%#llx/+%#llx of the walked "
+             "element is written directly and read back a whole second later, because the v123 probe read "
+             "through four frames and a server that reconciles on a 50 ms cadence would still look "
+             "successful there; the difference between a local shadow and an authoritative position is "
+             "exactly whether the pair is still ours a second later",
+             (void *)element, vx, vy, was, g_v127_elem_y0, (unsigned long long)TNX_OBJ_X_OFF,
+             (unsigned long long)TNX_OBJ_Y_OFF);
+}
+
 static uintptr_t tnx_v113_entry(uintptr_t rva) {
     if (!g_base || !rva) return 0;
     if (!tnx_callable(rva)) return 0;
@@ -12038,13 +12212,8 @@ static int32_t g_v123_w1_was_x = 0;
 static int32_t g_v123_w1_was_y = 0;
 static uint64_t g_v123_w1_frame = 0;
 static int g_v123_w1_state = 0;
-static uintptr_t g_v123_w2_elem = 0;
-static int32_t g_v123_w2_x = 0;
-static int32_t g_v123_w2_y = 0;
-static int32_t g_v123_w2_was_x = 0;
-static int32_t g_v123_w2_was_y = 0;
-static uint64_t g_v123_w2_frame = 0;
 static int g_v123_w2_state = 0;
+static int g_v127_w2_off = 0;
 
 static int tnx_v123_hop2_arr(void **containerOut, void **arrOut, int32_t *countOut) {
     void *outer = NULL;
@@ -12197,50 +12366,21 @@ static void tnx_v123_writes(const tnx_v47_obj_t *objects, int usable, int ownInd
                  (unsigned long long)(g_v48_ticks - g_v123_w1_frame));
     }
 
-    if (g_v123_w2_state == 0) {
-        void *container = NULL;
-        void *arr = NULL;
-        int32_t count = 0;
-        void *e = NULL;
-        int32_t vx = 0;
-        int32_t vy = 0;
-
-        if (!tnx_v123_hop2_arr(&container, &arr, &count)) return;
-        if (!tnx_read_ptr((uintptr_t)arr, &e) || !e) return;
-
-        tnx_read_i32((uintptr_t)e + TNX_OBJ_X_OFF, &g_v123_w2_was_x);
-        tnx_read_i32((uintptr_t)e + TNX_OBJ_Y_OFF, &g_v123_w2_was_y);
-
-        g_v123_w2_x = g_v123_w2_was_x + TNX_V123_STEP;
-        g_v123_w2_y = g_v123_w2_was_y + TNX_V123_STEP;
-        vx = g_v123_w2_x;
-        vy = g_v123_w2_y;
-
-        tnx_write_bytes((uintptr_t)e + TNX_OBJ_X_OFF, &vx, sizeof(vx));
-        tnx_write_bytes((uintptr_t)e + TNX_OBJ_Y_OFF, &vy, sizeof(vy));
-
-        g_v123_w2_elem = (uintptr_t)e;
-        g_v123_w2_frame = g_v48_ticks;
-        g_v123_w2_state = 1;
-
-        tnx_logf("v123 wtestH2 wrote elem[0]=%p x=%d y=%d was=(%d,%d) - this is the hop2 element in class "
-                 "%#llx and the answer is binary: if the pair holds, element+%#llx is writable and the "
-                 "actuator is a plain store, if it snaps back the int pair is engine owned",
-                 e, g_v123_w2_x, g_v123_w2_y, g_v123_w2_was_x, g_v123_w2_was_y,
-                 (unsigned long long)0xff5440ULL, (unsigned long long)TNX_OBJ_X_OFF);
-    } else if (g_v123_w2_state == 1 && (g_v48_ticks - g_v123_w2_frame) >= TNX_V123_WRITE_WAIT) {
-        int32_t x = 0;
-        int32_t y = 0;
-
+    if (g_v127_w2_off) {
         g_v123_w2_state = 2;
+    } else if (g_v123_w2_state == 0) {
+        g_v127_w2_off = 1;
 
-        tnx_read_i32(g_v123_w2_elem + TNX_OBJ_X_OFF, &x);
-        tnx_read_i32(g_v123_w2_elem + TNX_OBJ_Y_OFF, &y);
+        tnx_logf("v127 wtestH2 off - hop2 %#llx was proven writable in the v126 run (elem[0] took the "
+                 "pair and read back ten units shifted), and the same pair at +%#llx/+%#llx is now the "
+                 "target of path (c), which reads it back a full second later instead of five frames: two "
+                 "writers on one field would make the held= answer meaningless",
+                 (unsigned long long)0xff5440ULL, (unsigned long long)TNX_OBJ_X_OFF,
+                 (unsigned long long)TNX_OBJ_Y_OFF);
 
-        tnx_logf("v123 wtestH2 held=%d now=(%d,%d) want=(%d,%d) frames=%llu",
-                 (x == g_v123_w2_x && y == g_v123_w2_y) ? 1 : 0, x, y, g_v123_w2_x, g_v123_w2_y,
-                 (unsigned long long)(g_v48_ticks - g_v123_w2_frame));
+        return;
     }
+
 }
 
 static void *tnx_v126_battle(void) {
@@ -12705,6 +12845,7 @@ static void tnx_v113_window(int plus) {
     int32_t inY = 0;
     int32_t inK = 0;
 
+    if (plus % TNX_V127_FRAME_EVERY) return;
     if (g_v113_window_logs >= 12) return;
 
     g_v113_window_logs++;
@@ -12715,12 +12856,97 @@ static void tnx_v113_window(int plus) {
         tnx_read_i32((uintptr_t)g_scene_object + TNX_V112_INPUT_K_OFF, &inK);
     }
 
-    tnx_logf("v113 window tick=+%d qcount=%d in10c=%d in110=%d in114=%d want=(%d,%d) match=%d - logged "
-             "tick by tick because addInput evicts an older entry that carries the same key, so a count "
-             "that rises and falls inside these ticks is our message eaten by a game message of the same "
-             "type rather than by the consumer",
+    tnx_logf("v113 window tick=+%d qcount=%d in10c=%d in110=%d in114=%d want=(%d,%d) match=%d - the "
+             "window is one line every %d ticks instead of one per tick, because the queue drain was "
+             "already shown to be steady and the per tick line only spent the log budget",
              plus, tnx_v113_queue_count(NULL), inX, inY, inK, g_v113_enq_x, g_v113_enq_y,
-             tnx_v113_fields());
+             tnx_v113_fields(), TNX_V127_FRAME_EVERY);
+}
+
+static void tnx_v127_statics(void) {
+    static int done = 0;
+
+    if (done) return;
+
+    done = 1;
+
+    tnx_logf("v127 statics, read out of the binary instead of assumed: the apply gate the queue feeds is "
+             "NOT a mode id - %#llx is 'ldrb w8,[rcv+%#llx]; cmp w8,#1; b.ne' and the flag it tests is "
+             "written by the setter %#llx itself as 'strb 1', so path (b) opens that door by construction "
+             "while a queue message never reaches it; the applier behind the gate is %#llx, which reads "
+             "the pair from +%#llx/+%#llx, takes the target from [rcv+%#llx] and calls %#llx; the "
+             "cmp-against-7 that the plan hunted lives in the SCENE class %#llx slots +0x50 and +0x68 "
+             "(%#llx and %#llx read [this+%#llx] against 7) and has nothing to do with the input path; "
+             "the queue drain %#llx pops the tail while msg[+%#llx] <= manager+%#llx and then frees the "
+             "message through %#llx without applying it, so the queue is the buffer that goes out to the "
+             "server and never the local apply path; the second setter %#llx has exactly one caller, "
+             "%#llx, which is the resource loader, so it is construction state and not an actuator",
+             (unsigned long long)TNX_V113_READER_RVA, (unsigned long long)TNX_V127_GATE_FLAG_OFF,
+             (unsigned long long)TNX_V112_SETPRED4_RVA, (unsigned long long)0x9fe350ULL,
+             (unsigned long long)TNX_V127_GATE_X_OFF, (unsigned long long)TNX_V127_GATE_Y_OFF,
+             (unsigned long long)TNX_V126_BOX_PTR_OFF, (unsigned long long)0x9fe4a4ULL,
+             (unsigned long long)0xfe9d00ULL, (unsigned long long)0x8c7f9cULL,
+             (unsigned long long)0x8c7fbcULL, (unsigned long long)0xcULL,
+             (unsigned long long)0x746d18ULL, (unsigned long long)TNX_V113_SEQ_OFF,
+             (unsigned long long)0x10ULL, (unsigned long long)0xd8d9f0ULL,
+             (unsigned long long)0xac3f20ULL, (unsigned long long)0xa26520ULL);
+}
+
+static void tnx_v127_readback(int plus) {
+    uintptr_t elem = g_v127_elem;
+    int32_t elemX = -1;
+    int32_t elemY = -1;
+    int32_t ownX = -1;
+    int32_t ownY = -1;
+    int32_t ownF = -1;
+    int32_t sceneX = -1;
+    int32_t sceneY = -1;
+    int32_t gate = -1;
+    int elemHeld = 0;
+    int ownHeld = 0;
+    int fldHeld = 0;
+
+    if (g_v127_rb_logs >= TNX_V127_READBACK_LOGS) return;
+
+    g_v127_rb_logs++;
+
+    if (elem && tnx_read_i32(elem + TNX_OBJ_X_OFF, &elemX) &&
+        tnx_read_i32(elem + TNX_OBJ_Y_OFF, &elemY)) {
+        elemHeld = (elemX == g_v113_enq_x + TNX_V127_DX_ELEM &&
+                    elemY == g_v113_enq_y + TNX_V127_DY_ELEM) ? 1 : 0;
+    }
+
+    if (g_v127_own_obj) {
+        tnx_read_i32(g_v127_own_obj + TNX_V127_GATE_X_OFF, &ownX);
+        tnx_read_i32(g_v127_own_obj + TNX_V127_GATE_Y_OFF, &ownY);
+        tnx_read_i32(g_v127_own_obj + TNX_V127_GATE_FLAG_OFF, &gate);
+        tnx_read_i32(g_v127_own_obj + TNX_V126_OWN_OFF, &ownF);
+        ownHeld = (ownX == g_v113_enq_x + TNX_V127_DX_SETTER &&
+                   ownY == g_v113_enq_y + TNX_V127_DY_SETTER) ? 1 : 0;
+    }
+
+    if (g_scene_object) {
+        tnx_read_i32((uintptr_t)g_scene_object + TNX_V112_INPUT_X_OFF, &sceneX);
+        tnx_read_i32((uintptr_t)g_scene_object + TNX_V112_INPUT_Y_OFF, &sceneY);
+    }
+
+    fldHeld = tnx_v113_fields();
+
+    if (g_v113_readback < 0) g_v113_readback = 0;
+
+    tnx_logf("v127 readback +%d elem=%p held=%d now=(%d,%d) want=(%d,%d) was=(%d,%d) | own=%p "
+             "in10c=%d in110=%d held=%d flag%#llx=%d | scene10c=%d scene110=%d fld=%d | q=%d - read a "
+             "whole second after the three writes and not four frames later, because a server that "
+             "reconciles the position on a short cadence turns a four frame probe into a false success: "
+             "elemHeld names path (c) the direct element pair, ownHeld names path (b) the setter %#llx "
+             "store on the getOwnCharacter receiver, and the queue count together with the seq counter "
+             "names path (a) the message; whichever of the three holds after a second is the actuator",
+             plus, (void *)elem, elemHeld, elemX, elemY, g_v113_enq_x + TNX_V127_DX_ELEM,
+             g_v113_enq_y + TNX_V127_DY_ELEM, g_v127_elem_x0, g_v127_elem_y0, (void *)g_v127_own_obj,
+             ownX, ownY, ownHeld, (unsigned long long)TNX_V127_GATE_FLAG_OFF, gate, sceneX, sceneY,
+             fldHeld, tnx_v113_queue_count(NULL), (unsigned long long)TNX_V112_SETPRED4_RVA);
+
+    (void)ownF;
 }
 
 static void tnx_v113_test(const tnx_v47_obj_t *objects, int usable, int ownIndex) {
@@ -12794,8 +13020,8 @@ static void tnx_v113_test(const tnx_v47_obj_t *objects, int usable, int ownIndex
         g_v113_test_tick = g_v103_tick;
         g_v113_test_before_x = objects[ownIndex].x;
         g_v113_test_before_y = objects[ownIndex].y;
-        g_v113_enq_x = TNX_V126_PUSH_X;
-        g_v113_enq_y = TNX_V126_PUSH_Y;
+        g_v113_enq_x = TNX_V126_PUSH_X + TNX_V127_DX_QUEUE;
+        g_v113_enq_y = TNX_V126_PUSH_Y + TNX_V127_DY_QUEUE;
 
         g_v126_scene_before_x = 0;
         g_v126_scene_before_y = 0;
@@ -12822,16 +13048,26 @@ static void tnx_v113_test(const tnx_v47_obj_t *objects, int usable, int ownIndex
         g_v113_q_before = g_v126_q_before;
         g_v113_q_after = g_v126_q_after;
 
-        tnx_logf("v126 test push=(%d,%d) type=%d alloc=%s ok=%d enqueues=%llu seq %d->%d q %d->%d qLast=%p "
-                 "ownElem=(%d,%d) scene10c was=(%d,%d) - the push is a REAL displacement and no longer the "
-                 "own pair, because the own pair of the walked list is (0,0) and the previous no-op read "
-                 "scene+%#llx back as 0 and called it a match; ok=1 with seq after the push means the "
-                 "engine ran addInput, and qLast naming msg means the queue really holds our pointer",
-                 g_v113_enq_x, g_v113_enq_y, TNX_V126_TYPE_MOVE, g_v126_alloc_how, g_v126_enq_ok,
-                 (unsigned long long)g_v113_enqueues, g_v126_seq_before, g_v126_seq_after,
-                 g_v126_q_before, g_v126_q_after, g_v126_q_last, g_v113_test_before_x,
-                 g_v113_test_before_y, g_v126_scene_before_x, g_v126_scene_before_y,
-                 (unsigned long long)TNX_V112_INPUT_X_OFF);
+        tnx_v127_setter(g_v113_enq_x + TNX_V127_DX_SETTER, g_v113_enq_y + TNX_V127_DY_SETTER);
+        tnx_v127_elem_write(objects[ownIndex].object,
+                            g_v113_enq_x + TNX_V127_DX_ELEM, g_v113_enq_y + TNX_V127_DY_ELEM);
+
+        tnx_logf("v127 test three paths, one run: (a) queue msg type=%d x=%d y=%d ok=%d seq %d->%d "
+                 "q %d->%d qLast=%p, (b) setter %#llx on own=%p x=%d y=%d called=%d, (c) direct pair on "
+                 "elem=%p x=%d y=%d called=%d; ownElem was=(%d,%d) scene10c was=(%d,%d) - the offsets "
+                 "differ by %d, %d and %d so the direction of any movement names the path that moved it, "
+                 "and the readback happens a full second later: the v126 run proved the enqueue itself "
+                 "is mechanically sound (seq raised, queue 0 to 1, drained in six frames) so what is "
+                 "still open is only which of the three writes the engine accepts",
+                 TNX_V126_TYPE_MOVE, g_v113_enq_x, g_v113_enq_y, g_v126_enq_ok, g_v126_seq_before,
+                 g_v126_seq_after, g_v126_q_before, g_v126_q_after, g_v126_q_last,
+                 (unsigned long long)TNX_V112_SETPRED4_RVA, (void *)g_v127_own_obj,
+                 g_v113_enq_x + TNX_V127_DX_SETTER, g_v113_enq_y + TNX_V127_DY_SETTER,
+                 g_v127_setter_called, (void *)g_v127_elem,
+                 g_v113_enq_x + TNX_V127_DX_ELEM, g_v113_enq_y + TNX_V127_DY_ELEM,
+                 g_v127_elem_called, g_v113_test_before_x, g_v113_test_before_y,
+                 g_v126_scene_before_x, g_v126_scene_before_y, TNX_V127_DX_QUEUE,
+                 TNX_V127_DX_SETTER, TNX_V127_DX_ELEM);
 
         tnx_v113_window(0);
 
@@ -12846,11 +13082,13 @@ static void tnx_v113_test(const tnx_v47_obj_t *objects, int usable, int ownIndex
             g_v113_readback_tick = plus;
         }
 
-        if (plus <= TNX_V113_WAIT_TICKS) {
+        if (plus < TNX_V127_READBACK_TICKS) {
             tnx_v113_window(plus);
 
             return;
         }
+
+        tnx_v127_readback(plus);
 
         g_v113_test_state = 2;
 
@@ -12858,12 +13096,14 @@ static void tnx_v113_test(const tnx_v47_obj_t *objects, int usable, int ownIndex
 
         qnow = tnx_v113_queue_count(NULL);
 
-        tnx_logf("v113 test short before=(%d,%d) after=(%d,%d) qAfter=%d qNow=%d readback=%d atTick=%d "
-                 "- readback=1 means the consumer ran on this object and the setter wrote our pair back "
-                 "into the scene, readback=0 with a grown queue means the enqueue landed but the apply "
-                 "path did not run for this object",
+        tnx_logf("v127 test short before=(%d,%d) after=(%d,%d) qAfter=%d qNow=%d readback=%d atTick=%d - "
+                 "the walked element is a hop2 brawler in this build, so before and after here are its "
+                 "int pair at +%#llx/+%#llx and not a roster slot: the hop2 list is adopted because the "
+                 "roster wins on ids while every one of its positions is (0,0), and an id is worth "
+                 "nothing to a dodge that needs coordinates",
                  g_v113_test_before_x, g_v113_test_before_y, objects[ownIndex].x, objects[ownIndex].y,
-                 g_v113_q_after, qnow, g_v113_readback, g_v113_readback_tick);
+                 g_v113_q_after, qnow, g_v113_readback, g_v113_readback_tick,
+                 (unsigned long long)TNX_OBJ_X_OFF, (unsigned long long)TNX_OBJ_Y_OFF);
 
         return;
     }
@@ -13544,6 +13784,7 @@ static void tnx_v90_gate_report(int slotHit) {
             tnx_v123_writes(objects, usable, ownFound ? ownIndex : -1);
             tnx_v126_chain();
             tnx_v126_watch();
+            tnx_v127_statics();
         }
     }
 

@@ -291,6 +291,11 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_V122_RESOLVE_SELF_RVA 0x991440ULL
 #define TNX_V122_OWN_GETTER_RVA 0x7b9050ULL
 #define TNX_V122_PRE_FRAMES 300
+#define TNX_V123_MAX_SLOTS 32
+#define TNX_V123_HOP2_DEFER 1
+#define TNX_V123_WRITE_WAIT 5
+#define TNX_V123_STEP 10
+#define TNX_V123_OWN_IDX_OFF 0xe0ULL
 #define TNX_V115_GATE_BYTE_OFF 0x7aULL
 #define TNX_V115_CLIENT_OFF 0x28ULL
 #define TNX_V115_CLIENT_POS_X_OFF 0x80ULL
@@ -328,7 +333,7 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_122"
+#define TNX_BUILD_TAG "titanox_123"
 
 #define TNX_RVA_SETPREDICTION 0x00ac3f20ULL
 #define TNX_OBJ_X_OFF 0x30ULL
@@ -1816,6 +1821,41 @@ static void tnx_slot_install_one(int index) {
     if (!target) return;
 
     slots = hook_probe(target);
+
+    if (slots > TNX_V123_MAX_SLOTS) {
+        tnx_logf("slot %s: reject-bulk target=%p slots=%d - that many identical copies means the address is "
+                 "a shared constant duplicated across class tables and not a vtable entry, so redirecting "
+                 "it would send every original caller into a stub with the wrong arguments",
+                 g_slot_specs[index].tag, (void *)target, slots);
+
+        return;
+    }
+
+    {
+        int32_t word = 0;
+        int prologue = 0;
+
+        if (tnx_read_i32(target, &word)) {
+            uint32_t w = (uint32_t)word;
+
+            if ((w & 0xFFC003FFu) == 0xD10003FFu) prologue = 1;
+            if ((w & 0xFFC07FFFu) == 0xA9007BFDu) prologue = 1;
+            if ((w & 0xFFC07FFFu) == 0xA9807BFDu) prologue = 1;
+            if (w == 0xD503237Fu) prologue = 1;
+            if (w == 0xD65F03C0u) prologue = 1;
+            if ((w & 0xFF000000u) == 0x14000000u) prologue = 1;
+            if ((w & 0x9F000000u) == 0x10000000u) prologue = 1;
+        }
+
+        if (!prologue) {
+            tnx_logf("slot %s: reject-nonfunc target=%p firstWord=%#x - the first instruction is not a "
+                     "prologue, a leaf return, a branch or an adrp, so this is not a function entry and a "
+                     "stub placed here would be entered with the caller's scratch registers intact",
+                     g_slot_specs[index].tag, (void *)target, (unsigned)(word & 0xFFFFFFFF));
+
+            return;
+        }
+    }
 
     if (slots <= 0) {
         tnx_logf("slot %s: not-found target=%p slots=0 in __DATA_CONST/__DATA - runtime inline "
@@ -4489,6 +4529,20 @@ static int tnx_v80_state_tick(void) {
     capacity = hopCap[chosen];
 
     g_v82_hop_chosen = chosen;
+
+    if (chosen == 1 && TNX_V123_HOP2_DEFER) {
+        if (g_v123_defer_logs < 4) {
+            g_v123_defer_logs++;
+
+            tnx_logf("v123 hop2 defer container=%p count=%d cap=%d array=%p - the fresh hop2 container is "
+                     "logged and not adopted in this build: adopting it means the walk reads class %#llx "
+                     "elements and a single bad field in one of them is enough to take the stub path into "
+                     "a bad pointer, so hop1 stays the walk source until the hop2 dump proves the layout",
+                     (void *)players, count, capacity, array, (unsigned long long)0xff5440ULL);
+        }
+
+        return 1;
+    }
 
     if (players != g_players_object) {
         g_players_object = players;
@@ -11197,6 +11251,7 @@ static int g_v113_window_logs = 0;
 static uint64_t g_v113_push_frame = 0;
 static int g_v113_frame_logs = 0;
 static int g_v115_mode_wait_logs = 0;
+static int g_v123_defer_logs = 0;
 static int g_v115_mode_seen7 = 0;
 static int g_v115_mode_max = 0;
 static int g_v115_gate_seen = 0;
@@ -11865,6 +11920,200 @@ static void tnx_v122_entities2(void) {
     tnx_logf("v122 entities2 count=%d %s - vt %#llx is a brawler and %#llx is a lobby or roster slot, so "
              "this line decides whether the interpolation list carries live units or UI rows",
              count, buf, (unsigned long long)0xff5440ULL, (unsigned long long)0xf9e248ULL);
+}
+
+
+static int g_v123_dump_done = 0;
+static uintptr_t g_v123_w1_elem = 0;
+static int32_t g_v123_w1_x = 0;
+static int32_t g_v123_w1_y = 0;
+static int32_t g_v123_w1_was_x = 0;
+static int32_t g_v123_w1_was_y = 0;
+static uint64_t g_v123_w1_frame = 0;
+static int g_v123_w1_state = 0;
+static uintptr_t g_v123_w2_elem = 0;
+static int32_t g_v123_w2_x = 0;
+static int32_t g_v123_w2_y = 0;
+static int32_t g_v123_w2_was_x = 0;
+static int32_t g_v123_w2_was_y = 0;
+static uint64_t g_v123_w2_frame = 0;
+static int g_v123_w2_state = 0;
+
+static int tnx_v123_hop2_arr(void **containerOut, void **arrOut, int32_t *countOut) {
+    void *outer = NULL;
+    void *container = NULL;
+    void *arr = NULL;
+    int32_t count = 0;
+
+    if (!g_scene_object) return 0;
+    if (!tnx_read_ptr((uintptr_t)g_scene_object + TNX_V115_CLIENT_OFF, &outer) || !outer) return 0;
+    if (!tnx_read_ptr((uintptr_t)outer + TNX_V115_CLIENT_OFF, &container) || !container) return 0;
+    if (!tnx_read_ptr((uintptr_t)container + TNX_MGR_ARRAY_OFF, &arr) || !arr) return 0;
+    if (!tnx_read_i32((uintptr_t)container + TNX_MGR_COUNT_OFF, &count)) return 0;
+    if (count <= 0 || count > 16) return 0;
+
+    if (containerOut) *containerOut = container;
+    if (arrOut) *arrOut = arr;
+    if (countOut) *countOut = count;
+
+    return 1;
+}
+
+static void tnx_v123_hop2dump(void) {
+    void *container = NULL;
+    void *arr = NULL;
+    int32_t count = 0;
+    int32_t i = 0;
+    int ownIdx = -1;
+    int ownGid = -1;
+    void *h1arr = NULL;
+    int32_t h1count = 0;
+
+    if (g_v123_dump_done) return;
+    if (g_v103_tick < 2) return;
+    if (!tnx_v123_hop2_arr(&container, &arr, &count)) return;
+
+    g_v123_dump_done = 1;
+
+    if (g_players_object) {
+        void *piece = NULL;
+
+        if (tnx_read_ptr((uintptr_t)g_players_object + TNX_MGR_ARRAY_OFF, &piece)) h1arr = piece;
+
+        tnx_read_i32((uintptr_t)g_players_object + TNX_MGR_COUNT_OFF, &h1count);
+        tnx_read_i32((uintptr_t)g_players_object + TNX_V123_OWN_IDX_OFF, &ownIdx);
+
+        if (h1arr && ownIdx >= 0 && ownIdx < h1count) {
+            void *e = NULL;
+
+            if (tnx_read_ptr((uintptr_t)h1arr + (uintptr_t)ownIdx * 8ULL, &e) && e) {
+                tnx_read_i32((uintptr_t)e + TNX_V112_GID_OFF, &ownGid);
+            }
+        }
+    }
+
+    tnx_logf("v123 hop2dump container=%p arr=%p count=%d ownIdxHop1=%d ownGid=%d - the fresh hop2 list is "
+             "read only, never adopted in this build, and own is looked up by gid and not by pointer",
+             container, arr, count, ownIdx, ownGid);
+
+    for (i = 0; i < count && i < 12; i++) {
+        void *e = NULL;
+        void *vt = NULL;
+        uintptr_t r = 0;
+        int32_t gid = 0;
+        int32_t team = 0;
+        int32_t x = 0;
+        int32_t y = 0;
+        uint8_t h1 = 0;
+        uint8_t h7 = 0;
+        int isOwn = 0;
+
+        if (!tnx_read_ptr((uintptr_t)arr + (uintptr_t)i * 8ULL, &e) || !e) continue;
+
+        if (tnx_read_ptr((uintptr_t)e, &vt) && vt) r = (uintptr_t)vt - g_base;
+
+        tnx_read_i32((uintptr_t)e + TNX_V112_GID_OFF, &gid);
+        tnx_read_i32((uintptr_t)e + TNX_OBJ_TEAM_OFF, &team);
+        tnx_read_i32((uintptr_t)e + TNX_OBJ_X_OFF, &x);
+        tnx_read_i32((uintptr_t)e + TNX_OBJ_Y_OFF, &y);
+        tnx_read_u8((uintptr_t)e + TNX_V119_ELIG_OFF, &h1);
+        tnx_read_u8((uintptr_t)e + TNX_V115_GATE_BYTE_OFF, &h7);
+
+        if (ownGid >= 0 && gid == ownGid) isOwn = 1;
+
+        tnx_logf("v123 hop2[%d] p=%p vt=%#llx gid50=%d t40=%d xy=(%d,%d) h1fd=%d h7a=%d own=%d",
+                 i, e, (unsigned long long)r, gid, team, x, y, (int)h1, (int)h7, isOwn);
+    }
+}
+
+static void tnx_v123_writes(const tnx_v47_obj_t *objects, int usable, int ownIndex) {
+    if (usable <= 0 || !objects) return;
+
+    if (g_v123_w1_state == 0) {
+        uintptr_t e = objects[(ownIndex >= 0 && ownIndex < usable) ? ownIndex : 0].object;
+        int32_t vx = 0;
+        int32_t vy = 0;
+
+        if (!e) return;
+
+        tnx_read_i32(e + TNX_OBJ_X_OFF, &g_v123_w1_was_x);
+        tnx_read_i32(e + TNX_OBJ_Y_OFF, &g_v123_w1_was_y);
+
+        g_v123_w1_x = g_v123_w1_was_x + 1;
+        g_v123_w1_y = g_v123_w1_was_y + 1;
+        vx = g_v123_w1_x;
+        vy = g_v123_w1_y;
+
+        tnx_write_bytes(e + TNX_OBJ_X_OFF, &vx, sizeof(vx));
+        tnx_write_bytes(e + TNX_OBJ_Y_OFF, &vy, sizeof(vy));
+
+        g_v123_w1_elem = e;
+        g_v123_w1_frame = g_v48_ticks;
+        g_v123_w1_state = 1;
+
+        tnx_logf("v123 wtestH1 wrote elem=%p x=%d y=%d was=(%d,%d) - a hop1 slot takes one synthetic write "
+                 "in the int pair to prove whether that pair is writable at all, before any network route "
+                 "is trusted",
+                 (void *)e, g_v123_w1_x, g_v123_w1_y, g_v123_w1_was_x, g_v123_w1_was_y);
+    } else if (g_v123_w1_state == 1 && (g_v48_ticks - g_v123_w1_frame) >= TNX_V123_WRITE_WAIT) {
+        int32_t x = 0;
+        int32_t y = 0;
+
+        g_v123_w1_state = 2;
+
+        tnx_read_i32(g_v123_w1_elem + TNX_OBJ_X_OFF, &x);
+        tnx_read_i32(g_v123_w1_elem + TNX_OBJ_Y_OFF, &y);
+
+        tnx_logf("v123 wtestH1 held=%d now=(%d,%d) want=(%d,%d) frames=%llu - held=0 means something else "
+                 "wrote the pair back, held=1 means the write survives and the int pair is a plain store",
+                 (x == g_v123_w1_x && y == g_v123_w1_y) ? 1 : 0, x, y, g_v123_w1_x, g_v123_w1_y,
+                 (unsigned long long)(g_v48_ticks - g_v123_w1_frame));
+    }
+
+    if (g_v123_w2_state == 0) {
+        void *container = NULL;
+        void *arr = NULL;
+        int32_t count = 0;
+        void *e = NULL;
+        int32_t vx = 0;
+        int32_t vy = 0;
+
+        if (!tnx_v123_hop2_arr(&container, &arr, &count)) return;
+        if (!tnx_read_ptr((uintptr_t)arr, &e) || !e) return;
+
+        tnx_read_i32((uintptr_t)e + TNX_OBJ_X_OFF, &g_v123_w2_was_x);
+        tnx_read_i32((uintptr_t)e + TNX_OBJ_Y_OFF, &g_v123_w2_was_y);
+
+        g_v123_w2_x = g_v123_w2_was_x + TNX_V123_STEP;
+        g_v123_w2_y = g_v123_w2_was_y + TNX_V123_STEP;
+        vx = g_v123_w2_x;
+        vy = g_v123_w2_y;
+
+        tnx_write_bytes((uintptr_t)e + TNX_OBJ_X_OFF, &vx, sizeof(vx));
+        tnx_write_bytes((uintptr_t)e + TNX_OBJ_Y_OFF, &vy, sizeof(vy));
+
+        g_v123_w2_elem = (uintptr_t)e;
+        g_v123_w2_frame = g_v48_ticks;
+        g_v123_w2_state = 1;
+
+        tnx_logf("v123 wtestH2 wrote elem[0]=%p x=%d y=%d was=(%d,%d) - this is the hop2 element in class "
+                 "%#llx and the answer is binary: if the pair holds, element+%#llx is writable and the "
+                 "actuator is a plain store, if it snaps back the int pair is engine owned",
+                 e, g_v123_w2_x, g_v123_w2_y, g_v123_w2_was_x, g_v123_w2_was_y,
+                 (unsigned long long)0xff5440ULL, (unsigned long long)TNX_OBJ_X_OFF);
+    } else if (g_v123_w2_state == 1 && (g_v48_ticks - g_v123_w2_frame) >= TNX_V123_WRITE_WAIT) {
+        int32_t x = 0;
+        int32_t y = 0;
+
+        g_v123_w2_state = 2;
+
+        tnx_read_i32(g_v123_w2_elem + TNX_OBJ_X_OFF, &x);
+        tnx_read_i32(g_v123_w2_elem + TNX_OBJ_Y_OFF, &y);
+
+        tnx_logf("v123 wtestH2 held=%d now=(%d,%d) want=(%d,%d) frames=%llu",
+                 (x == g_v123_w2_x && y == g_v123_w2_y) ? 1 : 0, x, y, g_v123_w2_x, g_v123_w2_y,
+                 (unsigned long long)(g_v48_ticks - g_v123_w2_frame));
+    }
 }
 
 static void tnx_v117_match(int32_t ix, int32_t iy) {
@@ -12954,6 +13203,8 @@ static void tnx_v90_gate_report(int slotHit) {
             tnx_v112_pos_watch(objects, usable, ownFound ? ownIndex : -1);
             tnx_v113_hop2();
             tnx_v113_test(objects, usable, ownFound ? ownIndex : -1);
+            tnx_v123_hop2dump();
+            tnx_v123_writes(objects, usable, ownFound ? ownIndex : -1);
         }
     }
 

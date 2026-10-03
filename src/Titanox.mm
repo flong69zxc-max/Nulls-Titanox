@@ -310,7 +310,25 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_141"
+#define TNX_BUILD_TAG "titanox_142"
+
+/* v142 - the container desync, closed at the source.
+ *
+ * The v141 log answers the checklist question: "v138 dodge CALLED" exists only from v141 on,
+ * because wantedCount was 0 and the gate above tnx_run_workload stayed shut until 141 filled
+ * it. The two lines that are still wrong in the 141 log are the counts:
+ *   v138 dodge CALLED n=1200 count=21   (03:59:13.889)
+ *   v135 dodge probe tick=21  count=24  (03:59:13.890)
+ *   v100 man walk             count=26  (03:59:13.906)
+ * tnx_locate_battle_mode is called from two different threads: the render callback
+ * (tnx_run_workload) and the 1 Hz dispatch_source scan timer at line 4041. The triple
+ * g_players_object/array/count is written by whichever ran last and read by the walk and by
+ * the resolver at different instants, so the walk holds one list while the resolver reads
+ * another. v142 moves the triple under a seqlock and gives one snapshot per render tick. */
+#define TNX_V142_WALK_ABORT_FULL 5
+#define TNX_V142_WALK_ABORT_EVERY 64
+#define TNX_V142_PROJ_CLASS_A 0x00ff56d8ULL
+#define TNX_V142_PROJ_CLASS_B 0x00ff57b0ULL
 
 /* v141 - two roots, both proven by reading this file, and both upstream of everything v140 added.
  *
@@ -918,6 +936,117 @@ static uintptr_t g_v80_site = 0;
 static int g_v80_state = -1;
 static int g_v80_scan_armed = -1;
 static uintptr_t g_players_array = 0;
+
+/* ---------------------------------------------------------------------------
+ * v142 - single source of truth for the walked container.
+ *
+ * tnx_locate_battle_mode runs from the render callback and from the 1 Hz scan timer, i.e.
+ * from two threads. object/array/count/cap were four independent stores read by the walk,
+ * the census and the resolver at different instants, so a reader could take the new array
+ * with the old count - that is the 21/24/26 spread in the v141 log, and that is what walks
+ * a freed list and crashes. The publish below is a seqlock: a reader sees the whole previous
+ * triple or the whole new one, never a mix.
+ * ------------------------------------------------------------------------- */
+static volatile uint32_t g_v142_seq = 0;
+static uintptr_t g_v142_pub_object = 0;
+static uintptr_t g_v142_pub_array = 0;
+static int32_t g_v142_pub_count = 0;
+static int32_t g_v142_pub_cap = 0;
+static int g_v142_pub_logs = 0;
+
+static uintptr_t g_v142_tick_object = 0;
+static uintptr_t g_v142_tick_array = 0;
+static int32_t g_v142_tick_count = 0;
+static uint64_t g_v142_tick_stamp = 0;
+static uint64_t g_v142_tick_logs = 0;
+static int g_v142_score_logs = 0;
+static uint64_t g_v142_walk_aborts = 0;
+
+static void tnx_v142_publish(uintptr_t object, uintptr_t array, int32_t count, int32_t cap,
+                             const char *why) {
+    __sync_synchronize();
+
+    g_v142_seq++;
+
+    __sync_synchronize();
+
+    g_v142_pub_object = object;
+    g_v142_pub_array = array;
+    g_v142_pub_count = count;
+    g_v142_pub_cap = cap;
+
+    g_players_object = object;
+    g_players_array = array;
+    g_players_count = count;
+    g_players_cap = cap;
+
+    __sync_synchronize();
+
+    g_v142_seq++;
+
+    __sync_synchronize();
+
+    if (g_v142_pub_logs < 12) {
+        g_v142_pub_logs++;
+
+        tnx_logf("v142 publish why=%s object=%p array=%p count=%d cap=%d seq=%u - the whole triple "
+                 "moves under one sequence, so no reader can take the new array with the old "
+                 "count", why ? why : "?", (void *)object, (void *)array, count, cap,
+                 (unsigned)g_v142_seq);
+    }
+}
+
+static int tnx_v142_snapshot(uintptr_t *objectOut, uintptr_t *arrayOut, int32_t *countOut) {
+    int tries;
+
+    for (tries = 0; tries < 8; tries++) {
+        uint32_t s1 = g_v142_seq;
+        uintptr_t o;
+        uintptr_t a;
+        int32_t c;
+
+        if (s1 & 1u) continue;
+
+        o = g_v142_pub_object;
+        a = g_v142_pub_array;
+        c = g_v142_pub_count;
+
+        __sync_synchronize();
+
+        if (g_v142_seq != s1) continue;
+
+        if (objectOut) *objectOut = o;
+        if (arrayOut) *arrayOut = a;
+        if (countOut) *countOut = c;
+
+        return 1;
+    }
+
+    return 0;
+}
+
+static void tnx_v142_tick_begin(const char *phase) {
+    uintptr_t o = 0;
+    uintptr_t a = 0;
+    int32_t c = 0;
+
+    if (!tnx_v142_snapshot(&o, &a, &c)) return;
+
+    g_v142_tick_object = o;
+    g_v142_tick_array = a;
+    g_v142_tick_count = c;
+    g_v142_tick_stamp++;
+
+    if (g_v142_tick_logs < 12) {
+        g_v142_tick_logs++;
+
+        tnx_logf("v142 tick enter phase=%s object=%p array=%p count=%d stamp=%llu - the snapshot is "
+                 "taken before any stage reads it and is what the walk, the census and the "
+                 "resolver all use, so a publish from the scan timer cannot split them",
+                 phase ? phase : "?", (void *)o, (void *)a, c,
+                 (unsigned long long)g_v142_tick_stamp);
+    }
+}
 static int g_players_count = 0;
 static int g_players_cap = 0;
 static int g_v81_census_logs = 0;
@@ -2558,24 +2687,21 @@ static void tnx_v64_modesig_tick(void) {
         if (count >= 2 && cap >= count && cap <= TNX_MGR_CAP_MAX) {
             void *mgrArray = NULL;
 
-            g_players_object = (uintptr_t)mgr;
             g_manager_count = count;
 
-            /* v141: the list is published together with the container. Writing the container
-             * alone left g_players_array on the previous battle's list, and the hop adoption
-             * (guarded by players != g_players_object) then never fired because the container
-             * was already equal - so the own resolver walked a foreign array all battle. That
-             * is the pair "container=0x121313c60 array=0x1474ca580" against
-             * "v106 gid fallback element=0x131c68400" in the v140 run. */
+            /* v142: the container is never published without its list. The v140 form wrote
+             * g_players_object alone, the hop adoption (guarded by players != g_players_object)
+             * then never fired, and the own resolver walked the previous battle's list - the
+             * pair "container=0x121313c60 array=0x1474ca580" against
+             * "v106 gid fallback element=0x131c68400". If the list cannot be read, nothing is
+             * published at all instead of a container with a stale array. */
             if (tnx_read_ptr((uintptr_t)mgr + TNX_MGR_ARRAY_OFF, &mgrArray) && mgrArray) {
-                g_players_array = (uintptr_t)mgrArray;
-                g_players_count = count;
+                tnx_v142_publish((uintptr_t)mgr, (uintptr_t)mgrArray, count, cap, "modesig");
             }
 
-            tnx_logf("v141 modesig container obj=%p mgr=%p array=%p count=%d cap=%d src=SIG - the "
-                     "array and the count are published with the container, so the walk and the "
-                     "resolver cannot name different lists", (void *)found, mgr, mgrArray, count,
-                     cap);
+            tnx_logf("v142 modesig container obj=%p mgr=%p array=%p count=%d cap=%d src=SIG - read "
+                     "and published as one tuple under the seqlock, or not at all",
+                     (void *)found, mgr, mgrArray, count, cap);
         }
     }
 }
@@ -3604,7 +3730,7 @@ static int tnx_v80_state_tick(void) {
     {
         static int v141_array_vote_logs = 0;
 
-        if ((uintptr_t)array != g_players_array && players == g_players_object &&
+        if ((uintptr_t)array != g_v142_pub_array && (uintptr_t)players == g_v142_pub_object &&
             v141_array_vote_logs < TNX_V141_ARRAY_VOTE_LOGS) {
             v141_array_vote_logs++;
 
@@ -3612,15 +3738,13 @@ static int tnx_v80_state_tick(void) {
                      "newArray=%p count=%d - the pair is republished on the array alone, because "
                      "the container can stay equal while the engine reallocates or swaps the "
                      "list, and that difference is what made the resolver read a foreign array",
-                     (void *)players, chosen, (void *)g_players_array, array, count);
+                     (void *)players, chosen, (void *)g_v142_pub_array, array, count);
         }
     }
 
-    if (players != g_players_object || (uintptr_t)array != g_players_array) {
-        g_players_object = players;
-        g_players_array = (uintptr_t)array;
-        g_players_count = count;
-        g_players_cap = capacity;
+    if ((uintptr_t)players != g_v142_pub_object || (uintptr_t)array != g_v142_pub_array ||
+        count != g_v142_pub_count) {
+        tnx_v142_publish((uintptr_t)players, (uintptr_t)array, count, capacity, "hop-adopt");
 
         tnx_logf("v100 container=%p hop=%d count=%d cap=%d array=%p - read straight out of the "
                  "engine's own global chain with no scan; hop %d is the field the engine walks "
@@ -4064,7 +4188,17 @@ static void tnx_start_timer(void) {
 }
 
 static void tnx_run_workload(void) {
+    /* v142: one snapshot of the published container per render callback, taken before
+     * tnx_locate_battle_mode can publish again and before any stage reads it. Every stage of
+     * this tick - the walk, the census and the own resolver - reads this pair, so a publish
+     * from the 1 Hz scan timer cannot split them across two lists. */
+    tnx_v142_tick_begin("pre-locate");
+
     tnx_locate_battle_mode();
+
+    /* the locate call may have published a new battle; re-take so the rest of the tick uses
+     * what the stage that runs first decided instead of the previous tick's list */
+    tnx_v142_tick_begin("post-locate");
 
     if (g_scene_object) {
         if (!g_snapshot_first) {
@@ -5958,6 +6092,14 @@ static int g_v140_proj_dumps = 0;
 static uint64_t g_v140_proj_diff_logs = 0;
 static uint64_t g_v140_proj_firsts = 0;
 
+/* v142 walk guards: the walk keeps its own copy of array and count for the whole pass and
+ * stops the moment the published pair moves under it, instead of iterating a list the engine
+ * has already replaced. */
+static int g_v142_walk_aborted = 0;
+static int g_v142_walk_abort_i = -1;
+static uintptr_t g_v142_walk_arr = 0;
+static int32_t g_v142_walk_n = 0;
+
 static void tnx_v140_proj_track(uintptr_t elem, uintptr_t classRva, int32_t gid, int32_t team) {
     uint8_t now[TNX_V140_DIFF_BYTES];
     int i;
@@ -6039,6 +6181,7 @@ static int tnx_v48_collect(uintptr_t manager, tnx_v47_obj_t *out, int capacity, 
     int usable = 0;
     int bad = 0;
     uintptr_t gidOff = TNX_OBJ_GLOBALID_OFF;
+    uint32_t walkSeq = 0;
 
     memset(&g_v50_reject, 0, sizeof(g_v50_reject));
 
@@ -6055,6 +6198,17 @@ static int tnx_v48_collect(uintptr_t manager, tnx_v47_obj_t *out, int capacity, 
 
     gidOff = tnx_v135_list_gid_off((uintptr_t)data, count);
 
+    /* v142: data and count are copied into locals once, above, and the loop never re-reads a
+     * global - so the pointer it dereferences cannot become the new one halfway through. The
+     * sequence below is only the tripwire that stops the pass when the published tuple moved
+     * under it, which is the case that walked a freed list. */
+    walkSeq = g_v142_seq;
+
+    g_v142_walk_aborted = 0;
+    g_v142_walk_abort_i = -1;
+    g_v142_walk_arr = (uintptr_t)data;
+    g_v142_walk_n = count;
+
     for (int32_t i = 0; i < count && usable < capacity; i++) {
         void *element = NULL;
         void *vtable = NULL;
@@ -6064,6 +6218,31 @@ static int tnx_v48_collect(uintptr_t manager, tnx_v47_obj_t *out, int capacity, 
         memset(&entry, 0, sizeof(entry));
 
         g_v50_reject.elementsRead++;
+
+        /* v142: checked between elements, never inside one, and against the sequence rather
+         * than against a global pointer, so the loop body cannot dereference the new list. */
+        if (g_v142_seq != walkSeq) {
+            g_v142_walk_aborted = 1;
+            g_v142_walk_abort_i = i;
+            g_v142_walk_aborts++;
+
+            if (g_v142_walk_aborts <= TNX_V142_WALK_ABORT_FULL) {
+                tnx_logf("v142 walk aborted at i=%d n=%d arr=%p g_arr=%p g_n=%d aborts=%llu - the "
+                         "published tuple moved during the pass, so the rest of this list is "
+                         "whatever the engine put there next and the pass stops instead of "
+                         "dereferencing it",
+                         i, count, (void *)(uintptr_t)data, (void *)g_v142_pub_array,
+                         g_v142_pub_count, (unsigned long long)g_v142_walk_aborts);
+            } else if ((g_v142_walk_aborts % TNX_V142_WALK_ABORT_EVERY) == 0) {
+                tnx_logf("v142 walk aborts=%llu at i=%d n=%d - the full text is printed for the "
+                         "first %d only, because a reallocation burst would otherwise drown the "
+                         "log the way the census did in v135",
+                         (unsigned long long)g_v142_walk_aborts, i, count,
+                         TNX_V142_WALK_ABORT_FULL);
+            }
+
+            break;
+        }
 
         if (!tnx_read_ptr((uintptr_t)data + (uintptr_t)i * sizeof(void *), &element)) {
             g_v50_reject.rejUnreadable++;
@@ -6569,7 +6748,36 @@ static void tnx_v48_probe(uintptr_t manager, uintptr_t mode, int verbose) {
 
     if (mode) tnx_v47_read_map(mode);
 
+    {
+        static int v142_walk_logs = 0;
+
+        if (v142_walk_logs < 12 || (v142_walk_logs % 128) == 0) {
+            v142_walk_logs++;
+
+            tnx_logf("v142 walk enter arr=%p n=%d g_arr=%p g_n=%d tick_arr=%p tick_n=%d manager=%p "
+                     "- the walk reads the tuple the tick snapshot handed it, so this line and "
+                     "the score line must print the same arr and n", (void *)g_v142_tick_array,
+                     g_v142_tick_count, (void *)g_players_array, g_players_count,
+                     (void *)g_v142_tick_array, g_v142_tick_count, (void *)manager);
+        }
+    }
+
     usable = tnx_v48_collect(manager, objects, TNX_V47_OBJECT_MAX, &rejected);
+
+    {
+        static int v142_leave_logs = 0;
+
+        if (v142_leave_logs < 12 || (v142_leave_logs % 128) == 0) {
+            v142_leave_logs++;
+
+            tnx_logf("v142 walk leave arr=%p n=%d g_arr=%p g_n=%d aborted=%d abortI=%d usable=%d "
+                     "rejected=%d - aborted=1 names the pass that stopped because the published "
+                     "tuple moved under it, which is the case that walked a list the engine had "
+                     "already replaced", (void *)g_v142_walk_arr, g_v142_walk_n,
+                     (void *)g_v142_pub_array, g_v142_pub_count, g_v142_walk_aborted,
+                     g_v142_walk_abort_i, usable, rejected);
+        }
+    }
 
     for (int i = 0; i < usable; i++) {
         if (objects[i].x > -TNX_V47_COORD_ABS_MAX && objects[i].x < TNX_V47_COORD_ABS_MAX &&
@@ -8208,7 +8416,18 @@ static int tnx_v128_resolve_own(const tnx_v47_obj_t *objects, int usable, int *i
         uintptr_t minOwn = 0;
         int32_t minGid = 0;
 
-        if (tnx_v134_own_by_min_gid(g_players_array, g_players_count, &minOwn, &minGid) && minOwn) {
+        if (tnx_v142_score_logs < 8) {
+            g_v142_score_logs++;
+
+            tnx_logf("v142 score enter arr=%p n=%d g_arr=%p g_n=%d tick_arr=%p tick_n=%d - own is "
+                     "looked for on the tick snapshot and never on the live globals, so this line "
+                     "and the walk line must print the same arr and n in the same tick",
+                     (void *)g_v142_tick_array, g_v142_tick_count, (void *)g_players_array,
+                     g_players_count, (void *)g_v142_tick_array, g_v142_tick_count);
+        }
+
+        if (tnx_v134_own_by_min_gid(g_v142_tick_array, g_v142_tick_count, &minOwn, &minGid) &&
+            minOwn) {
             for (i = 0; i < usable; i++) {
                 if (objects[i].object != minOwn) continue;
 
@@ -9728,11 +9947,40 @@ static int tnx_v140_proj_scan(uintptr_t manager, int32_t count) {
 
         vtRva = (uintptr_t)vtable - g_base;
 
-        if (vtRva != TNX_V140_PROJCLASS_RVA) continue;
-
         gid = tnx_v106_gid((uintptr_t)element, NULL);
 
         if (gid < TNX_V138_PLAYER_GID_MAX) continue;
+
+        /* v142: the class equality is gone. The v141 run printed v140 proj FIRST/DIFF for
+         * classRva 0xff57b0, not for 0xff56d8, so the strict test skipped every live
+         * projectile and projSeen stayed 0 while the container held gid 2000000+. The set is
+         * now the id window - the same set the tracker prints - and each class actually seen
+         * is named once so it can be pinned later; a non-moving element never passes the
+         * velocity test below anyway. */
+        {
+            static uintptr_t seenCls[4] = { 0, 0, 0, 0 };
+            static int seenClsN = 0;
+            int si;
+            int known = 0;
+
+            for (si = 0; si < seenClsN; si++) {
+                if (seenCls[si] == vtRva) {
+                    known = 1;
+
+                    break;
+                }
+            }
+
+            if (!known && seenClsN < 4) {
+                seenCls[seenClsN++] = vtRva;
+
+                tnx_logf("v142 proj class seen classRva=%#llx gid=%d classes=%d/4 - every class "
+                         "named here is fed to the threat test, and one whose pair at +%#llx/+%#llx "
+                         "does not move drops out on its own",
+                         (unsigned long long)vtRva, gid, seenClsN,
+                         (unsigned long long)TNX_OBJ_X_OFF, (unsigned long long)TNX_OBJ_Y_OFF);
+            }
+        }
 
         if (!tnx_read_i32((uintptr_t)element + TNX_OBJ_X_OFF, &px)) continue;
         if (!tnx_read_i32((uintptr_t)element + TNX_OBJ_Y_OFF, &py)) continue;
@@ -9984,7 +10232,7 @@ static void tnx_autododge_v48(void) {
 
         g_v135_probe_tick = g_v50_ticks;
 
-        tnx_v134_own_by_min_gid(g_players_array, g_players_count, &probeOwn, &probeGid);
+        tnx_v134_own_by_min_gid(g_v142_tick_array, g_v142_tick_count, &probeOwn, &probeGid);
 
         if (probeOwn) tnx_read_i32(probeOwn + TNX_OBJ_TEAM_OFF, &probeTeam);
         if (g_players_object) tnx_read_i32(g_players_object + TNX_MGR_COUNT_OFF, &probeCount);
@@ -10200,8 +10448,11 @@ static void tnx_autododge_v48(void) {
         int managerChanged = 0;
         int periodic = 0;
 
-        if (sourceIsMode && g_v82_hop_chosen == 1 && g_players_object) {
-            resolved = (void *)g_players_object;
+        /* v142: the container the walk runs on comes from the tick snapshot, the same one the
+         * resolver is handed below, so the two stages of this tick cannot name different lists
+         * even if the 1 Hz scan timer publishes between them. */
+        if (sourceIsMode && g_v82_hop_chosen == 1 && g_v142_tick_object) {
+            resolved = (void *)g_v142_tick_object;
         } else if (sourceIsMode) {
             if (!tnx_read_ptr(source + TNX_MODE_MANAGER_OFF, &resolved) || !resolved) {
                 resolved = NULL;

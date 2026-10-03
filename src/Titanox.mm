@@ -231,7 +231,7 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_110"
+#define TNX_BUILD_TAG "titanox_111"
 
 #define TNX_RVA_SETPREDICTION 0x00ac3f20ULL
 #define TNX_OBJ_X_OFF 0x30ULL
@@ -3715,32 +3715,36 @@ static void tnx_v109_owner_probe(uintptr_t client, uintptr_t inner) {
 
     if (best >= 0) {
         const char *wireWhy = (const char *)"not-wired";
-        uintptr_t wireArray = 0;
+        void *wireArray = NULL;
         int32_t wireCount = 0;
         int wire = 0;
 
         g_v108_owner = cand[best];
 
+        if (!tnx_read_ptr(cand[best] + TNX_MGR_ARRAY_OFF, &wireArray)) wireArray = NULL;
+        if (!tnx_read_i32(cand[best] + TNX_MGR_COUNT_OFF, &wireCount)) wireCount = 0;
+
         if (!TNX_V110_WIRE_OWNER) wireWhy = (const char *)"flag-off";
         else if (!comb[best]) wireWhy = (const char *)"not-combat-class";
         else if (!elem0p[best]) wireWhy = (const char *)"elem0-null";
         else if (cnt[best] < TNX_V110_WIRE_MIN_COUNT) wireWhy = (const char *)"count-below-floor";
-        else if (!tnx_read_ptr(cand[best] + TNX_MGR_ARRAY_OFF, &wireArray) || !wireArray) wireWhy = (const char *)"array-null";
-        else if (!tnx_read_i32(cand[best] + TNX_MGR_COUNT_OFF, &wireCount) || wireCount <= 0) wireWhy = (const char *)"count-unreadable";
+        else if (!wireArray) wireWhy = (const char *)"array-null";
+        else if (wireCount <= 0) wireWhy = (const char *)"count-unreadable";
         else wire = 1;
 
         if (wire) {
             g_v110_owner = cand[best];
 
-            tnx_logf("v109 owner wired into walk owner=%p count=%d cap=%d array=%p elem0=%p elem0vt=%#llx - the "
-                     "owner that ownerprobe picked is written into the walk globals in this same run and the hop "
-                     "selection is marked %d so the chain cannot overwrite it",
-                     (void *)cand[best], cnt[best], cap[best], (void *)wireArray, elem0p[best],
+            tnx_logf("v109 owner wired into walk owner=%p count-at-probe=%d count-at-wire=%d cap=%d array=%p "
+                     "elem0=%p elem0vt=%#llx - the owner that ownerprobe picked is written into the walk globals "
+                     "in this same run and the hop selection is marked %d so the chain cannot overwrite it",
+                     (void *)cand[best], cnt[best], wireCount, cap[best], wireArray, elem0p[best],
                      (unsigned long long)vt0[best], TNX_V110_HOPCHOSEN_DIRECT);
         } else {
-            tnx_logf("v109 owner NOT wired reason=%s owner=%p comb=%d count=%d elem0=%p elem0vt=%#llx - the walk "
-                     "stays on the hop path for this run and the ownerprobe table above is what to read",
-                     wireWhy, (void *)cand[best], comb[best], cnt[best], elem0p[best],
+            tnx_logf("v109 owner NOT wired reason=%s owner=%p comb=%d count-at-probe=%d count-at-wire=%d "
+                     "elem0=%p elem0vt=%#llx - the walk stays on the hop path for this run and the ownerprobe "
+                     "table above is what to read",
+                     wireWhy, (void *)cand[best], comb[best], cnt[best], wireCount, elem0p[best],
                      (unsigned long long)vt0[best]);
         }
     }
@@ -4300,9 +4304,10 @@ static int tnx_v80_state_tick(void) {
             if (!g_v110_wired) {
                 g_v110_wired = 1;
 
-                tnx_logf("v109 owner wired route=direct owner=%p array=%p count=%d chosen=%d - the walk reads the "
-                         "owner list from this tick on; chosen stays above one because a negative value already "
-                         "means no container elsewhere in the engine path",
+                tnx_logf("v109 owner wired route=direct owner=%p array=%p count-at-wire=%d chosen=%d - the walk "
+                         "reads the owner list from this tick on; the array and the count are re-read from the "
+                         "owner on every tick, and chosen stays above one because a negative value already means "
+                         "no container elsewhere in the engine path",
                          (void *)g_v110_owner, (void *)directArray, directCount,
                          TNX_V110_HOPCHOSEN_DIRECT);
             }

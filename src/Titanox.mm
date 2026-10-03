@@ -214,7 +214,7 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_102"
+#define TNX_BUILD_TAG "titanox_104"
 
 #define TNX_RVA_SETPREDICTION 0x00ac3f20ULL
 #define TNX_OBJ_X_OFF 0x30ULL
@@ -266,6 +266,54 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_V91_DEAD_OFF 0xd4ULL
 #define TNX_V99_SCAN_QWORDS 512
 #define TNX_V99_SCAN_BASES 3
+
+static void tnx_v103_state_note(int state);
+
+static uintptr_t g_v103_sp4 = 0;
+static uintptr_t g_v103_sp2 = 0;
+static uintptr_t g_v103_addinput = 0;
+static uintptr_t g_v103_mgr = 0;
+static int g_v103_armed = 0;
+static int g_v103_mgr_logs = 0;
+static int g_v103_test_state = 0;
+static uint64_t g_v103_test_tick = 0;
+static int g_v103_test_before_x = 0;
+static int g_v103_test_before_y = 0;
+static int g_v103_test_after_x = 0;
+static int g_v103_test_after_y = 0;
+static int g_v103_moved = 0;
+static int g_v103_moved2 = 0;
+static int g_v103_kept = 0;
+static int g_v103_tested = 0;
+static int g_v103_ok = 0;
+static uint64_t g_v103_writes = 0;
+static int g_v103_last_x = 0;
+static int g_v103_last_y = 0;
+static uint64_t g_v103_tick = 0;
+static int g_v103_attempt = 0;
+static int g_v103_prev_state = -1;
+static int g_v103_other_logs = 0;
+static int g_v103_other_detail = 0;
+
+#define TNX_V103_SETPRED4_RVA 0xac3a58ULL
+#define TNX_V103_SETPRED2_RVA 0xac3f20ULL
+#define TNX_V103_ADDINPUT_RVA 0x74675cULL
+#define TNX_V103_GETBATTLE_RVA 0x8c5130ULL
+#define TNX_V103_INPUTMGR_OFF 0x58ULL
+#define TNX_V103_MGR_QUEUE_OFF 0x20ULL
+#define TNX_V103_KEY_TABLE_VM 0x100e1d9a8ULL
+#define TNX_V103_KEY_TABLE_N 21
+#define TNX_V103_TEST_STEP 300
+#define TNX_V103_TEST_WAIT 3
+#define TNX_V103_TEST_WAIT_LONG 10
+#define TNX_V103_LOG_EVERY 10
+#define TNX_V103_OTHER_ELEM_OFF 0x18ULL
+#define TNX_V103_OTHER_DETAIL 2
+#define TNX_V103_MAX_OTHERS 16
+#define TNX_V103_SEND_TEST 1
+#define TNX_V103_USE_PRED2 0
+#define TNX_V103_ACTUATOR_FLAG 1
+#define TNX_V103_DODGE_USE_PRED4 1
 
 static uintptr_t g_v102_own_ptr = 0;
 static int g_v102_own_index = -1;
@@ -3530,6 +3578,7 @@ static int tnx_v80_state_tick(void) {
     if (slot) tnx_read_i32(slot + TNX_V80_STATE_ENUM_OFF, &state);
 
     if (slot != g_v80_site || state != g_v80_state) {
+        tnx_v103_state_note(state);
         tnx_logf("v100 state slot=%p state=%d - the engine loads this word in 0x8cdfd4, tests "
                  "[slot+%#llx] against %d in 0x8c5130 and only then returns [slot+%#llx]; the "
                  "state that passes that test is the one in which the engine itself calls the "
@@ -10114,6 +10163,334 @@ static void tnx_v102_audit_all(void) {
              (unsigned long long)TNX_V102_SUBGETTER_RVA);
 }
 
+
+static void tnx_v103_arm(void) {
+    if (g_v103_armed || !g_base) return;
+
+    g_v103_armed = 1;
+
+    g_v103_sp4 = tnx_v101_entry(TNX_V103_SETPRED4_RVA);
+    g_v103_sp2 = tnx_v101_entry(TNX_V103_SETPRED2_RVA);
+    g_v103_addinput = tnx_v101_entry(TNX_V103_ADDINPUT_RVA);
+
+    tnx_logf("v103 rva audit tag=%s setPredMoveTo4 rva=%#llx entry=%s callable=%s | setter2 "
+             "rva=%#llx entry=%s callable=%s | addInput rva=%#llx entry=%s callable=%s",
+             TNX_BUILD_TAG,
+             (unsigned long long)TNX_V103_SETPRED4_RVA, g_v103_sp4 ? "yes" : "no",
+             tnx_callable(TNX_V103_SETPRED4_RVA) ? "yes" : "no",
+             (unsigned long long)TNX_V103_SETPRED2_RVA, g_v103_sp2 ? "yes" : "no",
+             tnx_callable(TNX_V103_SETPRED2_RVA) ? "yes" : "no",
+             (unsigned long long)TNX_V103_ADDINPUT_RVA, g_v103_addinput ? "yes" : "no",
+             tnx_callable(TNX_V103_ADDINPUT_RVA) ? "yes" : "no");
+
+    tnx_logf("v103 rva bodies 0xac3a58 = str w1,[x0,#0x10c]; str w2,[x0,#0x110]; strb w3,[x0,#0x114]; "
+             "mov w8,#1; strb w8,[x0,#0xac]; ret, four arguments and it is called by the battle "
+             "update at 0x79de14 and 0x7a7270 right after the input message is enqueued; "
+             "0xac3f20 = str w1,[x0,#0x1d4]; str w2,[x0,#0x1d8]; ret, the two argument pair the "
+             "v102 run wrote and the game never read back; 0x74675c = enqueue, it maps message+0x8 "
+             "through the 21 entry table at %#llx and pushes the pointer into the queue at "
+             "manager+0x20, then stamps a sequence number into message+0x0",
+             (unsigned long long)TNX_V103_KEY_TABLE_VM);
+
+    tnx_logf("plan v103, breakthrough from the v102 run and the Frida reference:");
+    tnx_logf("the dodge now has both ends. own resolved from scene+e0 at +0 index=1");
+    tnx_logf("object=0x131d7c600, target=0x14900a1c0, vector=(1050,3750),");
+    tnx_logf("actuatorReached=1 and the only closed door is prediction, which stays");
+    tnx_logf("zero on every tick (mode+0x1d4=0 mode+0x1d8=0). The reason chain ends");
+    tnx_logf("at predictionZero, which is exactly the last of the five gates, so");
+    tnx_logf("everything before it passed. The Frida reference (a mod for a different");
+    tnx_logf("build) shows the actuator is NOT a store into scene+0x58+8: movement");
+    tnx_logf("is a NEW 200-byte ClientInput message with type=2 at +0x4, x at +0x8,");
+    tnx_logf("y at +0xc, handed to ClientInputManager::addInput(*(scene+0x58), msg).");
+    tnx_logf("So v103 (1) resolves ClientInput::ctor and ClientInputManager::addInput");
+    tnx_logf("in THIS binary via radare2 before the build; (2) replaces the");
+    tnx_logf("prediction write with a real addInput call; (3) validates with a");
+    tnx_logf("single test move and a read-back of own.pos on the next tick; (4) only");
+    tnx_logf("then enables the threat walk and the clip; (5) prints the inputmgr");
+    tnx_logf("chain and the addInput result every tenth tick.");
+
+    tnx_logf("plan v103 revision after the static pass on the attached binary - "
+             "addInput IS found and it is %#llx: first argument is the manager, second the message, "
+             "it maps message+0x8 through the 21 entry table at %#llx, pushes the pointer into the "
+             "queue at manager+0x20 (array at +0x0, count at +0xc) and stamps a sequence number into "
+             "message+0x0. The message layout of the reference does NOT hold in this build: "
+             "message+0x8 is the dedup key, so type and x/y are not at +0x4/+0x8/+0xc and a hand "
+             "built message would be enqueued as garbage and later freed. What the same battle "
+             "update calls immediately after the enqueue is the four argument setter %#llx "
+             "(str w1,[x0,#0x10c]; str w2,[x0,#0x110]; strb w3,[x0,#0x114]; strb 1,[x0,#0xac]; ret) "
+             "at 0x79de14 and 0x7a7270, so v103 drives that first and keeps the message route until "
+             "the ctor of this build is located",
+             (unsigned long long)TNX_V103_ADDINPUT_RVA, (unsigned long long)TNX_V103_KEY_TABLE_VM,
+             (unsigned long long)TNX_V103_SETPRED4_RVA);
+}
+
+static void tnx_v103_read_mgr(void) {
+    void *mgr = NULL;
+    void *queue = NULL;
+    int32_t count = 0;
+
+    if (!g_scene_object) {
+        g_v103_mgr = 0;
+        return;
+    }
+
+    if (!tnx_read_ptr((uintptr_t)g_scene_object + TNX_V103_INPUTMGR_OFF, &mgr) || !mgr) {
+        g_v103_mgr = 0;
+        return;
+    }
+
+    g_v103_mgr = (uintptr_t)mgr;
+
+    if (tnx_read_ptr((uintptr_t)mgr + TNX_V103_MGR_QUEUE_OFF, &queue) && queue) {
+        tnx_read_i32((uintptr_t)queue + 0xc, &count);
+    }
+
+    if (g_v103_mgr_logs < 4) {
+        g_v103_mgr_logs++;
+
+        tnx_logf("v103 inputmgr scene=%p mgr=+%#llx->%p queue=+%#llx->%p count=+0xc->%d - the engine "
+                 "loads this exact word in the battle update: bl %#llx; ldr x0,[x0,#0x58]; mov x1,msg; "
+                 "bl %#llx, so this object is the first argument of the enqueue",
+                 (void *)g_scene_object, (unsigned long long)TNX_V103_INPUTMGR_OFF, mgr,
+                 (unsigned long long)TNX_V103_MGR_QUEUE_OFF, queue, count,
+                 (unsigned long long)TNX_V103_GETBATTLE_RVA,
+                 (unsigned long long)TNX_V103_ADDINPUT_RVA);
+    }
+}
+
+static int tnx_v103_send(int32_t x, int32_t y) {
+    if (!g_scene_object) return 0;
+
+    if (g_v103_sp4) {
+        ((void (*)(void *, int, int, int))g_v103_sp4)((void *)g_scene_object, x, y,
+                                                     TNX_V103_ACTUATOR_FLAG);
+        g_v103_writes++;
+        g_v103_last_x = x;
+        g_v103_last_y = y;
+
+        return 1;
+    }
+
+    if (TNX_V103_USE_PRED2 && g_v103_sp2) {
+        ((void (*)(void *, int, int))g_v103_sp2)((void *)g_scene_object, x, y);
+        g_v103_writes++;
+        g_v103_last_x = x;
+        g_v103_last_y = y;
+
+        return 1;
+    }
+
+    return 0;
+}
+
+static void tnx_v103_test(const tnx_v47_obj_t *objects, int usable, int ownIndex) {
+    int32_t x = 0;
+    int32_t y = 0;
+
+    if (!TNX_V103_SEND_TEST) return;
+    if (!objects || ownIndex < 0 || ownIndex >= usable) return;
+    if (!g_v103_mgr) return;
+    if (g_v103_test_state >= 3) return;
+
+    if (g_v103_test_state == 0) {
+        g_v103_test_state = 1;
+        g_v103_test_tick = g_v103_tick;
+        g_v103_test_before_x = objects[ownIndex].x;
+        g_v103_test_before_y = objects[ownIndex].y;
+
+        tnx_v103_send(objects[ownIndex].x + TNX_V103_TEST_STEP, objects[ownIndex].y);
+
+        tnx_logf("v103 inputmgr test sent=(%d,%d) from own=(%d,%d) gid=%d step=%d short=%d long=%d "
+                 "writes=%llu - one test move through the four argument setter, own position is read "
+                 "back twice because a client only prediction gets rolled back by the server one or "
+                 "more ticks later",
+                 objects[ownIndex].x + TNX_V103_TEST_STEP, objects[ownIndex].y,
+                 g_v103_test_before_x, g_v103_test_before_y, objects[ownIndex].gid,
+                 TNX_V103_TEST_STEP, TNX_V103_TEST_WAIT, TNX_V103_TEST_WAIT_LONG,
+                 (unsigned long long)g_v103_writes);
+
+        return;
+    }
+
+    if (g_v103_test_state == 1) {
+        if (g_v103_tick - g_v103_test_tick < TNX_V103_TEST_WAIT) return;
+
+        g_v103_test_state = 2;
+        g_v103_test_after_x = objects[ownIndex].x;
+        g_v103_test_after_y = objects[ownIndex].y;
+        g_v103_moved = (g_v103_test_after_x != g_v103_test_before_x ||
+                        g_v103_test_after_y != g_v103_test_before_y) ? 1 : 0;
+
+        tnx_logf("v103 inputmgr test short before=(%d,%d) after=(%d,%d) moved=%d wait=%d writes=%llu",
+                 g_v103_test_before_x, g_v103_test_before_y, g_v103_test_after_x,
+                 g_v103_test_after_y, g_v103_moved, TNX_V103_TEST_WAIT,
+                 (unsigned long long)g_v103_writes);
+
+        return;
+    }
+
+    if (g_v103_tick - g_v103_test_tick < TNX_V103_TEST_WAIT_LONG) return;
+
+    g_v103_test_state = 3;
+    g_v103_tested = 1;
+
+    x = objects[ownIndex].x;
+    y = objects[ownIndex].y;
+    g_v103_moved2 = (x != g_v103_test_before_x || y != g_v103_test_before_y) ? 1 : 0;
+    g_v103_kept = (g_v103_moved && x == g_v103_test_after_x && y == g_v103_test_after_y) ? 1 : 0;
+    g_v103_ok = (g_v103_moved && g_v103_kept) ? 1 : 0;
+
+    tnx_logf("v103 inputmgr test long before=(%d,%d) after=(%d,%d) after2=(%d,%d) moved=%d moved2=%d "
+             "kept=%d verdict=%s writes=%llu - kept needs the short shift to have happened and the "
+             "long read to still hold it, verdict=real means the four argument setter drives the "
+             "character, verdict=client-only means the shift was rolled back and the message route "
+             "at rva %#llx is next, verdict=dead means this setter is not the actuator either",
+             g_v103_test_before_x, g_v103_test_before_y, g_v103_test_after_x, g_v103_test_after_y,
+             x, y, g_v103_moved, g_v103_moved2, g_v103_kept,
+             (g_v103_moved && g_v103_kept) ? "real" : (g_v103_moved ? "client-only" : "dead"),
+             (unsigned long long)g_v103_writes, (unsigned long long)TNX_V103_ADDINPUT_RVA);
+}
+
+static void tnx_v103_log(const tnx_v47_obj_t *objects, int usable, int ownIndex) {
+    if (g_v103_tick % TNX_V103_LOG_EVERY) return;
+
+    tnx_logf("v103 inputmgr: scene=%p mgr=%p test=%d writes=%llu last=(%d,%d) own=%d,%d channel=%s "
+             "tick=%llu",
+             (void *)g_scene_object, (void *)g_v103_mgr, g_v103_tested,
+             (unsigned long long)g_v103_writes, g_v103_last_x, g_v103_last_y,
+             (objects && ownIndex >= 0 && ownIndex < usable) ? objects[ownIndex].x : 0,
+             (objects && ownIndex >= 0 && ownIndex < usable) ? objects[ownIndex].y : 0,
+             g_v103_sp4 ? "setPredMoveTo4" : (g_v103_sp2 ? "setPred2" : "none"),
+             (unsigned long long)g_v103_tick);
+}
+
+static void tnx_v103_other_containers(const tnx_v47_obj_t *objects, int usable) {
+    uintptr_t others[TNX_V103_MAX_OTHERS];
+    int counts[TNX_V103_MAX_OTHERS];
+    int n = 0;
+    int i;
+    int j;
+
+    if (!objects || usable <= 0) return;
+
+    for (i = 0; i < usable && i < TNX_V47_OBJECT_MAX; i++) {
+        void *other = NULL;
+        uintptr_t obj = (uintptr_t)objects[i].object;
+
+        if (!obj) continue;
+        if (!tnx_read_ptr(obj + TNX_V103_OTHER_ELEM_OFF, &other) || !other) continue;
+        if (other == (void *)g_players_object) continue;
+        if (other == (void *)g_players_array) continue;
+
+        for (j = 0; j < n; j++) {
+            if (others[j] == (uintptr_t)other) break;
+        }
+
+        if (j < n) {
+            counts[j]++;
+            continue;
+        }
+
+        if (n < TNX_V103_MAX_OTHERS) {
+            others[n] = (uintptr_t)other;
+            counts[n] = 1;
+            n++;
+        }
+    }
+
+    if (!n) return;
+
+    if (g_v103_other_logs < 4) {
+        g_v103_other_logs++;
+
+        for (i = 0; i < n; i++) {
+            tnx_logf("v103 other container=%p elements=%d at elem+%#llx - a second list the battle "
+                     "objects point at, the projectile list the dodge needs has to live here",
+                     (void *)others[i], counts[i], (unsigned long long)TNX_V103_OTHER_ELEM_OFF);
+        }
+    }
+
+    if (g_v103_other_detail >= TNX_V103_OTHER_DETAIL) return;
+
+    for (i = 0; i < n; i++) {
+        void *array = NULL;
+        int32_t count = 0;
+        int shown = 0;
+        int k;
+
+        if (!tnx_read_ptr(others[i], &array) || !array) continue;
+        if (!tnx_read_i32(others[i] + 0xc, &count)) continue;
+        if (count <= 0 || count > 4096) continue;
+
+        g_v103_other_detail++;
+
+        tnx_logf("v103 other detail container=%p array=%p count=%d - walking it with the same header "
+                 "probe the container census uses",
+                 (void *)others[i], array, count);
+
+        for (k = 0; k < count && k < 64 && shown < 8; k++) {
+            void *p = NULL;
+            int32_t gid = 0;
+            int32_t team = 0;
+            int32_t px = 0;
+            int32_t py = 0;
+
+            if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)k * 8ULL, &p) || !p) continue;
+            if (tnx_v75_element_ascii((uintptr_t)p)) continue;
+
+            tnx_read_i32((uintptr_t)p + TNX_OBJ_GLOBALID_OFF, &gid);
+            tnx_read_i32((uintptr_t)p + tnx_v57_coord_x_off(), &px);
+            tnx_read_i32((uintptr_t)p + tnx_v57_coord_y_off(), &py);
+            tnx_read_i32((uintptr_t)p + TNX_V91_TEAM_OFF, &team);
+
+            if (!gid) continue;
+
+            shown++;
+            tnx_logf("v103 other[%d] elem=%p gid=%d pos=(%d,%d) team=%d own=%d", k, p, gid, px, py,
+                     team, ((uintptr_t)p == g_v102_own_ptr) ? 1 : 0);
+        }
+
+        return;
+    }
+}
+
+static void tnx_v103_state_note(int state) {
+    if (g_v103_prev_state == 5 && state != 5) {
+        g_v103_ok = 0;
+        g_v103_tested = 0;
+        g_v103_test_state = 0;
+        g_v103_moved = 0;
+        g_v103_moved2 = 0;
+        g_v103_kept = 0;
+        g_v103_test_after_x = 0;
+        g_v103_test_after_y = 0;
+        g_v103_mgr = 0;
+        g_v103_mgr_logs = 0;
+        g_v103_other_logs = 0;
+        g_v103_other_detail = 0;
+        g_v101_wide_runs = 0;
+        g_v101_own_index = -1;
+        g_v101_own_ptr = 0;
+        g_v102_own_ptr = 0;
+        g_v102_own_index = -1;
+        g_v102_own_from = "v103-reset";
+
+        tnx_logf("v103 chain reset reason=state-left-5 prev=%d state=%d writes=%llu tested=%d - every "
+                 "pointer cached from the finished battle is dropped so the next battle resolves "
+                 "scene, manager, own and the containers again from scratch",
+                 g_v103_prev_state, state, (unsigned long long)g_v103_writes, g_v103_tested);
+    }
+
+    if (state == 5 && g_v103_prev_state != 5) {
+        g_v103_attempt++;
+
+        tnx_logf("v103 battle-start scene=%p attempt=%d tick=%llu", (void *)g_scene_object,
+                 g_v103_attempt, (unsigned long long)g_v103_tick);
+    }
+
+    g_v103_prev_state = state;
+}
+
 static int tnx_v91_own_scan(void) {
     uintptr_t bases[TNX_V99_SCAN_BASES];
     const char *names[TNX_V99_SCAN_BASES] = { "mode", "client", "inputMgr" };
@@ -10146,6 +10523,10 @@ static int tnx_v91_own_scan(void) {
 
     tnx_v102_own_probe();
     tnx_v102_audit_all();
+
+    g_v103_tick++;
+    tnx_v103_arm();
+    tnx_v103_read_mgr();
 
     if (!g_v101_setpred) g_v101_setpred = tnx_v101_entry(TNX_V101_MODEPAIRSET_RVA);
 
@@ -10357,6 +10738,10 @@ static void tnx_v90_gate_report(int slotHit) {
             if (!ownFound) ownFound = tnx_v102_take_own(objects, usable, &ownIndex, &ownFrom);
 
             tnx_v102_write_test(objects, usable, ownFound ? ownIndex : -1);
+
+            tnx_v103_test(objects, usable, ownFound ? ownIndex : -1);
+            tnx_v103_log(objects, usable, ownFound ? ownIndex : -1);
+            tnx_v103_other_containers(objects, usable);
         }
     }
 
@@ -10441,8 +10826,12 @@ static void tnx_v90_gate_report(int slotHit) {
         }
     }
 
-    if (strcmp(reason, "none") == 0 && !ownFound) {
+    if (strcmp(reason, "none") == 0 && !g_v103_mgr) {
+        reason = "noInputMgr";
+    } else if (strcmp(reason, "none") == 0 && !ownFound) {
         reason = "noOwn";
+    } else if (strcmp(reason, "none") == 0 && !g_v103_tested) {
+        reason = "actuatorNotTested";
     } else if (strcmp(reason, "none") == 0 && !targetFound) {
         reason = "noTarget";
     } else if (strcmp(reason, "none") == 0 && !modeReal) {
@@ -12440,13 +12829,18 @@ static void tnx_v56_dodge_tick(void) {
         newX = g_v56_px + (int)(perpX * (float)TNX_V56_WALK_STEP);
         newY = g_v56_py + (int)(perpY * (float)TNX_V56_WALK_STEP);
 
-        if (!setpredFn) setpredFn = g_base + TNX_RVA_SETPREDICTION;
+        if (g_v103_sp4 && TNX_V103_DODGE_USE_PRED4) {
+            tnx_v103_send(newX, newY);
+        } else {
+            if (!setpredFn) setpredFn = g_base + TNX_RVA_SETPREDICTION;
 
-        ((tnx_v47_setpred_t)setpredFn)((void *)g_scene_object, newX, newY);
+            ((tnx_v47_setpred_t)setpredFn)((void *)g_scene_object, newX, newY);
+        }
 
-        tnx_logf("v100 dodge write=(%d,%d) from=(%d,%d) near=(%d,%d) enemies=%d", newX, newY,
+        tnx_logf("v103 dodge channel=%s write=(%d,%d) from=(%d,%d) near=(%d,%d) enemies=%d writes=%llu",
+                 (g_v103_sp4 && TNX_V103_DODGE_USE_PRED4) ? "predMoveTo4" : "pred2", newX, newY,
                  g_v56_px, g_v56_py, g_v56_enemy_x[best], g_v56_enemy_y[best],
-                 g_v56_enemy_count);
+                 g_v56_enemy_count, (unsigned long long)g_v103_writes);
     }
 }
 

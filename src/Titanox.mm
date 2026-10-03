@@ -266,6 +266,32 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_V91_DEAD_OFF 0xd4ULL
 #define TNX_V99_SCAN_QWORDS 512
 #define TNX_V99_SCAN_BASES 3
+
+static uintptr_t g_v101_own_ptr = 0;
+static int g_v101_own_index = -1;
+static int g_v101_own_team = 0;
+static int g_v101_own_idhit = 0;
+static uintptr_t g_v101_setpred = 0;
+static int g_v101_audited = 0;
+static int g_v101_own_logs = 0;
+static int g_v101_head_logs = 0;
+static int g_v101_wide_runs = 0;
+static int g_v101_wide_hits = 0;
+static int g_v101_miss_logs = 0;
+static const char *g_v101_own_from = "none";
+
+#define TNX_V101_OWNIDX_OFF 0xe0ULL
+#define TNX_V101_OWNTEAM_OFF 0xe4ULL
+#define TNX_V101_ELEM_ID_OFF 0x48ULL
+#define TNX_V101_ELEM_TEAM_OFF 0x4cULL
+#define TNX_V101_GETTEAMSTARS_RVA 0xac3cfcULL
+#define TNX_V101_MODEPAIRSET_RVA 0xac3a58ULL
+#define TNX_V101_WIDE_QWORDS 4096
+#define TNX_V101_WIDE_ATTEMPTS 2
+#define TNX_V101_OWN_LOGS 12
+#define TNX_V101_DELTA_TICKS 60
+#define TNX_V101_ACTUATOR 0
+#define TNX_V101_ACTUATOR_STEP 40
 #define TNX_V99_INPUTMGR_WRITE 0
 #define TNX_V99_INPUTMGR_COS_OFF 0x8ULL
 #define TNX_V99_INPUTMGR_SIN_OFF 0xcULL
@@ -9418,6 +9444,290 @@ static void tnx_v91_scalar_dump(uintptr_t mode, uintptr_t client) {
              (void *)g_players_object);
 }
 
+
+static int tnx_v101_word(uintptr_t address, uint32_t *out) {
+    if (!out) return 0;
+    if (address & 3ULL) return 0;
+
+    return tnx_read_bytes(address, out, sizeof(*out)) ? 1 : 0;
+}
+
+static int tnx_v101_is_term(uint32_t w) {
+    if ((w & 0xFFFFFC1Fu) == 0xD65F0000u) return 1;
+    if ((w & 0xFFFFFC1Fu) == 0xD61F0000u) return 1;
+    if (w == 0xD69F03E0u) return 1;
+    if ((w & 0xFC000000u) == 0x14000000u) return 1;
+
+    return 0;
+}
+
+static int tnx_v101_is_prologue(uint32_t w) {
+    if (w == 0xD503237Fu || w == 0xD503233Fu) return 1;
+    if ((w & 0xFFFFFF1Fu) == 0xD503241Fu) return 1;
+    if ((w & 0xFF800000u) == 0xA9800000u && ((w >> 5) & 31u) == 31u) return 1;
+    if ((w & 0xFF8003FFu) == 0xD10003FFu) return 1;
+
+    return 0;
+}
+
+static uintptr_t tnx_v101_entry(uintptr_t rva) {
+    uint32_t self = 0;
+    uint32_t prev = 0;
+
+    if (!g_base || !rva) return 0;
+    if (!tnx_v101_word(g_base + rva, &self)) return 0;
+    if (self == 0) return 0;
+
+    if (tnx_v101_is_prologue(self)) return g_base + rva;
+    if (!tnx_v101_word(g_base + rva - 4, &prev)) return 0;
+    if (tnx_v101_is_term(prev)) return g_base + rva;
+
+    return 0;
+}
+
+static void tnx_v101_rva_audit(void) {
+    static const struct { const char *name; uintptr_t rva; } t[] = {
+        { "getTeamStars", TNX_V101_GETTEAMSTARS_RVA },
+        { "modePairSetter", TNX_V101_MODEPAIRSET_RVA },
+        { "getOwnCharacter", RVA_LOGICBATTLEMODECLIENT_GETOWNCHARACTER },
+        { "getOwnPlayerTeam", RVA_LOGICBATTLEMODECLIENT_GETOWNPLAYERTEAM },
+        { "setClientPredictionMoveTo", RVA_LOGICBATTLEMODECLIENT_SETCLIENTPREDICTIONMOVETO },
+        { "objMgrClient_getGameObjects", RVA_LOGICGAMEOBJECTMANAGERCLIENT__GETGAMEOBJECTS },
+        { "objMgrClient_findGameObject", RVA_LOGICGAMEOBJECTMANAGERCLIENT__FINDGAMEOBJECT },
+        { "objClient_getGlobalID", RVA_LOGICGAMEOBJECTCLIENT_GETGLOBALID },
+        { "objClient_getX", RVA_LOGICGAMEOBJECTCLIENT_GETX },
+        { "objClient_getY", RVA_LOGICGAMEOBJECTCLIENT_GETY },
+        { "battleMode_getInstance", RVA_BATTLEMODE_GETINSTANCE },
+        { "gameStateManager_isState", RVA_GAMESTATEMANAGER__ISSTATE },
+        { "messageManager_receiveMessage", RVA_MESSAGEMANAGER__RECEIVEMESSAGE },
+        { "stage_addChild", RVA_STAGE_ADDCHILD },
+        { NULL, 0 }
+    };
+    int i;
+
+    if (g_v101_audited || !g_base) return;
+
+    g_v101_audited = 1;
+
+    tnx_logf("v101 rva audit: word is the four bytes at the rva, prev the four bytes before it - "
+             "prologue says whether that word opens a frame, term says whether prev ends the "
+             "previous function, entry means either of the two holds, callable is the engine's own "
+             "stricter test, so a row with entry=yes callable=no is a leaf function the engine "
+             "refuses and a row with entry=no is an rva inside another function that no call can "
+             "ever reach");
+
+    for (i = 0; t[i].name; i++) {
+        uintptr_t a = g_base + t[i].rva;
+        uint32_t w = 0;
+        uint32_t wm = 0;
+        const char *rule = tnx_prologue_rule(a);
+
+        tnx_v101_word(a, &w);
+        tnx_v101_word(a - 4, &wm);
+
+        tnx_logf("v101 rva audit %-26s rva=%#llx word=%#x prev=%#x prologue=%s term=%d "
+                 "entry=%s callable=%s",
+                 t[i].name, (unsigned long long)t[i].rva, (unsigned)w, (unsigned)wm,
+                 rule ? rule : "?", tnx_v101_is_term(wm),
+                 tnx_v101_entry(t[i].rva) ? "yes" : "no",
+                 (tnx_callable(t[i].rva) && tnx_looks_like_start(a)) ? "yes" : "no");
+    }
+}
+
+static void tnx_v101_head_dump(void) {
+    int i;
+
+    if (g_v101_head_logs || !g_players_object) return;
+
+    g_v101_head_logs = 1;
+
+    tnx_logf("v101 head dump container=%p - the five floats the group walk reported as a rising "
+             "run are read here as qwords and as float pairs so the timer verdict is not taken "
+             "from a single reading",
+             (void *)g_players_object);
+
+    for (i = 0; i < 5; i++) {
+        uint64_t q = tnx_v68_word(g_players_object + 0x80ULL + (uintptr_t)i * 8ULL);
+        uint32_t lo = (uint32_t)(q & 0xffffffffULL);
+        uint32_t hi = (uint32_t)(q >> 32);
+        float flo = 0.0f;
+        float fhi = 0.0f;
+
+        memcpy(&flo, &lo, sizeof(flo));
+        memcpy(&fhi, &hi, sizeof(fhi));
+
+        tnx_logf("v101 head dump +%#x qword=%#llx lo=%#x hi=%#x asfloat=(%.4f, %.4f)",
+                 0x80 + i * 8, (unsigned long long)q, (unsigned)lo, (unsigned)hi, flo, fhi);
+    }
+}
+
+static void tnx_v101_own_index_probe(void) {
+    uintptr_t cand[2];
+    static const char *cname[2] = { "container", "scene" };
+    uintptr_t array = g_players_array;
+    int32_t count = g_players_count;
+    int taken = 0;
+    int chosen = -1;
+    int b;
+
+    if (!array || count <= 0) return;
+
+    cand[0] = (uintptr_t)g_players_object;
+    cand[1] = (uintptr_t)g_scene_object;
+
+    for (b = 0; b < 2; b++) {
+        int32_t idx = -1;
+        int32_t team = -1;
+        int32_t eid = 0;
+        int32_t eteam = 0;
+        void *elem = NULL;
+        int hit = 0;
+
+        if (!cand[b]) continue;
+        if (!tnx_read_i32(cand[b] + TNX_V101_OWNIDX_OFF, &idx)) continue;
+
+        tnx_read_i32(cand[b] + TNX_V101_OWNTEAM_OFF, &team);
+
+        if (idx >= 0 && idx < count) {
+            if (tnx_read_ptr(array + (uintptr_t)idx * 8ULL, &elem) && elem) hit = 1;
+        }
+
+        if (hit) {
+            if (tnx_read_i32((uintptr_t)elem + TNX_V101_ELEM_ID_OFF, &eid) &&
+                tnx_read_i32((uintptr_t)elem + TNX_V101_ELEM_TEAM_OFF, &eteam)) {
+                g_v101_own_idhit = (eid == idx) ? 1 : 0;
+            }
+        }
+
+        if (g_v101_own_logs < TNX_V101_OWN_LOGS) {
+            g_v101_own_logs++;
+
+            tnx_logf("v101 own-index base=%-9s at=%p +%#llx=%d +%#llx=%d count=%d array=%p "
+                     "elem=%p elem+%#llx=%d elem+%#llx=%d idHit=%d verdict=%s - the class that "
+                     "owns the object array keeps the own slot as an int, indexes its own array "
+                     "with it and resets it to -1, so no pointer into the array has to exist in "
+                     "any field for own to be resolvable",
+                     cname[b], (void *)cand[b], (unsigned long long)TNX_V101_OWNIDX_OFF, idx,
+                     (unsigned long long)TNX_V101_OWNTEAM_OFF, team, count, (void *)array, elem,
+                     (unsigned long long)TNX_V101_ELEM_ID_OFF, eid,
+                     (unsigned long long)TNX_V101_ELEM_TEAM_OFF, eteam, g_v101_own_idhit,
+                     hit ? "index-taken" : "index-rejected");
+        }
+
+        if (hit && !taken) {
+            taken = 1;
+            chosen = b;
+            g_v101_own_index = idx;
+            g_v101_own_ptr = (uintptr_t)elem;
+            g_v101_own_team = team;
+            g_v101_own_from = (b == 0) ? "container+e0" : "scene+e0";
+        }
+    }
+
+    if (!taken) {
+        g_v101_own_index = -1;
+        g_v101_own_ptr = 0;
+        g_v101_own_from = "index-miss";
+    }
+
+    tnx_v101_head_dump();
+
+    if (TNX_V101_ACTUATOR && taken) {
+        tnx_v101_actuator(chosen == 0 ? (uintptr_t)g_players_object : (uintptr_t)g_scene_object,
+                          0, 0);
+    }
+}
+
+static void tnx_v101_wide_scan(void) {
+    uintptr_t bases[4];
+    static const char *names[4] = { "container", "mode", "client", "inputMgr" };
+    uintptr_t array = g_players_array;
+    int32_t count = g_players_count;
+    int b;
+    int i;
+
+    if (!array || count <= 0) return;
+    if (g_v101_wide_runs >= TNX_V101_WIDE_ATTEMPTS) return;
+
+    g_v101_wide_runs++;
+
+    bases[0] = g_players_object;
+    bases[1] = (uintptr_t)g_scene_object;
+    bases[2] = 0;
+    bases[3] = 0;
+
+    if (g_scene_object) {
+        void *hop = NULL;
+
+        if (tnx_read_ptr((uintptr_t)g_scene_object + TNX_MODE_MANAGER_OFF, &hop) && hop) {
+            bases[2] = (uintptr_t)hop;
+        }
+
+        hop = NULL;
+
+        if (tnx_read_ptr((uintptr_t)g_scene_object + TNX_MODE_INPUTMGR_OFF, &hop) && hop) {
+            bases[3] = (uintptr_t)hop;
+        }
+    }
+
+    tnx_logf("v101 wide scan run=%d window=%#x bases container=%p mode=%p client=%p inputMgr=%p "
+             "array=%p count=%d - the container itself is scanned too and the window is the one "
+             "the v100 run asked for instead of %#x",
+             g_v101_wide_runs, TNX_V101_WIDE_QWORDS * 8, (void *)bases[0], (void *)bases[1],
+             (void *)bases[2], (void *)bases[3], (void *)array, count, TNX_V99_SCAN_QWORDS * 8);
+
+    for (b = 0; b < 4; b++) {
+        if (!bases[b]) continue;
+
+        for (i = 0; i < TNX_V101_WIDE_QWORDS; i++) {
+            uintptr_t off = (uintptr_t)i * 8ULL;
+            uintptr_t value = (uintptr_t)tnx_v68_word(bases[b] + off);
+            uintptr_t index = 0;
+
+            if (!value) continue;
+            if (value <= array) continue;
+            if (value >= array + (uintptr_t)count * 8ULL) continue;
+            if ((value - array) % 8ULL) continue;
+
+            index = (value - array) / 8ULL;
+            g_v101_wide_hits++;
+
+            if (g_v101_wide_hits <= 8) {
+                tnx_logf("v101 wide scan %s+%#llx = %p is element[%llu] of array=%p count=%d - a "
+                         "word that points into the container, taken only after the narrow pass "
+                         "came back empty",
+                         names[b], (unsigned long long)off, (void *)value,
+                         (unsigned long long)index, (void *)array, count);
+            }
+
+            if (g_v101_own_index < 0) {
+                g_v101_own_index = (int)index;
+                g_v101_own_ptr = value;
+                g_v101_own_from = "wide";
+            }
+        }
+    }
+
+    if (!g_v101_wide_hits && !g_v101_miss_logs) {
+        g_v101_miss_logs = 1;
+
+        tnx_logf("v101 wide scan nothing in container+0x00..+%#x, mode+0x00..+%#x, "
+                 "client+0x00..+%#x or inputMgr+0x00..+%#x points into array=%p count=%d - own is "
+                 "then not reachable as a pointer at all and only the index route at +%#llx can "
+                 "name it",
+                 TNX_V101_WIDE_QWORDS * 8, TNX_V101_WIDE_QWORDS * 8, TNX_V101_WIDE_QWORDS * 8,
+                 TNX_V101_WIDE_QWORDS * 8, (void *)array, count,
+                 (unsigned long long)TNX_V101_OWNIDX_OFF);
+    }
+}
+
+static void tnx_v101_actuator(uintptr_t mode, int x, int y) {
+    if (!TNX_V101_ACTUATOR) return;
+    if (!mode || !g_v101_setpred) return;
+
+    ((void (*)(void *, int, int, int))g_v101_setpred)((void *)mode, x, y, 1);
+}
+
 static int tnx_v91_own_scan(void) {
     uintptr_t bases[TNX_V99_SCAN_BASES];
     const char *names[TNX_V99_SCAN_BASES] = { "mode", "client", "inputMgr" };
@@ -9444,6 +9754,20 @@ static int tnx_v91_own_scan(void) {
 
     bases[1] = client;
     bases[2] = inputMgr;
+
+    tnx_v101_rva_audit();
+    tnx_v101_own_index_probe();
+
+    if (!g_v101_setpred) g_v101_setpred = tnx_v101_entry(TNX_V101_MODEPAIRSET_RVA);
+
+    if (!g_v101_setpred && g_v101_own_logs < 2) {
+        tnx_logf("v101 setter candidate rva=%#llx is not an entry point on this build - the leaf "
+                 "setter the audit names starts with a store and carries no frame, so its call "
+                 "cannot be armed and the actuator has to go through the input manager instead",
+                 (unsigned long long)TNX_V101_MODEPAIRSET_RVA);
+    }
+
+    if (g_v101_own_index < 0) tnx_v101_wide_scan();
 
     for (int b = 0; b < TNX_V99_SCAN_BASES; b++) {
         if (!bases[b]) continue;
@@ -9514,6 +9838,35 @@ static int tnx_v91_resolve_own(const tnx_v47_obj_t *objects, int usable, int *in
     if (fromOut) *fromOut = "none";
 
     if (!objects || usable <= 0) return 0;
+
+    if (g_v101_own_index >= 0 && g_v101_own_ptr) {
+        int seen = 0;
+        int i;
+
+        for (i = 0; i < usable; i++) {
+            if (objects[i].object == g_v101_own_ptr) {
+                seen = 1;
+                break;
+            }
+        }
+
+        if (seen) {
+            if (indexOut) *indexOut = i;
+            if (fromOut) *fromOut = g_v101_own_from;
+
+            return 1;
+        }
+
+        if (g_v101_miss_logs < 4) {
+            g_v101_miss_logs++;
+
+            tnx_logf("v101 own-index element %p, slot %d of %d, is not in the collected list of "
+                     "%d objects - the index names an object the collector drops or reorders, so "
+                     "the slot number from the container cannot be used as an index into this "
+                     "list and the element has to be matched by pointer or by global id",
+                     (void *)g_v101_own_ptr, g_v101_own_index, g_players_count, usable);
+        }
+    }
 
     if (g_v91_own_index >= 0 && g_v91_own_index < usable &&
         objects[g_v91_own_index].object == g_v91_own_ptr) {

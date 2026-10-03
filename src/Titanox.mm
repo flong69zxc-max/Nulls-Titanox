@@ -310,7 +310,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_138"
+#define TNX_BUILD_TAG "titanox_139"
 
 #define TNX_RVA_SETPREDICTION 0x00ac3f20ULL
 #define TNX_OBJ_X_OFF 0x30ULL
@@ -377,6 +377,8 @@ static uint64_t g_v103_writes = 0;
 static uint64_t g_v103_tick = 0;
 static uint64_t g_v138_dodge_calls = 0;
 static uint64_t g_v138_render_calls = 0;
+static int g_v138_dump_np = 0;
+static uintptr_t g_v138_prev_scene = 0;
 static int g_v103_attempt = 0;
 static int g_v103_prev_state = -1;
 static int g_v103_other_logs = 0;
@@ -2602,10 +2604,15 @@ static void tnx_v132_battle_alert(uintptr_t scene, uintptr_t scenePrev) {
     g_v132_alert_scene = scene;
     g_v132_alert_ms = now;
 
-    tnx_logf("v138 alert shown prev=%p now=%p sinceMs=%llu gapMs=%d - printed after both gates, so "
-             "the menu line that follows cannot be mistaken for a call that skipped them",
-             (void *)scenePrev, (void *)scene, (unsigned long long)g_v132_alert_ms,
-             TNX_V134_ALERT_GAP_MS);
+    tnx_logf("v138 alert shown prev=%p now=%p edgePrev=%p sinceMs=%llu gapMs=%d - printed after both "
+             "gates, so the menu line that follows cannot be mistaken for a call that skipped them; "
+             "edgePrev is the scene the edge detector itself last held, so a repeat that reaches this "
+             "line with edgePrev equal to now is an edge misfire and not a real battle entry, which is "
+             "exactly what the v137 run could not be asked",
+             (void *)scenePrev, (void *)scene, (void *)g_v138_prev_scene,
+             (unsigned long long)g_v132_alert_ms, TNX_V134_ALERT_GAP_MS);
+
+    g_v138_prev_scene = scene;
 
     tnx_v62_alert_menu([NSString stringWithFormat:
         @"Вход в бой\nscene=%p (было %p)\ncontainer=%p count=%d\ngid=%d..%d\nown=min gid",
@@ -4019,7 +4026,7 @@ static void tnx_objc_rep0(id self, SEL _cmd) {
                  "from this callback and nothing else, so this line is the first thing to check when "
                  "the dodge prints nothing: if it is absent the whole workload is never entered and "
                  "the state has nothing to do with the dodge's own gates",
-                 (unsigned long long)g_v138_render_calls, (void *)self, g_inside_hook, (void *)g_base,
+                 (unsigned long long)g_v138_render_calls, (__bridge void *)self, g_inside_hook, (void *)g_base,
                  (void *)g_scene_object);
     }
 
@@ -5951,6 +5958,10 @@ static int tnx_v48_collect(uintptr_t manager, tnx_v47_obj_t *out, int capacity, 
                 int32_t npY = 0;
                 int32_t np70 = 0;
                 int32_t np74 = 0;
+                float npFx = 0.0f;
+                float npFy = 0.0f;
+                float npF70 = 0.0f;
+                float npF74 = 0.0f;
                 void *np38 = NULL;
                 uintptr_t npRva = vtRva;
 
@@ -5961,9 +5972,14 @@ static int tnx_v48_collect(uintptr_t manager, tnx_v47_obj_t *out, int capacity, 
                 tnx_read_i32(entry.object + TNX_V134_V70_OFF, &np70);
                 tnx_read_i32(entry.object + TNX_V134_V70_OFF + 4ULL, &np74);
                 tnx_read_ptr(entry.object + TNX_V138_NP_PTR_OFF, &np38);
+                if (!tnx_read_f32(entry.object + TNX_OBJ_X_OFF, &npFx)) npFx = 0.0f;
+                if (!tnx_read_f32(entry.object + TNX_OBJ_Y_OFF, &npFy)) npFy = 0.0f;
+                if (!tnx_read_f32(entry.object + TNX_V134_V70_OFF, &npF70)) npF70 = 0.0f;
+                if (!tnx_read_f32(entry.object + TNX_V134_V70_OFF + 4ULL, &npF74)) npF74 = 0.0f;
 
                 tnx_logf("v138 nonplayer elem=%p classRva=%#llx gid=%d team=%d x+%#llx=%d y+%#llx=%d "
-                         "+%#llx=%d +%#llx=%d ptr+%#llx=%p - an element outside the player id window "
+                         "+%#llx=%d +%#llx=%d f32x=%g f32y=%g f32%#llx=%g f32%#llx=%g ptr+%#llx=%p - an "
+                         "element outside the player id window "
                          "is named once with the fields a projectile would need, because the claim "
                          "that this class is a projectile was an analogy from its id range and not a "
                          "measurement, and a position that changes while the element exists and then "
@@ -5972,6 +5988,8 @@ static int tnx_v48_collect(uintptr_t manager, tnx_v47_obj_t *out, int capacity, 
                          (unsigned long long)TNX_OBJ_X_OFF, npX, (unsigned long long)TNX_OBJ_Y_OFF, npY,
                          (unsigned long long)TNX_V134_V70_OFF, np70,
                          (unsigned long long)(TNX_V134_V70_OFF + 4ULL), np74,
+                         (double)npFx, (double)npFy, (unsigned long long)TNX_OBJ_X_OFF, (double)npF70,
+                         (unsigned long long)(TNX_V134_V70_OFF + 4ULL), (double)npF74,
                          (unsigned long long)TNX_V138_NP_PTR_OFF, np38);
             }
 

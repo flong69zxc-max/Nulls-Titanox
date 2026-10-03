@@ -310,7 +310,27 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_144"
+#define TNX_BUILD_TAG "titanox_145"
+
+/* v145 - one own, published once per tick.
+ *
+ * v144 hardened tnx_v127_own_obj and gave the actuator a validated candidate list, but own is
+ * still derived twice per tick by two different resolvers: tnx_v90_gate_report resolves at its
+ * own line and calls the actuate path from there, and tnx_autododge_v48 resolves again later.
+ * The gate line and the actuate therefore name one element while the dodge block names another,
+ * which is the split the v91 work was meant to close.
+ *
+ * v145 publishes own through one function, tnx_v145_publish_own, at every point that resolves
+ * it, tagged with the tick stamp. tnx_v127_own_obj reads that single value and only while it
+ * belongs to the current tick; the engine chain stays as the fallback for ticks before any
+ * resolver has run. Every other consumer of own - the setter branch, the actuate log, the
+ * candidate list - goes through that same call, so a run cannot hold two different owns.
+ *
+ * On the mode question: TNX_V129_MODE is 1 (WRITE), so doSetter = 0 and the setter branch of
+ * tnx_v128_actuate is never entered. Mode 3 (BOTH) is the only setting that enters it, and that
+ * branch takes own from tnx_v127_own_obj, so the validation above covers it too. */
+
+#define TNX_V145_PUB_LOGS 10
 
 /* v144 - the segfault in the actuator call.
  *
@@ -7769,6 +7789,7 @@ static int g_v127_rb_logs = 0;
  * which is exactly what the v140/v141 builds did not do before calling 0xac3a58.
  * ------------------------------------------------------------------------- */
 static uintptr_t g_v144_own_elem = 0;
+static uint64_t g_v144_own_stamp = 0;
 static int g_v144_own_logs = 0;
 static uint64_t g_v144_cand_logs = 0;
 static uint64_t g_v144_raw_writes = 0;
@@ -7861,17 +7882,95 @@ static uintptr_t tnx_v144_hop(uintptr_t base, int *whyOut) {
     return (uintptr_t)q;
 }
 
+static const char *g_v145_own_from = "none";
+static int g_v145_pub_logs = 0;
+static int g_v145_stale_logs = 0;
+static int g_v145_actuate_logs = 0;
+
+static void tnx_v145_publish_own(uintptr_t elem, const char *from) {
+    uintptr_t vt = 0;
+    const char *why = "?";
+
+    if (!tnx_v144_cand_ok(elem, &why, &vt)) {
+        if (g_v145_pub_logs < TNX_V145_PUB_LOGS) {
+            g_v145_pub_logs++;
+
+            tnx_logf("v145 own publish REJECT from=%s elem=%p vt=%p reason=%s - nothing is published, "
+                     "so the actuator falls back to the engine chain or skips; a reject here is not "
+                     "a v135 failure, it is a tick where the resolver named nothing usable",
+                     from ? from : "?", (void *)elem, (void *)vt, why);
+        }
+
+        return;
+    }
+
+    g_v144_own_elem = elem;
+    g_v144_own_stamp = g_v142_tick_stamp;
+    g_v145_own_from = from ? from : "?";
+
+    if (g_v145_pub_logs < TNX_V145_PUB_LOGS) {
+        uintptr_t cls = (vt >= g_base) ? (vt - g_base) : 0;
+
+        g_v145_pub_logs++;
+
+        tnx_logf("v145 own publish from=%s elem=%p vt=%p classRva=%#llx stamp=%llu - classRva is the "
+                 "value to line up against the census classRva of the same element index; the guard "
+                 "accepts on aligned+readable+vtable-in-__DATA_CONST and this line names the class "
+                 "that passed it", from ? from : "?", (void *)elem, (void *)vt,
+                 (unsigned long long)cls, (unsigned long long)g_v144_own_stamp);
+    }
+}
+
 static uintptr_t tnx_v127_own_obj(void) {
-    uintptr_t cand = tnx_v144_hop((uintptr_t)g_scene_object, NULL);
+    uintptr_t vt = 0;
+    const char *why = "?";
 
-    /* v144: the value that comes back is validated before it is returned. The v140 form
-     * returned whatever sat at [p+0x28] - tnx_read_ptr only proves the address was
-     * readable - so a stale slot produced 0xff000000ff and the actuator wrote through it. */
-    if (cand && tnx_v144_vt_ok(cand, NULL)) return cand;
+    /* v145: this is the single reader of own. The element published this tick by whichever
+     * resolver ran first wins; a valid object from an earlier tick is refused, because a stale
+     * element is a live heap object pointing at a dead character, which is the same failure
+     * class the engine chain had in v140. The chain is the fallback for the ticks before any
+     * resolver has published. */
+    if (g_v144_own_elem) {
+        if (g_v144_own_stamp == g_v142_tick_stamp &&
+            tnx_v144_cand_ok(g_v144_own_elem, &why, &vt)) {
+            g_v145_own_from = "published";
 
-    cand = tnx_v144_hop((uintptr_t)g_players_object, NULL);
+            return g_v144_own_elem;
+        }
 
-    if (cand && tnx_v144_vt_ok(cand, NULL)) return cand;
+        if (g_v145_stale_logs < 6) {
+            g_v145_stale_logs++;
+
+            tnx_logf("v145 own not used elem=%p stamp=%llu tick=%llu reason=%s - an element from "
+                     "another tick is not accepted even though the address is a live heap object, "
+                     "so the engine chain is tried instead and may legitimately resolve to 0",
+                     (void *)g_v144_own_elem, (unsigned long long)g_v144_own_stamp,
+                     (unsigned long long)g_v142_tick_stamp, why);
+        }
+    }
+
+    {
+        uintptr_t cand = tnx_v144_hop((uintptr_t)g_scene_object, NULL);
+
+        /* v144: the value that comes back is validated before it is returned. The v140 form
+         * returned whatever sat at [p+0x28] - tnx_read_ptr only proves the address was
+         * readable - so a stale slot produced a wild pointer and the actuator wrote through it. */
+        if (cand && tnx_v144_cand_ok(cand, NULL, &vt)) {
+            g_v145_own_from = "engine-chain";
+
+            return cand;
+        }
+
+        cand = tnx_v144_hop((uintptr_t)g_players_object, NULL);
+
+        if (cand && tnx_v144_cand_ok(cand, NULL, &vt)) {
+            g_v145_own_from = "players-chain";
+
+            return cand;
+        }
+    }
+
+    g_v145_own_from = "none";
 
     return 0;
 }
@@ -8659,6 +8758,8 @@ static int tnx_v128_resolve_own(const tnx_v47_obj_t *objects, int usable, int *i
 
 static void tnx_v128_actuate(void) {
     uintptr_t own = tnx_v127_own_obj();
+    uintptr_t ownVt = 0;
+    uintptr_t ownCls = 0;
     uintptr_t ctrl = (uintptr_t)g_scene_object;
     uintptr_t fn = tnx_v113_entry(TNX_V112_SETPRED4_RVA);
     int32_t raw_x = TNX_V129_DX;
@@ -8776,14 +8877,29 @@ static void tnx_v128_actuate(void) {
     if (g_v128_act_logs < TNX_V128_ACT_LOGS) {
         g_v128_act_logs++;
 
-        tnx_logf("v129 actuate mode=%d call=%d doWrite=%d doSetter=%d own=%p scene=%p wrote raw+%#llx "
+        tnx_v144_vt_ok(own, &ownVt);
+
+        if (ownVt >= g_base) ownCls = ownVt - g_base;
+
+        if (g_v145_actuate_logs < 8) {
+            g_v145_actuate_logs++;
+
+            tnx_logf("v145 actuate own=%p ownFrom=%s ownClassRva=%#llx valid=%d - this is the same "
+                     "value the gate line and the dodge block read, so own here and ownFound there "
+                     "have to point at one element in one tick or the split is still open",
+                     (void *)own, g_v145_own_from, (unsigned long long)ownCls, own ? 1 : 0);
+        }
+
+        tnx_logf("v129 actuate mode=%d call=%d doWrite=%d doSetter=%d own=%p ownFrom=%s "
+                 "ownClassRva=%#llx scene=%p wrote raw+%#llx "
                  "(%d,%d) over (%d,%d) on the scene, setterRan=%d, wouldCall %#llx(own,%d,%d,%d) from "
                  "the witness "
                  "(%d,%d) - mode %d is chain-only and never reaches this line, %d writes only the raw "
                  "pair the battle update clamps for itself, %d calls only the setter and %d does both; "
                  "the pair is %d,%d and not the old %d,%d, because the message carries clamp(position + "
                  "step) and a step of hundreds is a teleport the server has no reason to accept",
-                 TNX_V129_MODE, g_v128_calls, doWrite, doSetter, (void *)own, (void *)ctrl,
+                 TNX_V129_MODE, g_v128_calls, doWrite, doSetter, (void *)own, g_v145_own_from,
+                 (unsigned long long)ownCls, (void *)ctrl,
                  (unsigned long long)TNX_V128_CTRL_RAW_X_OFF, raw_x, raw_y, raw_keep_x, raw_keep_y,
                  setterRan, (unsigned long long)TNX_V112_SETPRED4_RVA, wx + TNX_V129_DX,
                  wy + TNX_V129_DY,
@@ -9901,6 +10017,13 @@ static void tnx_v90_gate_report(int slotHit) {
 
             if (!ownFound) ownFound = tnx_v102_take_own(objects, usable, &ownIndex, &ownFrom);
 
+            /* v145: this is the first resolver to run in the tick and the actuate path below is
+             * reached from here, so own is published here rather than only in the dodge block
+             * further down, which would have made the actuate read the previous tick's element. */
+            if (ownFound && ownIndex >= 0 && ownIndex < usable) {
+                tnx_v145_publish_own(objects[ownIndex].object, ownFrom);
+            }
+
             tnx_v102_write_test(objects, usable, ownFound ? ownIndex : -1);
 
             tnx_v113_hop2();
@@ -10769,19 +10892,27 @@ static void tnx_autododge_v48(void) {
         /* v144: publish the element the walk and the min-gid resolver agree on, so the actuator
          * has a checked fallback receiver this tick instead of re-deriving one from a slot that
          * may hold a stale value. */
-        g_v144_own_elem = objects[ownIndex].object;
+        /* v145: published, not assigned. The gate report earlier in this tick already published
+         * its own; this call republishes the resolver's own with the current tick stamp, and both
+         * go through the same validation, so the gate line, the actuate and the candidate list
+         * cannot name different elements. */
+        tnx_v145_publish_own(objects[ownIndex].object, ownFrom);
 
         if (g_v144_own_logs < 8) {
             uintptr_t ownVt = 0;
+            uintptr_t ownCls = 0;
 
             g_v144_own_logs++;
 
             tnx_v144_vt_ok((uintptr_t)g_v144_own_elem, &ownVt);
 
-            tnx_logf("v144 dodge own elem=%p vt=%p from=%s index=%d pos=(%d,%d) - this is the last "
-                     "candidate the actuator may use and the vtable printed here is the one to "
-                     "compare with the census classes", (void *)g_v144_own_elem, (void *)ownVt,
-                     ownFrom, ownIndex, objects[ownIndex].x, objects[ownIndex].y);
+            if (ownVt >= g_base) ownCls = ownVt - g_base;
+
+            tnx_logf("v144 dodge own elem=%p vt=%p classRva=%#llx from=%s index=%d pos=(%d,%d) - "
+                     "classRva is what the census classRva of the same element index has to match, "
+                     "and the actuator uses this exact element or nothing",
+                     (void *)g_v144_own_elem, (void *)ownVt, (unsigned long long)ownCls, ownFrom,
+                     ownIndex, objects[ownIndex].x, objects[ownIndex].y);
         }
 
         if (!g_v91_own_logged) {

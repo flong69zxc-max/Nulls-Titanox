@@ -230,6 +230,80 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_V112_SETPRED4_RVA 0xac3a58ULL
 #define TNX_V112_READER_RVA 0xac3424ULL
 
+#define TNX_V113_READER_RVA 0x00ac3424ULL
+#define TNX_V113_ALLOC_RVA 0x00d8da2cULL
+#define TNX_V113_MSGCTOR_RVA 0x00a95798ULL
+#define TNX_V113_ADDINPUT_RVA 0x0074675cULL
+#define TNX_V113_GETBATTLE_RVA 0x008c5130ULL
+#define TNX_V113_MGR_OFF 0x58ULL
+#define TNX_V113_QUEUE_OFF 0x20ULL
+#define TNX_V113_QUEUE_COUNT_OFF 0xcULL
+#define TNX_V113_MSG_SIZE 0x48
+#define TNX_V113_TYPE_OFF 0x08ULL
+#define TNX_V113_X_OFF 0x0cULL
+#define TNX_V113_Y_OFF 0x10ULL
+#define TNX_V113_SEQ_OFF 0x00ULL
+#define TNX_V113_TYPE_MOVE 2
+#define TNX_V113_TEST_STEP 300
+#define TNX_V113_WAIT_TICKS 3
+#define TNX_V113_LONG_TICKS 10
+#define TNX_V113_HOP2_OWNER_OFF 0x28ULL
+#define TNX_V113_HOP2_INNER_OFF 0x28ULL
+#define TNX_V113_HOP2_WAIT 60
+#define TNX_V113_QUEUE_EVERY 1
+#define TNX_V113_ALERT_WITHHELD 0
+#define TNX_V113_DEAD_ONCE 1
+#define TNX_V113_FRAME_WINDOW 12
+#define TNX_V113_READER_ENTRY_RVA 0x00ac1ee8ULL
+#define TNX_V113_READER_CALLER_RVA 0x008cc004ULL
+#define TNX_V113_X_OFF_SCENE 0x10cULL
+#define TNX_V113_Y_OFF_SCENE 0x110ULL
+
+#define TNX_V115_MODE_OFF 0x124ULL
+#define TNX_V115_MODE_TARGET 7
+#define TNX_V115_GATE_PTR_OFF 0x30ULL
+#define TNX_V117_GATE3_PTR_OFF 0x38ULL
+#define TNX_V119_ELIG_OFF 0x1fdULL
+#define TNX_V119_PROP_214_OFF 0x214ULL
+#define TNX_V119_PROP_220_OFF 0x220ULL
+#define TNX_V119_PROP_224_OFF 0x224ULL
+#define TNX_V119_DENOM_MIN 4
+#define TNX_V119_TEST_ENABLE 0
+#define TNX_V120_FROM_OFF 0x138ULL
+#define TNX_V120_TO_OFF 0x13cULL
+#define TNX_V120_ENTITY_GETTER_RVA 0x1c1c0ULL
+#define TNX_V120_HOLDER_CTOR_RVA 0xafcc84ULL
+#define TNX_V120_HOLDER_SIZE 0x20
+#define TNX_V120_HOLDER_VT_RVA 0x1003628ULL
+#define TNX_V121_TRAJ_ARR_OFF 0x70ULL
+#define TNX_V121_TRAJ_COUNT_OFF 0x7cULL
+#define TNX_V121_TRAJ_TIME_OFF 0xb8ULL
+#define TNX_V121_TRAJ_TIME_MUL_OFF 0xbcULL
+#define TNX_V121_ENTRY_SEQ_OFF 0x98ULL
+#define TNX_V121_ENTRY_BLOCK_OFF 0x90ULL
+#define TNX_V121_NOOP_PUSH 1
+#define TNX_V121_WIN1_FRAMES 30
+#define TNX_V121_WIN2_FRAMES 120
+#define TNX_V122_BOUND_X_OFF 0xccULL
+#define TNX_V122_BOUND_Y_OFF 0xd0ULL
+#define TNX_V122_POS_X_OFF 0x80ULL
+#define TNX_V122_POS_Y_OFF 0x84ULL
+#define TNX_V122_RESOLVE_SELF_RVA 0x991440ULL
+#define TNX_V122_OWN_GETTER_RVA 0x7b9050ULL
+#define TNX_V122_PRE_FRAMES 300
+#define TNX_V115_GATE_BYTE_OFF 0x7aULL
+#define TNX_V115_CLIENT_OFF 0x28ULL
+#define TNX_V115_CLIENT_POS_X_OFF 0x80ULL
+#define TNX_V115_CLIENT_POS_Y_OFF 0x84ULL
+#define TNX_V115_MODE_WAIT 1200
+#define TNX_V115_REQUIRE_GATE 0
+#define TNX_V115_TEST_ENABLE 1
+
+#define TNX_V116_HIST_MODES 16
+#define TNX_V116_INTERP_TICKS 25
+#define TNX_V116_HIST_TICKS 25
+#define TNX_V116_HIST_LOGS 60
+
 #define TNX_OBJ_TEAM_OFF 0x40ULL
 #define TNX_OBJ_OWNERINDEX_OFF 0x3cULL
 #define TNX_OBJ_DEADFLAG_OFF 0xd0ULL
@@ -254,7 +328,7 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_112"
+#define TNX_BUILD_TAG "titanox_122"
 
 #define TNX_RVA_SETPREDICTION 0x00ac3f20ULL
 #define TNX_OBJ_X_OFF 0x30ULL
@@ -351,7 +425,7 @@ static int g_v103_other_detail = 0;
 #define TNX_V103_OTHER_ELEM_OFF 0x18ULL
 #define TNX_V103_OTHER_DETAIL 2
 #define TNX_V103_MAX_OTHERS 16
-#define TNX_V103_SEND_TEST 1
+#define TNX_V103_SEND_TEST 0
 #define TNX_V103_USE_PRED2 0
 #define TNX_V103_ACTUATOR_FLAG 1
 #define TNX_V103_DODGE_USE_PRED4 1
@@ -1490,6 +1564,8 @@ static uint64_t tnx_slot_repl_31(void *a0, uint64_t a1, uint64_t a2, uint64_t a3
     return 0;
 }
 
+static int g_v113_dead_probe_done = 0;
+
 static const struct {
     const char *tag;
     const char *shortTag;
@@ -1510,30 +1586,30 @@ static const struct {
     { "C1/Stage::addChild @c33690", "C1", 0x00c33690ULL, 0x01011f50ULL, tnx_slot_repl_5, 1 },
     { "C2/hotflag @b9dc24", "C2", 0x00b9dc24ULL, 0, tnx_slot_repl_6, 1 },
 
-    { "D1/table10078b8 slot0 @b73424", "D1", 0x00b73424ULL, 0, tnx_slot_repl_7, 0 },
-    { "D2/table10086c0 slot0 @b8ae70", "D2", 0x00b8ae70ULL, 0, tnx_slot_repl_8, 0 },
-    { "D3/table10086c0 slot1 @b8ae74", "D3", 0x00b8ae74ULL, 0, tnx_slot_repl_9, 0 },
-    { "D4/table1008c28 slot0 @b9afa8", "D4", 0x00b9afa8ULL, 0, tnx_slot_repl_10, 0 },
+    { "P1/disabled-no-data-slot", "P1", 0, 0, tnx_slot_repl_7, 0 },
+    { "D2/disabled-fewer-noisy-slots", "D2", 0, 0, tnx_slot_repl_8, 0 },
+    { "P2/disabled-no-data-slot", "P2", 0, 0, tnx_slot_repl_9, 0 },
+    { "D4/disabled-fewer-noisy-slots", "D4", 0, 0, tnx_slot_repl_10, 0 },
     { "V6/vt0fe9d00+68/8c7fbc", "V6", 0x008c7fbcULL, 0x00fe9d68ULL, tnx_slot_repl_11, 0 },
     { "D6/table1009290 slot1 @bad4ec", "D6", 0x00000000ULL, 0, tnx_slot_repl_12, 1 },
 
     { "E1/table100a770 slot0 @bcfbe8", "E1", 0x00bcfbe8ULL, 0, tnx_slot_repl_13, 0 },
     { "E2/table100a770 slot1 @bcfc28", "E2", 0x00bcfc28ULL, 0, tnx_slot_repl_14, 0 },
-    { "V1/vt0fe9d00+00/8c53fc", "V1", 0x008c53fcULL, 0x00fe9d00ULL, tnx_slot_repl_15, 0 },
+    { "V1/disabled-fewer-noisy-slots", "V1", 0, 0, tnx_slot_repl_15, 0 },
     { "V2/vt0fe9d00+40/8c6150", "V2", 0x008c6150ULL, 0x00fe9d40ULL, tnx_slot_repl_16, 0 },
     { "E5/setClientPredictionMoveTo @b90b8c", "E5", 0x00b90b8cULL, 0, tnx_slot_repl_17, 1 },
     { "E6/sendMovement @7c13dc", "E6", 0x007c13dcULL, 0, tnx_slot_repl_18, 1 },
 
     { "D7/table10086c0 slot2 @b8ae88", "D7", 0x00b8ae88ULL, 0, tnx_slot_repl_19, 0 },
     { "D8/table10086c0 slot3 @b8ac7c", "D8", 0x00b8ac7cULL, 0, tnx_slot_repl_20, 0 },
-    { "D9/table10086c0 slot4 @b8835c", "D9", 0x00b8835cULL, 0, tnx_slot_repl_21, 0 },
-    { "D10/table10086c0 slot7 @b85f64", "D10", 0x00b85f64ULL, 0, tnx_slot_repl_22, 0 },
+    { "D9/disabled-fewer-noisy-slots", "D9", 0, 0, tnx_slot_repl_21, 0 },
+    { "D10/disabled-fewer-noisy-slots", "D10", 0, 0, tnx_slot_repl_22, 0 },
     { "D11/table10086c0 slot8 @b85fe0", "D11", 0x00b85fe0ULL, 0, tnx_slot_repl_23, 0 },
     { "D12/table10086c0 slot9 @b867d8", "D12", 0x00b867d8ULL, 0, tnx_slot_repl_24, 0 },
     { "D13/table10086c0 slot10 @b9e188", "D13", 0x00b9e188ULL, 0, tnx_slot_repl_25, 0 },
     { "D14/table10086c0 slot11 @b9dc8c", "D14", 0x00b9dc8cULL, 0, tnx_slot_repl_26, 0 },
 
-    { "V3/vt0fe9d00+48/8c7ef0", "V3", 0x008c7ef0ULL, 0x00fe9d48ULL, tnx_slot_repl_27, 0 },
+    { "V3/disabled-fewer-noisy-slots", "V3", 0, 0, tnx_slot_repl_27, 0 },
     { "V4/vt0fe9d00+50/8c7f9c", "V4", 0x008c7f9cULL, 0x00fe9d50ULL, tnx_slot_repl_28, 0 },
     { "V5/vt0fe9d00+58/8c7fac", "V5", 0x008c7facULL, 0x00fe9d58ULL, tnx_slot_repl_29, 0 },
     { "D15/table10086c0 slot21 @b898e8", "D15", 0x00b898e8ULL, 0, tnx_slot_repl_30, 0 },
@@ -1732,6 +1808,8 @@ static void tnx_slot_install_one(int index) {
     g_slot_slots[index] = 0;
 
     setenv("TITANOX_ALLOW_CODE_PATCH", "0", 1);
+
+    if (!g_slot_specs[index].rva && !g_slot_specs[index].slotRva) return;
 
     target = g_base + g_slot_specs[index].rva;
 
@@ -4860,7 +4938,7 @@ static void tnx_alert_battle_check(void) {
 
     if (withheld) {
 
-        if (g_v50_alert_withheld_logs < 5 || (g_v50_alert_calls % 1800) == 0) {
+        if (TNX_V113_ALERT_WITHHELD && (g_v50_alert_withheld_logs < 5 || (g_v50_alert_calls % 1800) == 0)) {
             g_v50_alert_withheld_logs++;
 
             tnx_logf("v100 alert withheld: %s bestLive=%d bestCount=%d mode=%p manager=%p "
@@ -9468,7 +9546,11 @@ static void tnx_v48_probe(uintptr_t manager, uintptr_t mode, int verbose) {
              usable, distinct, inRange);
 
     tnx_v50_raw_team_probe(manager);
-    tnx_v52_dead_probe(manager);
+
+    if (!TNX_V113_DEAD_ONCE || !g_v113_dead_probe_done) {
+        g_v113_dead_probe_done = 1;
+        tnx_v52_dead_probe(manager);
+    }
 
     if (verbose) {
         tnx_logf("v100 offsets obj off=0x%llx/0x%llx x=0x%llx y=0x%llx teamOld=0x%llx teamNew=0x%llx "
@@ -11090,6 +11172,1250 @@ static void tnx_v112_pos_watch(const tnx_v47_obj_t *objects, int usable, int own
              (unsigned long long)TNX_V112_POS_Y_OFF, TNX_V112_POS_EVERY);
 }
 
+static int g_v113_test_state = 0;
+static uint64_t g_v113_test_tick = 0;
+static int g_v113_test_before_x = 0;
+static int g_v113_test_before_y = 0;
+static int g_v113_test_after_x = 0;
+static int g_v113_test_after_y = 0;
+static int g_v113_moved = 0;
+static int g_v113_moved2 = 0;
+static int g_v113_kept = 0;
+static int g_v113_tested = 0;
+static uint64_t g_v113_enqueues = 0;
+static int g_v113_enq_x = 0;
+static int g_v113_enq_y = 0;
+static int g_v113_q_before = -1;
+static int g_v113_q_after = -1;
+static int g_v113_readback = -1;
+static int g_v113_readback_tick = -1;
+static int g_v113_hop2_logs = 0;
+static int g_v113_hop2_filled = 0;
+static uintptr_t g_v113_hop2 = 0;
+static int g_v113_queue_logs = 0;
+static int g_v113_window_logs = 0;
+static uint64_t g_v113_push_frame = 0;
+static int g_v113_frame_logs = 0;
+static int g_v115_mode_wait_logs = 0;
+static int g_v115_mode_seen7 = 0;
+static int g_v115_mode_max = 0;
+static int g_v115_gate_seen = 0;
+static uint64_t g_v113_test_tickbase = 0;
+
+static uintptr_t tnx_v113_entry(uintptr_t rva) {
+    if (!g_base || !rva) return 0;
+    if (!tnx_callable(rva)) return 0;
+
+    return g_base + rva;
+}
+
+static void *tnx_v113_manager(void) {
+    uintptr_t battleFn = tnx_v113_entry(TNX_V113_GETBATTLE_RVA);
+    void *battle = NULL;
+    void *mgr = NULL;
+
+    if (!battleFn) return NULL;
+
+    battle = ((void *(*)(void))battleFn)();
+
+    if (!battle) return NULL;
+    if (!tnx_read_ptr((uintptr_t)battle + TNX_V113_MGR_OFF, &mgr) || !mgr) return NULL;
+
+    return mgr;
+}
+
+static int tnx_v113_queue_count(uintptr_t *mgrOut) {
+    void *mgr = tnx_v113_manager();
+    void *queue = NULL;
+    int32_t count = -1;
+
+    if (mgrOut) *mgrOut = (uintptr_t)mgr;
+    if (!mgr) return -1;
+    if (!tnx_read_ptr((uintptr_t)mgr + TNX_V113_QUEUE_OFF, &queue) || !queue) return -1;
+    if (!tnx_read_i32((uintptr_t)queue + TNX_V113_QUEUE_COUNT_OFF, &count)) return -1;
+
+    return (int)count;
+}
+
+static int tnx_v113_enqueue(int x, int y) {
+    uintptr_t allocFn = tnx_v113_entry(TNX_V113_ALLOC_RVA);
+    uintptr_t ctorFn = tnx_v113_entry(TNX_V113_MSGCTOR_RVA);
+    uintptr_t inputFn = tnx_v113_entry(TNX_V113_ADDINPUT_RVA);
+    int32_t vx = x;
+    int32_t vy = y;
+    void *mgr = NULL;
+    void *msg = NULL;
+
+    if (!allocFn || !ctorFn || !inputFn) return 0;
+
+    msg = ((void *(*)(size_t))allocFn)((size_t)TNX_V113_MSG_SIZE);
+
+    if (!msg) return 0;
+
+    ((void (*)(void *, int))ctorFn)(msg, TNX_V113_TYPE_MOVE);
+    tnx_write_bytes((uintptr_t)msg + TNX_V113_X_OFF, &vx, sizeof(vx));
+    tnx_write_bytes((uintptr_t)msg + TNX_V113_Y_OFF, &vy, sizeof(vy));
+
+    mgr = tnx_v113_manager();
+
+    if (!mgr) {
+        tnx_logf("v113 queuePush aborted x=%d y=%d msg=%p - battle+%#llx is null, so the message was "
+                 "built but not pushed and is left allocated on purpose rather than freed through a "
+                 "pointer the queue never saw",
+                 x, y, msg, (unsigned long long)TNX_V113_MGR_OFF);
+
+        return 0;
+    }
+
+    ((void (*)(void *, void *))inputFn)(mgr, msg);
+
+    g_v113_enqueues++;
+    g_v113_push_frame = g_v48_ticks;
+
+    tnx_logf("v113 queuePush tick=%llu type=%d x=%d y=%d msg=%p mgr=%p ok=1 - the message the battle "
+             "update builds for itself: size %#x, ctor %#llx stores the type at +%#llx, x goes to "
+             "+%#llx and y to +%#llx, pushed through addInput at %#llx into the queue at manager+%#llx; "
+             "addInput has no data slot so the push is measured through the queue count, not a hook",
+             (unsigned long long)g_v103_tick, TNX_V113_TYPE_MOVE, x, y, msg, mgr,
+             (unsigned)TNX_V113_MSG_SIZE, (unsigned long long)TNX_V113_MSGCTOR_RVA,
+             (unsigned long long)TNX_V113_TYPE_OFF, (unsigned long long)TNX_V113_X_OFF,
+             (unsigned long long)TNX_V113_Y_OFF, (unsigned long long)TNX_V113_ADDINPUT_RVA,
+             (unsigned long long)TNX_V113_QUEUE_OFF);
+
+    return 1;
+}
+
+static const char *tnx_v113_state_x(int32_t v) {
+    if (v == g_v113_enq_x) return "MATCH";
+    if (v == -1) return "RESET";
+    if (v == 0) return "DEFAULT";
+
+    return "other";
+}
+
+static const char *tnx_v113_state_y(int32_t v) {
+    if (v == g_v113_enq_y && g_v113_enq_y != 0) return "MATCH";
+    if (v == -1) return "RESET";
+    if (v == 0) return (g_v113_enq_y == 0) ? "MATCH=DEFAULT" : "DEFAULT";
+
+    return "other";
+}
+
+static int tnx_v115_mode(void) {
+    int32_t mode = -1;
+
+    if (!g_scene_object) return -1;
+    if (!tnx_read_i32((uintptr_t)g_scene_object + TNX_V115_MODE_OFF, &mode)) return -1;
+
+    return (int)mode;
+}
+
+static int tnx_v115_inner(void) {
+    void *holder = NULL;
+    uint8_t b = 0;
+
+    if (!g_scene_object) return -1;
+    if (!tnx_read_ptr((uintptr_t)g_scene_object + TNX_V115_GATE_PTR_OFF, &holder) || !holder) return -1;
+    if (!tnx_read_u8((uintptr_t)holder + TNX_V115_GATE_BYTE_OFF, &b)) return -1;
+
+    return (int)b;
+}
+
+static int tnx_v115_gate(void) {
+    int mode = tnx_v115_mode();
+
+    if (mode < 0) return -1;
+    if (mode != TNX_V115_MODE_TARGET) return 0;
+    if (tnx_v115_inner() != 1) return 0;
+
+    return 1;
+}
+
+static uintptr_t tnx_v115_client(void) {
+    void *client = NULL;
+
+    if (!g_scene_object) return 0;
+    if (!tnx_read_ptr((uintptr_t)g_scene_object + TNX_V115_CLIENT_OFF, &client)) return 0;
+
+    return (uintptr_t)client;
+}
+
+
+static uint32_t g_v116_mode_hist[TNX_V116_HIST_MODES];
+static int64_t g_v116_last_mode = -1;
+static int32_t g_v116_interp_prev_x = 0;
+static int32_t g_v116_interp_prev_y = 0;
+static int g_v116_interp_have = 0;
+static uint64_t g_v116_interp_moves = 0;
+static uint64_t g_v116_interp_checks = 0;
+static uint64_t g_v116_interp_tick = 0;
+static int g_v116_hist_logs = 0;
+
+static int tnx_v116_interp(int32_t *x, int32_t *y) {
+    uintptr_t client = tnx_v115_client();
+    int32_t cx = 0;
+    int32_t cy = 0;
+
+    if (x) *x = 0;
+    if (y) *y = 0;
+    if (!client) return 0;
+    if (!tnx_read_i32(client + TNX_V115_CLIENT_POS_X_OFF, &cx)) return 0;
+    if (!tnx_read_i32(client + TNX_V115_CLIENT_POS_Y_OFF, &cy)) return 0;
+
+    if (x) *x = cx;
+    if (y) *y = cy;
+
+    return 1;
+}
+
+
+static int g_v117_match_idx = -1;
+static int g_v117_match_gid = -1;
+static int g_v117_match_streak = 0;
+static int g_v117_gate2_seen = 0;
+static int g_v117_gate3_seen = 0;
+
+static int tnx_v117_pair(uintptr_t obj, int32_t *x, int32_t *y) {
+    if (x) *x = 0;
+    if (y) *y = 0;
+    if (!obj) return 0;
+    if (!tnx_read_i32(obj + TNX_V115_CLIENT_POS_X_OFF, x)) return 0;
+    if (!tnx_read_i32(obj + TNX_V115_CLIENT_POS_Y_OFF, y)) return 0;
+
+    return 1;
+}
+
+static int tnx_v117_src(uintptr_t off, int32_t *x, int32_t *y, int *flag) {
+    void *o = NULL;
+    uint8_t b = 0;
+
+    if (x) *x = 0;
+    if (y) *y = 0;
+    if (flag) *flag = -1;
+    if (!g_scene_object) return 0;
+    if (!tnx_read_ptr((uintptr_t)g_scene_object + off, &o) || !o) return 0;
+    if (flag && tnx_read_u8((uintptr_t)o + TNX_V115_GATE_BYTE_OFF, &b)) *flag = (int)b;
+
+    return tnx_v117_pair((uintptr_t)o, x, y);
+}
+
+
+static int32_t g_v118_src30_prev_x = 0;
+static int32_t g_v118_src30_prev_y = 0;
+static int32_t g_v118_src38_prev_x = 0;
+static int32_t g_v118_src38_prev_y = 0;
+static int g_v118_src30_have = 0;
+static int g_v118_src38_have = 0;
+static uint64_t g_v118_src30_moves = 0;
+static uint64_t g_v118_src38_moves = 0;
+static int g_v118_w_eq_x = 0;
+static int g_v118_w_eq_y = 0;
+
+static int tnx_v118_weq(int32_t a, int32_t b, int32_t out, int32_t d) {
+    if (d == 0) return -1;
+
+    return (int)(((int64_t)(out - b) * 1000) / (int64_t)d);
+}
+
+static uintptr_t tnx_v118_mode_ptr(uintptr_t off) {
+    void *o = NULL;
+
+    if (!g_scene_object) return 0;
+    if (!tnx_read_ptr((uintptr_t)g_scene_object + off, &o)) return 0;
+
+    return (uintptr_t)o;
+}
+
+
+static uint64_t g_v119_gate1_tick = 0;
+static uint64_t g_v119_gate2_tick = 0;
+static uint64_t g_v119_gate3_tick = 0;
+static int g_v119_elig_logs = 0;
+static int g_v119_elig_any = 0;
+static uint64_t g_v119_pin_done = 0;
+
+static void tnx_v119_gate_ticks(void) {
+    if (!g_v119_gate1_tick && tnx_v115_mode() == TNX_V115_MODE_TARGET) g_v119_gate1_tick = g_v103_tick;
+    if (!g_v119_gate2_tick && tnx_v115_inner() == 1) g_v119_gate2_tick = g_v103_tick;
+
+    if (!g_v119_gate3_tick) {
+        int f = -1;
+
+        if (tnx_v117_src(TNX_V117_GATE3_PTR_OFF, NULL, NULL, &f) && f >= 0) g_v119_gate3_tick = g_v103_tick;
+    }
+}
+
+static void tnx_v119_elements(void) {
+    tnx_v47_obj_t objs[8];
+    int rej = 0;
+    int n = 0;
+    int i;
+    char buf[320];
+    char posBuf[96];
+    size_t used = 0;
+    size_t posUsed = 0;
+    int any = 0;
+
+    posBuf[0] = 0;
+
+    if (!g_players_object) return;
+    if (g_v119_elig_logs >= 30) return;
+    if (g_v103_tick % 25) return;
+
+    n = tnx_v48_collect((uintptr_t)g_players_object, objs, 8, &rej);
+
+    if (n <= 0) return;
+
+    g_v119_elig_logs++;
+
+    for (i = 0; i < n; i++) {
+        uint8_t elig = 0;
+        int32_t p214 = 0;
+        int32_t p220 = 0;
+        int32_t p224 = 0;
+
+        tnx_read_u8(objs[i].object + TNX_V119_ELIG_OFF, &elig);
+        tnx_read_i32(objs[i].object + TNX_V119_PROP_214_OFF, &p214);
+        tnx_read_i32(objs[i].object + TNX_V119_PROP_220_OFF, &p220);
+        tnx_read_i32(objs[i].object + TNX_V119_PROP_224_OFF, &p224);
+
+        if (elig == 1) {
+            any++;
+            posUsed += (size_t)snprintf(posBuf + posUsed, sizeof(posBuf) - posUsed, "%d,", i);
+        }
+
+        used += (size_t)snprintf(buf + used, sizeof(buf) - used, "[%d gid=%d elig=%d p214=%d p220=%d p224=%d]",
+                                 i, objs[i].gid, (int)elig, p214, p220, p224);
+        if (used >= sizeof(buf) - 96) break;
+    }
+
+    if (any) g_v119_elig_any = 1;
+
+    {
+        uint8_t ownB = 0;
+
+        if (g_players_object) {
+            tnx_v47_obj_t ownObjs[8];
+            int ownRej = 0;
+
+            if (tnx_v48_collect((uintptr_t)g_players_object, ownObjs, 8, &ownRej) > 0) {
+                tnx_read_u8(ownObjs[0].object + TNX_V119_ELIG_OFF, &ownB);
+            }
+        }
+
+        tnx_logf("v122 eligible own_elig=%d own_byte1fd=%#x pos=%s n=%d anyElig=%d anyEver=%d %s - the "
+                 "interpolation filter",
+                 (int)ownB, (unsigned)ownB, posBuf, n, any, g_v119_elig_any, buf);
+    }
+
+    tnx_logf("v119 eligibleNote the filter at %#x takes an element "
+             "only when the virtual slot +0x28 returns 1 and the byte at +%#llx is 1, and that byte is "
+             "loaded from the property list index %#x by the loader at %#llx which is reached from the "
+             "message path %#llx, so an element with elig=0 is dropped before the lerp no matter what any "
+             "writer or queue does",
+             (unsigned long long)0xac22c4, (unsigned long long)TNX_V119_ELIG_OFF,
+             (unsigned)0x1e2, (unsigned long long)0xa30b30ULL, (unsigned long long)0x7b322cULL);
+}
+
+static void tnx_v119_pin(void) {
+    tnx_v47_obj_t objs[8];
+    int rej = 0;
+    int n = 0;
+    int i;
+
+    if (!TNX_V119_TEST_ENABLE) return;
+    if (g_v119_pin_done) return;
+    if (!g_players_object) return;
+    if (tnx_v115_mode() != TNX_V115_MODE_TARGET) return;
+
+    n = tnx_v48_collect((uintptr_t)g_players_object, objs, 8, &rej);
+
+    if (n <= 0) return;
+
+    g_v119_pin_done = 1;
+
+    for (i = 0; i < n; i++) {
+        uint8_t b = 1;
+
+        tnx_write_bytes(objs[i].object + TNX_V119_ELIG_OFF, &b, sizeof(b));
+    }
+
+    tnx_logf("v119 pin set elig=1 on %d elements at +%#llx - this is the cheap test that does not need the "
+             "message ctor or the queue: if the loader at %#llx refreshes the byte on the next packet the "
+             "pin dies, and if it survives and client+%#llx starts moving then eligibility was the only "
+             "blocker", n, (unsigned long long)TNX_V119_ELIG_OFF, (unsigned long long)0xa30b30ULL,
+             (unsigned long long)TNX_V115_CLIENT_POS_X_OFF);
+}
+
+
+static int32_t g_v120_f138_prev = 0;
+static int32_t g_v120_f13c_prev = 0;
+static int g_v120_f_have = 0;
+static uint64_t g_v120_reloads = 0;
+static int g_v120_holder_logged = 0;
+static int g_v120_ent_logs = 0;
+
+static void tnx_v120_thermometer(void) {
+    int32_t from = 0;
+    int32_t to = 0;
+
+    if (!g_scene_object) return;
+    if (!tnx_read_i32((uintptr_t)g_scene_object + TNX_V120_FROM_OFF, &from)) return;
+    if (!tnx_read_i32((uintptr_t)g_scene_object + TNX_V120_TO_OFF, &to)) return;
+
+    if (g_v120_f_have && (from != g_v120_f138_prev || to != g_v120_f13c_prev)) g_v120_reloads++;
+
+    g_v120_f138_prev = from;
+    g_v120_f13c_prev = to;
+    g_v120_f_have = 1;
+}
+
+static void tnx_v120_holder_note(void) {
+    if (g_v120_holder_logged) return;
+    if (g_v103_tick < 10) return;
+
+    g_v120_holder_logged = 1;
+
+    tnx_logf("v122 holder=unavail lifetime=per-frame reason=scratch classRva=%#llx - the property holder cannot be used as a "
+             "network thermometer: the mode update allocates two %#x byte holders with %#llx every frame at "
+             "%#x and %#x, stores them only in stack slots, fills them through the loader %#llx and drops "
+             "them, so nothing persistent carries the packets; the readable proxy is the last loaded "
+             "from/to pair at mode+%#llx/+%#llx, which is exactly the pair that gates the snapshot reload",
+             (unsigned long long)TNX_V120_HOLDER_VT_RVA, (unsigned)TNX_V120_HOLDER_SIZE,
+             (unsigned long long)TNX_V120_HOLDER_CTOR_RVA,
+             (unsigned)0xac2104, (unsigned)0xac2114, (unsigned long long)0xa24278ULL,
+             (unsigned long long)TNX_V120_FROM_OFF, (unsigned long long)TNX_V120_TO_OFF);
+}
+
+static void tnx_v120_entities(void) {
+    uintptr_t getter = tnx_v113_entry(TNX_V120_ENTITY_GETTER_RVA);
+    void *obj = NULL;
+    void *container = NULL;
+    int32_t count = -1;
+    char buf[280];
+    size_t used = 0;
+    int i;
+
+    if (!g_scene_object || !getter) return;
+    if (g_v120_ent_logs >= 30) return;
+    if (g_v103_tick % 25) return;
+
+    if (!tnx_read_ptr((uintptr_t)g_scene_object + TNX_V117_GATE3_PTR_OFF, &obj) || !obj) return;
+
+    container = ((void *(*)(void *))getter)(obj);
+
+    if (!container) return;
+
+    tnx_read_i32((uintptr_t)container + 0xc, &count);
+
+    if (count < 0) return;
+
+    if (count > 12) count = 12;
+
+    g_v120_ent_logs++;
+
+    for (i = 0; i < count; i++) {
+        void *e = NULL;
+        void *vt = NULL;
+        uintptr_t r = 0;
+        uint8_t el = 0;
+
+        if (!tnx_read_ptr((uintptr_t)container + (uintptr_t)i * 8ULL, &e) || !e) continue;
+
+        if (tnx_read_ptr((uintptr_t)e, &vt) && vt) r = (uintptr_t)vt - g_base;
+
+        tnx_read_u8((uintptr_t)e + TNX_V119_ELIG_OFF, &el);
+
+        used += (size_t)snprintf(buf + used, sizeof(buf) - used, "[%d vt=%#llx elig=%d]", i,
+                                 (unsigned long long)r, (int)el);
+        if (used >= sizeof(buf) - 64) break;
+    }
+
+    tnx_logf("v120 entities node=%p list=%p count=%d %s - this is the real candidate list taken as "
+             "mode+%#llx through the getter %#llx, so an entry here with vtable %#llx is a live brawler and "
+             "an entry with another vtable is a lobby or roster slot; logInterp=%d - it needs the getter "
+             "call because the mode holds the node and not the array",
+             obj, container, count, buf, (unsigned long long)TNX_V117_GATE3_PTR_OFF,
+             (unsigned long long)TNX_V120_ENTITY_GETTER_RVA, (unsigned long long)0xff5440ULL,
+             (tnx_v115_mode() == TNX_V115_MODE_TARGET && tnx_v115_inner() == 1) ? 1 : 0);
+}
+
+
+static uint64_t g_v122_prev_win_reloads = 0;
+static uint64_t g_v122_win_mark = 0;
+static uint64_t g_v122_pre_reloads = 0;
+static uint64_t g_v122_pre_frames = 0;
+static int g_v122_pre_logged = 0;
+static int g_v122_ent2_logs = 0;
+
+static uint64_t g_v121_push_frame = 0;
+static uint64_t g_v121_win_reloads = 0;
+static int g_v121_win_stage = 0;
+static uint64_t g_v121_traj_logs = 0;
+static uint64_t g_v121_rate_marks = 0;
+
+static uint64_t g_v121_rate_prev = 0;
+
+static void tnx_v121_traj(void) {
+    void *arr = NULL;
+    int32_t count = 0;
+    int32_t tnow = 0;
+    char buf[300];
+    size_t used = 0;
+    int i;
+    int32_t seqA = 0;
+    int32_t seqB = 0;
+
+    if (!g_scene_object) return;
+    if (g_v121_traj_logs >= 30) return;
+    if (g_v103_tick % 25) return;
+
+    if (!tnx_read_ptr((uintptr_t)g_scene_object + TNX_V121_TRAJ_ARR_OFF, &arr) || !arr) return;
+    if (!tnx_read_i32((uintptr_t)g_scene_object + TNX_V121_TRAJ_COUNT_OFF, &count)) return;
+    if (!tnx_read_i32((uintptr_t)g_scene_object + TNX_V121_TRAJ_TIME_OFF, &tnow)) return;
+
+    g_v121_traj_logs++;
+
+    for (i = 0; i < count && i < 10; i++) {
+        void *e = NULL;
+        int32_t seq = 0;
+        void *blk = NULL;
+
+        if (!tnx_read_ptr((uintptr_t)arr + (uintptr_t)i * 8ULL, &e) || !e) continue;
+        tnx_read_i32((uintptr_t)e + TNX_V121_ENTRY_SEQ_OFF, &seq);
+        tnx_read_ptr((uintptr_t)e + TNX_V121_ENTRY_BLOCK_OFF, &blk);
+
+        if (i == 0) seqA = seq;
+        if (i == 1) seqB = seq;
+
+        used += (size_t)snprintf(buf + used, sizeof(buf) - used, "[%d seq=%d blk=%p]", i, seq, blk);
+        if (used >= sizeof(buf) - 64) break;
+    }
+
+    {
+        int cadence = 0;
+        int stale = 0;
+
+        if (count >= 2 && seqB > seqA) cadence = ((seqB - seqA) / (count - 1)) * 50;
+        stale = (tnow - seqA) * 50;
+
+        tnx_logf("v122 traj count=%d time=%d seqHead=%d seqTail=%d cadenceMs=%d stalenessMs=%d arr=%p "
+                 "seq0=%d seq1=%d ", count, tnow, seqA, seqB, cadence, stale, arr, seqA, seqB);
+    }
+
+    tnx_logf("v122 trajdetail arr=%p count=%d time=%d seq0=%d seq1=%d %s - this list at mode+%#llx with count at "
+             "+%#llx is the interpolation source: the update brackets the current time %d between two "
+             "entries, takes the block at entry+%#llx and lerps it into the client pair, while entry+%#llx "
+             "is the entry time, so a growing seq spacing is the packet cadence and a frozen list means "
+             "the server sent nothing new",
+             arr, count, tnow, seqA, seqB, buf,
+             (unsigned long long)TNX_V121_TRAJ_ARR_OFF,
+             (unsigned long long)TNX_V121_TRAJ_COUNT_OFF, tnow,
+             (unsigned long long)TNX_V121_ENTRY_BLOCK_OFF,
+             (unsigned long long)TNX_V121_ENTRY_SEQ_OFF);
+}
+
+static void tnx_v121_window(void) {
+    uint64_t d;
+
+    if (g_v121_rate_marks == 0 || (g_v48_ticks - g_v121_rate_marks) >= 300) {
+        g_v121_rate_marks = g_v48_ticks;
+
+        tnx_logf("v121 reloadRate reloads=%llu delta=%llu per5s=%llu - an absolute reload count says "
+                 "nothing because the gate only fires when the cached from/to pair changes, so a standing "
+                 "player produces zero reloads even with a perfect connection and only the rate over a "
+                 "window is meaningful",
+                 (unsigned long long)g_v120_reloads,
+                 (unsigned long long)(g_v120_reloads - g_v121_rate_prev),
+                 (unsigned long long)(g_v120_reloads - g_v121_rate_prev));
+
+        g_v121_rate_prev = g_v120_reloads;
+    }
+
+    if (!g_v121_push_frame) return;
+
+    d = g_v48_ticks - g_v121_push_frame;
+
+    if (g_v121_win_stage == 0 && !g_v122_pre_logged && d >= 1) {
+        g_v122_pre_logged = 1;
+
+        tnx_logf("v122 winPre preFrames=%llu preReloads=%llu preRate5s=%llu - the baseline is taken from the "
+                 "rolling %d frame window and not from a lifetime count, because the reload gate fires only "
+                 "when the cached timestamp pair changes",
+                 (unsigned long long)(g_v122_pre_frames - g_v122_win_mark),
+                 (unsigned long long)g_v122_pre_reloads, (unsigned long long)g_v122_prev_win_reloads,
+                 TNX_V122_PRE_FRAMES);
+    }
+
+    if (g_v121_win_stage == 0 && d > TNX_V121_WIN1_FRAMES) {
+        g_v121_win_stage = 1;
+
+        tnx_logf("v122 winA push+0..%dF reloads=%llu rate=%llu per %dF - a round trip of 50 to 150 ms lands "
+                 "here on a fast connection, so a jump against winPre means the server answered",
+                 TNX_V121_WIN1_FRAMES, (unsigned long long)(g_v120_reloads - g_v121_win_reloads),
+                 (unsigned long long)(g_v120_reloads - g_v121_win_reloads), TNX_V121_WIN1_FRAMES);
+
+        g_v121_win_reloads = g_v120_reloads;
+    }
+
+    if (g_v121_win_stage == 1 && d > TNX_V121_WIN2_FRAMES) {
+        g_v121_win_stage = 2;
+
+        tnx_logf("v122 winB push+%d..%dF reloads=%llu rate=%llu per %dF - second window, so a slow answer "
+                 "is separated from no answer instead of being lumped into one verdict",
+                 TNX_V121_WIN1_FRAMES, TNX_V121_WIN2_FRAMES,
+                 (unsigned long long)(g_v120_reloads - g_v121_win_reloads),
+                 (unsigned long long)(g_v120_reloads - g_v121_win_reloads),
+                 (TNX_V121_WIN2_FRAMES - TNX_V121_WIN1_FRAMES));
+    }
+}
+
+
+
+static void tnx_v122_prewin(void) {
+    if (g_v122_win_mark == 0 || (g_v48_ticks - g_v122_win_mark) >= TNX_V122_PRE_FRAMES) {
+        g_v122_win_mark = g_v48_ticks;
+        g_v122_prev_win_reloads = g_v120_reloads;
+    }
+}
+
+static uintptr_t tnx_v122_own(void) {
+    uintptr_t f1 = tnx_v113_entry(TNX_V122_OWN_GETTER_RVA);
+    uintptr_t f2 = tnx_v113_entry(TNX_V122_RESOLVE_SELF_RVA);
+    void *mid = NULL;
+    void *own = NULL;
+
+    if (!f1 || !f2 || !g_scene_object) return 0;
+
+    mid = ((void *(*)(void *))f1)((void *)g_scene_object);
+
+    if (!mid) return 0;
+
+    own = ((void *(*)(void *))f2)(mid);
+
+    return (uintptr_t)own;
+}
+
+static void tnx_v122_bounds(void) {
+    uintptr_t own = tnx_v122_own();
+    int32_t bx = 0;
+    int32_t by = 0;
+
+    if (!own) return;
+    if (!tnx_read_i32(own + TNX_V122_BOUND_X_OFF, &bx)) return;
+    if (!tnx_read_i32(own + TNX_V122_BOUND_Y_OFF, &by)) return;
+
+    tnx_logf("v122 bounds own=%p bx=%d by=%d - the battle update clamps the pushed x to [1, bx-2] and y "
+             "to [1, by-2] before it builds the message, so a payload outside that box is not the input "
+             "the engine would ever send and a no-op push must stay inside it",
+             (void *)own, bx, by);
+}
+
+static void tnx_v122_entities2(void) {
+    uintptr_t getter = tnx_v113_entry(TNX_V120_ENTITY_GETTER_RVA);
+    void *obj = NULL;
+    void *container = NULL;
+    char buf[340];
+    size_t used = 0;
+    int32_t count = -1;
+    int i;
+
+    if (!g_scene_object || !getter) return;
+    if (g_v122_ent2_logs >= 12) return;
+    if (g_v103_tick % 50) return;
+
+    if (!tnx_read_ptr((uintptr_t)g_scene_object + TNX_V117_GATE3_PTR_OFF, &obj) || !obj) return;
+
+    container = ((void *(*)(void *))getter)(obj);
+
+    if (!container) return;
+
+    tnx_read_i32((uintptr_t)container + 0xc, &count);
+
+    if (count <= 0) return;
+
+    if (count > 8) count = 8;
+
+    g_v122_ent2_logs++;
+
+    for (i = 0; i < count; i++) {
+        void *e = NULL;
+        void *vt = NULL;
+        uintptr_t r = 0;
+        uint8_t el = 0;
+        int32_t px = 0;
+        int32_t py = 0;
+        int32_t gid = 0;
+
+        if (!tnx_read_ptr((uintptr_t)container + (uintptr_t)i * 8ULL, &e) || !e) continue;
+
+        if (tnx_read_ptr((uintptr_t)e, &vt) && vt) r = (uintptr_t)vt - g_base;
+
+        tnx_read_u8((uintptr_t)e + TNX_V119_ELIG_OFF, &el);
+        tnx_read_i32((uintptr_t)e + TNX_V122_POS_X_OFF, &px);
+        tnx_read_i32((uintptr_t)e + TNX_V122_POS_Y_OFF, &py);
+        tnx_read_i32((uintptr_t)e + TNX_V112_GID_OFF, &gid);
+
+        used += (size_t)snprintf(buf + used, sizeof(buf) - used,
+                                 "[%d vt=%#llx elig=%d pos=(%d,%d) gid=%d]", i,
+                                 (unsigned long long)r, (int)el, px, py, gid);
+        if (used >= sizeof(buf) - 64) break;
+    }
+
+    tnx_logf("v122 entities2 count=%d %s - vt %#llx is a brawler and %#llx is a lobby or roster slot, so "
+             "this line decides whether the interpolation list carries live units or UI rows",
+             count, buf, (unsigned long long)0xff5440ULL, (unsigned long long)0xf9e248ULL);
+}
+
+static void tnx_v117_match(int32_t ix, int32_t iy) {
+    tnx_v47_obj_t objs[8];
+    int rej = 0;
+    int n = 0;
+    int best = -1;
+    int bestGid = -1;
+    int64_t bestd = 0;
+    int i;
+
+    if (!g_players_object) return;
+
+    n = tnx_v48_collect((uintptr_t)g_players_object, objs, 8, &rej);
+
+    if (n <= 0) return;
+
+    for (i = 0; i < n; i++) {
+        int32_t ex = 0;
+        int32_t ey = 0;
+        int64_t d;
+
+        if (!tnx_v117_pair(objs[i].object, &ex, &ey)) continue;
+
+        d = (int64_t)(ex - ix) * (int64_t)(ex - ix) + (int64_t)(ey - iy) * (int64_t)(ey - iy);
+
+        if (best < 0 || d < bestd) {
+            best = i;
+            bestd = d;
+            bestGid = objs[i].gid;
+        }
+    }
+
+    if (best < 0) return;
+
+    g_v117_match_streak = (best == g_v117_match_idx) ? g_v117_match_streak + 1 : 0;
+    g_v117_match_idx = best;
+    g_v117_match_gid = bestGid;
+
+    tnx_logf("v117 ownInterp matchElem=%d matchGid=%d streak=%d dist2=%lld n=%d own=(%d,%d) mode=%d "
+             "gate1=%d gate2=%d gate3=%d - the nearest element is matched on its own pair at +%#llx/+%#llx, "
+             "so a stable index with a rising streak is hypothesis H1, the client pair is that element's own "
+             "position, while an index that keeps changing means H2, the pair is a screen space or camera "
+             "target that drifts between elements",
+             best, bestGid, g_v117_match_streak, (long long)bestd, n, ix, iy, tnx_v115_mode(),
+             (tnx_v115_mode() == TNX_V115_MODE_TARGET) ? 1 : 0,
+             (tnx_v115_inner() == 1) ? 1 : 0, (tnx_v115_inner() == 1) ? 1 : 0,
+             (unsigned long long)TNX_V115_CLIENT_POS_X_OFF,
+             (unsigned long long)TNX_V115_CLIENT_POS_Y_OFF);
+}
+
+static void tnx_v116_frame(void) {
+    int mode = tnx_v115_mode();
+
+    if (mode >= 0 && mode < TNX_V116_HIST_MODES) g_v116_mode_hist[mode]++;
+
+    tnx_v119_gate_ticks();
+    tnx_v120_thermometer();
+    tnx_v121_window();
+    tnx_v122_prewin();
+    if (tnx_v115_inner() == 1 && mode == TNX_V115_MODE_TARGET) g_v117_gate2_seen++;
+    if (tnx_v117_src(TNX_V117_GATE3_PTR_OFF, NULL, NULL, NULL)) g_v117_gate3_seen++;
+
+    if (mode != g_v116_last_mode) {
+        if (g_v116_hist_logs < TNX_V116_HIST_LOGS) {
+            g_v116_hist_logs++;
+
+            {
+                int32_t e0 = -1;
+
+                if (g_scene_object) {
+                    tnx_read_i32((uintptr_t)g_scene_object + 0xe0, &e0);
+                }
+
+                tnx_logf("v117 mode change tick=%llu frames=%llu mode: %lld -> %d e0=%d from=unavail - "
+                         "this line fires the moment setMode ran, so a momentary 7 in a transition frame "
+                         "is caught instead of being averaged away by mode_max; the caller cannot be "
+                         "named because setMode %#llx and its two sites %#llx and %#llx have no data slot "
+                         "in __DATA_CONST or __DATA, so only the +0xe0 side effect is left as a "
+                         "discriminator and e0=0 right at a change points at the %#llx site",
+                         (unsigned long long)g_v103_tick, (unsigned long long)g_v48_ticks,
+                         (long long)g_v116_last_mode, mode, e0, (unsigned long long)0xac3a70ULL,
+                         (unsigned long long)0x760cdcULL, (unsigned long long)0x764350ULL,
+                         (unsigned long long)0x764350ULL);
+            }
+        }
+
+        g_v116_last_mode = mode;
+    }
+}
+
+static void tnx_v116_interp_line(void) {
+    int32_t x = 0;
+    int32_t y = 0;
+    int moved = 0;
+
+    if (!tnx_v116_interp(&x, &y)) return;
+    if (g_v103_tick - g_v116_interp_tick < TNX_V116_INTERP_TICKS) return;
+
+    g_v116_interp_tick = g_v103_tick;
+    g_v116_interp_checks++;
+
+    if (g_v116_interp_have) moved = (x != g_v116_interp_prev_x || y != g_v116_interp_prev_y) ? 1 : 0;
+    if (moved) g_v116_interp_moves++;
+
+    tnx_v117_match(x, y);
+
+    {
+        int32_t s30x = 0;
+        int32_t s30y = 0;
+        int f30 = -1;
+        int32_t s38x = 0;
+        int32_t s38y = 0;
+        int f38 = -1;
+
+        tnx_v117_src(TNX_V115_GATE_PTR_OFF, &s30x, &s30y, &f30);
+        tnx_v117_src(TNX_V117_GATE3_PTR_OFF, &s38x, &s38y, &f38);
+
+        uintptr_t p30 = tnx_v118_mode_ptr(TNX_V115_GATE_PTR_OFF);
+        uintptr_t p38 = tnx_v118_mode_ptr(TNX_V117_GATE3_PTR_OFF);
+        int32_t dx = s30x - s38x;
+        int32_t dy = s30y - s38y;
+        int s30moved = 0;
+        int s38moved = 0;
+
+        if (g_v118_src30_have) s30moved = (s30x != g_v118_src30_prev_x || s30y != g_v118_src30_prev_y) ? 1 : 0;
+        if (g_v118_src38_have) s38moved = (s38x != g_v118_src38_prev_x || s38y != g_v118_src38_prev_y) ? 1 : 0;
+        if (s30moved) g_v118_src30_moves++;
+        if (s38moved) g_v118_src38_moves++;
+
+        if (dx < 0) dx = -dx;
+        if (dy < 0) dy = -dy;
+
+        g_v118_w_eq_x = (dx < TNX_V119_DENOM_MIN) ? -999 : tnx_v118_weq(s30x, s38x, x, (s30x - s38x));
+        g_v118_w_eq_y = (dy < TNX_V119_DENOM_MIN) ? -999 : tnx_v118_weq(s30y, s38y, y, (s30y - s38y));
+
+        tnx_logf("v119 src30=(%d,%d) f30=%d src38=(%d,%d) f38=%d srcEq=%d denomX=%d denomY=%d dCX=%d dCY=%d d38X=%d "
+                 "d38Y=%d wEqX=%d wEqY=%d "
+                 "s30moved=%d s38moved=%d src30Moves=%llu src38Moves=%llu client=(%d,%d) gate2Seen=%d "
+                 "gate3Seen=%d - w28 itself is a register inside the mode update and no hook can reach it "
+                 "because %#llx has no data slot, but the effective weight is recoverable from the three "
+                 "pairs: wEq~1000 means the client sits on src30, wEq~0 means it sits on src38, wEq=-999 means denom "
+                 "was under %d so no weight is claimed at all, and the raw dC/d38 columns are printed so "
+                 "a real 500 cannot be mistaken for rounding noise; srcEq=1 makes the lerp meaningless "
+                 "because both ends are one pointer",
+                 s30x, s30y, f30, s38x, s38y, f38, (p30 == p38) ? 1 : 0, dx, dy, x - s30x, y - s30y,
+                 x - s38x, y - s38y, g_v118_w_eq_x, g_v118_w_eq_y, s30moved, s38moved,
+                 (unsigned long long)g_v118_src30_moves, (unsigned long long)g_v118_src38_moves, x, y,
+                 g_v117_gate2_seen, g_v117_gate3_seen, (unsigned long long)0xa26890ULL,
+                 TNX_V119_DENOM_MIN);
+
+        g_v118_src30_prev_x = s30x;
+        g_v118_src30_prev_y = s30y;
+        g_v118_src38_prev_x = s38x;
+        g_v118_src38_prev_y = s38y;
+        g_v118_src30_have = 1;
+        g_v118_src38_have = 1;
+    }
+
+    tnx_logf("v116 ownInterp prev=(%d,%d) now=(%d,%d) delta=%d moves=%llu checks=%llu mode=%d gate=%d - "
+             "the pair at client+%#llx/+%#llx is written every frame by %#llx inside the mode gate, so it "
+             "is the live own position: delta=1 with no test at all already means the engine moves own and "
+             "the walk pair at +%#llx/+%#llx was never the position",
+             g_v116_interp_prev_x, g_v116_interp_prev_y, x, y, moved,
+             (unsigned long long)g_v116_interp_moves, (unsigned long long)g_v116_interp_checks,
+             tnx_v115_mode(), tnx_v115_gate(), (unsigned long long)TNX_V115_CLIENT_POS_X_OFF,
+             (unsigned long long)TNX_V115_CLIENT_POS_Y_OFF, (unsigned long long)0xa26890ULL,
+             (unsigned long long)TNX_OBJ_X_OFF, (unsigned long long)TNX_OBJ_Y_OFF);
+
+    g_v116_interp_prev_x = x;
+    g_v116_interp_prev_y = y;
+    g_v116_interp_have = 1;
+}
+
+static void tnx_v116_hist_line(void) {
+    uint32_t rest = 0;
+    int i;
+
+    if (g_v103_tick % TNX_V116_HIST_TICKS) return;
+    if (g_v116_hist_logs >= TNX_V116_HIST_LOGS) return;
+
+    for (i = 8; i < TNX_V116_HIST_MODES; i++) rest += g_v116_mode_hist[i];
+
+    g_v116_hist_logs++;
+
+    tnx_logf("v117 modeHist m0=%u m1=%u m2=%u m3=%u m4=%u m5=%u m6=%u m7=%u rest=%u gate1=%d gate2=%d "
+             "gate3=%d g1t=%llu g2t=%llu g3t=%llu anyElig=%d f138=%d f13c=%d snapStampF138=%d snapStampF13c=%d reloads=%llu interpMoves=%llu - the histogram separates a momentary mode 7 in a transition frame from a "
+             "mode that never reaches 7 at all, which a single binary saw7 flag cannot do",
+             g_v116_mode_hist[0], g_v116_mode_hist[1], g_v116_mode_hist[2], g_v116_mode_hist[3],
+             g_v116_mode_hist[4], g_v116_mode_hist[5], g_v116_mode_hist[6], g_v116_mode_hist[7], rest,
+             (tnx_v115_mode() == TNX_V115_MODE_TARGET) ? 1 : 0, (tnx_v115_inner() == 1) ? 1 : 0,
+             g_v117_gate3_seen, (unsigned long long)g_v119_gate1_tick,
+             (unsigned long long)g_v119_gate2_tick, (unsigned long long)g_v119_gate3_tick,
+             g_v119_elig_any, g_v120_f138_prev, g_v120_f13c_prev, g_v120_f138_prev, g_v120_f13c_prev,
+             (unsigned long long)g_v120_reloads, (unsigned long long)g_v116_interp_moves);
+}
+
+static int tnx_v113_fields(void) {
+    int32_t x = 0;
+    int32_t y = 0;
+
+    if (!g_scene_object) return -1;
+    if (!tnx_read_i32((uintptr_t)g_scene_object + TNX_V112_INPUT_X_OFF, &x)) return -1;
+    if (!tnx_read_i32((uintptr_t)g_scene_object + TNX_V112_INPUT_Y_OFF, &y)) return -1;
+
+    return (x == g_v113_enq_x) ? 1 : 0;
+}
+
+static void tnx_v113_frame_window(void) {
+    uint64_t d = 0;
+    int32_t inX = 0;
+    int32_t inY = 0;
+
+    if (!g_v113_push_frame) return;
+
+    d = g_v48_ticks - g_v113_push_frame;
+
+    if (d > TNX_V113_FRAME_WINDOW) return;
+    if (g_v113_frame_logs >= 40) return;
+
+    g_v113_frame_logs++;
+
+    if (g_scene_object) {
+        tnx_read_i32((uintptr_t)g_scene_object + TNX_V112_INPUT_X_OFF, &inX);
+        tnx_read_i32((uintptr_t)g_scene_object + TNX_V112_INPUT_Y_OFF, &inY);
+    }
+
+    {
+        uintptr_t client = tnx_v115_client();
+        int32_t cx = 0;
+        int32_t cy = 0;
+        int32_t ck = 0;
+
+        if (client) {
+            tnx_read_i32(client + TNX_V115_CLIENT_POS_X_OFF, &cx);
+            tnx_read_i32(client + TNX_V115_CLIENT_POS_Y_OFF, &cy);
+        }
+
+        tnx_read_i32((uintptr_t)g_scene_object + TNX_V112_INPUT_K_OFF, &ck);
+
+        tnx_logf("v117 frame tick=%llu frame=+%llu qcount=%d mode=%d gate=%d inner=%d in10c=%d(%s) "
+                 "in110=%d(%s) in114=%d client80=%d client84=%d - the window carries the mode id because "
+                 "three different causes leave the same empty readback: the queue not being consumed, "
+                 "the queue consumed while the +%#llx branch is gated because mode != %d, and the branch "
+                 "running while the apply path never touches +%#llx; gate=1 means mode == %d and "
+                 "(*[mode+%#llx])+%#x == 1; client80/client84 is the pair %#llx writes on the client at "
+                 "client+%#llx, which is the interpolation output and the sharpest position signal here",
+                 (unsigned long long)g_v103_tick, (unsigned long long)d, tnx_v113_queue_count(NULL),
+                 tnx_v115_mode(), tnx_v115_gate(), tnx_v115_inner(), inX, tnx_v113_state_x(inX),
+                 inY, tnx_v113_state_y(inY), ck, cx, cy, (unsigned long long)TNX_V113_READER_RVA,
+                 TNX_V115_MODE_TARGET, (unsigned long long)TNX_V112_INPUT_X_OFF, TNX_V115_MODE_TARGET,
+                 (unsigned long long)TNX_V115_GATE_PTR_OFF, (unsigned)TNX_V115_GATE_BYTE_OFF,
+                 (unsigned long long)0xa26890ULL, (unsigned long long)TNX_V115_CLIENT_POS_X_OFF);
+    }
+}
+
+static void tnx_v113_window(int plus) {
+    int32_t inX = 0;
+    int32_t inY = 0;
+    int32_t inK = 0;
+
+    if (g_v113_window_logs >= 12) return;
+
+    g_v113_window_logs++;
+
+    if (g_scene_object) {
+        tnx_read_i32((uintptr_t)g_scene_object + TNX_V112_INPUT_X_OFF, &inX);
+        tnx_read_i32((uintptr_t)g_scene_object + TNX_V112_INPUT_Y_OFF, &inY);
+        tnx_read_i32((uintptr_t)g_scene_object + TNX_V112_INPUT_K_OFF, &inK);
+    }
+
+    tnx_logf("v113 window tick=+%d qcount=%d in10c=%d in110=%d in114=%d want=(%d,%d) match=%d - logged "
+             "tick by tick because addInput evicts an older entry that carries the same key, so a count "
+             "that rises and falls inside these ticks is our message eaten by a game message of the same "
+             "type rather than by the consumer",
+             plus, tnx_v113_queue_count(NULL), inX, inY, inK, g_v113_enq_x, g_v113_enq_y,
+             tnx_v113_fields());
+}
+
+static void tnx_v113_test(const tnx_v47_obj_t *objects, int usable, int ownIndex) {
+    int32_t x = 0;
+    int32_t y = 0;
+    int qnow = -1;
+    const char *verdict = "readback-unreadable";
+
+    if (!objects || ownIndex < 0 || ownIndex >= usable) return;
+    if (g_v113_test_state >= 4) return;
+    if (!g_scene_object) return;
+
+    if (!g_v113_test_tickbase) g_v113_test_tickbase = g_v103_tick;
+
+    {
+        int mode = tnx_v115_mode();
+
+        if (mode > g_v115_mode_max) g_v115_mode_max = mode;
+        if (mode == TNX_V115_MODE_TARGET) g_v115_mode_seen7 = 1;
+        if (tnx_v115_gate() == 1) g_v115_gate_seen = 1;
+    }
+
+    if (!TNX_V115_TEST_ENABLE) {
+        if (g_v113_test_state == 0 && (g_v103_tick - g_v113_test_tickbase) >= TNX_V115_MODE_WAIT) {
+            g_v113_test_state = 4;
+            g_v113_tested = 1;
+
+            tnx_logf("v115 notest mode_max=%d saw7=%d gateSeen=%d gate=%d - the build ran without the "
+                     "enqueue test and this line is the mode census: with saw7=0 the +%#llx branch is "
+                     "unreachable in this battle because the mode id never reaches %d, so the whole "
+                     "+0xac pipeline, %#llx and the client pair write belong to that mode alone",
+                     g_v115_mode_max, g_v115_mode_seen7, g_v115_gate_seen, tnx_v115_gate(),
+                     (unsigned long long)TNX_V113_READER_RVA, TNX_V115_MODE_TARGET,
+                     (unsigned long long)0xa26890ULL);
+        }
+
+        return;
+    }
+
+    if (g_v113_test_state == 0) {
+        if (TNX_V115_REQUIRE_GATE && tnx_v115_gate() != 1) {
+            if (g_v115_mode_wait_logs < 2) {
+                g_v115_mode_wait_logs++;
+
+                tnx_logf("v115 modewait tick=%llu mode=%d target=%d inner=%d gate=%d - the test is held "
+                         "until the reader gate opens, because the +%#llx branch answers only when the "
+                         "mode id at +%#llx is %d and (*[mode+%#llx])+%#x is 1; pushing before that would "
+                         "book a false empty readback as enqueue-ok-not-consumed",
+                         (unsigned long long)g_v103_tick, tnx_v115_mode(), TNX_V115_MODE_TARGET,
+                         tnx_v115_inner(), tnx_v115_gate(), (unsigned long long)TNX_V113_READER_RVA,
+                         (unsigned long long)TNX_V115_MODE_OFF, TNX_V115_MODE_TARGET,
+                         (unsigned long long)TNX_V115_GATE_PTR_OFF, (unsigned)TNX_V115_GATE_BYTE_OFF);
+            }
+
+            if (g_v103_tick - g_v113_test_tickbase < TNX_V115_MODE_WAIT) return;
+
+            g_v113_test_state = 4;
+            g_v113_tested = 1;
+
+            tnx_logf("v115 modewait NEVER OPENED after %d ticks mode_max=%d saw7=%d inner=%d - the gate "
+                     "never opened, so the +%#llx branch, %#llx and the client pair write were never in "
+                     "play and the enqueue was not attempted at all; this is reader-gated and it means "
+                     "the actuator of this battle is elsewhere, not the +0xac pipeline",
+                     TNX_V115_MODE_WAIT, g_v115_mode_max, g_v115_mode_seen7, tnx_v115_inner(),
+                     (unsigned long long)TNX_V113_READER_RVA, (unsigned long long)0xa26890ULL);
+
+            return;
+        }
+
+        g_v113_test_state = 1;
+        g_v113_test_tick = g_v103_tick;
+        g_v113_test_before_x = objects[ownIndex].x;
+        g_v113_test_before_y = objects[ownIndex].y;
+        if (TNX_V121_NOOP_PUSH) {
+            g_v113_enq_x = objects[ownIndex].x;
+            g_v113_enq_y = objects[ownIndex].y;
+        } else {
+            g_v113_enq_x = objects[ownIndex].x + TNX_V113_TEST_STEP;
+            g_v113_enq_y = objects[ownIndex].y;
+        }
+
+        g_v122_pre_reloads = g_v120_reloads;
+        g_v122_pre_frames = g_v48_ticks;
+
+        tnx_v122_bounds();
+
+        g_v121_push_frame = g_v48_ticks;
+        g_v121_win_stage = 0;
+        g_v121_win_reloads = g_v120_reloads;
+        g_v113_q_before = tnx_v113_queue_count(NULL);
+
+        tnx_v113_enqueue(g_v113_enq_x, g_v113_enq_y);
+
+        g_v113_q_after = tnx_v113_queue_count(NULL);
+
+        tnx_logf("v113 test sent=(%d,%d) from own=(%d,%d) gid=%d enqueues=%llu qBefore=%d qAfter=%d - one "
+                 "message through the real enqueue, and the verdict comes from the two words at "
+                 "+%#llx/+%#llx: only the setter %#llx writes real values there, while the reset path "
+                 "writes -1 into +%#llx, so a match on both words cannot be a reset",
+                 g_v113_enq_x, g_v113_enq_y, g_v113_test_before_x, g_v113_test_before_y,
+                 objects[ownIndex].gid, (unsigned long long)g_v113_enqueues, g_v113_q_before,
+                 g_v113_q_after, (unsigned long long)TNX_V112_INPUT_X_OFF,
+                 (unsigned long long)TNX_V112_INPUT_Y_OFF, (unsigned long long)TNX_V112_SETPRED4_RVA,
+                 (unsigned long long)TNX_V112_INPUT_Y_OFF);
+
+        tnx_v113_window(0);
+
+        return;
+    }
+
+    if (g_v113_test_state == 1) {
+        int plus = (int)(g_v103_tick - g_v113_test_tick);
+
+        if (g_v113_readback < 0 && tnx_v113_fields() == 1) {
+            g_v113_readback = 1;
+            g_v113_readback_tick = plus;
+        }
+
+        if (plus <= TNX_V113_WAIT_TICKS) {
+            tnx_v113_window(plus);
+
+            return;
+        }
+
+        g_v113_test_state = 2;
+
+        if (g_v113_readback < 0) g_v113_readback = 0;
+
+        qnow = tnx_v113_queue_count(NULL);
+
+        tnx_logf("v113 test short before=(%d,%d) after=(%d,%d) qAfter=%d qNow=%d readback=%d atTick=%d "
+                 "- readback=1 means the consumer ran on this object and the setter wrote our pair back "
+                 "into the scene, readback=0 with a grown queue means the enqueue landed but the apply "
+                 "path did not run for this object",
+                 g_v113_test_before_x, g_v113_test_before_y, objects[ownIndex].x, objects[ownIndex].y,
+                 g_v113_q_after, qnow, g_v113_readback, g_v113_readback_tick);
+
+        return;
+    }
+
+    if (g_v103_tick - g_v113_test_tick < TNX_V113_LONG_TICKS) return;
+
+    g_v113_test_state = 4;
+    g_v113_tested = 1;
+
+    x = objects[ownIndex].x;
+    y = objects[ownIndex].y;
+    g_v113_test_after_x = x;
+    g_v113_test_after_y = y;
+    g_v113_moved = (x != g_v113_test_before_x || y != g_v113_test_before_y) ? 1 : 0;
+    g_v113_moved2 = g_v113_moved;
+    g_v113_kept = (g_v113_readback == 1 && tnx_v113_fields() == 1) ? 1 : 0;
+
+    if (tnx_v113_fields() < 0) {
+        verdict = "readback-unreadable";
+    } else if (g_v113_q_before >= 0 && g_v113_q_after >= 0 && g_v113_q_after <= g_v113_q_before) {
+        verdict = "enqueue-failed";
+    } else if (g_v113_readback == 0 && g_v115_gate_seen == 0) {
+        verdict = "reader-gated";
+    } else if (g_v113_readback == 0) {
+        verdict = "enqueue-ok-not-consumed";
+    } else if (g_v113_readback == 1 && !g_v113_kept) {
+        verdict = "client-only";
+    } else if (g_v113_readback == 1 && g_v113_kept) {
+        verdict = "real";
+    }
+
+    tnx_logf("v115 test long before=(%d,%d) after2=(%d,%d) moved=%d kept=%d verdict=%s mode_max=%d "
+             "saw7=%d gateSeen=%d gate1=%d gate2=%d qBefore=%d "
+             "qAfter=%d qNow=%d readback=%d atTick=%d rowCount=%d - verdict=real means the pair survived "
+             "the long check, client-only means it was read back and then reset, enqueue-ok-not-consumed "
+             "means the count grew while the pair never appeared, enqueue-failed means the count never "
+             "grew so addInput or the manager is wrong, readback-unreadable means the scene words could "
+             "not be read at all",
+             g_v113_test_before_x, g_v113_test_before_y, x, y, g_v113_moved, g_v113_kept, verdict,
+             g_v115_mode_max, g_v115_mode_seen7, g_v115_gate_seen,
+             (tnx_v115_mode() == TNX_V115_MODE_TARGET) ? 1 : 0, (tnx_v115_inner() == 1) ? 1 : 0,
+             g_v113_q_before, g_v113_q_after, tnx_v113_queue_count(NULL), g_v113_readback,
+             g_v113_readback_tick, usable);
+}
+
+static void tnx_v113_queue_line(void) {
+    uintptr_t mgr = 0;
+    int count = tnx_v113_queue_count(&mgr);
+    int32_t inX = 0;
+    int32_t inY = 0;
+    int32_t inK = 0;
+
+    if (g_v103_tick % TNX_V113_QUEUE_EVERY) return;
+    if (g_v113_queue_logs >= 240) return;
+
+    g_v113_queue_logs++;
+
+    if (g_v113_queue_logs == 1) {
+        tnx_logf("v113 statics: reader branch %#llx sits in the mode update %#llx which is a per frame "
+                 "update called from exactly one site %#llx as mode->update(dt, elapsed) with x0 = "
+                 "[obj+0x28], so the +0xac branch is not dead code and consumed=0 can only mean the "
+                 "branch gates closed on this object; the object forwarded to %#llx is the loop body at "
+                 "0xac277c stored to the local [sp+0x40] and reloaded into x22 and then x25, so it is the "
+                 "iterated battle entity and not a fixed offset on the scene",
+                 (unsigned long long)TNX_V113_READER_RVA,
+                 (unsigned long long)TNX_V113_READER_ENTRY_RVA,
+                 (unsigned long long)TNX_V113_READER_CALLER_RVA,
+                 (unsigned long long)0x9fe350ULL);
+    }
+
+    if (g_scene_object) {
+        tnx_read_i32((uintptr_t)g_scene_object + TNX_V112_INPUT_X_OFF, &inX);
+        tnx_read_i32((uintptr_t)g_scene_object + TNX_V112_INPUT_Y_OFF, &inY);
+        tnx_read_i32((uintptr_t)g_scene_object + TNX_V112_INPUT_K_OFF, &inK);
+    }
+
+    tnx_logf("v115 queue tick=%llu count=%d mode=%d gate=%d mgr=%p sceneState=%d flags=%llu ac=%d "
+             "in10c=%d in110=%d in114=%d resetSentinel=%d - the count is printed every tick because the "
+             "verdict of this run is whether it rises after the push and falls after the consumer ran, "
+             "and the reader at %#llx and addInput at %#llx have no data slot so no hook can count them; "
+             "in110=-1 marks the reset path, while the apply target of the consumer is a larger object "
+             "because %#x is written on it",
+             (unsigned long long)g_v103_tick, count, tnx_v115_mode(), tnx_v115_gate(), (void *)mgr,
+             g_v103_prev_state, (unsigned long long)g_v113_enqueues, tnx_v112_read_flag(), inX, inY, inK,
+             (inY == -1) ? 1 : 0, (unsigned long long)TNX_V113_READER_RVA,
+             (unsigned long long)TNX_V113_ADDINPUT_RVA, (unsigned)0x528);
+}
+
+static void tnx_v113_hop2(void) {
+    void *outer = NULL;
+    void *inner = NULL;
+    void *list = NULL;
+    void *e0 = NULL;
+    void *vt0 = NULL;
+    uintptr_t vt0Rva = 0;
+    int32_t count = 0;
+
+    if (!g_scene_object) return;
+    if (g_v113_hop2_filled) return;
+
+    if (!tnx_read_ptr((uintptr_t)g_scene_object + TNX_V113_HOP2_OWNER_OFF, &outer) || !outer) return;
+    if (!tnx_read_ptr((uintptr_t)outer + TNX_V113_HOP2_INNER_OFF, &inner) || !inner) return;
+
+    g_v113_hop2 = (uintptr_t)inner;
+
+    if (!tnx_read_ptr((uintptr_t)inner + TNX_MGR_ARRAY_OFF, &list) || !list) {
+        if (g_v103_tick % 10 != 0) return;
+        if (g_v103_tick > TNX_V113_HOP2_WAIT) return;
+        if (g_v113_hop2_logs >= 6) return;
+
+        g_v113_hop2_logs++;
+
+        tnx_logf("v113 hop2 tick=%llu at=%p array=null - [[scene+%#llx]+%#llx] resolves but its list is "
+                 "not filled yet, so the wait runs to %d ticks before hop1 is trusted again",
+                 (unsigned long long)g_v103_tick, inner,
+                 (unsigned long long)TNX_V113_HOP2_OWNER_OFF,
+                 (unsigned long long)TNX_V113_HOP2_INNER_OFF, TNX_V113_HOP2_WAIT);
+
+        return;
+    }
+
+    g_v113_hop2_filled = 1;
+    tnx_read_i32((uintptr_t)inner + TNX_MGR_COUNT_OFF, &count);
+
+    if (tnx_read_ptr((uintptr_t)list, &e0) && e0) {
+        if (tnx_read_ptr((uintptr_t)e0, &vt0) && vt0) vt0Rva = (uintptr_t)vt0 - g_base;
+    }
+
+    tnx_logf("v113 hop2 FILLED tick=%llu container=%p count=%d elem0=%p elem0vt=%#llx - this is the list "
+             "that carried a team split in the earlier run, so the walk should be retargeted here and "
+             "[[scene+%#llx]+%#llx] kept as the hop, with hop1 only a log fallback",
+             (unsigned long long)g_v103_tick, inner, count, e0, (unsigned long long)vt0Rva,
+             (unsigned long long)TNX_V113_HOP2_OWNER_OFF,
+             (unsigned long long)TNX_V113_HOP2_INNER_OFF);
+
+    if (e0 && vt0Rva == TNX_V112_ELEM_VT_RVA) tnx_v112_deref_dump((uintptr_t)e0);
+}
+
 static void tnx_v103_read_mgr(void) {
     void *mgr = NULL;
     void *queue = NULL;
@@ -11409,6 +12735,7 @@ static int tnx_v91_own_scan(void) {
     tnx_v103_arm();
     tnx_v103_read_mgr();
     tnx_v112_flagwatch();
+    tnx_v113_queue_line();
 
     if (!g_v101_setpred) g_v101_setpred = tnx_v101_entry(TNX_V101_MODEPAIRSET_RVA);
 
@@ -11625,6 +12952,8 @@ static void tnx_v90_gate_report(int slotHit) {
             tnx_v103_log(objects, usable, ownFound ? ownIndex : -1);
             tnx_v103_other_containers(objects, usable);
             tnx_v112_pos_watch(objects, usable, ownFound ? ownIndex : -1);
+            tnx_v113_hop2();
+            tnx_v113_test(objects, usable, ownFound ? ownIndex : -1);
         }
     }
 
@@ -11819,6 +13148,9 @@ static void tnx_autododge_v48(void) {
         }
     }
 
+    tnx_v113_frame_window();
+    tnx_v116_frame();
+
     g_v48_ticks++;
 
     if (g_v92_wrote_valid && !g_v92_check_done &&
@@ -11866,18 +13198,38 @@ static void tnx_autododge_v48(void) {
         g_v92_check_done = 1;
     }
 
-    if (g_v89_enter_tick != g_v50_ticks) {
+    if (g_v89_enter_tick != g_v50_ticks && (g_v50_ticks < 5 || (g_v50_ticks % 5) == 0)) {
         g_v89_enter_tick = g_v50_ticks;
         g_v48_entry_logs++;
 
-        tnx_logf("v100 dodge ENTERED tick=%llu frames=%llu mode=%p manager=%p hop=%d source=%p "
-                 "kind=%s setpredFn=%d coordOk=%d usable=%d writes=%llu - one line per second "
-                 "whether or not anything is written, so 'the dodge runs' is printed rather than "
-                 "inferred", (unsigned long long)g_v50_ticks, (unsigned long long)g_v48_ticks,
-                 (void *)g_scene_object, (void *)g_players_object, g_v82_hop_chosen, (void *)source,
-                 sourceKind, g_v47_setpred_state, g_v47_coord_ok, g_v47_coord_usable,
-                 (unsigned long long)g_v47_writes);
+        {
+            int32_t oix = 0;
+            int32_t oiy = 0;
 
+            tnx_v116_interp(&oix, &oiy);
+
+            tnx_logf("v116 dodge ENTERED tick=%llu frames=%llu mode=%p manager=%p hop=%d source=%p "
+                     "kind=%s setpredFn=%d coordOk=%d usable=%d writes=%llu ownInterpX=%d ownInterpY=%d "
+                     "modeVar=%d gate1=%d gate2=%d - ownInterpX/Y is the live own position read from "
+                     "client+%#llx/+%#llx, so a dodge line with coordOk=0 can still carry a moving own "
+                     "position",
+                     (unsigned long long)g_v50_ticks, (unsigned long long)g_v48_ticks,
+                     (void *)g_scene_object, (void *)g_players_object, g_v82_hop_chosen, (void *)source,
+                     sourceKind, g_v47_setpred_state, g_v47_coord_ok, g_v47_coord_usable,
+                     (unsigned long long)g_v47_writes, oix, oiy, tnx_v115_mode(),
+                     (tnx_v115_mode() == TNX_V115_MODE_TARGET) ? 1 : 0, (tnx_v115_inner() == 1) ? 1 : 0,
+                     (unsigned long long)TNX_V115_CLIENT_POS_X_OFF,
+                     (unsigned long long)TNX_V115_CLIENT_POS_Y_OFF);
+        }
+
+        tnx_v116_interp_line();
+        tnx_v116_hist_line();
+        tnx_v119_elements();
+        tnx_v119_pin();
+        tnx_v120_holder_note();
+        tnx_v120_entities();
+        tnx_v121_traj();
+        tnx_v122_entities2();
         tnx_v90_gate_report(tnx_v90_slot_probe());
     }
 

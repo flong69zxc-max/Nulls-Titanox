@@ -310,7 +310,18 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_142"
+#define TNX_BUILD_TAG "titanox_143"
+
+/* v143 - build fixes over v142, plus dead-code removal.
+ *
+ * v142 did not compile: the publish helper was inserted above the declarations of
+ * g_players_count/g_players_cap (use before declaration), and the score log used
+ * tnx_v142_score_logs where g_v142_score_logs was declared. Both are error classes that
+ * tools/tnx_check.py now catches locally, so they cannot reach CI again.
+ * Removed as dead: tnx_v56_refresh_array (zero callers) with its four write-only globals
+ * g_v56_manager/g_v56_array/g_v56_count/g_v56_array_logged, g_v140_proj_seen,
+ * g_v140_proj_slots, and the three projectile-class defines that the v142 class-agnostic
+ * scan left unused. */
 
 /* v142 - the container desync, closed at the source.
  *
@@ -327,8 +338,6 @@ static int g_v123_defer_logs = 0;
  * another. v142 moves the triple under a seqlock and gives one snapshot per render tick. */
 #define TNX_V142_WALK_ABORT_FULL 5
 #define TNX_V142_WALK_ABORT_EVERY 64
-#define TNX_V142_PROJ_CLASS_A 0x00ff56d8ULL
-#define TNX_V142_PROJ_CLASS_B 0x00ff57b0ULL
 
 /* v141 - two roots, both proven by reading this file, and both upstream of everything v140 added.
  *
@@ -360,7 +369,6 @@ static int g_v123_defer_logs = 0;
 #define TNX_V140_MODEPAIR_RVA 0x00ac3a58ULL
 #define TNX_V140_MODEPAIR_FLAG 0
 #define TNX_V140_CTRL_MODE_OFF 0x918ULL
-#define TNX_V140_PROJCLASS_RVA 0x00ff56d8ULL
 #define TNX_V140_PROJ_MAX 8
 #define TNX_V140_DUMPS 3
 #define TNX_V140_DIFF_BYTES 0x100
@@ -887,10 +895,6 @@ static uint64_t g_v50_ticks = 0;
 static uintptr_t g_slot_adopted = 0;
 static int g_ag_adopted = 0;
 
-static int g_v56_array_logged = 0;
-static uintptr_t g_v56_manager = 0;
-static uintptr_t g_v56_array = 0;
-static int g_v56_count = 0;
 static int32_t g_v56_enemy_x[TNX_V56_COUNT_MAX] = { 0 };
 static int32_t g_v56_enemy_y[TNX_V56_COUNT_MAX] = { 0 };
 
@@ -936,6 +940,9 @@ static uintptr_t g_v80_site = 0;
 static int g_v80_state = -1;
 static int g_v80_scan_armed = -1;
 static uintptr_t g_players_array = 0;
+
+static int g_players_count = 0;
+static int g_players_cap = 0;
 
 /* ---------------------------------------------------------------------------
  * v142 - single source of truth for the walked container.
@@ -1047,8 +1054,6 @@ static void tnx_v142_tick_begin(const char *phase) {
                  (unsigned long long)g_v142_tick_stamp);
     }
 }
-static int g_players_count = 0;
-static int g_players_cap = 0;
 static int g_v81_census_logs = 0;
 static int g_v85_field_scans = 0;
 static int g_v86_elem_dumps = 0;
@@ -8416,7 +8421,7 @@ static int tnx_v128_resolve_own(const tnx_v47_obj_t *objects, int usable, int *i
         uintptr_t minOwn = 0;
         int32_t minGid = 0;
 
-        if (tnx_v142_score_logs < 8) {
+        if (g_v142_score_logs < 8) {
             g_v142_score_logs++;
 
             tnx_logf("v142 score enter arr=%p n=%d g_arr=%p g_n=%d tick_arr=%p tick_n=%d - own is "
@@ -9912,8 +9917,6 @@ typedef struct {
 } tnx_v140_proj_t;
 
 static tnx_v140_proj_t g_v140_projs[TNX_V140_PROJ_MAX];
-static int g_v140_proj_slots = 0;
-static uint64_t g_v140_proj_seen = 0;
 static int g_v140_side_hits = 0;
 static int g_v140_side_projs = 0;
 static int g_v140_side_logs = 0;
@@ -10034,7 +10037,6 @@ static int tnx_v140_proj_scan(uintptr_t manager, int32_t count) {
         g_v140_projs[k].hasPrev = 0;
     }
 
-    g_v140_proj_slots = found;
 
     return found;
 }
@@ -11272,66 +11274,6 @@ static uintptr_t tnx_v57_coord_y_off(void) {
     return TNX_OBJ_Y_OFF;
 }
 
-
-
-
-
-
-
-
-
-static int tnx_v56_refresh_array(void) {
-    void *manager = (void *)g_players_object;
-    void *array = NULL;
-    int32_t count = 0;
-
-    if (g_v82_hop_chosen < 0 || !manager) {
-        g_v56_manager = 0;
-        g_v56_array = 0;
-        g_v56_count = 0;
-
-        return 0;
-    }
-
-    if (!tnx_read_ptr((uintptr_t)manager + TNX_MGR_ARRAY_OFF, &array) || !array) {
-        g_v56_manager = 0;
-        g_v56_array = 0;
-        g_v56_count = 0;
-
-        return 0;
-    }
-
-    if (!tnx_read_i32((uintptr_t)manager + TNX_MGR_COUNT_OFF, &count)) {
-        g_v56_manager = 0;
-        g_v56_array = 0;
-        g_v56_count = 0;
-
-        return 0;
-    }
-
-    if (count <= 0 || count > TNX_V56_COUNT_MAX) {
-        g_v56_manager = 0;
-        g_v56_array = 0;
-        g_v56_count = 0;
-
-        return 0;
-    }
-
-    g_v56_manager = (uintptr_t)manager;
-    g_v56_array = (uintptr_t)array;
-    g_v56_count = count;
-
-    if (!g_v56_array_logged) {
-        g_v56_array_logged = 1;
-
-        tnx_logf("v100 array ready scene=%p manager=%p hop=%d array=%p count=%d - the array and the "
-                 "count are re-read from the manager on every tick, so the walk follows the hop "
-                 "the chain chose instead of the one it had when the array first appeared",
-                 (void *)g_scene_object, manager, g_v82_hop_chosen, array, count);
-    }
-
-    return 1;
-}
 
 
 

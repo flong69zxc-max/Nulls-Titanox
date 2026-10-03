@@ -310,7 +310,29 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_139"
+#define TNX_BUILD_TAG "titanox_140"
+
+/* v140 - offsets confirmed by disassembling the game binary itself.
+ * TNX_V140_MODEPAIR_RVA 0xac3a58 is the only setter the engine's own input path calls:
+ *   0x100ac3a58: str w1,[x0,#0x10c] ; str w2,[x0,#0x110] ; strb w3,[x0,#0x114] ; strb 1,[x0,#0xac] ; ret
+ *   callers: 0x79de14 (w3=0) and 0x7a7270 (w3=1), both with x0 = *(*(ctrl+0x918)+0x28) via 0x7b9050
+ *   consumer: 0xac3424  ldrb w8,[x19,#0xac] ; cmp #1 ; ldr w1,[x19,#0x10c] ; ldr w2,[x19,#0x110] ; ldrb w3,[x19,#0x114]
+ * 0xac3f20 (TNX_RVA_SETPREDICTION) is NOT that path: it is a bare leaf writing +0x1d4/+0x1d8 and its
+ * only caller in the whole image is 0xa26520, a message deserializer.
+ * TNX_V140_CTRL_MODE_OFF 0x918 is the ctrl field the engine dereferences to reach the mode. */
+#define TNX_V140_MODEPAIR_RVA 0x00ac3a58ULL
+#define TNX_V140_MODEPAIR_FLAG 0
+#define TNX_V140_CTRL_MODE_OFF 0x918ULL
+#define TNX_V140_PROJCLASS_RVA 0x00ff56d8ULL
+#define TNX_V140_PROJ_MAX 8
+#define TNX_V140_DUMPS 3
+#define TNX_V140_DIFF_BYTES 0x100
+#define TNX_V140_DIFF_LOGS 48
+#define TNX_V140_SIDE_WEIGHT 3.0f
+#define TNX_V140_THREAT_RADIUS 260.0f
+#define TNX_V140_THREAT_TICKS 12.0f
+#define TNX_V140_SIDE_LOGS 24
+#define TNX_V140_WRITE_LOGS 24
 
 #define TNX_RVA_SETPREDICTION 0x00ac3f20ULL
 #define TNX_OBJ_X_OFF 0x30ULL
@@ -3158,10 +3180,11 @@ static int tnx_v105_container_score(uintptr_t container) {
     if (!tnx_read_i32(container + TNX_MGR_COUNT_OFF, &count)) return -1;
     if (count <= 0 || count > TNX_V56_COUNT_MAX) return -1;
 
-    if (tnx_read_i32(container + TNX_V102_OWNIDX_OFF, &own)) {
-        tnx_read_i32(container + TNX_V102_OWNTEAM_OFF, &ownTeam);
-    }
-
+    /* v140: the +0xe0 read is gone. It never was an own index - the container dump shows
+     * +0xe0/+0xe4 as ordinary data words, and the v138 line "v129 score ... own=192 soft=1"
+     * is exactly that pair (0xc0=192, flag=1) read back as if it were an index. own stays
+     * unresolved here and is named later on the walked list by the id window alone, which
+     * is the only source that ever matched. */
     if (own < 0 || own >= count) soft = 1;
 
     for (i = 0; i < count && samples < 4; i++) {
@@ -5854,6 +5877,96 @@ static uintptr_t tnx_v135_list_gid_off(uintptr_t array, int32_t count) {
     return off;
 }
 
+/* ---------------------------------------------------------------------------
+ * v140 projectile tracker.
+ * The non-player branch of tnx_v48_collect already saw every projectile element
+ * (gid >= 2'000'000) but only printed the first sighting of each one, so a position
+ * that moves while the element lives stayed invisible. This keeps the last byte
+ * image of the element that was seen on the previous tick and prints exactly the
+ * bytes that changed, which is what names the position fields without any disasm.
+ * ------------------------------------------------------------------------- */
+static uintptr_t g_v140_proj_addr = 0;
+static uint8_t g_v140_proj_bytes[TNX_V140_DIFF_BYTES];
+static int g_v140_proj_have = 0;
+static int g_v140_proj_dumps = 0;
+static uint64_t g_v140_proj_diff_logs = 0;
+static uint64_t g_v140_proj_firsts = 0;
+
+static void tnx_v140_proj_track(uintptr_t elem, uintptr_t classRva, int32_t gid, int32_t team) {
+    uint8_t now[TNX_V140_DIFF_BYTES];
+    int i;
+
+    if (!elem) return;
+    if (!tnx_read_bytes(elem, now, sizeof(now))) return;
+
+    if (elem != g_v140_proj_addr) {
+        g_v140_proj_firsts++;
+        g_v140_proj_addr = elem;
+        memcpy(g_v140_proj_bytes, now, sizeof(now));
+        g_v140_proj_have = 1;
+
+        if (g_v140_proj_dumps < TNX_V140_DUMPS) {
+            g_v140_proj_dumps++;
+
+            tnx_logf("v140 proj FIRST elem=%p classRva=%#llx gid=%d team=%d firsts=%llu - the element "
+                     "id changed, so this is either a fresh spawn or the same slot reused; the whole "
+                     "first %#x bytes follow one qword per line",
+                     (void *)elem, (unsigned long long)classRva, gid, team,
+                     (unsigned long long)g_v140_proj_firsts, TNX_V140_DIFF_BYTES);
+
+            for (i = 0; i < TNX_V140_DIFF_BYTES; i += 8) {
+                uint64_t q = 0;
+                int32_t lo = 0;
+                int32_t hi = 0;
+                float loF = 0.0f;
+                float hiF = 0.0f;
+
+                memcpy(&q, now + i, 8);
+                memcpy(&lo, now + i, 4);
+                memcpy(&hi, now + i + 4, 4);
+                memcpy(&loF, now + i, 4);
+                memcpy(&hiF, now + i + 4, 4);
+
+                tnx_logf("v140 proj FIRST +%02x = %#018llx lo=%d hi=%d loF=%.3f hiF=%.3f",
+                         i, (unsigned long long)q, lo, hi, (double)loF, (double)hiF);
+            }
+        }
+
+        return;
+    }
+
+    if (!g_v140_proj_have) {
+        memcpy(g_v140_proj_bytes, now, sizeof(now));
+        g_v140_proj_have = 1;
+
+        return;
+    }
+
+    for (i = 0; i < TNX_V140_DIFF_BYTES; i++) {
+        if (g_v140_proj_bytes[i] == now[i]) continue;
+
+        g_v140_proj_diff_logs++;
+
+        if (g_v140_proj_diff_logs <= TNX_V140_DIFF_LOGS) {
+            uint64_t oldQ = 0;
+            uint64_t newQ = 0;
+            int base = i & ~7;
+
+            memcpy(&oldQ, g_v140_proj_bytes + base, 8);
+            memcpy(&newQ, now + base, 8);
+
+            tnx_logf("v140 proj DIFF +%02x old=%02x new=%02x gid=%d q_old=%#018llx q_new=%#018llx - "
+                     "a byte that changes between two ticks while the address stays the same is a "
+                     "field of the moving object; a position pair is the first int32/int32 or "
+                     "float/float that walks",
+                     i, g_v140_proj_bytes[i], now[i], gid, (unsigned long long)oldQ,
+                     (unsigned long long)newQ);
+        }
+    }
+
+    memcpy(g_v140_proj_bytes, now, sizeof(now));
+}
+
 static int tnx_v48_collect(uintptr_t manager, tnx_v47_obj_t *out, int capacity, int *rejected) {
     void *data = NULL;
     int32_t count = 0;
@@ -5952,6 +6065,8 @@ static int tnx_v48_collect(uintptr_t manager, tnx_v47_obj_t *out, int capacity, 
         if (entry.gid >= TNX_V138_PLAYER_GID_MAX) {
             g_v50_reject.rejNonPlayer++;
             bad++;
+
+            tnx_v140_proj_track(entry.object, vtRva, entry.gid, entry.teamOld);
 
             if (g_v138_dump_np < TNX_V138_NP_DUMPS) {
                 int32_t npX = 0;
@@ -7710,6 +7825,24 @@ static int tnx_v129_own_from_slot(uintptr_t *objectOut, int32_t *gidOut) {
         if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)idx * 8ULL, &element) || !element) continue;
 
         gid = tnx_v106_gid((uintptr_t)element, NULL);
+
+        /* v140: the +0xe0 slot is only accepted as an own index when the element it points
+         * at carries an id inside the player window. Without this the v138 run took the
+         * index the container happened to hold (192) and returned whatever element sat
+         * there, which is how a non-player element became own. */
+        if (gid < TNX_V75_GID_FLOOR || gid >= TNX_V138_PLAYER_GID_MAX) {
+            if (g_v129_own_slot_logs < TNX_V129_CHAIN_LOGS) {
+                g_v129_own_slot_logs++;
+
+                tnx_logf("v140 own-slot REJECT hop=%d container=%p ownIdx+%#llx=%d count=%d elem=%p "
+                         "gid=%d window=[%d,%d) - the slot resolves to an element outside the player "
+                         "id window, so it is not own and the chain moves on",
+                         k, (void *)hop[k], (unsigned long long)TNX_V102_OWNIDX_OFF, idx, count,
+                         element, gid, TNX_V75_GID_FLOOR, TNX_V138_PLAYER_GID_MAX);
+            }
+
+            continue;
+        }
 
         if (g_v129_own_slot_logs < TNX_V129_CHAIN_LOGS) {
             g_v129_own_slot_logs++;
@@ -9472,6 +9605,275 @@ static void tnx_v90_gate_report(int slotHit) {
              (unsigned long long)g_v93_test_writes, (unsigned long long)g_v47_writes);
 }
 
+/* ---------------------------------------------------------------------------
+ * v140 threat detection + sidestep + the real actuator.
+ *
+ * Threat model: a projectile is any element whose vtable rva is 0xff56d8 and whose id
+ * is above the player window. Velocity is read as the difference of the int pair at
+ * +0x30/+0x34 between two ticks. The projectile is a threat when the ray
+ * P(t) = pos + v*t with t >= 0 passes within TNX_V140_THREAT_RADIUS of own within
+ * TNX_V140_THREAT_TICKS ticks; t < 0 (flying away) and t beyond the horizon are dropped.
+ * The escape direction is the ray's own perpendicular, signed by the side own already
+ * sits on, so the dodge moves away from the line of fire instead of away from the shooter.
+ * ------------------------------------------------------------------------- */
+typedef struct {
+    uintptr_t elem;
+    uintptr_t classRva;
+    int32_t x;
+    int32_t y;
+    int32_t px;
+    int32_t py;
+    int hasPrev;
+} tnx_v140_proj_t;
+
+static tnx_v140_proj_t g_v140_projs[TNX_V140_PROJ_MAX];
+static int g_v140_proj_slots = 0;
+static uint64_t g_v140_proj_seen = 0;
+static int g_v140_side_hits = 0;
+static int g_v140_side_projs = 0;
+static int g_v140_side_logs = 0;
+static int g_v140_write_logs = 0;
+
+static int tnx_v140_proj_scan(uintptr_t manager, int32_t count) {
+    void *array = NULL;
+    int found = 0;
+    int k;
+    int32_t i;
+
+    if (!manager || count <= 0) return 0;
+    if (count > TNX_V56_COUNT_MAX) count = TNX_V56_COUNT_MAX;
+    if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array) || !array) return 0;
+
+    for (k = 0; k < TNX_V140_PROJ_MAX; k++) {
+        g_v140_projs[k].classRva = (uintptr_t)-1;
+    }
+
+    for (i = 0; i < count && found < TNX_V140_PROJ_MAX; i++) {
+        void *element = NULL;
+        void *vtable = NULL;
+        uintptr_t vtRva = 0;
+        int32_t gid = 0;
+        int32_t px = 0;
+        int32_t py = 0;
+        int slot = -1;
+
+        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * 8ULL, &element) || !element) continue;
+        if (!tnx_read_ptr((uintptr_t)element, &vtable) || !vtable) continue;
+
+        vtRva = (uintptr_t)vtable - g_base;
+
+        if (vtRva != TNX_V140_PROJCLASS_RVA) continue;
+
+        gid = tnx_v106_gid((uintptr_t)element, NULL);
+
+        if (gid < TNX_V138_PLAYER_GID_MAX) continue;
+
+        if (!tnx_read_i32((uintptr_t)element + TNX_OBJ_X_OFF, &px)) continue;
+        if (!tnx_read_i32((uintptr_t)element + TNX_OBJ_Y_OFF, &py)) continue;
+
+        /* two passes: the address is looked up first so a projectile that keeps its slot
+         * keeps its previous tick, and only then a free slot is taken. A single pass would
+         * hand the first free slot to an element that already had one, and the velocity of
+         * that tick would be lost. */
+        for (k = 0; k < TNX_V140_PROJ_MAX; k++) {
+            if (g_v140_projs[k].elem != (uintptr_t)element) continue;
+
+            slot = k;
+
+            break;
+        }
+
+        if (slot < 0) {
+            for (k = 0; k < TNX_V140_PROJ_MAX; k++) {
+                if (g_v140_projs[k].classRva != (uintptr_t)-1) continue;
+
+                slot = k;
+
+                break;
+            }
+        }
+
+        if (slot < 0) continue;
+
+        if (g_v140_projs[slot].elem == (uintptr_t)element) {
+            g_v140_projs[slot].px = g_v140_projs[slot].x;
+            g_v140_projs[slot].py = g_v140_projs[slot].y;
+            g_v140_projs[slot].hasPrev = 1;
+        } else {
+            g_v140_projs[slot].elem = (uintptr_t)element;
+            g_v140_projs[slot].px = px;
+            g_v140_projs[slot].py = py;
+            g_v140_projs[slot].hasPrev = 0;
+        }
+
+        g_v140_projs[slot].classRva = vtRva;
+        g_v140_projs[slot].x = px;
+        g_v140_projs[slot].y = py;
+
+        found++;
+    }
+
+    for (k = 0; k < TNX_V140_PROJ_MAX; k++) {
+        if (g_v140_projs[k].classRva != (uintptr_t)-1) continue;
+
+        g_v140_projs[k].elem = 0;
+        g_v140_projs[k].hasPrev = 0;
+    }
+
+    g_v140_proj_slots = found;
+
+    return found;
+}
+
+static int tnx_v140_sidestep(int32_t ox, int32_t oy, float *sumX, float *sumY, int *hitsOut,
+                             int *seenOut) {
+    float sx = 0.0f;
+    float sy = 0.0f;
+    int hits = 0;
+    int seen = 0;
+    int k;
+
+    if (sumX) *sumX = 0.0f;
+    if (sumY) *sumY = 0.0f;
+    if (hitsOut) *hitsOut = 0;
+    if (seenOut) *seenOut = 0;
+
+    for (k = 0; k < TNX_V140_PROJ_MAX; k++) {
+        const tnx_v140_proj_t *p = &g_v140_projs[k];
+        float dx;
+        float dy;
+        float dd;
+        float vx;
+        float vy;
+        float t;
+        float hx;
+        float hy;
+        float ex;
+        float ey;
+        float dist;
+        float len;
+        float ux;
+        float uy;
+        float side;
+        float w;
+
+        if (!p->elem || !p->hasPrev) continue;
+
+        seen++;
+
+        dx = (float)(p->x - p->px);
+        dy = (float)(p->y - p->py);
+        dd = dx * dx + dy * dy;
+
+        if (dd < 1.0f) continue;
+
+        vx = (float)(ox - p->x);
+        vy = (float)(oy - p->y);
+
+        t = (vx * dx + vy * dy) / dd;
+
+        if (t < 0.0f) continue;
+        if (t > TNX_V140_THREAT_TICKS) continue;
+
+        hx = (float)p->x + dx * t;
+        hy = (float)p->y + dy * t;
+
+        ex = (float)ox - hx;
+        ey = (float)oy - hy;
+        dist = sqrtf(ex * ex + ey * ey);
+
+        if (dist > TNX_V140_THREAT_RADIUS) continue;
+
+        len = sqrtf(dd);
+        ux = -dy / len;
+        uy = dx / len;
+
+        side = ((vx * ux + vy * uy) > 0.0f) ? 1.0f : -1.0f;
+        w = (TNX_V140_THREAT_RADIUS - dist) / TNX_V140_THREAT_RADIUS;
+
+        sx += ux * side * w;
+        sy += uy * side * w;
+        hits++;
+    }
+
+    if (sumX) *sumX = sx;
+    if (sumY) *sumY = sy;
+    if (hitsOut) *hitsOut = hits;
+    if (seenOut) *seenOut = seen;
+
+    return hits;
+}
+
+static uintptr_t tnx_v140_mode_obj(void) {
+    uintptr_t m = tnx_v127_own_obj();
+
+    if (m) return m;
+
+    {
+        void *p = NULL;
+        void *q = NULL;
+
+        if (g_scene_object && tnx_read_ptr(g_scene_object + TNX_V140_CTRL_MODE_OFF, &p) && p &&
+            tnx_read_ptr((uintptr_t)p + TNX_V126_OWN_INNER_OFF, &q) && q) {
+            return (uintptr_t)q;
+        }
+    }
+
+    return 0;
+}
+
+static int tnx_v140_mode_write(int x, int y, int flag) {
+    uintptr_t fn = tnx_v113_entry(TNX_V140_MODEPAIR_RVA);
+    uintptr_t mode = tnx_v140_mode_obj();
+    int32_t beforeGate = -1;
+    int32_t beforeX = 0;
+    int32_t beforeY = 0;
+    int32_t beforeK = 0;
+    int32_t afterGate = -1;
+    int32_t afterX = 0;
+    int32_t afterY = 0;
+    int32_t afterK = 0;
+    int kept = 0;
+
+    if (!fn || !mode) {
+        if (g_v140_write_logs < TNX_V140_WRITE_LOGS) {
+            g_v140_write_logs++;
+
+            tnx_logf("v140 mode-write BLOCKED fn=%p mode=%p scene=%p - the actuator needs the mode "
+                     "object the engine reaches through ctrl+%#llx and neither the inner slot nor the "
+                     "scene chain produced one", (void *)fn, (void *)mode, (void *)g_scene_object,
+                     (unsigned long long)TNX_V140_CTRL_MODE_OFF);
+        }
+
+        return 0;
+    }
+
+    tnx_read_i32(mode + TNX_V127_GATE_FLAG_OFF, &beforeGate);
+    tnx_read_i32(mode + TNX_V127_GATE_X_OFF, &beforeX);
+    tnx_read_i32(mode + TNX_V127_GATE_Y_OFF, &beforeY);
+    tnx_read_i32(mode + TNX_V112_INPUT_K_OFF, &beforeK);
+
+    ((void (*)(void *, int, int, int))fn)((void *)mode, x, y, flag);
+
+    tnx_read_i32(mode + TNX_V127_GATE_FLAG_OFF, &afterGate);
+    kept = (tnx_read_i32(mode + TNX_V127_GATE_X_OFF, &afterX) && afterX == x) ? 1 : 0;
+    tnx_read_i32(mode + TNX_V127_GATE_Y_OFF, &afterY);
+    tnx_read_i32(mode + TNX_V112_INPUT_K_OFF, &afterK);
+
+    if (g_v140_write_logs < TNX_V140_WRITE_LOGS) {
+        g_v140_write_logs++;
+
+        tnx_logf("v140 mode-write mode=%p fn=%#llx want=(%d,%d) flag=%d gateBefore=%d gateAfter=%d "
+                 "before=(%d,%d,%d) after=(%d,%d,%d) kept=%d - kept is the read back of the pair the "
+                 "engine consumes at 0xac3424, so gateAfter=1 with kept=1 is the only combination "
+                 "that means the next logic tick has a destination",
+                 (void *)mode, (unsigned long long)TNX_V140_MODEPAIR_RVA, x, y, flag, beforeGate,
+                 afterGate, beforeX, beforeY, beforeK, afterX, afterY, afterK, kept);
+    }
+
+    return kept;
+}
+
 static void tnx_autododge_v48(void) {
     tnx_v47_obj_t objects[TNX_V47_OBJECT_MAX];
     uintptr_t source = 0;
@@ -9908,12 +10310,47 @@ static void tnx_autododge_v48(void) {
         threats++;
     }
 
-    if (threats == 0) {
+    /* v140: projectiles are a second, independent threat source. The hostile loop above only
+     * sees characters, so a shot already in the air produced threats=0 and the dodge returned
+     * before it could look at it. This runs before that early return. */
+    g_v140_side_hits = 0;
+    g_v140_side_projs = 0;
+
+    {
+        int32_t projCount = 0;
+        float sideX = 0.0f;
+        float sideY = 0.0f;
+
+        if (g_v48_manager) tnx_read_i32(g_v48_manager + TNX_MGR_COUNT_OFF, &projCount);
+
+        tnx_v140_proj_scan(g_v48_manager, projCount);
+        tnx_v140_sidestep(ownX, ownY, &sideX, &sideY, &g_v140_side_hits, &g_v140_side_projs);
+
+        if (g_v140_side_hits > 0) {
+            escapeX += sideX * TNX_V140_SIDE_WEIGHT;
+            escapeY += sideY * TNX_V140_SIDE_WEIGHT;
+
+            if (g_v140_side_logs < TNX_V140_SIDE_LOGS) {
+                g_v140_side_logs++;
+
+                tnx_logf("v140 threat detected own=(%d,%d) projectiles=%d onRay=%d side=(%.2f,%.2f) "
+                         "hostilesInRange=%d - the slope is the per tick delta of the pair at "
+                         "+%#llx/+%#llx, so a projectile only counts once two ticks were seen; the "
+                         "weight %g lets this dominate a repulsion sum whose terms are all below 1",
+                         ownX, ownY, g_v140_side_projs, g_v140_side_hits, (double)sideX,
+                         (double)sideY, threats, (unsigned long long)TNX_OBJ_X_OFF,
+                         (unsigned long long)TNX_OBJ_Y_OFF, (double)TNX_V140_SIDE_WEIGHT);
+            }
+        }
+    }
+
+    if (threats == 0 && g_v140_side_hits == 0) {
         if (g_v47_ticks % 256 == 0) {
             tnx_logf("v100 live ticks=%llu own=(%d,%d) team=%d pred=(%d,%d) hostilesAlive=%d "
-                     "enemiesActive=%d enemiesInRange=0 writes=%llu threatsTotal=%llu",
+                     "enemiesActive=%d enemiesInRange=0 projSeen=%d projOnRay=0 writes=%llu "
+                     "threatsTotal=%llu",
                      (unsigned long long)g_v47_ticks, ownX, ownY, ownTeam, predictX, predictY,
-                     threatsAlive, threats, (unsigned long long)g_v47_writes,
+                     threatsAlive, threats, g_v140_side_projs, (unsigned long long)g_v47_writes,
                      (unsigned long long)g_v47_threat_ticks);
         }
         return;
@@ -9967,13 +10404,21 @@ static void tnx_autododge_v48(void) {
             }
 
             if (g_v47_writes == 0) {
-                tnx_logf("v100 setprediction about to write: this=%p vt=%#llx chain=%p manager=%p "
-                         "target=(%d,%d)", (void *)g_scene_object, (unsigned long long)thisVt,
-                         (void *)thisChain, (void *)g_v48_manager, targetX, targetY);
+                tnx_logf("v140 about to write: scene=%p vt=%#llx chain=%p manager=%p target=(%d,%d) "
+                         "mode=%p actRva=%#llx leafRva=%#llx - the leaf %#llx is only a fallback, its "
+                         "only caller in the image is the deserializer at 0xa26520, so a write that "
+                         "lands there is stored and never consumed",
+                         (void *)g_scene_object, (unsigned long long)thisVt, (void *)thisChain,
+                         (void *)g_v48_manager, targetX, targetY, (void *)tnx_v140_mode_obj(),
+                         (unsigned long long)TNX_V140_MODEPAIR_RVA,
+                         (unsigned long long)TNX_RVA_SETPREDICTION,
+                         (unsigned long long)TNX_RVA_SETPREDICTION);
             }
         }
 
-        ((tnx_v47_setpred_t)g_v47_setpred)((void *)g_scene_object, targetX, targetY);
+        if (!tnx_v140_mode_write(targetX, targetY, TNX_V140_MODEPAIR_FLAG)) {
+            ((tnx_v47_setpred_t)g_v47_setpred)((void *)g_scene_object, targetX, targetY);
+        }
 
         g_v47_writes++;
 

@@ -26,7 +26,6 @@
 #define LOG_MAX_BYTES (512 * 1024)
 #define OBJC_HOOK_MAX 32
 #define WANTED_MAX 4
-#define SCAN_MAX 256
 
 #define TNX_RVA_GETTEXTFIELDBYNAME_A 0xc1d7b0ULL
 #define TNX_RVA_GETTEXTFIELDBYNAME_B 0xc1d550ULL
@@ -35,13 +34,8 @@
 #define TNX_RVA_SETXY_A 0xc16b54ULL
 #define TNX_RVA_SETXY_B 0xc16b4cULL
 
-#define TNX_LABEL "Titanox v1.0 [Zero-Latency]"
-#define TNX_CLIP_FILE "sc/ui.sc"
-#define TNX_CLIP_NAME "textbox_1"
-#define TNX_CLIP_TEXT "txt"
 
 #define DODGE_RANGE_SQ (1800.0f * 1800.0f)
-#define DODGE_THREAT 320.0f
 #define DODGE_STEP 600.0f
 
 typedef void (*fn_void_2_t)(void *, void *);
@@ -128,11 +122,7 @@ static size_t g_starts_count = 0;
 static FILE *g_log = NULL;
 static long g_log_written = 0;
 static BOOL g_setup_done = NO;
-static BOOL g_wm_failed = NO;
-static BOOL g_wm_ready = NO;
-static BOOL g_aim_rejected = NO;
 
-static __thread BOOL g_inside_hook = NO;
 
 #define TNX_MODE_MANAGER_OFF 0x28ULL
 #define TNX_MGR_ARRAY_OFF 0x0ULL
@@ -142,8 +132,6 @@ static __thread BOOL g_inside_hook = NO;
 #define TNX_MGR_CAP_MAX 4096
 
 #define TNX_MODE_INPUTMGR_OFF 0x58ULL
-#define TNX_INPUT_X_OFF 0xcULL
-#define TNX_INPUT_Y_OFF 0x10ULL
 
 #define TNX_MANAGER_MIN_OBJECTS 3
 
@@ -170,11 +158,9 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_OWNER_VOTE_VT_MAX 4
 
 #define TNX_OWNER_VOTE_TEAMS_MIN 2
-#define TNX_OBJ_OWNERIDX_MAX 0xff
 
 #define TNX_OWNER_VOTE_CONFIRM 1
 
-#define TNX_OWNER_VOTE_DETAIL_MAX 12
 
 #define TNX_OBJ_HIT_DUMP_MAX 64
 #define TNX_OBJ_HIT_PRINT_MAX 24
@@ -183,7 +169,6 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_VTCENSUS_PRINT 16
 #define TNX_VTCENSUS_SLOTS 12
 
-#define TNX_V50_WATCH_RVA 0x1009290ULL
 #define TNX_VTCENSUS_INST 4
 
 #define TNX_HEAP_SCAN_BUDGET_MAX (768ull * 1024ull * 1024ull)
@@ -191,23 +176,9 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_OBJ_GLOBALID_OFF 0x8ULL
 #define TNX_V106_GID_FALLBACK_OFF 0x50ULL
 #define TNX_V106_COORD_SOFT 0
-#define TNX_V107_INNER_OFF 0x70ULL
-#define TNX_V108_OWNER_MAX 8
-#define TNX_V109_MAX 16
 #define TNX_V110_WIRE_OWNER 1
-#define TNX_V110_WIRE_MIN_COUNT 6
 #define TNX_V110_HOPCHOSEN_DIRECT 2
-#define TNX_V109_PROXY_VT 0x1009290ULL
-#define TNX_V109_SELFREF_VT 0xf97a28ULL
-#define TNX_V109_COMBAT_VT_A 0xff57b0ULL
-#define TNX_V109_COMBAT_VT_B 0xff5440ULL
-#define TNX_V109_COMBAT_VT_C 0xff5100ULL
-#define TNX_V108_OWNER_LOGS 16
-#define TNX_V107_SCAN_FROM 0x00
-#define TNX_V107_SCAN_TO 0x124
-#define TNX_V107_SCAN_MAX 6
 
-#define TNX_V112_FLAG_OFF 0xacULL
 #define TNX_V112_INPUT_X_OFF 0x10cULL
 #define TNX_V112_INPUT_Y_OFF 0x110ULL
 #define TNX_V112_INPUT_K_OFF 0x114ULL
@@ -220,15 +191,8 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_V112_GETX_SLOT 0x88ULL
 #define TNX_V112_GETY_SLOT 0x90ULL
 #define TNX_V112_DEREF_QWORDS 64
-#define TNX_V112_FLAG_MAX_TICKS 6
-#define TNX_V112_POS_EVERY 30
-#define TNX_V112_INDEX_OFF 0x48ULL
-#define TNX_V112_TEAM_OFF2 0x4cULL
-#define TNX_V112_DEAD_OFF 0xd0ULL
-#define TNX_V112_GID_OFF 0x50ULL
 #define TNX_V112_ELEM_VT_RVA 0xf9e248ULL
 #define TNX_V112_SETPRED4_RVA 0xac3a58ULL
-#define TNX_V112_READER_RVA 0xac3424ULL
 
 #define TNX_V113_READER_RVA 0x00ac3424ULL
 #define TNX_V113_ALLOC_RVA 0x00d8da2cULL
@@ -242,60 +206,17 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_V113_TYPE_OFF 0x08ULL
 #define TNX_V113_X_OFF 0x0cULL
 #define TNX_V113_Y_OFF 0x10ULL
-#define TNX_V113_SEQ_OFF 0x00ULL
-#define TNX_V113_TYPE_MOVE 2
-#define TNX_V113_TEST_STEP 300
-#define TNX_V113_WAIT_TICKS 3
 #define TNX_V113_LONG_TICKS 10
 #define TNX_V113_HOP2_OWNER_OFF 0x28ULL
 #define TNX_V113_HOP2_INNER_OFF 0x28ULL
 #define TNX_V113_HOP2_WAIT 60
-#define TNX_V113_QUEUE_EVERY 5
-#define TNX_V113_ALERT_WITHHELD 0
-#define TNX_V113_DEAD_ONCE 1
-#define TNX_V113_FRAME_WINDOW 12
-#define TNX_V113_READER_ENTRY_RVA 0x00ac1ee8ULL
-#define TNX_V113_READER_CALLER_RVA 0x008cc004ULL
-#define TNX_V113_X_OFF_SCENE 0x10cULL
-#define TNX_V113_Y_OFF_SCENE 0x110ULL
 
 #define TNX_V115_MODE_OFF 0x124ULL
 #define TNX_V115_MODE_TARGET 7
 #define TNX_V115_GATE_PTR_OFF 0x30ULL
 #define TNX_V117_GATE3_PTR_OFF 0x38ULL
-#define TNX_V119_ELIG_OFF 0x1fdULL
-#define TNX_V119_PROP_214_OFF 0x214ULL
-#define TNX_V119_PROP_220_OFF 0x220ULL
-#define TNX_V119_PROP_224_OFF 0x224ULL
-#define TNX_V119_DENOM_MIN 4
-#define TNX_V119_TEST_ENABLE 0
-#define TNX_V120_FROM_OFF 0x138ULL
-#define TNX_V120_TO_OFF 0x13cULL
-#define TNX_V120_ENTITY_GETTER_RVA 0x1c1c0ULL
-#define TNX_V120_HOLDER_CTOR_RVA 0xafcc84ULL
-#define TNX_V120_HOLDER_SIZE 0x20
-#define TNX_V120_HOLDER_VT_RVA 0x1003628ULL
-#define TNX_V121_TRAJ_ARR_OFF 0x70ULL
-#define TNX_V121_TRAJ_COUNT_OFF 0x7cULL
-#define TNX_V121_TRAJ_TIME_OFF 0xb8ULL
-#define TNX_V121_TRAJ_TIME_MUL_OFF 0xbcULL
-#define TNX_V121_ENTRY_SEQ_OFF 0x98ULL
-#define TNX_V121_ENTRY_BLOCK_OFF 0x90ULL
-#define TNX_V121_NOOP_PUSH 1
-#define TNX_V121_WIN1_FRAMES 30
-#define TNX_V121_WIN2_FRAMES 120
-#define TNX_V122_BOUND_X_OFF 0xccULL
-#define TNX_V122_BOUND_Y_OFF 0xd0ULL
-#define TNX_V122_POS_X_OFF 0x80ULL
-#define TNX_V122_POS_Y_OFF 0x84ULL
-#define TNX_V122_RESOLVE_SELF_RVA 0x991440ULL
-#define TNX_V122_OWN_GETTER_RVA 0x7b9050ULL
-#define TNX_V122_PRE_FRAMES 300
 #define TNX_V123_MAX_SLOTS 32
 #define TNX_V123_HOP2_DEFER 0
-#define TNX_V123_WRITE_WAIT 5
-#define TNX_V123_STEP 10
-#define TNX_V123_OWN_IDX_OFF 0xe0ULL
 #define TNX_V125_HEAP_LO 0x100000000ULL
 #define TNX_V125_HEAP_HI 0x300000000ULL
 
@@ -303,27 +224,13 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_V126_TYPE_MOVE 0xa
 #define TNX_V126_OWN_OFF 0x918ULL
 #define TNX_V126_OWN_INNER_OFF 0x28ULL
-#define TNX_V126_BOX_PTR_OFF 0xf8ULL
-#define TNX_V126_BOX_MIN_OFF 0xccULL
 #define TNX_V126_MGR_SEQ_OFF 0x14ULL
-#define TNX_V126_PUSH_X 1500
-#define TNX_V126_PUSH_Y 1500
-#define TNX_V126_WTEST_H1 0
-#define TNX_V126_CHAIN_EVERY 20
-#define TNX_V126_CHAIN_LOGS 10
-#define TNX_V126_WATCH_TICKS 600
-#define TNX_V126_WATCH_EVERY 30
-#define TNX_V126_WATCH_LOGS 20
 
 #define TNX_V127_GIDLESS 1
-#define TNX_V127_POS_BONUS 4
-#define TNX_V127_ACT_QUEUE 1
 #define TNX_V127_ACT_SETTER 0
 #define TNX_V127_ACT_ELEM 0
-#define TNX_V127_DX_QUEUE 300
 #define TNX_V127_DX_SETTER 600
 #define TNX_V127_DX_ELEM 900
-#define TNX_V127_DY_QUEUE 0
 #define TNX_V127_DY_SETTER 120
 #define TNX_V127_DY_ELEM 240
 #define TNX_V127_READBACK_TICKS 6
@@ -334,17 +241,12 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_V127_GATE_FLAG_OFF 0xacULL
 #define TNX_V127_GATE_X_OFF 0x10cULL
 #define TNX_V127_GATE_Y_OFF 0x110ULL
-#define TNX_V127_GATE_B_OFF 0x114ULL
 
 #define TNX_V128_POS_BONUS 8
 #define TNX_V128_DIST_BONUS 6
 #define TNX_V128_SOFT_BASE 2
 #define TNX_V128_SOFT_MIN_POS 2
 #define TNX_V128_SOFT_MIN_DIST 2
-#define TNX_V128_DX_QUEUE 300
-#define TNX_V128_DY_QUEUE 90
-#define TNX_V128_DX_ACT 600
-#define TNX_V128_DY_ACT 120
 #define TNX_V128_RAW_X 900
 #define TNX_V128_RAW_Y -300
 #define TNX_V128_CTRL_RAW_X_OFF 0xfa4ULL
@@ -381,8 +283,6 @@ static int g_v123_defer_logs = 0;
 #define TNX_V115_TEST_ENABLE 1
 
 #define TNX_V116_HIST_MODES 16
-#define TNX_V116_INTERP_TICKS 25
-#define TNX_V116_HIST_TICKS 25
 #define TNX_V116_HIST_LOGS 60
 
 #define TNX_OBJ_TEAM_OFF 0x40ULL
@@ -397,8 +297,6 @@ static int g_v123_defer_logs = 0;
 
 #define TNX_MODE_PREDICTX_OFF 0x1d4ULL
 #define TNX_MODE_PREDICTY_OFF 0x1d8ULL
-#define TNX_MODE_STARS0_OFF 0x1e8ULL
-#define TNX_MODE_STARS1_OFF 0x1ecULL
 #define TNX_MODE_SLOT_A 0x218ULL
 #define TNX_MODE_SLOT_B 0x220ULL
 #define TNX_MODE_SLOT_C 0x228ULL
@@ -414,15 +312,9 @@ static int g_v123_defer_logs = 0;
 #define TNX_RVA_SETPREDICTION 0x00ac3f20ULL
 #define TNX_OBJ_X_OFF 0x30ULL
 #define TNX_OBJ_Y_OFF 0x34ULL
-#define TNX_OBJ_TEAMENGINE_OFF 0x4cULL
 #define TNX_OBJ_ACTIVEFLAG_OFF 0x1e8ULL
-#define TNX_MODE_TILEMAP_OFF 0xf8ULL
-#define TNX_TILEMAP_WIDTH_OFF 0xc4ULL
-#define TNX_TILEMAP_HEIGHT_OFF 0xc8ULL
 
 #define TNX_V47_COORD_ABS_MAX 1000000
-#define TNX_V47_MAP_MIN 4
-#define TNX_V47_MAP_MAX 512
 #define TNX_V47_OBJECT_MAX 64
 #define TNX_V47_DODGE_MIN_MS 100
 #define TNX_V47_LOG_FIRST 12
@@ -454,7 +346,6 @@ static int g_v123_defer_logs = 0;
 #define TNX_V88_ELEM_QWORDS 96
 #define TNX_V88_DEF_QWORDS 32
 #define TNX_V88_ELEM_DUMPS 1
-#define TNX_V88_BACK_MIN 2
 #define TNX_V89_WALK_EVERY 5
 #define TNX_V90_SLOTS 3
 #define TNX_V91_TEAM_OFF 0x4cULL
@@ -466,15 +357,9 @@ static void tnx_v103_state_note(int state);
 static void tnx_v112_deref_dump(uintptr_t element);
 
 static uintptr_t g_v103_sp4 = 0;
-static uintptr_t g_v103_sp2 = 0;
-static uintptr_t g_v103_addinput = 0;
 static uintptr_t g_v103_mgr = 0;
-static int g_v103_armed = 0;
 static int g_v103_mgr_logs = 0;
 static int g_v103_test_state = 0;
-static uint64_t g_v103_test_tick = 0;
-static int g_v103_test_before_x = 0;
-static int g_v103_test_before_y = 0;
 static int g_v103_test_after_x = 0;
 static int g_v103_test_after_y = 0;
 static int g_v103_moved = 0;
@@ -483,32 +368,12 @@ static int g_v103_kept = 0;
 static int g_v103_tested = 0;
 static int g_v103_ok = 0;
 static uint64_t g_v103_writes = 0;
-static int g_v103_last_x = 0;
-static int g_v103_last_y = 0;
 static uint64_t g_v103_tick = 0;
 static int g_v103_attempt = 0;
 static int g_v103_prev_state = -1;
 static int g_v103_other_logs = 0;
 static int g_v103_other_detail = 0;
 
-#define TNX_V103_SETPRED4_RVA 0xac3a58ULL
-#define TNX_V103_SETPRED2_RVA 0xac3f20ULL
-#define TNX_V103_ADDINPUT_RVA 0x74675cULL
-#define TNX_V103_GETBATTLE_RVA 0x8c5130ULL
-#define TNX_V103_INPUTMGR_OFF 0x58ULL
-#define TNX_V103_MGR_QUEUE_OFF 0x20ULL
-#define TNX_V103_KEY_TABLE_VM 0x100e1d9a8ULL
-#define TNX_V103_KEY_TABLE_N 21
-#define TNX_V103_TEST_STEP 300
-#define TNX_V103_TEST_WAIT 3
-#define TNX_V103_TEST_WAIT_LONG 10
-#define TNX_V103_LOG_EVERY 10
-#define TNX_V103_OTHER_ELEM_OFF 0x18ULL
-#define TNX_V103_OTHER_DETAIL 2
-#define TNX_V103_MAX_OTHERS 16
-#define TNX_V103_SEND_TEST 0
-#define TNX_V103_USE_PRED2 0
-#define TNX_V103_ACTUATOR_FLAG 1
 #define TNX_V103_DODGE_USE_PRED4 1
 
 static uintptr_t g_v102_own_ptr = 0;
@@ -516,49 +381,26 @@ static int g_v102_own_index = -1;
 static int g_v102_own_team = -1;
 static int g_v102_own_base = -1;
 static int g_v102_own_logs = 0;
-static int g_v102_audited = 0;
 static int g_v102_inject_logs = 0;
 static const char *g_v102_own_from = "none";
-static uint64_t g_v102_tick = 0;
-static uint64_t g_v102_write_last = 0;
-static int g_v102_write_phase = 0;
-static int g_v102_write_count = 0;
-static int g_v102_write_base_ok = 0;
-static int g_v102_write_base_x = 0;
-static int g_v102_write_base_y = 0;
-static int g_v102_trace_logs = 0;
-static int g_v102_trace_n = 0;
 static uintptr_t g_v102_trace_obj[TNX_V47_OBJECT_MAX];
 static int g_v102_trace_x[TNX_V47_OBJECT_MAX];
 static int g_v102_trace_y[TNX_V47_OBJECT_MAX];
 
-#define TNX_V102_WRITE_TEST 0
-#define TNX_V102_WRITE_STEP 48
-#define TNX_V102_WRITE_EVERY 20
-#define TNX_V102_WRITE_TICKS 6
-#define TNX_V102_TRACE_MAX 32
 #define TNX_V102_ELEM_ID_OFF 0x48ULL
 #define TNX_V102_ELEM_TEAM_OFF 0x4cULL
 #define TNX_V102_ARRAY_OFF 0x0ULL
 #define TNX_V102_COUNT_OFF 0xcULL
 #define TNX_V102_OWNIDX_OFF 0xe0ULL
 #define TNX_V102_OWNTEAM_OFF 0xe4ULL
-#define TNX_V102_GETTEAMSTARS_RVA 0xac3cfcULL
-#define TNX_V102_SETPRED_RVA 0xac3f20ULL
-#define TNX_V102_MODEPAIRSET_RVA 0xac3a58ULL
-#define TNX_V102_TILELOOKUP_RVA 0xac3f48ULL
-#define TNX_V102_SUBGETTER_RVA 0xac3f2cULL
 
 static uintptr_t g_v101_own_ptr = 0;
 static int g_v101_own_index = -1;
 static int g_v101_own_team = 0;
 static int g_v101_own_idhit = 0;
 static uintptr_t g_v101_setpred = 0;
-static int g_v101_audited = 0;
 static int g_v101_own_logs = 0;
-static int g_v101_head_logs = 0;
 static int g_v101_wide_runs = 0;
-static int g_v101_wide_hits = 0;
 static int g_v101_miss_logs = 0;
 static const char *g_v101_own_from = "none";
 
@@ -566,20 +408,14 @@ static const char *g_v101_own_from = "none";
 #define TNX_V101_OWNTEAM_OFF 0xe4ULL
 #define TNX_V101_ELEM_ID_OFF 0x48ULL
 #define TNX_V101_ELEM_TEAM_OFF 0x4cULL
-#define TNX_V101_GETTEAMSTARS_RVA 0xac3cfcULL
 #define TNX_V101_MODEPAIRSET_RVA 0xac3a58ULL
-#define TNX_V101_WIDE_QWORDS 4096
-#define TNX_V101_WIDE_ATTEMPTS 2
 #define TNX_V101_OWN_LOGS 12
-#define TNX_V101_DELTA_TICKS 60
 #define TNX_V101_ACTUATOR 0
-#define TNX_V101_ACTUATOR_STEP 40
 #define TNX_V99_INPUTMGR_WRITE 0
 #define TNX_V99_INPUTMGR_COS_OFF 0x8ULL
 #define TNX_V99_INPUTMGR_SIN_OFF 0xcULL
 #define TNX_V99_INPUTMGR_WRITE_X 0.7071
 #define TNX_V99_INPUTMGR_WRITE_Y 0.7071
-#define TNX_V99_ADOPT_REJECT_LOGS 8
 #define TNX_V92_TEAM_DUMPS 4
 #define TNX_V92_VERIFY_FRAMES 3
 #define TNX_V93_TEST_WRITE 0
@@ -587,13 +423,10 @@ static const char *g_v101_own_from = "none";
 #define TNX_V93_TEST_X 2000
 #define TNX_V93_TEST_Y 2000
 #define TNX_V93_POS_DUMPS 8
-#define TNX_V93_CLASS_QWORDS 4
-#define TNX_V93_CLASS_DUMPS 2
 #define TNX_V96_BASES 24
 #define TNX_V99_SPAN 0x1000
 #define TNX_V99_FLOATS (TNX_V99_SPAN / 4)
 #define TNX_V96_LINES 12
-#define TNX_V96_DETAIL_MAX 16
 #define TNX_V97_MOVE_MAX 96
 #define TNX_V97_CHANGED_MAX 128
 #define TNX_V97_GROUP_MIN 2
@@ -605,20 +438,16 @@ static const char *g_v101_own_from = "none";
 #define TNX_V98_FORCE_SECS 30
 #define TNX_V98_CLIP_SELFTEST 1
 #define TNX_V98_GRID 8
-#define TNX_V85_FIELD_QWORDS 8
 #define TNX_V85_FIELD_SCANS 1
 #define TNX_V56_WALK_STEP 40
 #define TNX_V56_MODE_WAIT_TICKS 30
-#define TNX_V56_ROUTE_WAIT_TICKS 60
 
 #define TNX_V57_GETOWN_RVA 0x00b90a28ULL
 
 #define TNX_V57_MODE_REVERIFY_TICKS 2
 #define TNX_V57_STALE_MAX 3
 #define TNX_V57_REJECT_MAX 8
-#define TNX_V57_ASCII_WINDOW 32
 
-#define TNX_V59_CHAIN_MIN_TICKS 2
 #define TNX_V59_SLOT_WIDE 100
 #define TNX_V59_DROP_TICKS 60
 #define TNX_V59_TAG_MAX 24
@@ -627,21 +456,13 @@ static const char *g_v101_own_from = "none";
 
 #define TNX_V61_CHAIN_STABLE_TICKS 3
 
-#define TNX_V63_HB_TICKS 5
 #define TNX_V63_BUCKET_TICKS 10
 #define TNX_V63_D6_WAIT_SECS 15
 #define TNX_V63_QUIET_SECS 10
-#define TNX_V76_SCAN_FLOOR_TICKS 12
-#define TNX_V76_SCAN_FALLBACK_TICKS 20
 #define TNX_V63_KNOWN_VT_COUNT 4
 
 #define TNX_V65_MODESIG_TICKS 3
-#define TNX_V77_LIVE_OBJ_MIN 3
-#define TNX_V77_LIVE_TEAM_MIN 2
 #define TNX_V77_TEAM_SLOTS 16
-#define TNX_V77_BAR_TICKS 30
-#define TNX_V78_IDLE_TICKS 15
-#define TNX_V78_IDLE_RETRY_TICKS 300
 #define TNX_V79_OBJCLASS_RVA 0xff5720ULL
 #define TNX_V79_PROBE_TRIES 3
 #define TNX_V79_OBJ_SLOTS 3
@@ -661,16 +482,10 @@ static const char *g_v101_own_from = "none";
 #define TNX_V81_NEXT_MEMBER_OFF 0x68ULL
 #define TNX_V81_DUMP_QWORDS 32
 #define TNX_V81_VT_MAX 24
-#define TNX_V81_CENSUS_MAX 6
 #define TNX_V81_PLAYERS_DUMPS 4
-#define TNX_V81_KIND_MAX 0x1000
 
 #define TNX_V82_CLIENT_HOP_OFF 0x28ULL
 #define TNX_V82_ELEM_DEF_OFF 0x10ULL
-#define TNX_V82_ELEMCLASS_RVA 0xf9e248ULL
-#define TNX_V82_ELEMCLASS_SUB_RVA 0xf9e268ULL
-#define TNX_V82_ELEMCLASS_SLOTS 6
-#define TNX_V82_CONTAINER_TEAMS 16
 #define TNX_V82_KIND_MAX 0x1000
 #define TNX_V82_HOPS 2
 #define TNX_V82_HOP_DUMPS 4
@@ -686,26 +501,16 @@ static const char *g_v101_own_from = "none";
 #define TNX_V75_TEAM_MAX 15
 #define TNX_V75_GID_MAX 1000000
 #define TNX_V75_COORD_MAX 100000
-#define TNX_V75_GID_DISTINCT_MIN 2
 
 #define TNX_V72_OWNERCHAIN_PROBE 12
-#define TNX_V72_DEAD_PROBE_COUNT 5
 #define TNX_V73_STATE_DROPPED (-2)
 #define TNX_V73_INST_SLOTS 8
 
-#define TNX_V47_OWN_MAX_SQ 100000000LL
 
-#define TNX_CAVE_MIN_RUN 96
-#define TNX_CAVE_PAGE_LIMIT 64
 
-#define TNX_TEXT_RVA_LO 0x4000ULL
-#define TNX_TEXT_RVA_SIZE 0xf70000U
 
-#define TNX_RVA_ADDGAMEOBJECT 0x00a278a8ULL
 #define TNX_AG_OBJECT_MAX 16
 
-#define TNX_RVA_CAVE_WINDOW 0x00dc0000ULL
-#define TNX_CAVE_WINDOW_SIZE 0x10000U
 
 #define TNX_VOTESCAN_GLOBAL_EVERY 10
 
@@ -714,7 +519,6 @@ static const char *g_v101_own_from = "none";
 
 #define TNX_SNAPSHOT_OBJECTS 12
 #define TNX_SNAPSHOT_BYTES 0x140
-#define TNX_SNAPSHOT_DELAY 1.2
 #define TNX_VOTESCAN_INTERVAL 1.0
 #define TNX_VOTESCAN_ATTEMPTS 600
 
@@ -722,57 +526,26 @@ static const char *g_v101_own_from = "none";
 
 #define TNX_VOTESCAN_HEAP_EVERY 5
 
-#define TNX_MODE_MIN_OBJECTS 3
 #define TNX_VOTESCAN_HEARTBEAT 30
-#define TNX_HEAP_CHUNK (8u * 1024u * 1024u)
 
 #define TNX_VTABLE_SEGMENT "__DATA_CONST"
 #define TNX_VTABLE_SEGMENT_ALT "__DATA"
 
 static const uintptr_t g_mode_vtables_verified[] = { 0x1002548, 0xff5720, 0 };
 
-#define TNX_MODE_VTABLE_PRIMARY 0x1002548ULL
 
-static int tnx_verified_vtable(uintptr_t vtable) {
-    if (!g_base || vtable <= g_base) return -1;
-
-    uintptr_t rva = vtable - g_base;
-
-    for (int i = 0; g_mode_vtables_verified[i]; i++) {
-        if (rva == g_mode_vtables_verified[i]) return i;
-    }
-
-    return -1;
-}
 
 static uintptr_t g_scene_object = 0;
 static BOOL g_mode_strong = NO;
-static int g_mode_best_objects = 0;
-static int g_mode_last_types = 0;
-static int g_mode_verified_hits = 0;
 static uintptr_t g_players_object = 0;
 static int g_v82_hop_chosen = -1;
 static int g_v82_hop_sticky = 0;
 static int g_manager_count = 0;
-static int g_manager_probes = 0;
-static int g_manager_probes_total = 0;
-static int g_manager_skipped = 0;
 static int g_manager_last_live = 0;
 static int g_manager_last_nonempty = 0;
 static int g_manager_last_capacity = 0;
-static int g_manager_saw_cap = 0;
-static int g_manager_loose_count = 0;
-static int g_manager_window_rejects = 0;
 
-static int g_chain_checks = 0;
-static int g_chain_ready = 0;
-static int g_chain_probes = 0;
-static int g_chain_skipped = 0;
-static int g_chain_best_live = 0;
-static int g_chain_best_own = 0;
-static int g_chain_best_gid = 0;
 static int g_seen_stable = 0;
-static uintptr_t g_chain_vtable = 0;
 static unsigned long long g_vtprobe_hits[TNX_VTPROBE_COUNT];
 
 typedef struct {
@@ -788,22 +561,10 @@ typedef struct {
 } tnx_owner_vote_t;
 
 static tnx_owner_vote_t g_owner_votes[TNX_OWNER_VOTE_MAX];
-static int g_owner_vote_count = 0;
-static unsigned long long g_objvote_hits = 0;
-static unsigned long long g_objvote_skipped = 0;
-static int g_objvote_dead_seen = 0;
 static uintptr_t g_objvote_best_owner = 0;
-static int g_objvote_best_gids = 0;
-static uintptr_t g_objvote_prev_owner = 0;
-static int g_objvote_confirm = 0;
 static BOOL g_objvote_owner_ok = NO;
 
-static unsigned long long g_objvote_owner_img = 0;
-static unsigned long long g_objvote_obj_img = 0;
 static int g_objvote_best_teamcount = 0;
-static int g_objvote_best_gids_full = 0;
-static int g_objvote_single_team_logs = 0;
-static int g_heap_img_skip = 0;
 
 typedef struct {
     uintptr_t at;
@@ -818,14 +579,9 @@ typedef struct {
 
 static tnx_objhit_t g_objhits[TNX_OBJ_HIT_DUMP_MAX];
 static int g_objhit_count = 0;
-static int g_objhit_full = 0;
-static unsigned long long g_objvote_owner_reg = 0;
 
-static unsigned long long g_objvote_owner_above_win = 0;
 static int g_objvote_max_votes = 0;
-static uintptr_t g_objvote_top_owner = 0;
 
-static unsigned long long g_objvote_shaped = 0;
 
 typedef struct {
     uintptr_t rva;
@@ -839,21 +595,10 @@ typedef struct {
 } tnx_vtcensus_t;
 
 static tnx_vtcensus_t g_vtcensus[TNX_VTCENSUS_MAX];
-static int g_vtcensus_used = 0;
-static unsigned long long g_vtcensus_total = 0;
-static unsigned long long g_vtcensus_spill = 0;
-static uintptr_t g_vtcensus_dc_lo = 0;
-static uintptr_t g_vtcensus_dc_hi = 0;
-static uintptr_t g_vtcensus_d_lo = 0;
-static uintptr_t g_vtcensus_d_hi = 0;
 
 static unsigned long long g_vtprobe_pass[TNX_VTPROBE_COUNT];
 static uintptr_t g_vtprobe_first[TNX_VTPROBE_COUNT];
 
-static int g_heap_ro_skip = 0;
-static int g_heap_big_skip = 0;
-static unsigned long long g_heap_big_bytes = 0;
-static int g_heap_huge_skip = 0;
 static int g_heap_region_capped = 0;
 
 static uintptr_t g_img_span_lo = 0;
@@ -861,25 +606,13 @@ static uintptr_t g_img_span_hi = 0;
 static int g_img_span_ok = 0;
 
 static int g_trail_best = 0;
-static int g_manager_cap_rejects = 0;
 static int g_manager_best_count = 0;
 static int g_manager_best_live = 0;
 static int g_heap_passes = 0;
-static unsigned long long g_heap_covered = 0;
-static uintptr_t g_heap_scan_next = 0;
 static int g_scan_sig[2] = { -1, -1 };
 static uintptr_t g_mode_source = 0;
-static int g_mode_matches = 0;
-static BOOL g_mode_scanned = NO;
-static int g_mode_relaxed = 0;
-static int g_mode_strict_logs = 0;
-static int g_mode_near_logs = 0;
-static int g_mode_relaxed_logs = 0;
 static int g_votescan_attempts = 0;
 static double g_votescan_last = 0.0;
-static BOOL g_snapshot_first = NO;
-static BOOL g_snapshot_second = NO;
-static double g_snapshot_start = 0.0;
 
 static tnx_objc_hook_t g_objc_hooks[OBJC_HOOK_MAX];
 static int g_objc_armed = 0;
@@ -898,11 +631,7 @@ static uintptr_t g_addr_setxy = 0;
 static uintptr_t g_addr_addchild = 0;
 static uintptr_t g_addr_battlescreen = 0;
 
-static void *g_label_clip = NULL;
-static void *g_label_tf = NULL;
-static void *g_label_sc = NULL;
 static char g_label_text[64] = {0};
-static int g_label_updates = 0;
 
 static uintptr_t tnx_strip_imp(IMP imp) {
 #if defined(__has_feature)
@@ -913,32 +642,8 @@ static uintptr_t tnx_strip_imp(IMP imp) {
     return (uintptr_t)imp;
 }
 
-static FILE *g_battle_log = NULL;
 static BOOL g_battle_capture = NO;
-static BOOL g_battle_header = NO;
 
-static void tnx_battle_write(const char *utf8, size_t len) {
-    if (!g_battle_log) {
-        NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
-
-        if (paths.count == 0) return;
-
-        NSString *path = [paths[0] stringByAppendingPathComponent:@"Titanox.battle.log"];
-        g_battle_log = fopen(path.UTF8String, "a");
-    }
-
-    if (!g_battle_log) return;
-
-    if (!g_battle_header) {
-        g_battle_header = YES;
-
-        const char *header = "---- battle capture started ----\n";
-        fwrite(header, 1, strlen(header), g_battle_log);
-    }
-
-    fwrite(utf8, 1, len, g_battle_log);
-    fflush(g_battle_log);
-}
 
 static FILE *tnx_log_handle(void) {
     if (!g_log) {
@@ -971,7 +676,6 @@ static void tnx_write_line(const char *text) {
     g_log_written += (long)len;
 
     if (g_battle_capture && g_log_written < LOG_MAX_BYTES) {
-        tnx_battle_write(utf8, len);
     }
 }
 
@@ -1003,9 +707,6 @@ static void tnx_battle_begin(const char *why) {
 }
 
 #define TNX_SLOT_COUNT 32
-#define TNX_SLOT_CLASSIC_COUNT 7
-#define TNX_ALERT_SIGHTINGS 2
-#define TNX_V52_ASCII_MIN 3
 
 typedef uint64_t (*tnx_slot_fn_t)(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                   uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7);
@@ -1015,7 +716,6 @@ static uintptr_t g_slot_object[TNX_SLOT_COUNT] = { 0 };
 
 static uintptr_t g_slot_arg1[TNX_SLOT_COUNT] = { 0 };
 static uint64_t g_slot_hits[TNX_SLOT_COUNT] = { 0 };
-static uint64_t g_slot_hits_total = 0;
 static int g_slot_installed[TNX_SLOT_COUNT] = { -1, -1, -1, -1, -1, -1, -1,
                                                -1, -1, -1, -1, -1, -1, -1,
                                                -1, -1, -1, -1, -1, -1, -1,
@@ -1023,22 +723,13 @@ static int g_slot_installed[TNX_SLOT_COUNT] = { -1, -1, -1, -1, -1, -1, -1,
                                                -1, -1, -1, -1 };
 static int g_slot_slots[TNX_SLOT_COUNT] = { 0 };
 
-static uint64_t g_v52_weak_rejected = 0;
-static int g_v52_weak_logs = 0;
 static int g_v55_chain_rej[20] = { 0 };
-static int g_v55_chain_pass = -1;
-static int g_v55_chain_probes_pass = 0;
-static int g_v55_layout_logs = 0;
-static int g_v55_adopt_refusals = 0;
 static int g_v54_no_source_passes = 0;
 static int g_v54_route_logged = 0;
 static uint64_t g_v52_setpred_calls = 0;
 static uintptr_t g_v52_setpred_this = 0;
 static float g_v52_setpred_x = 0.0f;
 static float g_v52_setpred_y = 0.0f;
-static uint64_t g_v52_stringy_rejected = 0;
-static int g_v52_stringy_logs = 0;
-static int g_v52_low_votes_logs = 0;
 static uint64_t g_v52_ascii_rejected = 0;
 static uint32_t g_slot_reported_mask = 0;
 static uint64_t g_slot_first_tick[TNX_SLOT_COUNT] = { 0 };
@@ -1072,9 +763,7 @@ static int g_v57_capture_rejects = 0;
 static int g_v57_stale_ticks = 0;
 static uintptr_t g_v57_rejected[TNX_V57_REJECT_MAX] = { 0 };
 static int g_v57_rejected_count = 0;
-static int g_v57_reject_logs = 0;
 static int g_v57_coord_off = -1;
-static int g_v57_stringy_slot = -1;
 static uintptr_t g_v57_getown = 0;
 static int g_v57_getown_logged = 0;
 static int g_v59_chain_hits = 0;
@@ -1094,17 +783,14 @@ static char g_v59_drop_tags[TNX_V59_TAG_MAX][8];
 static int g_v59_drop_count = 0;
 static char g_v59_keep_tags[TNX_V59_TAG_MAX][8];
 static int g_v59_keep_count = 0;
-static int g_v60_class_rejects = 0;
 static int g_v61_class_logs = 0;
 static int g_v61_class_rejects = 0;
 static int g_v61_weak_logs = 0;
 static int g_v64_modesig_hits = 0;
-static int g_v64_modesig_logs = 0;
 static int g_v64_modesig_notfound = 0;
 static int g_v65_sig_ticks = 0;
 static int g_v65_sig_logs = 0;
 static uintptr_t g_v65_sig_last = 0;
-static int g_v66_trail_refusals = 0;
 static int g_v67_rejected_tick[TNX_V57_REJECT_MAX] = { 0 };
 static int g_v67_retry_logged = 0;
 static int g_v67_layout_used = 0xc;
@@ -1117,35 +803,24 @@ static int g_v68_gate_logs = 0;
 static int g_v68_dump_logs = 0;
 static int g_v71_pending_attempts[TNX_V68_PENDING_MAX] = { 0 };
 static int g_v71_pending_evicted = 0;
-static int g_v71_head_reject_logs = 0;
 static int g_v71_array_reject_logs = 0;
 static int g_v71_modewindow_logs = 0;
 static int g_v72_trail_refusals = 0;
 static int g_v75_ascii_refused = 0;
-static int g_v75_ascii_refusals = 0;
-static int g_v75_best_wait_logs = 0;
-static int g_v75_gid_veto_logs = 0;
-static int g_v76_floor_logged = 0;
-static int g_v76_fallback_logged = 0;
 static int g_v77_live_objs = 0;
 static int g_v77_live_teams = 0;
 static int g_v77_fb_on = 0;
-static int g_v77_fb_logged = 0;
-static int g_v77_bar_logged = 0;
 static unsigned g_v77_vt_text_rejects = 0;
 static unsigned long long g_v79_obj_prev = 0;
 static int g_v79_probe_done = 0;
 static int g_v79_probe_tries = 0;
 static uintptr_t g_v80_site = 0;
 static int g_v80_state = -1;
-static int g_v80_scan_armed = -1;
-static int g_v80_novt_logs = 0;
 static uintptr_t g_players_array = 0;
 static int g_players_count = 0;
 static int g_players_cap = 0;
 static int g_v81_prev_have_scene = 0;
 static int g_v81_census_logs = 0;
-static int g_v85_elem_dumps = 0;
 static int g_v85_field_scans = 0;
 static int g_v86_elem_dumps = 0;
 static int g_v86_hop2_census = 0;
@@ -1175,7 +850,6 @@ static int g_v92_wrote_valid = 0;
 static int g_v92_check_done = 0;
 static uint64_t g_v93_test_tick = 0;
 static uint64_t g_v93_test_writes = 0;
-static int g_v93_class_dumps = 0;
 static int g_v95_find_joy_done = 0;
 
 typedef struct {
@@ -1196,7 +870,6 @@ static int g_v98_force_due = 0;
 static int g_v98_clip_pass = 0;
 static int g_v98_clip_fail = 0;
 static int g_v99_inputmgr_logs = 0;
-static int g_v99_adopt_reject_logs = 0;
 static uint64_t g_v99_static_samples = 0;
 static uint64_t g_v99_inputmgr_writes = 0;
 static uint64_t g_v99_inputmgr_last_tick = 0;
@@ -1206,22 +879,16 @@ static int g_v82_hop_dumps = 0;
 static uintptr_t g_v81_vt_seen[TNX_V81_VT_MAX] = { 0 };
 static int g_v81_vt_live[TNX_V81_VT_MAX] = { 0 };
 static int g_v81_vt_used = 0;
-static uint64_t g_v78_idle_start = 0;
 static int g_v78_idle_on = 0;
-static int g_v78_idle_logged = 0;
-static int g_v78_idle_skips = 0;
 static uint32_t g_v73_inst_mask = 0;
 static int g_v73_inst_slots = 0;
 static int g_v73_inst_positive = 0;
 static int g_v73_inst_summary = 0;
 static int g_v71_head_ok = 0;
 static int g_v71_head_rejected = 0;
-static int g_v71_head_veto = 0;
-static int g_v71_head_veto_logs = 0;
 static unsigned long long g_v71_pending_pushed = 0;
 static int g_v71_pending_seen = 0;
 static int g_v71_pending_q_log = 0;
-static int g_v71_modehit_dump = 0;
 static int g_v71_teamhist_logs = 0;
 static int g_v71_ownerchain_logs = 0;
 static int g_v62_class_pass = 0;
@@ -1230,8 +897,6 @@ static const char *g_v62_mode_source = "none";
 static const uintptr_t g_v63_known_vt[TNX_V63_KNOWN_VT_COUNT] = { 0xf924d0ULL, 0xf92538ULL,
                                                                   0xf92808ULL, 0xf92898ULL };
 static int g_v63_hb_sig_prev = 0;
-static int g_v63_d6_notdispatched = 0;
-static int g_v63_bucket = 0;
 static int g_v63_image_count = 0;
 static uintptr_t g_v63_image_top_mgr = 0;
 static int32_t g_v63_image_top_count = 0;
@@ -1242,9 +907,6 @@ static int g_v63_stringy_logs = 0;
 static int g_v63_battle_active = 0;
 static int g_v63_battle_last_tick = 0;
 static const char *g_v63_battle_reason = "none";
-static int g_v63_reason_logged = 0;
-static uint64_t g_v57_last_arg1 = 0;
-static uint64_t g_v57_last_arg2 = 0;
 
 static void tnx_slot_diag(const char *why);
 static void tnx_slot_fired_report(void);
@@ -1645,7 +1307,6 @@ static uint64_t tnx_slot_repl_31(void *a0, uint64_t a1, uint64_t a2, uint64_t a3
     return 0;
 }
 
-static int g_v113_dead_probe_done = 0;
 
 static const struct {
     const char *tag;
@@ -1767,92 +1428,14 @@ static void tnx_slot_fired_report(void) {
              g_v63_stringy_logs, g_v72_trail_refusals);
 }
 
-static tnx_slot_fn_t g_ag_orig = NULL;
 static int g_ag_installed = -1;
 static uint64_t g_ag_hits = 0;
 static uintptr_t g_ag_manager = 0;
 static uintptr_t g_ag_objects[TNX_AG_OBJECT_MAX] = { 0 };
 static int g_ag_objectCount = 0;
 
-static void tnx_make_rwx(uintptr_t address, size_t length) {
-    uintptr_t page = address & ~(uintptr_t)0x3fff;
-    uintptr_t last = (address + length + 0x3fff) & ~(uintptr_t)0x3fff;
-    kern_return_t result = vm_protect(mach_task_self(), (vm_address_t)page,
-                                      (vm_size_t)(last - page), FALSE,
-                                      VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE);
 
-    tnx_logf("rwx %p..%p kr=%d", (void *)page, (void *)last, (int)result);
-}
 
-static int tnx_arm_cave_pages(void) {
-    static uint8_t buffer[0x4000];
-    uintptr_t first = g_base + TNX_TEXT_RVA_LO;
-    uintptr_t last = first + TNX_TEXT_RVA_SIZE;
-    int armed = 0;
-
-    for (uintptr_t page = first; page + 0x4000 <= last; page += 0x4000) {
-        vm_size_t got = 0;
-        int best = 0;
-        int run = 0;
-
-        if (armed >= TNX_CAVE_PAGE_LIMIT) break;
-
-        if (vm_read_overwrite(mach_task_self(), (vm_address_t)page, 0x4000,
-                              (vm_address_t)buffer, &got) != KERN_SUCCESS) continue;
-
-        if (got != 0x4000) continue;
-
-        for (int i = 0; i + 4 <= 0x4000; i += 4) {
-            uint32_t word = (uint32_t)buffer[i] | ((uint32_t)buffer[i + 1] << 8) |
-                            ((uint32_t)buffer[i + 2] << 16) | ((uint32_t)buffer[i + 3] << 24);
-
-            if (word == 0x00000000 || word == 0xd503201f) {
-                run += 4;
-
-                if (run > best) best = run;
-            } else {
-                run = 0;
-            }
-        }
-
-        if (best < TNX_CAVE_MIN_RUN) continue;
-
-        tnx_logf("cave page rva=%#llx run=%d", (unsigned long long)(page - g_base), best);
-
-        tnx_make_rwx(page, 0x4000);
-
-        armed++;
-    }
-
-    tnx_logf("cave pages armed=%d of limit=%d", armed, TNX_CAVE_PAGE_LIMIT);
-
-    return armed;
-}
-
-static uint64_t tnx_ag_repl(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
-                            uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
-    g_ag_hits++;
-
-    if (a0 && !g_ag_manager) g_ag_manager = (uintptr_t)a0;
-
-    if (a1 && g_ag_objectCount < TNX_AG_OBJECT_MAX) {
-        uintptr_t object = (uintptr_t)a1;
-        BOOL known = NO;
-
-        for (int i = 0; i < g_ag_objectCount; i++) {
-            if (g_ag_objects[i] == object) {
-                known = YES;
-                break;
-            }
-        }
-
-        if (!known) g_ag_objects[g_ag_objectCount++] = object;
-    }
-
-    if (g_ag_orig) return g_ag_orig(a0, a1, a2, a3, a4, a5, a6, a7);
-
-    return 0;
-}
 
 static void tnx_inline_install(uintptr_t rva, const char *tag, void *replacement,
                                tnx_slot_fn_t *original, int *status) {
@@ -1862,8 +1445,6 @@ static void tnx_inline_install(uintptr_t rva, const char *tag, void *replacement
 
     if (!target) return;
 
-    tnx_make_rwx(target, 0x4000);
-    tnx_make_rwx(g_base + TNX_RVA_CAVE_WINDOW, TNX_CAVE_WINDOW_SIZE);
 
     if (!brk_install((void *)target, replacement)) {
         tnx_logf("inline %s: install failed target=%p (%s)", tag, (void *)target,
@@ -1976,67 +1557,7 @@ static void tnx_slot_hooks_install(void) {
     tnx_slot_diag("install");
 }
 
-static BOOL tnx_query_region(uintptr_t address,
-                             vm_prot_t *protection,
-                             vm_prot_t *maxProtection,
-                             mach_vm_size_t *regionSize,
-                             uintptr_t *regionStart) {
-    vm_address_t regionAddress = (vm_address_t)address;
-    vm_size_t size = 0;
-    vm_region_basic_info_data_64_t info;
-    mach_msg_type_number_t infoCount = VM_REGION_BASIC_INFO_COUNT_64;
-    mach_port_t objectName = MACH_PORT_NULL;
 
-    kern_return_t result = vm_region_64(
-        mach_task_self(),
-        &regionAddress,
-        &size,
-        VM_REGION_BASIC_INFO_64,
-        (vm_region_info_t)&info,
-        &infoCount,
-        &objectName
-    );
-
-    if (objectName != MACH_PORT_NULL) {
-        mach_port_deallocate(mach_task_self(), objectName);
-    }
-
-    if (result != KERN_SUCCESS || size == 0) return NO;
-    if ((uintptr_t)regionAddress + (uintptr_t)size <= address) return NO;
-
-    if (protection) *protection = info.protection;
-    if (maxProtection) *maxProtection = info.max_protection;
-    if (regionSize) *regionSize = (mach_vm_size_t)size;
-    if (regionStart) *regionStart = (uintptr_t)regionAddress;
-
-    return YES;
-}
-
-static BOOL tnx_addr_writable(uintptr_t address, size_t length) {
-    if (!address || !length) return NO;
-
-    uintptr_t end = address + length;
-    if (end < address) return NO;
-
-    uintptr_t cursor = address;
-
-    for (int guard = 0; cursor < end && guard < 64; guard++) {
-        vm_prot_t protection = 0;
-        mach_vm_size_t size = 0;
-        uintptr_t start = 0;
-
-        if (!tnx_query_region(cursor, &protection, NULL, &size, &start)) return NO;
-        if (size == 0 || size > 0x10000000ULL) return NO;
-        if ((protection & VM_PROT_WRITE) == 0) return NO;
-
-        uintptr_t next = start + (uintptr_t)size;
-        if (next <= cursor) return NO;
-
-        cursor = next;
-    }
-
-    return cursor >= end;
-}
 
 static BOOL tnx_read_bytes(uintptr_t address, void *out, size_t length) {
     if (!out || !length) return NO;
@@ -2196,80 +1717,8 @@ static uintptr_t tnx_pick(uintptr_t rvaA, uintptr_t rvaB) {
     return tnx_callable(rvaB);
 }
 
-static void tnx_log_words(uintptr_t address, uint32_t *out, size_t count) {
-    if (!out || !count) return;
 
-    size_t bytes = count * sizeof(uint32_t);
 
-    if (!tnx_read_bytes(address, out, bytes)) {
-        memset(out, 0, bytes);
-        return;
-    }
-}
-
-static uintptr_t tnx_linkedit(uintptr_t fileOffset, uint64_t size) {
-    if (!g_base) return 0;
-    if (!tnx_addr_readable(g_base, sizeof(struct mach_header_64))) return 0;
-
-    const struct mach_header_64 *header = (const struct mach_header_64 *)g_base;
-
-    if (header->magic != MH_MAGIC_64) return 0;
-
-    const uint8_t *cursor = (const uint8_t *)(header + 1);
-    const uint8_t *limit = cursor + header->sizeofcmds;
-    uintptr_t slide = tnx_image_slide(g_base);
-
-    for (uint32_t i = 0; i < header->ncmds; i++) {
-        if (cursor + sizeof(struct load_command) > limit) return 0;
-
-        const struct load_command *command = (const struct load_command *)cursor;
-
-        if (command->cmdsize < sizeof(struct load_command)) return 0;
-        if (cursor + command->cmdsize > limit) return 0;
-
-        if (command->cmd == LC_SEGMENT_64 && command->cmdsize >= sizeof(struct segment_command_64)) {
-            const struct segment_command_64 *segment = (const struct segment_command_64 *)command;
-
-            if (strcmp(segment->segname, "__LINKEDIT") == 0) {
-                if (fileOffset < segment->fileoff) return 0;
-
-                uint64_t delta = (uint64_t)fileOffset - segment->fileoff;
-
-                if (delta > segment->filesize) return 0;
-                if (size > segment->filesize - delta) return 0;
-                if (delta > segment->vmsize) return 0;
-                if (size > segment->vmsize - delta) return 0;
-
-                return slide + (uintptr_t)segment->vmaddr + (uintptr_t)delta;
-            }
-        }
-
-        cursor += command->cmdsize;
-    }
-
-    return 0;
-}
-
-static BOOL tnx_read_uleb(const uint8_t *bytes, size_t size, size_t *offset, uint64_t *value) {
-    if (!bytes || !offset || !value) return NO;
-
-    *value = 0;
-
-    for (unsigned shift = 0; shift <= 63; shift += 7) {
-        if (*offset >= size) return NO;
-
-        uint8_t byte = bytes[(*offset)++];
-        uint64_t payload = byte & 0x7f;
-
-        if (shift == 63 && payload > 1) return NO;
-
-        *value |= payload << shift;
-
-        if (!(byte & 0x80)) return YES;
-    }
-
-    return NO;
-}
 
 static BOOL tnx_copy(uintptr_t source, void *destination, size_t length) {
     if (!source || !destination || !length) return NO;
@@ -2503,36 +1952,6 @@ static BOOL find_game_image(uintptr_t *out_base) {
     return NO;
 }
 
-static void *tnx_sc_string(const char *utf8) {
-    if (!utf8) return NULL;
-
-    size_t blen = strlen(utf8);
-
-    uint8_t *buf = (uint8_t *)malloc(16);
-    if (!buf) return NULL;
-
-    memset(buf, 0, 16);
-
-    *(uint32_t *)(buf + 0) = (uint32_t)blen;
-    *(uint32_t *)(buf + 4) = (uint32_t)blen;
-
-    if (blen > 7) {
-        uint8_t *data = (uint8_t *)malloc(blen + 1);
-        if (!data) {
-            free(buf);
-            return NULL;
-        }
-
-        memcpy(data, utf8, blen);
-        data[blen] = 0;
-
-        *(void **)(buf + 8) = data;
-    } else {
-        memcpy(buf + 8, utf8, blen);
-    }
-
-    return buf;
-}
 
 static const char *tnx_skip_compound(const char *p) {
     char open = *p;
@@ -2627,400 +2046,19 @@ static Class tnx_owner_class(Class cls, SEL sel) {
     return Nil;
 }
 
-static tnx_objc_hook_t *tnx_objc_find(id self, SEL _cmd) {
-    Class start = object_getClass(self);
 
-    if (!start) return NULL;
 
-    tnx_objc_hook_t *bySelector = NULL;
-    int bySelectorCount = 0;
 
-    for (int i = 0; i < OBJC_HOOK_MAX; i++) {
-        tnx_objc_hook_t *hook = &g_objc_hooks[i];
-
-        if (!hook->used || hook->sel != _cmd) continue;
-
-        bySelector = hook;
-        bySelectorCount++;
-
-        for (Class c = start; c; c = class_getSuperclass(c)) {
-            if (c == hook->cls) return hook;
-        }
-    }
-
-    if (bySelectorCount == 1) return bySelector;
-
-    return NULL;
-}
-
-static BOOL tnx_objc_targets(id self, tnx_objc_hook_t *hook) {
-    if (!hook || hook->wantedCount <= 0) return NO;
-
-    Class start = object_getClass(self);
-
-    if (!start) return NO;
-
-    for (int i = 0; i < hook->wantedCount; i++) {
-        Class wanted = hook->wanted[i];
-
-        if (!wanted) continue;
-
-        for (Class c = start; c; c = class_getSuperclass(c)) {
-            if (c == wanted) return YES;
-        }
-    }
-
-    return NO;
-}
-
-static void tnx_objc_add_wanted(tnx_objc_hook_t *hook, Class cls) {
-    if (!hook || !cls) return;
-
-    for (int i = 0; i < hook->wantedCount; i++) {
-        if (hook->wanted[i] == cls) return;
-    }
-
-    if (hook->wantedCount >= WANTED_MAX) return;
-
-    hook->wanted[hook->wantedCount++] = cls;
-}
-
-static void tnx_run_autododge_legacy(void) {
-    if (!g_addr_getinstance || !g_addr_getownchar) return;
-
-    void *battleMode = ((fn_get_inst_t)g_addr_getinstance)();
-    if (!tnx_object_plausible(battleMode)) return;
-
-    void *ownChar = ((fn_get_own_char_t)g_addr_getownchar)(battleMode);
-    if (!tnx_object_plausible(ownChar)) return;
-
-    uint8_t ownDead = 0;
-    if (!tnx_read_u8((uintptr_t)ownChar + OFF_GAMEOBJ_DEADFLAG, &ownDead)) return;
-    if (ownDead) return;
-
-    int ownX = g_addr_getx ? ((fn_get_coord_t)g_addr_getx)(ownChar) : 0;
-    int ownY = g_addr_gety ? ((fn_get_coord_t)g_addr_gety)(ownChar) : 0;
-    int ownTeam = g_addr_getteam ? ((fn_get_team_t)g_addr_getteam)(battleMode) : 0;
-
-    void *objMgr = NULL;
-    if (!tnx_read_ptr((uintptr_t)battleMode + OFF_BATTLEMODE_OBJECTMANAGERPTR, &objMgr)) return;
-    if (!tnx_object_plausible(objMgr)) return;
-
-    void *rawObjects = NULL;
-    int32_t count = 0;
-
-    if (!tnx_read_ptr((uintptr_t)objMgr + OFF_OBJECTMANAGER_OBJECTSARRAY, &rawObjects)) return;
-    if (!tnx_read_i32((uintptr_t)objMgr + OFF_OBJECTMANAGER_COUNT, &count)) return;
-
-    void **objects = (void **)rawObjects;
-
-    if (!objects || count <= 0) return;
-
-    if (count > SCAN_MAX) count = SCAN_MAX;
-    void *probe = NULL;
-
-    if (!tnx_read_ptr((uintptr_t)objects, &probe)) return;
-    if (count > 1 && !tnx_read_ptr((uintptr_t)objects + (uintptr_t)(count - 1) * sizeof(void *), &probe)) return;
-
-    float dodgeX = 0.0f;
-    float dodgeY = 0.0f;
-    BOOL danger = NO;
-
-    for (int i = 0; i < count; i++) {
-        void *obj = objects[i];
-
-        if (!obj || obj == ownChar) continue;
-        if (!tnx_object_plausible(obj)) continue;
-
-        uint8_t objDead = 0;
-        if (!tnx_read_u8((uintptr_t)obj + OFF_GAMEOBJ_DEADFLAG, &objDead)) continue;
-        if (objDead) continue;
-
-        int32_t team = 0;
-        if (!tnx_read_i32((uintptr_t)obj + OFF_GAMEOBJ_TEAM, &team)) continue;
-        if (team == ownTeam) continue;
-
-        int ex = g_addr_getx ? ((fn_get_coord_t)g_addr_getx)(obj) : 0;
-        int ey = g_addr_gety ? ((fn_get_coord_t)g_addr_gety)(obj) : 0;
-
-        float dx = (float)(ownX - ex);
-        float dy = (float)(ownY - ey);
-        float distSq = dx * dx + dy * dy;
-
-        if (distSq > DODGE_RANGE_SQ || distSq < 1.0f) continue;
-
-        float angle = 0.0f;
-        if (!tnx_read_f32((uintptr_t)obj + OFF_PROJECTILE_SPAWNANGLE, &angle)) continue;
-        if (!isfinite(angle)) continue;
-
-        float vx = cosf(angle);
-        float vy = sinf(angle);
-
-        float dot = dx * vx + dy * vy;
-        if (dot <= 0.0f) continue;
-
-        float perpDist = fabsf(dx * vy - dy * vx);
-
-        if (perpDist < DODGE_THREAT) {
-            float nx = -vy;
-            float ny = vx;
-
-            if ((dx * nx + dy * ny) < 0.0f) {
-                nx = -nx;
-                ny = -ny;
-            }
-
-            float weight = 1.0f / (perpDist + 1.0f);
-            dodgeX += nx * weight;
-            dodgeY += ny * weight;
-            danger = YES;
-        }
-    }
-
-    if (!danger) return;
-
-    float len = sqrtf(dodgeX * dodgeX + dodgeY * dodgeY);
-    if (len <= 0.0001f) return;
-
-    dodgeX /= len;
-    dodgeY /= len;
-
-    if (g_addr_setprediction) {
-        int targetX = ownX + (int)(dodgeX * DODGE_STEP);
-        int targetY = ownY + (int)(dodgeY * DODGE_STEP);
-        ((fn_set_prediction_t)g_addr_setprediction)(battleMode, targetX, targetY);
-    }
-
-    if (!g_addr_sendmovement) return;
-
-    void *inputMgr = NULL;
-    if (!tnx_read_ptr((uintptr_t)battleMode + OFF_BATTLEMODE_CLIENTINPUTMANAGER, &inputMgr)) return;
-    if (!inputMgr) return;
-
-    ((fn_send_movement_t)g_addr_sendmovement)(inputMgr, dodgeX, dodgeY);
-}
 
 static void tnx_run_autododge(void) {
     tnx_autododge_v48();
 }
 
-static void tnx_run_autoaim(void) {
-    if (!g_addr_getinstance || !g_addr_getownchar || !g_addr_battlescreen) return;
 
-    void *battleMode = ((fn_get_inst_t)g_addr_getinstance)();
-    if (!tnx_object_plausible(battleMode)) return;
 
-    void *ownChar = ((fn_get_own_char_t)g_addr_getownchar)(battleMode);
-    if (!tnx_object_plausible(ownChar)) return;
 
-    int ownX = g_addr_getx ? ((fn_get_coord_t)g_addr_getx)(ownChar) : 0;
-    int ownY = g_addr_gety ? ((fn_get_coord_t)g_addr_gety)(ownChar) : 0;
-    int ownTeam = g_addr_getteam ? ((fn_get_team_t)g_addr_getteam)(battleMode) : 0;
 
-    void *objMgr = NULL;
-    if (!tnx_read_ptr((uintptr_t)battleMode + OFF_BATTLEMODE_OBJECTMANAGERPTR, &objMgr)) return;
-    if (!tnx_object_plausible(objMgr)) return;
 
-    void *rawObjects = NULL;
-    int32_t count = 0;
-
-    if (!tnx_read_ptr((uintptr_t)objMgr + OFF_OBJECTMANAGER_OBJECTSARRAY, &rawObjects)) return;
-    if (!tnx_read_i32((uintptr_t)objMgr + OFF_OBJECTMANAGER_COUNT, &count)) return;
-
-    void **objects = (void **)rawObjects;
-
-    if (!objects || count <= 0) return;
-
-    if (count > SCAN_MAX) count = SCAN_MAX;
-    void *probe = NULL;
-
-    if (!tnx_read_ptr((uintptr_t)objects, &probe)) return;
-    if (count > 1 && !tnx_read_ptr((uintptr_t)objects + (uintptr_t)(count - 1) * sizeof(void *), &probe)) return;
-
-    float closestDistSq = 1.0e18f;
-    int targetX = 0;
-    int targetY = 0;
-    BOOL found = NO;
-
-    for (int i = 0; i < count; i++) {
-        void *obj = objects[i];
-
-        if (!obj || obj == ownChar) continue;
-        if (!tnx_object_plausible(obj)) continue;
-
-        uint8_t objDead = 0;
-        if (!tnx_read_u8((uintptr_t)obj + OFF_GAMEOBJ_DEADFLAG, &objDead)) continue;
-        if (objDead) continue;
-
-        int32_t team = 0;
-        if (!tnx_read_i32((uintptr_t)obj + OFF_GAMEOBJ_TEAM, &team)) continue;
-        if (team == ownTeam) continue;
-
-        int ex = g_addr_getx ? ((fn_get_coord_t)g_addr_getx)(obj) : 0;
-        int ey = g_addr_gety ? ((fn_get_coord_t)g_addr_gety)(obj) : 0;
-
-        float dx = (float)(ex - ownX);
-        float dy = (float)(ey - ownY);
-        float distSq = dx * dx + dy * dy;
-
-        if (distSq > 1.0f && distSq < closestDistSq) {
-            closestDistSq = distSq;
-            targetX = ex;
-            targetY = ey;
-            found = YES;
-        }
-    }
-
-    if (!found) return;
-
-    void *screen = NULL;
-    if (!tnx_read_ptr(g_addr_battlescreen, &screen)) return;
-
-    if (!tnx_object_plausible(screen)) {
-        if (!g_aim_rejected) {
-            g_aim_rejected = YES;
-            tlog(@"autofire disabled: RVA_BATTLESCREEN__BATTLESCREEN is not a valid instance slot");
-        }
-        return;
-    }
-
-    uintptr_t fireX = (uintptr_t)screen + OFF_BATTLESCREEN_AUTOFIREX;
-    uintptr_t fireY = (uintptr_t)screen + OFF_BATTLESCREEN_AUTOFIREY;
-
-    if (!tnx_addr_writable(fireX, 4) || !tnx_addr_writable(fireY, 4)) {
-        if (!g_aim_rejected) {
-            g_aim_rejected = YES;
-            tlog(@"autofire disabled: target offsets are not writable");
-        }
-        return;
-    }
-
-    *(int32_t *)fireX = targetX;
-    *(int32_t *)fireY = targetY;
-}
-
-static UILabel *g_overlay = NULL;
-static double g_overlay_last = 0.0;
-static int g_scan_ticks = 0;
-
-static void tnx_overlay_attach(NSString *text) {
-    UIWindow *window = nil;
-
-    for (UIWindow *candidate in [UIApplication sharedApplication].windows) {
-        if (candidate.isKeyWindow) {
-            window = candidate;
-            break;
-        }
-    }
-
-    if (!window) window = [UIApplication sharedApplication].keyWindow;
-    if (!window) return;
-
-    if (g_overlay && g_overlay.superview != window) {
-        [g_overlay removeFromSuperview];
-        g_overlay = nil;
-    }
-
-    if (!g_overlay) {
-        UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(10.0, 44.0, 520.0, 36.0)];
-
-        label.font = [UIFont monospacedSystemFontOfSize:12.0 weight:UIFontWeightBold];
-        label.textColor = [UIColor colorWithRed:1.0 green:0.32 blue:0.32 alpha:1.0];
-        label.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.55];
-        label.userInteractionEnabled = NO;
-        label.numberOfLines = 2;
-
-        g_overlay = label;
-    }
-
-    g_overlay.text = text;
-
-    if (!g_overlay.superview) [window addSubview:g_overlay];
-
-    [g_overlay.superview bringSubviewToFront:g_overlay];
-}
-
-static void tnx_overlay_update(void) {
-    char text[192];
-    double now = CFAbsoluteTimeGetCurrent();
-
-    if (g_overlay) {
-        UILabel *stale = g_overlay;
-
-        g_overlay = NULL;
-
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [stale removeFromSuperview];
-        });
-    }
-
-    return;
-
-    if (now - g_overlay_last < 0.4) return;
-
-    g_overlay_last = now;
-
-    uint64_t slotHits = 0;
-    uint64_t slotControl = 0;
-    int slotInstalled = 0;
-
-    for (int i = 0; i < TNX_SLOT_COUNT; i++) {
-        if (g_slot_specs[i].control) slotControl += g_slot_hits[i];
-        else slotHits += g_slot_hits[i];
-
-        if (g_slot_installed[i] == 1) slotInstalled++;
-    }
-
-    snprintf(text, sizeof(text), "%sTNX %s t=%d a=%d/%d hp=%d\nmx=%d ty=%d sl=%llu/%d ctl=%llu obj=%d",
-             g_slot_adopted ? "*** BATTLE FOUND ***\n" : "", TNX_BUILD_TAG,
-             g_scan_ticks, g_votescan_attempts, TNX_VOTESCAN_ATTEMPTS, g_heap_passes,
-             g_mode_best_objects, g_mode_last_types, (unsigned long long)slotHits,
-             slotInstalled, (unsigned long long)slotControl, g_scene_object ? 1 : 0);
-
-    NSString *string = [NSString stringWithUTF8String:text];
-
-    dispatch_async(dispatch_get_main_queue(), ^{
-        tnx_overlay_attach(string);
-    });
-}
-
-static int g_alert_shown = 0;
-static uint64_t g_alert_cleared_ms = 0;
-
-static void tnx_alert_show(NSString *title, NSString *message) {
-
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *window = nil;
-        UIViewController *host = nil;
-
-        for (UIWindow *candidate in [UIApplication sharedApplication].windows) {
-            if (candidate.isKeyWindow) {
-                window = candidate;
-                break;
-            }
-        }
-
-        if (!window) window = [UIApplication sharedApplication].keyWindow;
-        if (!window) return;
-
-        host = window.rootViewController;
-
-        if (!host) return;
-
-        while (host.presentedViewController) host = host.presentedViewController;
-
-        UIAlertController *alert =
-            [UIAlertController alertControllerWithTitle:title
-                                               message:message
-                                        preferredStyle:UIAlertControllerStyleAlert];
-
-        [alert addAction:[UIAlertAction actionWithTitle:@"OK"
-                                                 style:UIAlertActionStyleDefault
-                                               handler:nil]];
-
-        [host presentViewController:alert animated:YES completion:nil];
-    });
-}
 
 static void tnx_v62_alert_menu(NSString *info) {
     NSString *text = [info copy];
@@ -3182,23 +2220,6 @@ static void tnx_v64_modesig_tick(void) {
     }
 }
 
-static void tnx_v63_flush_buckets(void) {
-    if (g_v63_image_count > 0) {
-        tnx_logf("v100 image-resident: %d rejections in last %ds (top mgr=%p count=%d)",
-                 g_v63_image_count, TNX_V63_BUCKET_TICKS, (void *)g_v63_image_top_mgr,
-                 g_v63_image_top_count);
-
-        g_v63_image_count = 0;
-        g_v63_image_top_mgr = 0;
-        g_v63_image_top_count = 0;
-    }
-
-    tnx_logf("v100 chain: hits=%d vtableChanged=%d classPass=%d", g_v59_chain_hits,
-             g_v63_chain_vtchanged, g_v62_class_pass);
-
-    g_v63_chain_vtchanged = 0;
-    g_v63_chain_stable_logged = 0;
-}
 
 static void tnx_v81_global_dump(uintptr_t slot) {
     if (!slot) return;
@@ -3271,36 +2292,7 @@ static void tnx_v81_players_dump(uintptr_t players, uintptr_t array, int32_t cou
              (unsigned long long)TNX_V81_NEXT_MEMBER_OFF, (unsigned long long)TNX_MGR_ARRAY_OFF);
 }
 
-static void tnx_v85_qword_dump(const char *what, uintptr_t base, int qwords) {
-    for (int i = 0; i < qwords; i++) {
-        uint64_t word = tnx_v68_word(base + (uintptr_t)i * 8);
-        const char *seg = tnx_image_segment_name((uintptr_t)word);
 
-        tnx_logf("v100 %s @%p +%02x = %#018llx seg=%s", what, (void *)base, i * 8,
-                 (unsigned long long)word, seg ? seg : "-");
-    }
-}
-
-static void tnx_v85_ptr_field_dump(const char *tag, uintptr_t object, uintptr_t off, int qwords) {
-    void *ptr = NULL;
-    int32_t count = 0;
-    int32_t cap = 0;
-    const char *seg = NULL;
-    const char *header = NULL;
-
-    if (!tnx_read_ptr(object + off, &ptr) || !ptr) return;
-
-    seg = tnx_image_segment_name((uintptr_t)ptr);
-    header = tnx_v57_header_reason((uintptr_t)ptr, &count, &cap);
-
-    tnx_logf("v100 %s+%#llx = %p seg=%s header=%s count=%d cap=%d - a heap pointer here whose "
-             "header passes is another container, which is where the projectiles would live",
-             tag, (unsigned long long)off, ptr, seg ? seg : "-", header ? header : "ok", count, cap);
-
-    if (!tnx_heap_resident((uintptr_t)ptr)) return;
-
-    tnx_v85_qword_dump(tag, (uintptr_t)ptr, qwords);
-}
 
 static void tnx_v81_vt_note(uintptr_t vt) {
     uintptr_t rva = tnx_v60_strip_ptr(vt);
@@ -3450,9 +2442,7 @@ static void tnx_v88_element_full(uintptr_t element, uintptr_t def, uintptr_t con
              (void *)container, (unsigned)(TNX_V88_ELEM_QWORDS * 8),
              (unsigned long long)TNX_V82_ELEM_DEF_OFF, (unsigned)(TNX_V88_DEF_QWORDS * 8));
 
-    tnx_v85_qword_dump("elemfull", element, TNX_V88_ELEM_QWORDS);
 
-    if (def) tnx_v85_qword_dump("deffull", def, TNX_V88_DEF_QWORDS);
 
     tnx_logf("v100 element pair elem=%p int32 +%#llx=%d int32 +%#llx=%d back=%d [elem+%#llx]=%p "
              "container=%p - the two int32 are printed as signed integers because those offsets "
@@ -3588,7 +2578,6 @@ static void tnx_v81_container_census(uintptr_t array, int32_t count, uintptr_t c
                      (void *)element, vt, typeText, (unsigned)(TNX_V86_ELEM_QWORDS * 8),
                      (unsigned long long)TNX_V82_ELEM_DEF_OFF);
 
-            tnx_v85_qword_dump("elem", (uintptr_t)element, TNX_V86_ELEM_QWORDS);
 
             if (type == TNX_V88_TYPE3_CODE) {
                 float h10 = 0.0f;
@@ -3799,177 +2788,7 @@ static int g_v109_done = 0;
 static uintptr_t g_v110_owner = 0;
 static int g_v110_wired = 0;
 
-static void tnx_v109_owner_probe(uintptr_t client, uintptr_t inner) {
-    uintptr_t cand[TNX_V109_MAX];
-    int freq[TNX_V109_MAX];
-    int32_t cnt[TNX_V109_MAX];
-    int32_t cap[TNX_V109_MAX];
-    uintptr_t vt0[TNX_V109_MAX];
-    void *elem0p[TNX_V109_MAX];
-    int comb[TNX_V109_MAX];
-    int rank[TNX_V109_MAX];
-    char why[TNX_V109_MAX][64];
-    int nc = 0;
-    int badptr = 0;
-    int best = -1;
-    int i;
-    int j;
-    int k;
 
-    if (g_v109_done) return;
-    if (!g_objhit_count) return;
-
-    g_v109_done = 1;
-
-    for (i = 0; i < g_objhit_count; i++) {
-        uintptr_t owner = g_objhits[i].owner;
-
-        if (!owner) continue;
-
-        if (owner < 0x100000000ULL || owner >= 0x800000000ULL) {
-            badptr++;
-            continue;
-        }
-
-        for (j = 0; j < nc; j++) {
-            if (cand[j] == owner) break;
-        }
-
-        if (j < nc) {
-            freq[j]++;
-            continue;
-        }
-
-        if (nc >= TNX_V109_MAX) continue;
-
-        cand[nc] = owner;
-        freq[nc] = 1;
-        cnt[nc] = 0;
-        cap[nc] = 0;
-        vt0[nc] = 0;
-        comb[nc] = 0;
-        elem0p[nc] = NULL;
-        why[nc][0] = 0;
-        nc++;
-    }
-
-    for (j = 0; j < nc; j++) {
-        uintptr_t array = 0;
-        int32_t count = 0;
-        int32_t capacity = 0;
-        void *elem0 = NULL;
-        void *vt = NULL;
-        int combat = 0;
-        int e;
-        int ok = tnx_v82_container_header(cand[j], &array, &count, &capacity, why[j], sizeof(why[j]));
-
-        cnt[j] = count;
-        cap[j] = capacity;
-
-        if (ok) {
-            for (e = 0; e < 3; e++) {
-                void *ep = NULL;
-                void *vtp = NULL;
-
-                if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)e * 8ULL, &ep) || !ep) continue;
-                if (!tnx_read_ptr((uintptr_t)ep, &vtp) || !vtp) continue;
-
-                if (e == 0) {
-                    elem0 = ep;
-                    vt = vtp;
-                    vt0[j] = (uintptr_t)vtp - g_base;
-                }
-
-                if ((uintptr_t)vtp - g_base == TNX_V109_COMBAT_VT_A ||
-                    (uintptr_t)vtp - g_base == TNX_V109_COMBAT_VT_B ||
-                    (uintptr_t)vtp - g_base == TNX_V109_COMBAT_VT_C) combat = 1;
-            }
-
-            if (vt0[j] == TNX_V109_PROXY_VT) {
-                ok = 0;
-                snprintf(why[j], sizeof(why[j]), "proxy-class-veto");
-            } else if (vt0[j] == TNX_V109_SELFREF_VT) {
-                ok = 0;
-                snprintf(why[j], sizeof(why[j]), "selfref-class-veto");
-            } else {
-                snprintf(why[j], sizeof(why[j]), "ok combat=%d", combat);
-            }
-        }
-
-        comb[j] = combat;
-        elem0p[j] = elem0;
-
-        if (ok) {
-            if (best < 0) best = j;
-            else if (freq[j] > freq[best]) best = j;
-            else if (freq[j] == freq[best] && combat > 0) best = j;
-        }
-    }
-
-    for (j = 0; j < nc; j++) rank[j] = j;
-
-    for (j = 0; j + 1 < nc; j++) {
-        for (k = 0; k + 1 < nc - j; k++) {
-            if (freq[rank[k]] < freq[rank[k + 1]]) {
-                int t = rank[k];
-
-                rank[k] = rank[k + 1];
-                rank[k + 1] = t;
-            }
-        }
-    }
-
-    for (j = 0; j < nc && j < 4; j++) {
-        uintptr_t owner = cand[rank[j]];
-        int chain = (owner == client || owner == inner || owner == (uintptr_t)g_players_object) ? 1 : 0;
-
-        tnx_logf("v108 ownerprobe %s: owner=%p freq=%d/%d header=%s count=%d cap=%d elem0vt=%#llx "
-                 "chain-match=%d found-via=objhit badptr=%d - the owner is chosen by how often the live "
-                 "battle objects name it and not by which candidate passed the header first",
-                 (j == 0) ? "top" : "runner-up", (void *)owner, freq[rank[j]], g_objhit_count,
-                 why[rank[j]], cnt[rank[j]], cap[rank[j]], (unsigned long long)vt0[rank[j]], chain,
-                 badptr);
-    }
-
-    if (best >= 0) {
-        const char *wireWhy = (const char *)"not-wired";
-        void *wireArray = NULL;
-        int32_t wireCount = 0;
-        int wire = 0;
-
-        g_v108_owner = cand[best];
-
-        if (!tnx_read_ptr(cand[best] + TNX_MGR_ARRAY_OFF, &wireArray)) wireArray = NULL;
-        if (!tnx_read_i32(cand[best] + TNX_MGR_COUNT_OFF, &wireCount)) wireCount = 0;
-
-        if (!TNX_V110_WIRE_OWNER) wireWhy = (const char *)"flag-off";
-        else if (!comb[best]) wireWhy = (const char *)"not-combat-class";
-        else if (!elem0p[best]) wireWhy = (const char *)"elem0-null";
-        else if (cnt[best] < TNX_V110_WIRE_MIN_COUNT) wireWhy = (const char *)"count-below-floor";
-        else if (!wireArray) wireWhy = (const char *)"array-null";
-        else if (wireCount <= 0) wireWhy = (const char *)"count-unreadable";
-        else wire = 1;
-
-        if (wire) {
-            g_v110_owner = cand[best];
-
-            tnx_logf("v109 owner wired into walk owner=%p count-at-probe=%d count-at-wire=%d cap=%d array=%p "
-                     "elem0=%p elem0vt=%#llx - the owner that ownerprobe picked is written into the walk globals "
-                     "in this same run and the hop selection is marked %d so the chain cannot overwrite it",
-                     (void *)cand[best], cnt[best], wireCount, cap[best], wireArray, elem0p[best],
-                     (unsigned long long)vt0[best], TNX_V110_HOPCHOSEN_DIRECT);
-        } else {
-            tnx_logf("v109 owner NOT wired reason=%s owner=%p comb=%d count-at-probe=%d count-at-wire=%d "
-                     "elem0=%p elem0vt=%#llx - the walk stays on the hop path for this run and the ownerprobe "
-                     "table above is what to read",
-                     wireWhy, (void *)cand[best], comb[best], cnt[best], wireCount, elem0p[best],
-                     (unsigned long long)vt0[best]);
-        }
-    }
-}
-
-static int g_v107_cand_logs = 0;
-static int g_v107_scan_logs = 0;
 static int g_v107_deref_logs = 0;
 
 static void tnx_v112_deref_dump(uintptr_t element) {
@@ -4054,126 +2873,7 @@ static void tnx_v112_deref_dump(uintptr_t element) {
     }
 }
 
-static void tnx_v107_cand_probe(const char *tag, uintptr_t container) {
-    void *array = NULL;
-    int32_t count = 0;
-    int32_t own = -1;
-    int32_t ownTeam = -1;
-    uintptr_t vt0 = 0;
-    uintptr_t vt1 = 0;
-    int samples = 0;
-    int gidOk = 0;
-    int teamOk = 0;
-    int coordOk = 0;
-    int i;
 
-    if (!container) return;
-    if (g_v107_cand_logs >= 24) return;
-
-    if (!tnx_read_ptr(container + TNX_MGR_ARRAY_OFF, &array) || !array) {
-        g_v107_cand_logs++;
-
-        tnx_logf("v107 cand tag=%-8s at=%p array=+%#llx is null - the candidate carries no list at all",
-                 tag, (void *)container, (unsigned long long)TNX_MGR_ARRAY_OFF);
-
-        return;
-    }
-
-    tnx_read_i32(container + TNX_MGR_COUNT_OFF, &count);
-    tnx_read_i32(container + TNX_V102_OWNIDX_OFF, &own);
-    tnx_read_i32(container + TNX_V102_OWNTEAM_OFF, &ownTeam);
-
-    for (i = 0; i < count && i < 6; i++) {
-        void *element = NULL;
-        void *vtable = NULL;
-        int32_t gid = 0;
-        int32_t team = 0;
-        int32_t x = 0;
-        int32_t y = 0;
-
-        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * 8ULL, &element) || !element) continue;
-
-        samples++;
-
-        if (tnx_read_ptr((uintptr_t)element, &vtable) && vtable) {
-            if (i == 0) vt0 = (uintptr_t)vtable - g_base;
-            if (i == 1) vt1 = (uintptr_t)vtable - g_base;
-        }
-
-        gid = tnx_v106_gid((uintptr_t)element, NULL);
-        tnx_read_i32((uintptr_t)element + TNX_V91_TEAM_OFF, &team);
-        tnx_read_i32((uintptr_t)element + TNX_OBJ_X_OFF, &x);
-        tnx_read_i32((uintptr_t)element + TNX_OBJ_Y_OFF, &y);
-
-        if (gid) gidOk++;
-        if (team >= 0 && team <= 7) teamOk++;
-        if (x > -TNX_V47_COORD_ABS_MAX && x < TNX_V47_COORD_ABS_MAX &&
-            y > -TNX_V47_COORD_ABS_MAX && y < TNX_V47_COORD_ABS_MAX) coordOk++;
-    }
-
-    g_v107_cand_logs++;
-
-    tnx_logf("v107 cand tag=%-8s at=%p array=%p count=%d own=%d ownTeam=%d samples=%d gidOk=%d teamOk=%d "
-             "coordOk=%d vt0=%#llx vt1=%#llx ownSlot=%s - every candidate is reported and not only the "
-             "winner, so a list that carries real coordinates and real teams can be told apart from the "
-             "slot table that carries only the own index",
-             tag, (void *)container, array, count, own, ownTeam, samples, gidOk, teamOk, coordOk,
-             (unsigned long long)vt0, (unsigned long long)vt1,
-             (own >= 0 && own < count) ? "valid" : "invalid");
-}
-
-static void tnx_v107_coord_scan(uintptr_t container) {
-    void *array = NULL;
-    void *e0 = NULL;
-    void *e1 = NULL;
-    int32_t count = 0;
-    char buf[256];
-    size_t used = 0;
-    int found = 0;
-    int gidPairOnly = 1;
-    int off;
-
-    if (!container) return;
-    if (g_v107_scan_logs >= 8) return;
-    if (!tnx_read_ptr(container + TNX_MGR_ARRAY_OFF, &array) || !array) return;
-    if (!tnx_read_i32(container + TNX_MGR_COUNT_OFF, &count) || count < 2) return;
-    if (!tnx_read_ptr((uintptr_t)array, &e0) || !e0) return;
-    if (!tnx_read_ptr((uintptr_t)array + 8ULL, &e1) || !e1) return;
-
-    buf[0] = 0;
-
-    for (off = TNX_V107_SCAN_FROM; off + 4 <= TNX_V107_SCAN_TO; off += 4) {
-        int32_t a = 0;
-        int32_t b = 0;
-
-        if (!tnx_read_i32((uintptr_t)e0 + (uintptr_t)off, &a)) continue;
-        if (!tnx_read_i32((uintptr_t)e1 + (uintptr_t)off, &b)) continue;
-        if (a == b) continue;
-        if (a < 0 || a > 10000 || b < 0 || b > 10000) continue;
-        if (found >= TNX_V107_SCAN_MAX) break;
-
-        if (off != (int)TNX_OBJ_GLOBALID_OFF && off != (int)TNX_V106_GID_FALLBACK_OFF &&
-            off != (int)TNX_V112_INDEX_OFF && off != (int)TNX_V112_TEAM_OFF2 &&
-            off != (int)TNX_V112_DEAD_OFF && off != (int)TNX_V102_OWNIDX_OFF &&
-            off != (int)TNX_V102_OWNTEAM_OFF) gidPairOnly = 0;
-
-        found++;
-        used += (size_t)snprintf(buf + used, sizeof(buf) - used, "(%#x,%d,%d)", off, a, b);
-        if (used >= sizeof(buf) - 48) break;
-    }
-
-    g_v107_scan_logs++;
-
-    tnx_logf("v112 coord scan container=%p elem0=%p elem1=%p pairs=%d gidPairOnly=%d [%s] - the index at "
-             "+%#x, the team at +%#x, the dead byte at +%#x and the own pair at +%#x/+%#x are counted as "
-             "known non coordinate fields now, because a slot index of 0..5 differs between two elements "
-             "and used to clear gidPairOnly on its own, so the earlier scan reported (0x48,0,1) as a "
-             "candidate pair while only the id slots at +%#llx/+%#llx remain as ids",
-             (void *)container, e0, e1, found, gidPairOnly, buf,
-             (unsigned)TNX_V112_INDEX_OFF, (unsigned)TNX_V112_TEAM_OFF2, (unsigned)TNX_V112_DEAD_OFF,
-             (unsigned)TNX_V102_OWNIDX_OFF, (unsigned)TNX_V102_OWNTEAM_OFF,
-             (unsigned long long)TNX_OBJ_GLOBALID_OFF, (unsigned long long)TNX_V106_GID_FALLBACK_OFF);
-}
 
 static int g_v106_gid_logs = 0;
 static int g_v106_coord_logs = 0;
@@ -4217,63 +2917,7 @@ static int32_t tnx_v106_gid(uintptr_t element, int32_t *offOut) {
     return 0;
 }
 
-static void tnx_v106_own_dump(uintptr_t element) {
-    void *vtable = NULL;
-    uintptr_t vtRva = 0;
-    int i;
 
-    if (!element || g_v106_dump_done) return;
-
-    g_v106_dump_done = 1;
-
-    if (tnx_read_ptr(element, &vtable) && vtable) vtRva = (uintptr_t)vtable - g_base;
-
-    tnx_logf("v106 own dump elem=%p vtRva=%#llx - raw qwords of the own element, because this class "
-             "keeps its id at +%#llx and not at +%#llx, so the walk can no longer assume that the "
-             "coordinate pair sits at +%#llx/+%#llx either; a pair of small integers in the same "
-             "neighbourhood is the pair to use",
-             (void *)element, (unsigned long long)vtRva,
-             (unsigned long long)TNX_V106_GID_FALLBACK_OFF, (unsigned long long)TNX_OBJ_GLOBALID_OFF,
-             (unsigned long long)TNX_OBJ_X_OFF, (unsigned long long)TNX_OBJ_Y_OFF);
-
-    for (i = 0; i < 13; i++) {
-        uint64_t q = tnx_v68_word(element + (uintptr_t)i * 8ULL);
-        uint32_t lo = (uint32_t)(q & 0xffffffffULL);
-        uint32_t hi = (uint32_t)(q >> 32);
-        float loF = 0.0f;
-        float hiF = 0.0f;
-
-        memcpy(&loF, &lo, sizeof(loF));
-        memcpy(&hiF, &hi, sizeof(hiF));
-
-        tnx_logf("v106 own dump +%#04x = %#018llx lo=%d hi=%d loF=%.3f hiF=%.3f", i * 8,
-                 (unsigned long long)q, (int32_t)lo, (int32_t)hi, loF, hiF);
-    }
-
-    tnx_v112_deref_dump(element);
-}
-
-static void tnx_v106_cand_dump(uintptr_t c0, uintptr_t c1, int s0, int s1, int chosen) {
-    int32_t n0 = 0;
-    int32_t o0 = -1;
-    int32_t n1 = 0;
-    int32_t o1 = -1;
-
-    if (c0) {
-        tnx_read_i32(c0 + TNX_MGR_COUNT_OFF, &n0);
-        tnx_read_i32(c0 + TNX_V102_OWNIDX_OFF, &o0);
-    }
-
-    if (c1) {
-        tnx_read_i32(c1 + TNX_MGR_COUNT_OFF, &n1);
-        tnx_read_i32(c1 + TNX_V102_OWNIDX_OFF, &o1);
-    }
-
-    tnx_logf("v106 hop candidates chosen=%d score0=%d score1=%d count0=%d own0=%d count1=%d own1=%d - "
-             "both hops are printed while the chosen list is short, because a container with a larger "
-             "count and a valid own slot is the one the hop has to prefer",
-             chosen, s0, s1, n0, o0, n1, o1);
-}
 
 static int g_v105_score_logs = 0;
 static int g_v105_last_choice = -2;
@@ -4606,16 +3250,9 @@ static int tnx_v80_state_tick(void) {
     } else if (g_v105_hop_logs < 6) {
         g_v105_hop_logs++;
 
-        tnx_v106_cand_dump((uintptr_t)client, (uintptr_t)inner, score[0], score[1], chosen);
     }
 
     if (g_v103_tick < 4 || (g_v103_tick % 90) == 0) {
-        tnx_v109_owner_probe((uintptr_t)client, (uintptr_t)inner);
-        tnx_v107_cand_probe((const char *)"client", (uintptr_t)client);
-        tnx_v107_cand_probe((const char *)"inner", (uintptr_t)inner);
-        tnx_v107_cand_probe((const char *)"owner", g_v108_owner);
-        tnx_v107_coord_scan((uintptr_t)g_players_object);
-        tnx_v107_coord_scan(g_v108_owner);
     }
 
     if (scene != g_v82_hop_scene) {
@@ -4634,20 +3271,7 @@ static int tnx_v80_state_tick(void) {
         if (g_v85_field_scans < TNX_V85_FIELD_SCANS) {
             g_v85_field_scans++;
 
-            tnx_v85_ptr_field_dump("scene", scene, TNX_MODE_MANAGER_OFF, TNX_V85_FIELD_QWORDS);
-            tnx_v85_ptr_field_dump("scene", scene, 0x30ULL, TNX_V85_FIELD_QWORDS);
-            tnx_v85_ptr_field_dump("scene", scene, 0x38ULL, TNX_V85_FIELD_QWORDS);
-            tnx_v85_ptr_field_dump("scene", scene, 0x40ULL, TNX_V85_FIELD_QWORDS);
-            tnx_v85_ptr_field_dump("scene", scene, 0x58ULL, TNX_V85_FIELD_QWORDS);
 
-            tnx_v85_ptr_field_dump("client", client, 0x18ULL, TNX_V85_FIELD_QWORDS);
-            tnx_v85_ptr_field_dump("client", client, 0x20ULL, TNX_V85_FIELD_QWORDS);
-            tnx_v85_ptr_field_dump("client", client, 0x30ULL, TNX_V85_FIELD_QWORDS);
-            tnx_v85_ptr_field_dump("client", client, 0x38ULL, TNX_V85_FIELD_QWORDS);
-            tnx_v85_ptr_field_dump("client", client, 0x40ULL, TNX_V85_FIELD_QWORDS);
-            tnx_v85_ptr_field_dump("client", client, 0x58ULL, TNX_V85_FIELD_QWORDS);
-            tnx_v85_ptr_field_dump("client", client, 0x68ULL, TNX_V85_FIELD_QWORDS);
-            tnx_v85_ptr_field_dump("client", client, 0x80ULL, TNX_V85_FIELD_QWORDS);
         }
     }
 
@@ -4783,13 +3407,6 @@ static int tnx_v63_battle_gate(int scene) {
     return g_v63_battle_active;
 }
 
-static uint64_t tnx_v78_hook_dispatches(void) {
-    uint64_t total = 0;
-
-    for (int i = 0; i < TNX_SLOT_COUNT; i++) total += g_slot_hits[i];
-
-    return total;
-}
 
 static const int tnx_v79_object_slots[TNX_V79_OBJ_SLOTS] = { 2, 3, 4 };
 
@@ -4887,110 +3504,8 @@ static void tnx_v79_object_probe(void) {
              (unsigned long long)TNX_V79_FIELD_LO, (unsigned long long)TNX_V79_FIELD_HI);
 }
 
-static int tnx_v78_scan_allowed(uint64_t fired, uint64_t total) {
-    if (fired > 0) {
-        if (g_v78_idle_on) {
-            tnx_logf("v100 scan resumed at tick=%llu objFired=%llu total=%llu - the object-class "
-                     "slots are being dispatched again after %d parked ticks",
-                     (unsigned long long)g_v50_ticks, (unsigned long long)fired,
-                     (unsigned long long)total, g_v78_idle_skips);
-        }
 
-        g_v78_idle_on = 0;
-        g_v78_idle_start = 0;
-        g_v78_idle_logged = 0;
-        g_v78_idle_skips = 0;
 
-        return 1;
-    }
-
-    if (g_v78_idle_start == 0) g_v78_idle_start = g_v50_ticks;
-
-    g_v78_idle_on = 1;
-
-    if (!g_v78_idle_logged && (g_v50_ticks - g_v78_idle_start) >= TNX_V78_IDLE_TICKS) {
-        g_v78_idle_logged = 1;
-
-        tnx_logf("v100 scan parked at tick=%llu: none of the %d object-class slots has been "
-                 "dispatched in %llu ticks while the %d armed slots together reached %llu, so "
-                 "the app is drawing UI and not a battle and the heap walk has no mode to find; "
-                 "it resumes on the first object-class dispatch and is retried every %d parked "
-                 "ticks", (unsigned long long)g_v50_ticks, TNX_V79_OBJ_SLOTS,
-                 (unsigned long long)(g_v50_ticks - g_v78_idle_start), TNX_SLOT_COUNT,
-                 (unsigned long long)total, TNX_V78_IDLE_RETRY_TICKS);
-    }
-
-    if ((g_v50_ticks - g_v78_idle_start) < TNX_V78_IDLE_RETRY_TICKS) {
-        g_v78_idle_skips++;
-
-        return 0;
-    }
-
-    g_v78_idle_start = g_v50_ticks;
-    g_v78_idle_skips = 0;
-
-    return 1;
-}
-
-static int tnx_v77_battle_gate(int v63) {
-    int liveEnough = (g_v77_live_objs >= TNX_V77_LIVE_OBJ_MIN &&
-                      g_v77_live_teams >= TNX_V77_LIVE_TEAM_MIN);
-
-    g_v77_fb_on = (v63 || liveEnough) ? 1 : 0;
-
-    if (!g_v77_fb_on) {
-        if (!g_v77_bar_logged && g_v50_ticks >= TNX_V77_BAR_TICKS) {
-            g_v77_bar_logged = 1;
-
-            tnx_logf("v100 gate fallback OFF v63=%d liveObjs=%d liveTeams=%d need=%d/%d - the "
-                     "objhit set holds no live objects over two teams, so nothing here claims "
-                     "a battle the mode signature cannot see", v63, g_v77_live_objs,
-                     g_v77_live_teams, TNX_V77_LIVE_OBJ_MIN, TNX_V77_LIVE_TEAM_MIN);
-        }
-
-        return 0;
-    }
-
-    if (v63) return 1;
-
-    if (!g_v77_fb_logged) {
-        g_v77_fb_logged = 1;
-
-        tnx_logf("v100 gate fallback ON liveObjs=%d liveTeams=%d - v63 cannot see a mode, but "
-                 "the objhit set holds live objects over two teams, which is the weaker "
-                 "signal the trail itself uses", g_v77_live_objs, g_v77_live_teams);
-    }
-
-    return 1;
-}
-
-static int tnx_v76_scan_ready(int battle) {
-    if (g_v50_ticks < TNX_V76_SCAN_FLOOR_TICKS) {
-        if (!g_v76_floor_logged) {
-            g_v76_floor_logged = 1;
-
-            tnx_logf("v100 scan held to tick=%d battle=%d mode=%p - the lobby scan is what "
-                     "raised the TID_SHOP trail candidate", TNX_V76_SCAN_FLOOR_TICKS, battle,
-                     (void *)g_scene_object);
-        }
-
-        return 0;
-    }
-
-    if (battle || g_scene_object) return 1;
-
-    if (g_v50_ticks < TNX_V76_SCAN_FALLBACK_TICKS) return 0;
-
-    if (!g_v76_fallback_logged) {
-        g_v76_fallback_logged = 1;
-
-        tnx_logf("v100 scan fallback at tick=%llu battle=%d mode=%p - no battle seen, resuming "
-                 "on the %ds bucket", (unsigned long long)g_v50_ticks, battle,
-                 (void *)g_scene_object, TNX_V63_BUCKET_TICKS);
-    }
-
-    return (g_v50_ticks % TNX_V63_BUCKET_TICKS) == 0;
-}
 
 static void tnx_v63_log_heartbeat(void) {
     int sigDelta = g_v64_modesig_hits - g_v63_hb_sig_prev;
@@ -5007,7 +3522,6 @@ static void tnx_v63_log_heartbeat(void) {
 
     g_v63_hb_sig_prev = g_v64_modesig_hits;
 
-    if ((g_v50_ticks % TNX_V63_BUCKET_TICKS) == 0) tnx_v63_flush_buckets();
 
     if (g_v64_modesig_hits == 0 && g_v50_ticks >= TNX_V63_D6_WAIT_SECS &&
         !g_v64_modesig_notfound) {
@@ -5028,362 +3542,21 @@ typedef struct {
     uintptr_t vt0;
 } tnx_v50_facts_t;
 
-#define TNX_V50_GID_SEEN 64
 
-static void tnx_v50_container_facts(uintptr_t manager, tnx_v50_facts_t *facts) {
-    void *array = NULL;
-    int32_t count = 0;
-    uint64_t teamMask = 0;
-    int32_t gids[TNX_V50_GID_SEEN];
-    int gidCount = 0;
 
-    if (!facts) return;
 
-    memset(facts, 0, sizeof(*facts));
 
-    if (!manager) return;
-    if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array) || !array) return;
-    if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) return;
-    if (count <= 0) return;
 
-    if (count > TNX_MANAGER_MAX_OBJECTS) count = TNX_MANAGER_MAX_OBJECTS;
-
-    for (int32_t i = 0; i < count; i++) {
-        void *element = NULL;
-        void *vtable = NULL;
-        int32_t gid = 0;
-        int32_t team = 0;
-        uint8_t dead = 0;
-        uintptr_t rva = 0;
-
-        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * sizeof(void *), &element)) break;
-        if (!element) continue;
-
-        facts->elements++;
-
-        if (!tnx_read_ptr((uintptr_t)element, &vtable) || !vtable) continue;
-
-        rva = (uintptr_t)vtable - g_base;
-
-        if (rva < TNX_DC_RVA_LO || rva >= TNX_DC_RVA_LO + TNX_DC_RVA_SIZE) continue;
-
-        facts->live++;
-
-        if (!facts->vt0) facts->vt0 = rva;
-
-        tnx_read_i32((uintptr_t)element + TNX_OBJ_GLOBALID_OFF, &gid);
-        tnx_read_i32((uintptr_t)element + TNX_OBJ_TEAM_OFF, &team);
-        tnx_read_u8((uintptr_t)element + TNX_OBJ_DEADFLAG_OFF, &dead);
-
-        if (team >= 0 && team <= TNX_OBJ_TEAM_MAX) teamMask |= (1ull << team);
-
-        if (dead <= 1) facts->deadOk++;
-
-        {
-            int known = 0;
-
-            for (int j = 0; j < gidCount; j++) {
-                if (gids[j] == gid) {
-                    known = 1;
-
-                    break;
-                }
-            }
-
-            if (!known && gidCount < TNX_V50_GID_SEEN) gids[gidCount++] = gid;
-        }
-    }
-
-    facts->distinctGids = gidCount;
-
-    for (int t = 0; t <= TNX_OBJ_TEAM_MAX; t++) {
-        if (teamMask & (1ull << t)) facts->teamCount++;
-    }
-}
-
-static int g_v50_alert_streak = 0;
-static uintptr_t g_v50_alert_streak_ptr = 0;
-static uint64_t g_v50_alert_calls = 0;
-static int g_v50_alert_withheld_logs = 0;
-
-static void tnx_alert_battle_check(void) {
-    uintptr_t candidate = 0;
-    tnx_v50_facts_t facts;
-    uint64_t now = (uint64_t)(CFAbsoluteTimeGetCurrent() * 1000.0);
-    int armed = 0;
-    int withheld = 0;
-    int counted = 0;
-    const char *why = "no candidate";
-
-    memset(&facts, 0, sizeof(facts));
-
-    g_v50_alert_calls++;
-
-    if (g_scene_object) candidate = g_scene_object;
-    else if (g_players_object) candidate = g_players_object;
-
-    if (!candidate) {
-        why = "mode=0 and manager=0 (the scanner's hit is not a container)";
-    } else {
-        tnx_v50_container_facts(candidate, &facts);
-
-        if (facts.live < 2) {
-            why = "live<2";
-        } else if (facts.teamCount < 2) {
-            why = "teamCount<2";
-        } else {
-
-            if (g_v50_alert_streak_ptr == candidate) g_v50_alert_streak++;
-            else {
-                g_v50_alert_streak_ptr = candidate;
-                g_v50_alert_streak = 1;
-            }
-
-            counted = 1;
-
-            if (g_v50_alert_streak < TNX_ALERT_SIGHTINGS) {
-                why = "sightings<3";
-            } else {
-                armed = 1;
-            }
-        }
-    }
-
-    if (!counted) {
-        g_v50_alert_streak = 0;
-        g_v50_alert_streak_ptr = 0;
-    }
-
-    if (!armed) withheld = 1;
-
-    if (withheld) {
-
-        if (TNX_V113_ALERT_WITHHELD && (g_v50_alert_withheld_logs < 5 || (g_v50_alert_calls % 1800) == 0)) {
-            g_v50_alert_withheld_logs++;
-
-            tnx_logf("v100 alert withheld: %s bestLive=%d bestCount=%d mode=%p manager=%p "
-                     "candidate=%p live=%d elements=%d teamCount=%d distinctGids=%d deadOk=%d "
-                     "vt0=%#llx sightings=%d",
-                     why, g_manager_best_live, g_manager_best_count, (void *)g_scene_object,
-                     (void *)g_players_object, (void *)candidate, facts.live, facts.elements,
-                     facts.teamCount, facts.distinctGids, facts.deadOk,
-                     (unsigned long long)facts.vt0, g_v50_alert_streak);
-        }
-
-        if (g_alert_shown) {
-            if (g_alert_cleared_ms == 0) g_alert_cleared_ms = now;
-            else if (now > g_alert_cleared_ms + 5000) {
-                g_alert_shown = 0;
-                g_alert_cleared_ms = 0;
-            }
-        }
-
-        return;
-    }
-
-    g_alert_cleared_ms = 0;
-
-    if (!g_alert_shown && now > 3000) {
-        g_alert_shown = 1;
-
-        tnx_logf("v100 battle entry: live=%d teamCount=%d distinctGids=%d deadOk=%d vt0=%#llx "
-                 "sightings=%d bestLive=%d bestCount=%d mode=%p manager=%p candidate=%p -- showing "
-                 "alert",
-                 facts.live, facts.teamCount, facts.distinctGids, facts.deadOk,
-                 (unsigned long long)facts.vt0, g_v50_alert_streak, g_manager_best_live,
-                 g_manager_best_count, (void *)g_scene_object, (void *)g_players_object,
-                 (void *)candidate);
-
-        tnx_alert_show(@"Titanox", @"Вход в бой обнаружен");
-    }
-}
-
-static dispatch_source_t g_scan_timer = NULL;
-
-static void tnx_render_watermark(void) {
-    if (!g_base || g_wm_failed) return;
-
-    if (!g_wm_ready) {
-        if (!g_addr_getclip || !g_addr_gettf || !g_addr_settext || !g_addr_setxy || !g_addr_addchild) {
-            g_wm_failed = YES;
-            tlog(@"watermark disabled: unresolved address");
-            return;
-        }
-
-        void *stage = tnx_read_global_ptr(OFF_STAGEINSTANCEGLOBALPTR);
-        if (!tnx_object_plausible(stage)) return;
-
-        void *scFile = tnx_sc_string(TNX_CLIP_FILE);
-        void *scName = tnx_sc_string(TNX_CLIP_NAME);
-        void *scText = tnx_sc_string(TNX_CLIP_TEXT);
-
-        if (!scFile || !scName || !scText) return;
-
-        void *clip = ((fn_ptr_2_t)g_addr_getclip)(scFile, scName);
-        if (!tnx_object_plausible(clip)) return;
-
-        void *tf = ((fn_ptr_2_t)g_addr_gettf)(clip, scText);
-        if (!tnx_object_plausible(tf)) return;
-
-        ((fn_setxy_t)g_addr_setxy)(clip, 60536.0f, 60536.0f);
-        ((fn_void_2_t)g_addr_addchild)(stage, clip);
-
-        g_label_clip = clip;
-        g_label_tf = tf;
-        g_wm_ready = YES;
-
-        tlog([NSString stringWithFormat:@"watermark ready stage=%p clip=%p tf=%p", stage, clip, tf]);
-    }
-
-    if (!g_label_clip || !g_label_tf) return;
-
-    if (strcmp(g_label_text, TNX_LABEL) != 0) {
-        void *sc = tnx_sc_string(TNX_LABEL);
-        if (!sc) return;
-
-        g_label_sc = sc;
-        snprintf(g_label_text, sizeof(g_label_text), "%s", TNX_LABEL);
-    }
-
-    if (!g_label_sc) return;
-
-    ((fn_settext_t)g_addr_settext)(g_label_tf, g_label_sc, 4, 0);
-    g_label_updates++;
-}
 
 static void tnx_locate_battle_mode(void);
 static void tnx_slot_pump(void);
 
-static void tnx_start_timer(void) {
-    if (g_scan_timer) return;
-
-    dispatch_queue_t queue = dispatch_get_global_queue(QOS_CLASS_UTILITY, 0);
-    dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, queue);
-
-    if (!timer) return;
-
-    uint64_t interval = (uint64_t)(1.0 * NSEC_PER_SEC);
-
-    dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)interval),
-                              interval, (uint64_t)(0.25 * NSEC_PER_SEC));
-
-    dispatch_source_set_event_handler(timer, ^{
-        tnx_slot_pump();
-
-        int scene = tnx_v80_state_tick();
-        int gate = tnx_v63_battle_gate(scene);
-        int battle = gate || scene;
-        int fallback = tnx_v77_battle_gate(battle);
-
-        int ready = tnx_v76_scan_ready(battle || fallback);
-        int needScan = !scene && !g_players_object;
-
-        tnx_v79_object_probe();
-
-        if (needScan != g_v80_scan_armed) {
-            g_v80_scan_armed = needScan;
-
-            tnx_logf("v100 heap walk %s - the scene chain %s, so the walk is %s",
-                     needScan ? "armed" : "parked",
-                     g_players_object ? "delivered the container" : "has not delivered yet",
-                     needScan ? "the only remaining source" : "not needed this tick");
-        }
-
-        if (needScan && ready &&
-            tnx_v78_scan_allowed((unsigned long long)tnx_v79_object_dispatches(),
-                                 tnx_v78_hook_dispatches())) {
-            tnx_locate_battle_mode();
-        }
-
-        tnx_v64_modesig_tick();
-        tnx_v68_pending_tick();
-        tnx_v96_tick();
-        tnx_v99_inputmgr_probe();
-        tnx_v56_dodge_tick();
-
-        g_scan_ticks++;
-        g_v50_ticks++;
-
-        if ((g_v50_ticks % TNX_V63_HB_TICKS) == 0) tnx_v63_log_heartbeat();
-
-        if ((g_v50_ticks % 10) == 0) tnx_slot_fired_report();
-
-        tnx_overlay_update();
-    });
-
-    dispatch_resume(timer);
-
-    g_scan_timer = timer;
-
-    tnx_logf("scan timer started (1 Hz, render hook no longer drives the scan)");
-
-    tnx_v63_log_heartbeat();
-}
 static void tnx_dump_mode_objects(const char *tag);
 
-static void tnx_run_workload(void) {
-    tnx_locate_battle_mode();
 
-    if (g_scene_object) {
-        if (!g_snapshot_first) {
-            g_snapshot_first = YES;
-            g_snapshot_start = CFAbsoluteTimeGetCurrent();
-            tnx_dump_mode_objects("a");
-        } else if (!g_snapshot_second) {
-            if (CFAbsoluteTimeGetCurrent() > (g_snapshot_start + TNX_SNAPSHOT_DELAY)) {
-                g_snapshot_second = YES;
-                tnx_dump_mode_objects("b");
-            }
-        }
-    }
 
-    tnx_run_autododge();
-    tnx_run_autoaim();
-    tnx_render_watermark();
-    tnx_overlay_update();
 
-    tnx_alert_battle_check();
-}
 
-static void tnx_objc_rep0(id self, SEL _cmd) {
-    tnx_objc_hook_t *hook = tnx_objc_find(self, _cmd);
-
-    if (hook) hook->hits++;
-
-    if (hook && !g_inside_hook && tnx_objc_targets(self, hook)) {
-        g_inside_hook = YES;
-        tnx_run_workload();
-        g_inside_hook = NO;
-    }
-
-    if (hook && hook->original) {
-        reinterpret_cast<void (*)(id, SEL)>(hook->original)(self, _cmd);
-    }
-}
-
-static void tnx_objc_rep1(id self, SEL _cmd, id a1) {
-    tnx_objc_hook_t *hook = tnx_objc_find(self, _cmd);
-
-    if (hook && hook->original) {
-        reinterpret_cast<void (*)(id, SEL, id)>(hook->original)(self, _cmd, a1);
-    }
-}
-
-static void tnx_objc_rep1b(id self, SEL _cmd, BOOL a1) {
-    tnx_objc_hook_t *hook = tnx_objc_find(self, _cmd);
-
-    if (hook && hook->original) {
-        reinterpret_cast<void (*)(id, SEL, BOOL)>(hook->original)(self, _cmd, a1);
-    }
-}
-
-static void tnx_objc_rep2(id self, SEL _cmd, id a1, id a2) {
-    tnx_objc_hook_t *hook = tnx_objc_find(self, _cmd);
-
-    if (hook && hook->original) {
-        reinterpret_cast<void (*)(id, SEL, id, id)>(hook->original)(self, _cmd, a1, a2);
-    }
-}
 
 static int tnx_objc_arm(const char *clsName, const char *selName) {
     Class wanted = objc_getClass(clsName);
@@ -5431,7 +3604,6 @@ static int tnx_objc_arm(const char *clsName, const char *selName) {
         if (!g_objc_hooks[i].used) continue;
         if (g_objc_hooks[i].cls != owner || g_objc_hooks[i].sel != sel) continue;
 
-        tnx_objc_add_wanted(&g_objc_hooks[i], wanted);
         tlog([NSString stringWithFormat:@"objc hook %s -%s joined via %s", clsName, selName, class_getName(owner)]);
         return 0;
     }
@@ -5459,7 +3631,6 @@ static int tnx_objc_arm(const char *clsName, const char *selName) {
         g_objc_hooks[i].hits = 0;
         g_objc_hooks[i].wantedCount = 0;
 
-        tnx_objc_add_wanted(&g_objc_hooks[i], wanted);
 
         g_objc_armed++;
 
@@ -5516,65 +3687,7 @@ static void tnx_resolve_addresses(void) {
           g_addr_battlescreen ? 1 : 0]);
 }
 
-static void tnx_dump_rvas(void) {
-    if (!g_base) return;
 
-    tnx_logf("rva table image=%p", (void *)g_base);
-
-    for (int i = 0; g_rvas[i].name; i++) {
-        uintptr_t address = g_base + g_rvas[i].rva;
-        vm_prot_t protection = 0;
-        mach_vm_size_t size = 0;
-        uint32_t words[4] = {0, 0, 0, 0};
-
-        BOOL region = tnx_query_region(address, &protection, NULL, &size, NULL);
-        BOOL exact = NO;
-        size_t index = tnx_start_index(address, &exact);
-        uintptr_t nearest = (index != (size_t)-1) ? g_starts[index] : 0;
-        uintptr_t next = (index != (size_t)-1 && (index + 1) < g_starts_count) ? g_starts[index + 1] : 0;
-        unsigned long long into = nearest ? (unsigned long long)(address - nearest) : 0;
-
-        tnx_log_words(address, words, 4);
-
-        tnx_logf("rva %-48s off=0x%08llx addr=%p start=%d into=0x%llx near=%p next=%p prologue=%-8s callable=%d prot=%d words=%08x %08x %08x %08x",
-                 g_rvas[i].name,
-                 (unsigned long long)g_rvas[i].rva,
-                 (void *)address,
-                 exact ? 1 : 0,
-                 into,
-                 (void *)nearest,
-                 (void *)next,
-                 tnx_prologue_rule(address),
-                 tnx_callable_target(g_base, address) ? 1 : 0,
-                 region ? (int)protection : -1,
-                 words[0], words[1], words[2], words[3]);
-    }
-}
-
-static void tnx_probe_classes(void) {
-    SEL sel = sel_registerName("render");
-
-    for (int i = 0; g_probe_classes[i]; i++) {
-        Class cls = objc_getClass(g_probe_classes[i]);
-
-        if (!cls) {
-            tnx_logf("probe class %-14s missing", g_probe_classes[i]);
-            continue;
-        }
-
-        Method method = class_getInstanceMethod(cls, sel);
-        const char *types = method ? method_getTypeEncoding(method) : NULL;
-        Class owner = tnx_owner_class(cls, sel);
-
-        tnx_logf("probe class %-14s inImage=%d owns=%d method=%d owner=%s types=%s",
-                 g_probe_classes[i],
-                 tnx_image_owns_address(g_base, (uintptr_t)cls) ? 1 : 0,
-                 tnx_class_owns_method(cls, sel) ? 1 : 0,
-                 method ? 1 : 0,
-                 owner ? class_getName(owner) : "-",
-                 types ? types : "-");
-    }
-}
 
 static const tnx_rva_entry_t g_verified[] = {
     { "-[MetalView render]", 0xd5646c },
@@ -5607,36 +3720,7 @@ static const tnx_rva_entry_t g_verified[] = {
     { NULL, 0 }
 };
 
-static void tnx_dump_structs(void) {
-    tnx_logf("structs mode+0x%llx=manager mgr+0x%llx=array mgr+0x%llx=count obj+0x%llx=gid obj+0x%llx=team mode+0x%llx=modeVar mode+0x%llx/0x%llx=stars slots=0x%llx/0x%llx/0x%llx",
-             TNX_MODE_MANAGER_OFF, TNX_MGR_ARRAY_OFF, TNX_MGR_COUNT_OFF,
-             TNX_OBJ_GLOBALID_OFF, TNX_OBJ_TEAM_OFF, TNX_MODE_MODEVAR_OFF,
-             TNX_MODE_STARS0_OFF, TNX_MODE_STARS1_OFF,
-             TNX_MODE_SLOT_A, TNX_MODE_SLOT_B, TNX_MODE_SLOT_C);
-}
 
-static void tnx_dump_verified(void) {
-    if (!g_base) return;
-
-    tnx_logf("verified anchors image=%p", (void *)g_base);
-
-    for (int i = 0; g_verified[i].name; i++) {
-        uintptr_t address = g_base + g_verified[i].rva;
-        uint32_t words[4] = {0, 0, 0, 0};
-        BOOL exact = NO;
-
-        tnx_start_index(address, &exact);
-        tnx_log_words(address, words, 4);
-
-        tnx_logf("verified %-52s off=0x%08llx start=%d prologue=%-8s callable=%d words=%08x %08x %08x %08x",
-                 g_verified[i].name,
-                 (unsigned long long)g_verified[i].rva,
-                 exact ? 1 : 0,
-                 tnx_prologue_rule(address),
-                 tnx_callable_target(g_base, address) ? 1 : 0,
-                 words[0], words[1], words[2], words[3]);
-    }
-}
 
 static BOOL tnx_segment_range(const char *name, uintptr_t *lo, uintptr_t *hi) {
     if (!g_base || !name) return NO;
@@ -5711,46 +3795,6 @@ static BOOL tnx_image_contains(uintptr_t value) {
     return NO;
 }
 
-static void tnx_image_span_refresh(void) {
-    g_img_span_lo = 0;
-    g_img_span_hi = 0;
-    g_img_span_ok = 0;
-
-    if (!g_base || !tnx_addr_readable(g_base, sizeof(struct mach_header_64))) return;
-
-    const struct mach_header_64 *header = (const struct mach_header_64 *)g_base;
-
-    if (header->magic != MH_MAGIC_64) return;
-
-    const uint8_t *cursor = (const uint8_t *)(header + 1);
-    const uint8_t *limit = cursor + header->sizeofcmds;
-    uintptr_t slide = tnx_image_slide(g_base);
-
-    for (uint32_t i = 0; i < header->ncmds; i++) {
-        if (cursor + sizeof(struct load_command) > limit) break;
-
-        const struct load_command *command = (const struct load_command *)cursor;
-
-        if (command->cmdsize < sizeof(struct load_command)) break;
-        if (cursor + command->cmdsize > limit) break;
-
-        if (command->cmd == LC_SEGMENT_64 && command->cmdsize >= sizeof(struct segment_command_64)) {
-            const struct segment_command_64 *segment = (const struct segment_command_64 *)command;
-
-            if (segment->vmsize) {
-                uintptr_t start = slide + (uintptr_t)segment->vmaddr;
-                uintptr_t end = start + (uintptr_t)segment->vmsize;
-
-                if (!g_img_span_lo || start < g_img_span_lo) g_img_span_lo = start;
-                if (end > g_img_span_hi) g_img_span_hi = end;
-            }
-        }
-
-        cursor += command->cmdsize;
-    }
-
-    g_img_span_ok = (g_img_span_hi > g_img_span_lo) ? 1 : 0;
-}
 
 static BOOL tnx_in_image_span(uintptr_t value) {
     if (!value) return NO;
@@ -5798,7 +3842,6 @@ static const char *tnx_image_segment_name(uintptr_t value) {
 }
 
 #define TNX_HEAP_REGION_MAX 512
-#define TNX_HEAP_REGION_MAX_SIZE 0x100000000ULL
 
 typedef struct {
     uintptr_t low;
@@ -5811,48 +3854,6 @@ static uintptr_t g_heap_window_low = 0;
 static uintptr_t g_heap_window_high = 0;
 static int g_heap_window_ok = 0;
 
-static void tnx_heap_regions_refresh(void) {
-    uintptr_t cursor = 0x10000;
-    uintptr_t lowest = 0;
-    uintptr_t highest = 0;
-    int count = 0;
-
-    for (int guard = 0; guard < 8192 && count < TNX_HEAP_REGION_MAX; guard++) {
-        vm_prot_t protection = 0;
-        mach_vm_size_t size = 0;
-        uintptr_t start = 0;
-        uintptr_t next = 0;
-
-        if (!tnx_query_region(cursor, &protection, NULL, &size, &start)) break;
-        if (size == 0) break;
-
-        next = start + (uintptr_t)size;
-        if (next <= cursor) break;
-
-        if ((protection & VM_PROT_WRITE) &&
-            size <= TNX_HEAP_REGION_MAX_SIZE &&
-            start >= 0x10000 &&
-            !tnx_image_segment_name(start)) {
-            g_heap_regions[count].low = start;
-            g_heap_regions[count].high = next;
-            count++;
-
-            if (!lowest || start < lowest) lowest = start;
-            if (next > highest) highest = next;
-        }
-
-        cursor = next;
-    }
-
-    g_heap_region_count = count;
-    g_heap_window_low = lowest;
-    g_heap_window_high = highest;
-    g_heap_window_ok = count > 0 ? 1 : 0;
-
-    g_heap_region_capped = (count >= TNX_HEAP_REGION_MAX) ? 1 : 0;
-
-    tnx_image_span_refresh();
-}
 
 static BOOL tnx_heap_window_shaped(uintptr_t value) {
     if (!value) return NO;
@@ -5957,122 +3958,9 @@ static BOOL tnx_gameobject_shape(uintptr_t object) {
     return YES;
 }
 
-static BOOL tnx_instance_shaped(uintptr_t object) {
-    void *vtable = NULL;
 
-    if (!tnx_pointer_plausible(object)) return NO;
-    if (!tnx_heap_resident(object)) return NO;
-    if (!tnx_read_ptr(object, &vtable)) return NO;
-    if (!vtable) return NO;
-    if ((uintptr_t)vtable == object) return NO;
-    if (!tnx_vtable_shaped((uintptr_t)vtable)) return NO;
 
-    return YES;
-}
 
-static BOOL tnx_object_shaped(uintptr_t object) {
-    void *vtable = NULL;
-
-    if (!tnx_pointer_plausible(object)) return NO;
-    if (!tnx_read_ptr(object, &vtable)) return NO;
-    if (!vtable) return NO;
-
-    return tnx_image_contains((uintptr_t)vtable);
-}
-
-static BOOL tnx_manager_shape(uintptr_t manager) {
-    void *array = NULL;
-    void *probe = NULL;
-    int32_t count = 0;
-    int32_t capacity = 0;
-
-    if (!tnx_heap_resident(manager)) return NO;
-    if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array)) return NO;
-    if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) return NO;
-    if (!tnx_read_i32(manager + TNX_MGR_CAP_OFF, &capacity)) return NO;
-    if (count < 0 || count > TNX_MANAGER_MAX_OBJECTS) return NO;
-
-    if (capacity < count || capacity > TNX_MGR_CAP_MAX) return NO;
-
-    if (array && !tnx_heap_resident((uintptr_t)array)) return NO;
-
-    if (count > 0) {
-        if (!array) return NO;
-        if (!tnx_read_ptr((uintptr_t)array, &probe)) return NO;
-        if (!tnx_heap_resident((uintptr_t)probe)) return NO;
-        if (count > 1) {
-            if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)(count - 1) * sizeof(void *), &probe)) return NO;
-            if (!tnx_heap_resident((uintptr_t)probe)) return NO;
-        }
-    }
-
-    return YES;
-}
-
-static int tnx_mode_score(uintptr_t mode) {
-    void *manager = NULL;
-    void *array = NULL;
-    int32_t variation = 0;
-    int32_t count = 0;
-
-    if (!tnx_instance_shaped(mode)) return 0;
-
-    if (!tnx_read_i32(mode + TNX_MODE_MODEVAR_OFF, &variation)) return 0;
-    if (variation < 0 || variation > 400) return 0;
-
-    if (!tnx_read_ptr(mode + TNX_MODE_MANAGER_OFF, &manager)) return 0;
-    if (!manager) return 0;
-    if (!tnx_manager_shape((uintptr_t)manager)) return 0;
-
-    if (!tnx_read_ptr((uintptr_t)manager + TNX_MGR_ARRAY_OFF, &array)) return 0;
-    if (!tnx_read_i32((uintptr_t)manager + TNX_MGR_COUNT_OFF, &count)) return 0;
-
-    if (count > g_mode_best_objects) g_mode_best_objects = count;
-
-    if (count < TNX_MODE_MIN_OBJECTS || count > TNX_MANAGER_MAX_OBJECTS) return 0;
-    if (!array || !tnx_heap_resident((uintptr_t)array)) return 0;
-
-    int verified = 0;
-    int live = 0;
-    uintptr_t types[TNX_MODE_TYPE_MAX] = {0};
-    int typeCount = 0;
-
-    for (int32_t i = 0; i < count; i++) {
-        void *element = NULL;
-
-        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * sizeof(void *), &element)) break;
-        if (!element) continue;
-        if (!tnx_heap_resident((uintptr_t)element)) continue;
-
-        live++;
-
-        if (tnx_gameobject_shape((uintptr_t)element)) verified++;
-
-        void *elementVtable = NULL;
-
-        if (!tnx_read_ptr((uintptr_t)element, &elementVtable)) continue;
-        if ((uintptr_t)elementVtable <= g_base) continue;
-
-        uintptr_t elementRva = (uintptr_t)elementVtable - g_base;
-        BOOL known = NO;
-
-        for (int k = 0; k < typeCount; k++) {
-            if (types[k] == elementRva) {
-                known = YES;
-                break;
-            }
-        }
-
-        if (!known && typeCount < TNX_MODE_TYPE_MAX) types[typeCount++] = elementRva;
-    }
-
-    g_mode_last_types = typeCount;
-
-    if (live < TNX_MODE_MIN_OBJECTS) return 0;
-    if (verified < TNX_MODE_MIN_OBJECTS) return 1;
-
-    return (typeCount >= TNX_MODE_MIN_TYPES) ? 2 : 1;
-}
 
 static const uintptr_t g_mode_vtables[] = {
     0x10012c8, 0x1001318, 0x1001368, 0x10013b8,
@@ -6083,263 +3971,12 @@ static const uintptr_t g_mode_vtables[] = {
     0,
 };
 
-static BOOL tnx_is_mode_vtable(uintptr_t value, uintptr_t *rvaOut) {
-    if (!g_base || !value) return NO;
 
-    for (int i = 0; g_mode_vtables[i]; i++) {
-        if (value != (g_base + g_mode_vtables[i])) continue;
 
-        if (rvaOut) *rvaOut = g_mode_vtables[i];
 
-        return YES;
-    }
 
-    return NO;
-}
 
-static void tnx_report_mode_hit(const char *tag, uintptr_t slot, uintptr_t object) {
-    uintptr_t vtableRva = 0;
-    uintptr_t managerVtableRva = 0;
-    uintptr_t vtableOff = 0;
-    const char *modeSeg = NULL;
-    const char *vtableSeg = NULL;
-    int score = 0;
-    void *vtable = NULL;
-    void *manager = NULL;
-    void *managerVtable = NULL;
-    void *array = NULL;
-    void *entry = NULL;
-    int32_t variation = 0;
-    int32_t count = 0;
 
-    tnx_read_ptr(object, &vtable);
-    tnx_is_mode_vtable((uintptr_t)vtable, &vtableRva);
-
-    if (g_base && (uintptr_t)vtable > g_base) vtableOff = (uintptr_t)vtable - g_base;
-
-    modeSeg = tnx_image_segment_name(object);
-    vtableSeg = tnx_image_segment_name((uintptr_t)vtable);
-    score = tnx_mode_score(object);
-
-    tnx_read_i32(object + TNX_MODE_MODEVAR_OFF, &variation);
-    tnx_read_ptr(object + TNX_MODE_MANAGER_OFF, &manager);
-    tnx_read_ptr((uintptr_t)manager, &managerVtable);
-    tnx_is_mode_vtable((uintptr_t)managerVtable, &managerVtableRva);
-    tnx_read_i32((uintptr_t)manager + TNX_MGR_COUNT_OFF, &count);
-    tnx_read_ptr((uintptr_t)manager + TNX_MGR_ARRAY_OFF, &array);
-    tnx_read_ptr((uintptr_t)array, &entry);
-
-    tnx_logf("modehit[%s] slot=%p mode=%p mdSeg=%s vt=%p vtSeg=%s vtOff=%#llx inList=%d primary=%d score=%d types=%d var=%d mgr=%p mgr0Rva=%#llx mgrShape=%d array=%p entry0=%p count=%d",
-             tag, (void *)slot, (void *)object, modeSeg ? modeSeg : "-",
-             vtable, vtableSeg ? vtableSeg : "-", (unsigned long long)vtableOff,
-             tnx_is_mode_vtable((uintptr_t)vtable, NULL) ? 1 : 0,
-             tnx_verified_vtable((uintptr_t)vtable) >= 0 ? 1 : 0,
-             score, g_mode_last_types, variation,
-             manager, (unsigned long long)managerVtableRva,
-             tnx_manager_shape((uintptr_t)manager) ? 1 : 0, array, entry, count);
-
-    if (g_v71_modehit_dump >= 8) return;
-
-    g_v71_modehit_dump++;
-
-    for (int i = 0; i < 5; i++) {
-        uint32_t w4[4] = { 0, 0, 0, 0 };
-
-        tnx_read_bytes((uintptr_t)object - 0x10ULL + (uintptr_t)i * 16ULL, w4, sizeof(w4));
-
-        tnx_logf("modehit[%s] off=%+d %08x %08x %08x %08x", tag, i * 16 - 16, w4[0], w4[1], w4[2],
-                 w4[3]);
-    }
-
-    {
-        void *before = NULL;
-        void *tableHead = NULL;
-        uintptr_t tableRva = 0;
-
-        tnx_read_ptr((uintptr_t)object - 0x8ULL, &before);
-
-        if (before && tnx_v56_vtable_in_image((uintptr_t)before) &&
-            tnx_read_ptr((uintptr_t)before, &tableHead) && tableHead) {
-            if ((uintptr_t)tableHead > g_base) tableRva = (uintptr_t)tableHead - g_base;
-
-            tnx_logf("modehit[%s] classtable m-08=%p inImage=1 vt0=%p vt0rva=%#llx", tag,
-                     before, tableHead, (unsigned long long)tableRva);
-        } else {
-            tnx_logf("modehit[%s] classtable m-08=%p not-a-class-table", tag, before);
-        }
-    }
-}
-
-static void tnx_adopt_mode(uintptr_t object, BOOL strong, const char *tag) {
-    if (!object) return;
-
-    {
-        void *vt = NULL;
-
-        if (!tnx_read_ptr(object, &vt) || !vt || !tnx_v56_vtable_in_image((uintptr_t)vt)) {
-            if (g_v99_adopt_reject_logs < TNX_V99_ADOPT_REJECT_LOGS) {
-                g_v99_adopt_reject_logs++;
-
-                tnx_logf("v100 adopt rejected tag=%s object=%p vt=%p - a watched word whose first "
-                         "slot is not a class table inside the image cannot name the mode, so the "
-                         "garbage that E2 reads as its vtable is refused here and no longer "
-                         "reaches the scene", tag, (void *)object, vt);
-            }
-
-            return;
-        }
-    }
-
-    if (g_mode_strong) return;
-    if (g_scene_object == object && strong == g_mode_strong) return;
-    if (g_scene_object && !strong) return;
-
-    if (g_scene_object != object) {
-        g_snapshot_first = NO;
-        g_snapshot_second = NO;
-        g_snapshot_start = 0.0;
-    }
-
-    g_scene_object = object;
-    g_mode_source = 0;
-
-    if (strong) g_mode_strong = YES;
-
-    tnx_battle_begin(tag);
-
-    tnx_logf("mode adopt tag=%s object=%p strong=%d maxObj=%d",
-             tag, (void *)object, strong ? 1 : 0, g_mode_best_objects);
-
-    tnx_report_mode_hit(tag, 0, object);
-}
-
-static void tnx_dump_protocol_methods(const char *name) {
-    Protocol *protocol = objc_getProtocol(name);
-
-    if (!protocol) {
-        tnx_logf("proto %s absent", name);
-        return;
-    }
-
-    unsigned required = 0;
-    unsigned optional = 0;
-    struct objc_method_description *req = protocol_copyMethodDescriptionList(protocol, YES, YES, &required);
-    struct objc_method_description *opt = protocol_copyMethodDescriptionList(protocol, NO, YES, &optional);
-
-    tnx_logf("proto %s required=%u optional=%u", name, required, optional);
-
-    for (unsigned i = 0; req && i < required && i < 48; i++) {
-        tnx_logf("proto %s req -%s types=%s", name, sel_getName(req[i].name),
-                 req[i].types ? req[i].types : "-");
-    }
-
-    for (unsigned i = 0; opt && i < optional && i < 48; i++) {
-        tnx_logf("proto %s opt -%s types=%s", name, sel_getName(opt[i].name),
-                 opt[i].types ? opt[i].types : "-");
-    }
-
-    if (req) free(req);
-    if (opt) free(opt);
-}
-
-static void tnx_dump_protocols(void) {
-    unsigned total = 0;
-    Protocol *__unsafe_unretained *list = objc_copyProtocolList(&total);
-    int named = 0;
-
-    for (unsigned i = 0; list && i < total; i++) {
-        const char *name = protocol_getName(list[i]);
-
-        if (!name) continue;
-
-        if (strstr(name, "itan") || strstr(name, "attle") || strstr(name, "Titan") ||
-            strstr(name, "Hook") || strstr(name, "View") || strstr(name, "Game")) {
-            if (named++ < 60) tnx_logf("proto found %s", name);
-        }
-    }
-
-    tnx_logf("proto total=%u interesting=%d", total, named);
-
-    if (list) free(list);
-
-    static const char *const classes[] = { "MetalView", "NullView", NULL };
-
-    for (int i = 0; classes[i]; i++) {
-        Class cls = objc_getClass(classes[i]);
-
-        if (!cls) continue;
-
-        objc_property_t property = class_getProperty(cls, "titanDelegate");
-
-        tnx_logf("prop %s titanDelegate attrs=%s", classes[i],
-                 property ? (property_getAttributes(property) ? property_getAttributes(property) : "-") : "absent");
-    }
-
-    static const char *const protocols[] = { "TitanViewDelegate", NULL };
-
-    for (int i = 0; protocols[i]; i++) tnx_dump_protocol_methods(protocols[i]);
-}
-
-static void tnx_dump_hex(const char *tag, uintptr_t address, size_t bytes) {
-    uint8_t buffer[0x100];
-
-    if (bytes > sizeof(buffer)) bytes = sizeof(buffer);
-
-    for (size_t offset = 0; offset + 16 <= bytes; offset += 16) {
-        uint32_t words[4] = { 0, 0, 0, 0 };
-
-        if (!tnx_copy(address + offset, buffer, 16)) break;
-
-        memcpy(words, buffer, sizeof(words));
-
-        tnx_logf("%s +%02zx %08x %08x %08x %08x", tag, offset, words[0], words[1], words[2], words[3]);
-    }
-}
-
-static void tnx_dump_manager(uintptr_t manager, int count) {
-    void *array = NULL;
-
-    tnx_logf("mgr[dump] manager=%p count=%d", (void *)manager, count);
-    tnx_dump_hex("mgr", manager, 0x40);
-
-    if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array)) return;
-    if (!array) return;
-
-    tnx_dump_hex("mgrArr", (uintptr_t)array, 0x40);
-
-    for (int i = 0; i < count && i < 4; i++) {
-        void *element = NULL;
-
-        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * sizeof(void *), &element)) return;
-        if (!element) continue;
-
-        int32_t globalId = 0;
-        int32_t team = 0;
-        int32_t owner = 0;
-        uint8_t dead = 0;
-        int32_t x = 0;
-        int32_t y = 0;
-
-        tnx_read_i32((uintptr_t)element + TNX_OBJ_GLOBALID_OFF, &globalId);
-        tnx_read_i32((uintptr_t)element + TNX_OBJ_TEAM_OFF, &team);
-        tnx_read_i32((uintptr_t)element + TNX_OBJ_OWNERINDEX_OFF, &owner);
-        tnx_read_u8((uintptr_t)element + TNX_OBJ_DEADFLAG_OFF, &dead);
-
-        uintptr_t s88 = 0;
-        uintptr_t s90 = 0;
-
-        tnx_obj_slot_fn((uintptr_t)element, TNX_OBJ_GETX_SLOT, &s88);
-        tnx_obj_slot_fn((uintptr_t)element, TNX_OBJ_GETY_SLOT, &s90);
-
-        tnx_logf("mgr[%d] element=%p gameobj=%d gid=%d team=%d own=%d dead=%d "
-                 "s88=%#llx s90=%#llx",
-                 i, element, tnx_gameobject_shape((uintptr_t)element) ? 1 : 0,
-                 globalId, team, owner, dead,
-                 (unsigned long long)s88, (unsigned long long)s90);
-
-        tnx_dump_hex("mgrObj", (uintptr_t)element, 0x100);
-    }
-}
 
 static int tnx_manager_live_count(uintptr_t manager) {
     void *array = NULL;
@@ -6538,1065 +4175,28 @@ static void tnx_v75_measure(uintptr_t manager, int32_t count, tnx_v75_measure_t 
     out->posDistinct = posCount;
 }
 
-static int tnx_v52_stringy(uintptr_t manager, int32_t count) {
-    void *array = NULL;
-    int inspected = 0;
-    int ascii = 0;
 
-    if (count <= 0) return 0;
-    if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array) || !array) return 0;
 
-    if (count > TNX_V57_ASCII_WINDOW) count = TNX_V57_ASCII_WINDOW;
 
-    for (int32_t i = 0; i < count; i++) {
-        void *element = NULL;
 
-        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * sizeof(void *), &element)) break;
-        if (!element) continue;
 
-        inspected++;
 
-        if (tnx_v75_element_ascii((uintptr_t)element)) {
-            ascii++;
 
-            g_v57_stringy_slot = (int)i;
 
-            break;
-        }
-    }
 
-    if (inspected < TNX_V52_ASCII_MIN) return 0;
 
-    return ascii >= 1 ? 1 : 0;
-}
 
-static void tnx_probe_manager(uintptr_t cursor, size_t offset, const uint8_t *buffer, size_t chunk) {
-    uint64_t arrayValue = 0;
-    uint32_t count = 0;
-    uintptr_t candidate = 0;
-    int live = 0;
-    int refused = 0;
-    tnx_v75_measure_t measure;
 
-    if (g_mode_strong) return;
-    if (offset + 0x10 > chunk) return;
 
-    uint32_t capacity = 0;
 
-    memcpy(&arrayValue, buffer + offset, sizeof(arrayValue));
-    memcpy(&capacity, buffer + offset + TNX_MGR_CAP_OFF, sizeof(capacity));
-    memcpy(&count, buffer + offset + 0xc, sizeof(count));
 
-    if (count < TNX_MANAGER_MIN_OBJECTS || count > TNX_MANAGER_MAX_OBJECTS) return;
 
-    if (capacity < count || capacity > TNX_MGR_CAP_MAX) {
-        g_manager_saw_cap++;
-        g_manager_cap_rejects++;
-        return;
-    }
 
-    if (capacity > count * 2) {
-        g_manager_saw_cap++;
-        g_manager_cap_rejects++;
-        return;
-    }
 
-    g_manager_saw_cap++;
 
-    if (!tnx_pointer_plausible((uintptr_t)arrayValue)) return;
 
-    if ((uintptr_t)arrayValue & 0xf) return;
 
-    if (!tnx_heap_window_shaped((uintptr_t)arrayValue)) {
-        g_manager_window_rejects++;
-        return;
-    }
 
-    if (!tnx_heap_contains((uintptr_t)arrayValue)) {
-        g_manager_window_rejects++;
-        return;
-    }
-
-    g_manager_loose_count++;
-
-    if (g_manager_probes >= TNX_MANAGER_PROBE_LIMIT) {
-        g_manager_skipped++;
-        return;
-    }
-
-    g_manager_probes++;
-    g_manager_probes_total++;
-
-    candidate = cursor + offset;
-    live = tnx_manager_live_count(candidate);
-
-    if ((int)count > g_manager_best_count) g_manager_best_count = (int)count;
-    if (live > g_manager_best_live) g_manager_best_live = live;
-
-    tnx_v75_measure(candidate, (int32_t)count, &measure);
-
-    if (measure.sampled >= TNX_V52_ASCII_MIN && measure.noVt == measure.sampled) {
-        refused = 3;
-
-        g_v52_stringy_rejected++;
-        g_v63_stringy_logs++;
-
-        if (g_v80_novt_logs < 4) {
-            g_v80_novt_logs++;
-
-            tnx_logf("v100 trail: container mgr=%p count=%u has no class table behind any of its "
-                     "%d sampled elements (ascii=%d) - an element whose first word is not a "
-                     "table in __DATA_CONST or __DATA is text or a plain scalar, so this array "
-                     "is not an object container", (void *)candidate, count, measure.sampled,
-                     measure.ascii);
-        }
-    } else if (measure.sampled >= TNX_V52_ASCII_MIN &&
-               (measure.ascii * 100) / measure.sampled > TNX_V75_ASCII_RATIO) {
-        refused = 1;
-
-        g_v52_stringy_rejected++;
-        g_v63_stringy_logs++;
-        g_v75_ascii_refused++;
-
-        if (g_v75_ascii_refusals < 4) {
-            g_v75_ascii_refusals++;
-
-            tnx_logf("v100 trail: text container mgr=%p count=%u ascii=%d/%d(%d%%) live=%d "
-                     "nonEmpty=%d firstTextSlot=%d - inline strings are counted as text before "
-                     "the score and never become the best candidate", (void *)candidate, count,
-                     measure.ascii, measure.sampled, (measure.ascii * 100) / measure.sampled,
-                     g_manager_last_live, g_manager_last_nonempty, g_v57_stringy_slot);
-        }
-    } else if (live > 0 && live * 2 < (int)count) {
-        refused = 2;
-
-        g_v52_weak_rejected++;
-
-        if (g_v52_weak_logs < 4) {
-            g_v52_weak_logs++;
-
-            tnx_logf("v100 trail: weak container mgr=%p count=%u live=%d nonEmpty=%d - under "
-                     "half of its elements are objects, so it is not the array the dodge needs",
-                     (void *)candidate, count, live, g_manager_last_nonempty);
-        }
-    }
-
-    tnx_trail_note(candidate, (int32_t)count, g_manager_last_capacity, g_manager_last_live,
-                   g_manager_last_nonempty, measure.ascii, measure.sampled, measure.noVt,
-                   measure.teamDistinct, measure.posDistinct, refused);
-
-    if (refused) return;
-
-    if (live < TNX_MANAGER_MIN_OBJECTS) return;
-
-    if (!g_players_object && !g_objvote_owner_ok) {
-        uintptr_t container = 0;
-        int32_t resolved = 0;
-        int32_t resolvedCap = 0;
-        char why[64] = { 0 };
-
-        if (!tnx_v60_container_resolve(candidate, &container, &resolved, &resolvedCap, why,
-                                       sizeof(why))) {
-            if (g_v66_trail_refusals < 6) {
-                g_v66_trail_refusals++;
-
-                tnx_logf("v100 trail adoption refused mgr=%p count=%u live=%d reason=%s src=B",
-                         (void *)candidate, count, live, why[0] ? why : "unresolved");
-            }
-
-            return;
-        }
-
-        if (tnx_v52_stringy(candidate, resolved)) {
-            if (g_v66_trail_refusals < 6) {
-                g_v66_trail_refusals++;
-
-                tnx_logf("v100 trail adoption refused mgr=%p count=%d reason=stringy src=B",
-                         (void *)candidate, resolved);
-            }
-
-            return;
-        }
-
-        g_players_object = (uintptr_t)container;
-        g_manager_count = resolved;
-
-        tnx_logf("v100 manager adopted mgr=%p count=%d cap=%d live=%d layout=+0x%x src=B",
-                 (void *)container, resolved, resolvedCap, live, g_v67_layout_used);
-
-        tnx_dump_manager(container, resolved);
-    }
-}
-
-static int tnx_v55_container_ok(uintptr_t manager, int32_t *countOut) {
-    void *array = NULL;
-    int32_t count = 0;
-
-    if (countOut) *countOut = 0;
-    if (!manager) return 0;
-    if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array) || !array) return 0;
-    if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) return 0;
-    if (count <= 0 || count > TNX_MANAGER_MAX_OBJECTS) return 0;
-
-    if (countOut) *countOut = count;
-
-    return 1;
-}
-
-static void tnx_v55_layout_dump(const char *tag, uintptr_t address, int words) {
-    for (int base = 0; base < words; base += 4) {
-        uintptr_t word[4] = { 0, 0, 0, 0 };
-        char verdict[4][40];
-
-        for (int k = 0; k < 4; k++) {
-            void *array = NULL;
-            int32_t count = 0;
-
-            snprintf(verdict[k], sizeof(verdict[k]), "-");
-
-            if (!tnx_read_ptr(address + (uintptr_t)(base + k) * 8, (void**)&word[k])) continue;
-
-            if (!tnx_pointer_plausible(word[k])) continue;
-
-            if (tnx_read_ptr(word[k] + TNX_MGR_ARRAY_OFF, &array) && array &&
-                tnx_read_i32(word[k] + TNX_MGR_COUNT_OFF, &count) && count > 0 &&
-                count <= TNX_MANAGER_MAX_OBJECTS) {
-                snprintf(verdict[k], sizeof(verdict[k]), "ARRAYHDR count=%d", count);
-
-                continue;
-            }
-
-            if (tnx_heap_window_shaped(word[k])) {
-                snprintf(verdict[k], sizeof(verdict[k]), "heap");
-            }
-        }
-
-        tnx_logf("v100 %s+%02x: %#llx %#llx %#llx %#llx | %s | %s | %s | %s", tag, base * 8,
-                 (unsigned long long)word[0], (unsigned long long)word[1],
-                 (unsigned long long)word[2], (unsigned long long)word[3], verdict[0], verdict[1],
-                 verdict[2], verdict[3]);
-    }
-}
-
-static void tnx_probe_mode_chain(uintptr_t cursor, size_t offset, const uint8_t *buffer,
-                                 size_t chunk, uintptr_t dcLo, uintptr_t dcHi) {
-    uintptr_t vtable = 0;
-    uintptr_t manager = 0;
-    uintptr_t input = 0;
-    int32_t variation = 0;
-    int32_t px = 0;
-    int32_t py = 0;
-    int32_t count = 0;
-    void *array = NULL;
-
-    if (g_mode_strong) return;
-
-    if (g_v55_chain_pass != g_heap_passes) {
-        g_v55_chain_pass = g_heap_passes;
-        g_v55_chain_probes_pass = g_chain_probes;
-        g_chain_probes = 0;
-    }
-
-    if (offset + TNX_MODE_PREDICTY_OFF + 4 > chunk) return;
-
-    memcpy(&vtable, buffer + offset, sizeof(vtable));
-
-    if (!vtable || (vtable & 0x7)) { g_v55_chain_rej[0]++; return; }
-    if (vtable < dcLo || vtable >= dcHi) { g_v55_chain_rej[1]++; return; }
-
-    g_chain_checks++;
-
-    memcpy(&manager, buffer + offset + TNX_MODE_MANAGER_OFF, sizeof(manager));
-
-    if (!manager || (manager & 0xf)) { g_v55_chain_rej[2]++; return; }
-    if (!tnx_pointer_plausible(manager)) { g_v55_chain_rej[3]++; return; }
-    if (!tnx_heap_window_shaped(manager)) { g_v55_chain_rej[4]++; return; }
-
-    if (!g_v63_battle_active) return;
-
-    tnx_v59_chain_capture(cursor + offset, vtable, manager);
-
-    memcpy(&variation, buffer + offset + TNX_MODE_MODEVAR_OFF, sizeof(variation));
-
-    if (variation < 0 || variation > 400) { g_v55_chain_rej[5]++; return; }
-
-    memcpy(&px, buffer + offset + TNX_MODE_PREDICTX_OFF, sizeof(px));
-    memcpy(&py, buffer + offset + TNX_MODE_PREDICTY_OFF, sizeof(py));
-
-    if (px < -0x100000 || px > 0x100000) { g_v55_chain_rej[6]++; return; }
-    if (py < -0x100000 || py > 0x100000) { g_v55_chain_rej[7]++; return; }
-
-    memcpy(&input, buffer + offset + TNX_MODE_INPUTMGR_OFF, sizeof(input));
-
-    if (input && !tnx_heap_window_shaped(input)) { g_v55_chain_rej[8]++; return; }
-
-    g_chain_ready++;
-
-    if (g_chain_probes >= TNX_CHAIN_PROBE_LIMIT) {
-        g_chain_skipped++;
-        return;
-    }
-
-    g_chain_probes++;
-
-    if (!tnx_manager_shape(manager)) { g_v55_chain_rej[9]++; return; }
-    if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array)) { g_v55_chain_rej[10]++; return; }
-    if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) { g_v55_chain_rej[11]++; return; }
-    if (!array) { g_v55_chain_rej[12]++; return; }
-    if (count < TNX_MODE_MIN_OBJECTS || count > TNX_MANAGER_MAX_OBJECTS) {
-        g_v55_chain_rej[13]++;
-
-        return;
-    }
-
-    int live = 0;
-    int ownMatch = 0;
-    int gidDistinct = 0;
-    int32_t gids[TNX_MODE_TYPE_MAX];
-
-    for (int i = 0; i < TNX_MODE_TYPE_MAX; i++) gids[i] = -1;
-
-    for (int32_t i = 0; i < count; i++) {
-        void *element = NULL;
-        void *owner = NULL;
-        int32_t gid = 0;
-
-        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * sizeof(void *), &element)) break;
-        if (!element) continue;
-        if (!tnx_gameobject_shape((uintptr_t)element)) continue;
-
-        live++;
-
-        if (tnx_read_i32((uintptr_t)element + TNX_OBJ_GLOBALID_OFF, &gid)) {
-            BOOL known = NO;
-
-            for (int k = 0; k < gidDistinct; k++) {
-                if (gids[k] == gid) {
-                    known = YES;
-                    break;
-                }
-            }
-
-            if (!known && gidDistinct < TNX_MODE_TYPE_MAX) gids[gidDistinct++] = gid;
-        }
-
-        if (tnx_read_ptr((uintptr_t)element + TNX_SLOT_OWNER_OFF, &owner)) {
-            if ((uintptr_t)owner == manager) ownMatch++;
-        }
-    }
-
-    if (live > g_chain_best_live) g_chain_best_live = live;
-    if (ownMatch > g_chain_best_own) g_chain_best_own = ownMatch;
-    if (gidDistinct > g_chain_best_gid) g_chain_best_gid = gidDistinct;
-
-    uintptr_t object = cursor + offset;
-
-    tnx_logf("chain cand mode=%p vt=%#llx mgr=%p count=%d live=%d ownMatch=%d gidDistinct=%d "
-             "var=%d input=%p",
-             (void *)object, (unsigned long long)(vtable - g_base), (void *)manager, count,
-             live, ownMatch, gidDistinct, variation, (void *)input);
-
-    if (live < TNX_MODE_MIN_OBJECTS) { g_v55_chain_rej[14]++; return; }
-    if (ownMatch < 1) { g_v55_chain_rej[15]++; return; }
-    if (gidDistinct < 2) { g_v55_chain_rej[16]++; return; }
-
-    g_chain_vtable = vtable;
-
-    tnx_adopt_mode(object, YES, "chain");
-}
-
-static void tnx_vtprobe_note(uintptr_t vtable, uintptr_t absolute) {
-    uintptr_t rva = 0;
-
-    if (!vtable || !g_base) return;
-    if (absolute & 0xf) return;
-    if (vtable < g_base + TNX_DC_RVA_LO) return;
-    if (vtable >= g_base + TNX_DC_RVA_LO + TNX_DC_RVA_SIZE) return;
-
-    rva = vtable - g_base;
-
-    for (int k = 0; k < TNX_VTPROBE_COUNT; k++) {
-        if (rva == g_vtprobe_rva[k]) {
-            g_vtprobe_hits[k]++;
-
-            if (!g_vtprobe_first[k]) g_vtprobe_first[k] = absolute;
-
-            return;
-        }
-    }
-}
-
-static int tnx_vtcensus_seg(uintptr_t value) {
-    if (!value || !g_base) return -1;
-    if (g_vtcensus_dc_lo && value >= g_vtcensus_dc_lo && value < g_vtcensus_dc_hi) return 0;
-    if (g_vtcensus_d_lo && value >= g_vtcensus_d_lo && value < g_vtcensus_d_hi) return 1;
-
-    return -1;
-}
-
-static void tnx_vtcensus_reset(void) {
-    g_vtcensus_used = 0;
-    g_vtcensus_total = 0;
-    g_vtcensus_spill = 0;
-
-    memset(g_vtcensus, 0, sizeof(g_vtcensus));
-}
-
-static tnx_vtcensus_t *tnx_vtcensus_entry(uintptr_t rva, int seg, int create) {
-    for (int i = 0; i < g_vtcensus_used; i++) {
-        if (g_vtcensus[i].rva == rva && g_vtcensus[i].seg == seg) return &g_vtcensus[i];
-    }
-
-    if (!create) return NULL;
-    if (g_vtcensus_used >= TNX_VTCENSUS_MAX) {
-        g_vtcensus_spill++;
-
-        return NULL;
-    }
-
-    tnx_vtcensus_t *entry = &g_vtcensus[g_vtcensus_used++];
-
-    memset(entry, 0, sizeof(*entry));
-    entry->rva = rva;
-    entry->seg = seg;
-
-    return entry;
-}
-
-static void tnx_vtcensus_note(uintptr_t vtable, uintptr_t absolute, const uint8_t *buffer,
-                              size_t offset, size_t chunk) {
-    if (absolute & 0xf) return;
-    if (vtable & 7) return;
-
-    int seg = tnx_vtcensus_seg(vtable);
-
-    if (seg < 0) return;
-
-    tnx_vtcensus_t *entry = tnx_vtcensus_entry(vtable - g_base, seg, 1);
-
-    if (!entry) return;
-
-    entry->count++;
-    g_vtcensus_total++;
-
-    if (!entry->first) entry->first = absolute;
-
-    if (entry->instCount < TNX_VTCENSUS_INST) entry->inst[entry->instCount++] = absolute;
-
-    if (offset + TNX_SLOT_OWNER_OFF + sizeof(uintptr_t) <= chunk) {
-        uintptr_t w20 = 0;
-
-        memcpy(&w20, buffer + offset + TNX_SLOT_OWNER_OFF, sizeof(w20));
-
-        if (w20 == vtable) entry->ownerEqVt++;
-    }
-}
-
-static void tnx_vtcensus_shaped(uintptr_t vtable) {
-    int seg = tnx_vtcensus_seg(vtable);
-
-    if (seg < 0) return;
-
-    tnx_vtcensus_t *entry = tnx_vtcensus_entry(vtable - g_base, seg, 0);
-
-    if (entry) entry->shaped++;
-}
-
-static int tnx_vtcensus_top(int byShaped) {
-    int best = -1;
-
-    for (int i = 0; i < g_vtcensus_used; i++) {
-        unsigned long long here = byShaped ? g_vtcensus[i].shaped : g_vtcensus[i].count;
-
-        if (!here) continue;
-
-        if (best < 0) {
-            best = i;
-
-            continue;
-        }
-
-        unsigned long long there = byShaped ? g_vtcensus[best].shaped : g_vtcensus[best].count;
-
-        if (here > there) best = i;
-    }
-
-    return best;
-}
-
-static void tnx_v50_table_probe(const tnx_vtcensus_t *entry) {
-    int shaped = 0;
-    int sameGid = 1;
-    int32_t firstGid = 0;
-
-    if (!entry) return;
-    if (entry->rva != TNX_V50_WATCH_RVA) return;
-
-    tnx_logf("v100 table probe rva=%#llx seg=%c count=%llu shaped=%llu instances=%d -- before this "
-             "table is hooked",
-             (unsigned long long)entry->rva, entry->seg ? 'D' : 'C', entry->count, entry->shaped,
-             entry->instCount);
-
-    for (int i = 0; i < entry->instCount; i++) {
-        uintptr_t object = entry->inst[i];
-        void *vtable = NULL;
-        void *owner = NULL;
-        int32_t gid = 0;
-        int32_t team = 0;
-        int32_t teamEngine = 0;
-        int32_t ownIndex = 0;
-        int32_t w08 = 0;
-        int32_t w40 = 0;
-        int32_t w4c = 0;
-        int32_t wd0 = 0;
-        uint8_t dead = 0;
-        int isShaped = 0;
-
-        if (!tnx_read_ptr(object, &vtable)) {
-            tnx_logf("v100 table elem[%d] %p unreadable - no verdict from this element",
-                     i, (void *)object);
-
-            continue;
-        }
-
-        tnx_read_i32(object + TNX_OBJ_GLOBALID_OFF, &gid);
-        tnx_read_i32(object + TNX_OBJ_TEAM_OFF, &team);
-        tnx_read_i32(object + TNX_OBJ_TEAMENGINE_OFF, &teamEngine);
-        tnx_read_i32(object + TNX_OBJ_OWNERINDEX_OFF, &ownIndex);
-        tnx_read_u8(object + TNX_OBJ_DEADFLAG_OFF, &dead);
-        tnx_read_ptr(object + TNX_SLOT_OWNER_OFF, &owner);
-        tnx_read_i32(object + 0x08, &w08);
-        tnx_read_i32(object + TNX_OBJ_TEAM_OFF, &w40);
-        tnx_read_i32(object + TNX_OBJ_TEAMENGINE_OFF, &w4c);
-        tnx_read_i32(object + TNX_OBJ_DEADFLAG_OFF, &wd0);
-
-        isShaped = tnx_gameobject_shape(object) ? 1 : 0;
-        if (isShaped) shaped++;
-
-        if (i == 0) firstGid = gid;
-        else if (gid != firstGid) sameGid = 0;
-
-        tnx_logf("v100 table elem[%d] %p vt=%#llx gid=%d team=%d team4c=%d own=%d dead=%d owner=%p "
-                 "w08=%d w40=%d w4c=%d wd0=%d shape=%d",
-                 i, (void *)object, (unsigned long long)((uintptr_t)vtable - g_base), gid, team,
-                 teamEngine,
-                 ownIndex, dead, (void *)owner, w08, w40, w4c, wd0, isShaped);
-    }
-
-    if (entry->instCount >= 2 && sameGid) {
-        tnx_logf("v100 table verdict rva=%#llx: all %d instances share gid=%d - this is a proxy or a "
-                 "cache, NOT a battle container; hooking it would be pointless",
-                 (unsigned long long)entry->rva, entry->instCount, firstGid);
-    } else if (entry->instCount >= 1) {
-        tnx_logf("v100 table verdict rva=%#llx: shaped=%d instances=%d and the ids differ - a real "
-                 "object family, safe to hook",
-                 (unsigned long long)entry->rva, shaped, entry->instCount);
-    }
-}
-
-static void tnx_vtcensus_slots(const tnx_vtcensus_t *entry) {
-    uint8_t bytes[TNX_VTCENSUS_SLOTS * sizeof(uintptr_t)];
-    char listed[512];
-    int used = 0;
-
-    if (!entry) return;
-    if (!tnx_copy(g_base + entry->rva, bytes, sizeof(bytes))) {
-        tnx_logf("vtslots rva=%#llx seg=%c unreadable - the table moved or is not mapped",
-                 (unsigned long long)entry->rva, entry->seg ? 'D' : 'C');
-
-        return;
-    }
-
-    for (int i = 0; i < TNX_VTCENSUS_SLOTS; i++) {
-        uintptr_t slot = 0;
-        const char *mark = "";
-
-        memcpy(&slot, bytes + (size_t)i * sizeof(uintptr_t), sizeof(slot));
-
-        for (int k = 0; k < TNX_SLOT_COUNT; k++) {
-            if (slot && slot == (uintptr_t)g_slot_specs[k].replacement) mark = "self:";
-        }
-
-        if (used > (int)sizeof(listed) - 32) break;
-
-        used += snprintf(listed + used, sizeof(listed) - (size_t)used, "%s%s%#llx", i ? "," : "",
-                         mark, (unsigned long long)(slot > g_base ? slot - g_base : 0));
-    }
-
-    tnx_logf("vtslots rva=%#llx seg=%c count=%llu shaped=%llu slotRvas=%s (self: is this tweak's "
-             "own replacement, not a class method)", (unsigned long long)entry->rva,
-             entry->seg ? 'D' : 'C', entry->count, entry->shaped, listed);
-
-    tnx_v50_table_probe(entry);
-}
-
-static void tnx_vtcensus_dump(void) {
-    int chosen[TNX_VTCENSUS_PRINT];
-    int nchosen = 0;
-
-    tnx_logf("vtcensus pass=%d distinct=%d%s total=%llu spill=%llu dc=%p..%p data=%p..%p",
-             g_heap_passes, g_vtcensus_used, g_vtcensus_spill ? "+" : "", g_vtcensus_total,
-             g_vtcensus_spill, (void *)g_vtcensus_dc_lo, (void *)g_vtcensus_dc_hi,
-             (void *)g_vtcensus_d_lo, (void *)g_vtcensus_d_hi);
-
-    for (int k = 0; k < TNX_VTCENSUS_PRINT; k++) {
-        int best = -1;
-
-        for (int i = 0; i < g_vtcensus_used; i++) {
-            int taken = 0;
-
-            for (int j = 0; j < nchosen; j++) {
-                if (chosen[j] == i) {
-                    taken = 1;
-
-                    break;
-                }
-            }
-
-            if (taken) continue;
-            if (best < 0 || g_vtcensus[i].count > g_vtcensus[best].count) best = i;
-        }
-
-        if (best < 0) break;
-
-        chosen[nchosen++] = best;
-
-        const tnx_vtcensus_t *entry = &g_vtcensus[best];
-
-        tnx_logf("vtcensus #%d rva=%#llx seg=%c count=%llu shaped=%llu ownerEqVt=%llu first=%p", k,
-                 (unsigned long long)entry->rva, entry->seg ? 'D' : 'C', entry->count,
-                 entry->shaped, entry->ownerEqVt, (void *)entry->first);
-    }
-
-    int most = tnx_vtcensus_top(0);
-    int mostShaped = tnx_vtcensus_top(1);
-
-    if (most >= 0) tnx_vtcensus_slots(&g_vtcensus[most]);
-    if (mostShaped >= 0 && mostShaped != most) tnx_vtcensus_slots(&g_vtcensus[mostShaped]);
-}
-
-static tnx_owner_vote_t *tnx_owner_vote_slot(uintptr_t owner) {
-    for (int i = 0; i < g_owner_vote_count; i++) {
-        if (g_owner_votes[i].owner == owner) return &g_owner_votes[i];
-    }
-
-    if (g_owner_vote_count >= TNX_OWNER_VOTE_MAX) return NULL;
-
-    tnx_owner_vote_t *entry = &g_owner_votes[g_owner_vote_count++];
-
-    memset(entry, 0, sizeof(*entry));
-    entry->owner = owner;
-
-    return entry;
-}
-
-static void tnx_owner_vote_note(tnx_owner_vote_t *entry, int32_t gid, int32_t team, int deadOk,
-                                uintptr_t vtable) {
-    BOOL known = NO;
-
-    entry->votes++;
-
-    for (int i = 0; i < entry->gidSeenCount; i++) {
-        if (entry->gidSeen[i] == (uint32_t)gid) {
-            known = YES;
-            break;
-        }
-    }
-
-    if (!known) {
-        if (entry->gidSeenCount < TNX_OWNER_VOTE_GID_MAX) {
-            entry->gidSeen[entry->gidSeenCount++] = (uint32_t)gid;
-        } else {
-
-            entry->gidFull = 1;
-        }
-    }
-
-    if (team >= 0 && team < 32) entry->teamMask |= (1 << team);
-    if (deadOk) entry->deadOk++;
-
-    if (vtable) {
-        BOOL have = NO;
-
-        for (int i = 0; i < entry->vtCount; i++) {
-            if (entry->vt[i] == vtable) {
-                have = YES;
-                break;
-            }
-        }
-
-        if (!have && entry->vtCount < TNX_OWNER_VOTE_VT_MAX) entry->vt[entry->vtCount++] = vtable;
-    }
-}
-
-static void tnx_objhit_note(uintptr_t at, uintptr_t vt, uintptr_t owner, int32_t gid, int32_t team,
-                            int32_t ownerIdx, int dead, int ownerClass) {
-    if (g_objhit_count >= TNX_OBJ_HIT_DUMP_MAX) {
-        g_objhit_full = 1;
-
-        return;
-    }
-
-    tnx_objhit_t *hit = &g_objhits[g_objhit_count++];
-
-    hit->at = at;
-    hit->vt = vt;
-    hit->owner = owner;
-    hit->gid = gid;
-    hit->team = team;
-    hit->ownerIdx = ownerIdx;
-    hit->dead = dead;
-    hit->ownerClass = ownerClass;
-}
-
-static void tnx_objhit_dump(void) {
-    static const char *const names[4] = { "heap", "image", "noRegion", "aboveWin" };
-    int printed = 0;
-
-    if (!g_objhit_count) return;
-
-    {
-        int live = 0;
-        int teams = 0;
-        int teamSeen[TNX_V77_TEAM_SLOTS];
-
-        for (int i = 0; i < TNX_V77_TEAM_SLOTS; i++) teamSeen[i] = 0;
-
-        for (int i = 0; i < g_objhit_count; i++) {
-            const tnx_objhit_t *hit = &g_objhits[i];
-            int32_t team = 0;
-
-            if (!tnx_v75_object_live(hit->at)) continue;
-
-            live++;
-
-            if (!tnx_read_i32(hit->at + TNX_OBJ_TEAM_OFF, &team)) continue;
-            if (team < 0 || team >= TNX_V77_TEAM_SLOTS) continue;
-            if (teamSeen[team]) continue;
-
-            teamSeen[team] = 1;
-            teams++;
-        }
-
-        g_v77_live_objs = live;
-        g_v77_live_teams = teams;
-    }
-
-    for (int want = 0; want < 4 && printed < TNX_OBJ_HIT_PRINT_MAX; want++) {
-        for (int i = 0; i < g_objhit_count && printed < TNX_OBJ_HIT_PRINT_MAX; i++) {
-            const tnx_objhit_t *hit = &g_objhits[i];
-
-            if (hit->ownerClass != want) continue;
-
-            {
-                int32_t hx = 0;
-                int32_t hy = 0;
-
-                tnx_read_i32(hit->at + TNX_OBJ_X_OFF, &hx);
-                tnx_read_i32(hit->at + TNX_OBJ_Y_OFF, &hy);
-
-                tnx_logf("objhit pass=%d #%d at=%p vt=%#llx gid=%d team=%d own=%d dead=%d pos=(%d,%d) "
-                         "owner=%p o20=%#llx o20Heap=%d ownerClass=%s",
-                         g_heap_passes, printed, (void *)hit->at,
-                         (unsigned long long)(hit->vt > g_base ? hit->vt - g_base : 0), hit->gid,
-                         hit->team, hit->ownerIdx, hit->dead, hx, hy, (void *)hit->owner,
-                         (unsigned long long)tnx_v68_word(hit->at + TNX_SLOT_OWNER_OFF),
-                         (int)tnx_heap_contains((uintptr_t)hit->owner), names[want]);
-            }
-
-            printed++;
-        }
-    }
-
-    if (g_objhit_full || printed < g_objhit_count) {
-        tnx_logf("objhit truncated: shown=%d recorded=%d%s - the real number of shaped words is the "
-                 "objvote line's hits+skipped+ownerImg+ownerNoRegion+ownerAboveWin", printed,
-                 g_objhit_count,
-                 g_objhit_full ? "+" : "");
-    }
-}
-
-static void tnx_probe_object_vote(uintptr_t cursor, size_t offset, const uint8_t *buffer,
-                                  size_t chunk, uintptr_t dcLo, uintptr_t dcHi) {
-    uintptr_t absolute = cursor + offset;
-    uintptr_t vtable = 0;
-    uintptr_t owner = 0;
-    int32_t gid = 0;
-    int32_t team = 0;
-    int32_t ownerIdx = 0;
-    int deadOk = 0;
-    int ownerClass = 0;
-
-    if (g_mode_strong) return;
-
-    if (absolute & 0xf) return;
-    if (offset + TNX_OBJ_DEADFLAG_OFF + 1 > chunk) return;
-
-    if (tnx_in_image_span(absolute)) {
-        g_objvote_obj_img++;
-        return;
-    }
-
-    memcpy(&vtable, buffer + offset, sizeof(vtable));
-
-    if (vtable < dcLo || vtable >= dcHi) return;
-    if (vtable & 7) return;
-
-    memcpy(&gid, buffer + offset + TNX_OBJ_GLOBALID_OFF, sizeof(gid));
-
-    if (gid <= 0) return;
-
-    memcpy(&team, buffer + offset + TNX_OBJ_TEAM_OFF, sizeof(team));
-
-    if (team < 0 || team > TNX_OBJ_TEAM_MAX) return;
-
-    memcpy(&ownerIdx, buffer + offset + TNX_OBJ_OWNERINDEX_OFF, sizeof(ownerIdx));
-
-    if (ownerIdx < 0 || ownerIdx > TNX_OBJ_OWNERIDX_MAX) return;
-
-    memcpy(&owner, buffer + offset + TNX_SLOT_OWNER_OFF, sizeof(owner));
-
-    if (!owner || (owner & 0xf)) return;
-
-    deadOk = (buffer[offset + TNX_OBJ_DEADFLAG_OFF] <= 1) ? 1 : 0;
-
-    ownerClass = tnx_owner_is_heap(owner) ? 0 : (tnx_in_image_span(owner) ? 1 : 2);
-
-    if (ownerClass == 2 && g_heap_window_high && owner >= g_heap_window_high) ownerClass = 3;
-
-    if (ownerClass == 1) g_objvote_owner_img++;
-    else if (ownerClass == 2) g_objvote_owner_reg++;
-    else if (ownerClass == 3) g_objvote_owner_above_win++;
-
-    tnx_objhit_note(absolute, vtable, owner, gid, team, ownerIdx, deadOk, ownerClass);
-
-    g_objvote_shaped++;
-
-    tnx_vtcensus_shaped(vtable);
-
-    if (ownerClass != 0) return;
-
-    if (!tnx_v71_manager_head_ok(owner)) {
-        g_v71_head_veto++;
-
-        if (g_v71_head_veto_logs < 4) {
-            uintptr_t head = (uintptr_t)tnx_v68_word(owner);
-
-            g_v71_head_veto_logs++;
-
-            tnx_logf("v100 objvote veto owner=%p ownSeg=%c head=%#llx headSeg=%c img=%d heap=%d "
-                     "src=B", (void *)owner, tnx_v72_seg_code(owner), (unsigned long long)head,
-                     tnx_v72_seg_code(head), (int)tnx_in_image_span(head),
-                     (int)tnx_heap_contains(head));
-        }
-
-        return;
-    }
-
-    tnx_owner_vote_t *entry = tnx_owner_vote_slot(owner);
-
-    if (!entry) {
-        g_objvote_skipped++;
-        return;
-    }
-
-    if (deadOk) g_objvote_dead_seen++;
-
-    g_objvote_hits++;
-    tnx_owner_vote_note(entry, gid, team, deadOk, vtable);
-}
-
-static int tnx_team_count(int mask) {
-    int n = 0;
-
-    for (int i = 0; i < 32; i++) {
-        if (mask & (1 << i)) n++;
-    }
-
-    return n;
-}
-
-static int tnx_owner_vote_better(int a, int b) {
-    int ta = tnx_team_count(g_owner_votes[a].teamMask);
-    int tb = tnx_team_count(g_owner_votes[b].teamMask);
-
-    if (ta != tb) return ta > tb;
-
-    if (g_owner_votes[a].gidSeenCount != g_owner_votes[b].gidSeenCount) {
-        return g_owner_votes[a].gidSeenCount > g_owner_votes[b].gidSeenCount;
-    }
-
-    return g_owner_votes[a].votes > g_owner_votes[b].votes;
-}
-
-static void tnx_object_vote_finish(void) {
-    int best = -1;
-    int top = -1;
-
-    for (int i = 0; i < g_owner_vote_count; i++) {
-        if (g_owner_votes[i].gidSeenCount < TNX_OWNER_VOTE_MIN) continue;
-        if (tnx_v57_owner_rejected(g_owner_votes[i].owner)) continue;
-        if (best < 0 || tnx_owner_vote_better(i, best)) best = i;
-    }
-
-    for (int i = 0; i < g_owner_vote_count; i++) {
-        if (top < 0 || g_owner_votes[i].votes > g_owner_votes[top].votes) top = i;
-    }
-
-    g_objvote_max_votes = top >= 0 ? g_owner_votes[top].votes : 0;
-    g_objvote_top_owner = top >= 0 ? g_owner_votes[top].owner : 0;
-
-    tnx_owner_vote_t *entry = NULL;
-
-    if (best < 0) {
-        g_objvote_confirm = 0;
-        g_objvote_best_teamcount = 0;
-        g_objvote_best_gids_full = 0;
-    } else {
-        entry = &g_owner_votes[best];
-
-        if (entry->owner == g_objvote_prev_owner) g_objvote_confirm++;
-        else g_objvote_confirm = 0;
-
-        g_objvote_prev_owner = entry->owner;
-        g_objvote_best_owner = entry->owner;
-        g_objvote_best_gids = entry->gidSeenCount;
-        g_objvote_best_gids_full = entry->gidFull;
-        g_objvote_best_teamcount = tnx_team_count(entry->teamMask);
-    }
-
-    tnx_logf("objvote pass=%d hits=%llu skipped=%llu owners=%d deadOk=%d best=%p gids=%d%s "
-             "confirm=%d teamCount=%d ownerImg=%llu ownerNoRegion=%llu ownerAboveWin=%llu "
-             "objImg=%llu objShaped=%llu "
-             "objhitRec=%d%s "
-             "maxVotes=%d topOwner=%p teamsMin=%d",
-             g_heap_passes, g_objvote_hits, g_objvote_skipped, g_owner_vote_count,
-             g_objvote_dead_seen, (void *)g_objvote_best_owner, g_objvote_best_gids,
-             g_objvote_best_gids_full ? "+" : "", g_objvote_confirm, g_objvote_best_teamcount,
-             g_objvote_owner_img, g_objvote_owner_reg, g_objvote_owner_above_win, g_objvote_obj_img,
-             g_objvote_shaped,
-             g_objhit_count, g_objhit_full ? "+" : "", g_objvote_max_votes, (void *)g_objvote_top_owner,
-              TNX_OWNER_VOTE_TEAMS_MIN);
-
-    for (int i = 0; i < g_owner_vote_count; i++) {
-        if (g_owner_votes[i].gidSeenCount < TNX_OWNER_VOTE_MIN) continue;
-
-        tnx_v71_owner_team_dump(g_owner_votes[i].owner, g_owner_votes[i].teamMask,
-                                tnx_team_count(g_owner_votes[i].teamMask));
-    }
-
-    tnx_objhit_dump();
-
-    if (!entry) return;
-
-    tnx_logf("objvote owner=%p distinctGids=%d%s votes=%d teams=%#x teamCount=%d deadOk=%d "
-             "vtCount=%d vt0=%#llx vt1=%#llx vt2=%#llx vt3=%#llx",
-             (void *)entry->owner, entry->gidSeenCount, entry->gidFull ? "+" : "", entry->votes,
-             entry->teamMask, g_objvote_best_teamcount, entry->deadOk, entry->vtCount,
-             (unsigned long long)(entry->vt[0] > g_base ? entry->vt[0] - g_base : 0),
-             (unsigned long long)(entry->vt[1] > g_base ? entry->vt[1] - g_base : 0),
-             (unsigned long long)(entry->vt[2] > g_base ? entry->vt[2] - g_base : 0),
-             (unsigned long long)(entry->vt[3] > g_base ? entry->vt[3] - g_base : 0));
-
-    if (g_objvote_owner_ok) return;
-
-    if (g_objvote_best_teamcount >= TNX_OWNER_VOTE_TEAMS_MIN) {
-        if (entry->gidSeenCount < TNX_V75_GID_DISTINCT_MIN) {
-            if (g_v75_gid_veto_logs < 4) {
-                g_v75_gid_veto_logs++;
-
-                tnx_logf("v100 objvote veto owner=%p distinctGids=%d votes=%d teamCount=%d - a container "
-                         "whose elements repeat one id is a cache or a proxy, not a battle container",
-                         (void *)entry->owner, entry->gidSeenCount, entry->votes,
-                         g_objvote_best_teamcount);
-            }
-
-            return;
-        }
-
-        if (entry->votes < TNX_OWNER_VOTE_MIN) {
-            if (g_v52_low_votes_logs < 4) {
-                g_v52_low_votes_logs++;
-
-                tnx_logf("v100 objvote two teams but %d objects on owner=%p - not adopted yet",
-                         entry->votes, (void *)entry->owner);
-            }
-
-            return;
-        }
-
-        {
-            uintptr_t container = 0;
-            int32_t owned = 0;
-            int32_t ownedCap = 0;
-            char gateWhy[64] = { 0 };
-
-            if (!tnx_v71_manager_head_ok(entry->owner)) {
-                if (g_v71_head_reject_logs < 8) {
-                    g_v71_head_reject_logs++;
-
-                    tnx_logf("v100 objvote head refused owner=%p head=%#llx votes=%d gids=%d src=B",
-                             (void *)entry->owner,
-                             (unsigned long long)tnx_v68_word(entry->owner + TNX_MGR_ARRAY_OFF),
-                             entry->votes, entry->gidSeenCount);
-                }
-
-                return;
-            }
-
-            tnx_v68_multiteam_dump(entry->owner, entry->teamMask, g_objvote_best_teamcount);
-
-            if (!tnx_v68_container_gate(entry->owner, &container, &owned, &ownedCap, gateWhy,
-                                        sizeof(gateWhy))) {
-                tnx_v68_pending_push(entry->owner, gateWhy);
-
-                if (g_v57_reject_logs < 8) {
-                    g_v57_reject_logs++;
-
-                    tnx_logf("v100 adopt refused owner=%p teams=%#x votes=%d distinctGids=%d "
-                             "reason=%s count=%d cap=%d - queued for retry instead of excluded",
-                             (void *)entry->owner, entry->teamMask, entry->votes,
-                             entry->gidSeenCount, gateWhy[0] ? gateWhy : "unknown", owned,
-                             ownedCap);
-                }
-
-                return;
-            }
-
-            entry->owner = container;
-        }
-
-        tnx_logf("v100 objvote adopt owner=%p teams=%#x teamCount=%d votes=%d distinctGids=%d%s - a "
-                 "two-team owner is a battle container on its own, and waiting for consecutive "
-                 "passes is what kept the v51 run from ever naming it",
-                 (void *)entry->owner, entry->teamMask, g_objvote_best_teamcount, entry->votes,
-                 entry->gidSeenCount, entry->gidFull ? "+" : "");
-
-        tnx_battle_begin("objvote");
-
-        g_objvote_owner_ok = YES;
-        g_players_object = entry->owner;
-        g_manager_count = entry->gidSeenCount;
-
-        tnx_report_manager("objvote", entry->owner);
-        tnx_object_detail_readonly(entry->owner, TNX_OWNER_VOTE_DETAIL_MAX);
-
-        return;
-    }
-
-    g_objvote_confirm = 0;
-
-    if (g_objvote_single_team_logs < 4) {
-        g_objvote_single_team_logs++;
-
-        tnx_logf("v100 objvote singleTeam owner=%p teamCount=%d teams=%#x distinctGids=%d%s votes=%d "
-                 "deadOk=%d vt0=%#llx - held back: a battle container carries both teams, and a "
-                 "table that merely looks like one repeats a single team value",
-                 (void *)entry->owner, g_objvote_best_teamcount, entry->teamMask,
-                 entry->gidSeenCount, entry->gidFull ? "+" : "", entry->votes, entry->deadOk,
-                 (unsigned long long)(entry->vt[0] > g_base ? entry->vt[0] - g_base : 0));
-    }
-}
 
 static void tnx_slot_diag(const char *why) {
     char buf[1024];
@@ -7632,519 +4232,18 @@ static void tnx_slot_diag(const char *why) {
 
         for (int i = 0; i < g_ag_objectCount; i++) {
             tnx_logf("AG obj[%d]=%p", i, (void *)g_ag_objects[i]);
-            tnx_dump_hex("AGobj", g_ag_objects[i], 0x80);
         }
     }
 }
 
-static void tnx_diag_report(const char *why) {
-    const char *verdict = "no battle-shaped structure in the memory scanned so far";
 
-    char verdictBuf[512] = {0};
 
-    if (g_heap_passes == 0) {
-        verdict = "no heap pass completed yet";
-    } else if (g_mode_strong) {
-        verdict = "MODE ADOPTED through the mode -> manager -> array chain, fields only, nothing called";
-    } else if (g_objvote_owner_ok && g_players_object && g_ag_manager && g_ag_objectCount > 0) {
-        verdict = "OWNER CAPTURED - the vote adopted an owner and the manager walk holds objects";
-    } else if (g_objvote_owner_ok) {
-        verdict = "OWNER CANDIDATE, not adopted - the vote named an owner but the manager walk "
-                  "holds no objects";
-    } else if (g_objvote_best_gids >= TNX_OWNER_VOTE_MIN &&
-               g_objvote_best_teamcount < TNX_OWNER_VOTE_TEAMS_MIN) {
-
-        verdict = "OBJECT VOTE found a heap owner with many distinct ids but ONE team only - a battle container carries both teams, so it is held back, not adopted";
-    } else if (g_objvote_best_gids >= TNX_OWNER_VOTE_MIN) {
-        verdict = "OBJECT VOTE sees game objects under one owner, but it has not won two passes in a row yet";
-    } else if (g_objvote_hits > 0 && g_objvote_max_votes <= 1) {
-
-        int cidx = tnx_vtcensus_top(1);
-
-        if (cidx < 0) cidx = tnx_vtcensus_top(0);
-
-        if (cidx >= 0) {
-            snprintf(verdictBuf, sizeof(verdictBuf),
-                     "OBJECT VOTE matched real objects but +0x20 never repeated (%d owners for %llu "
-                     "objects), so +0x20 is not the shared owning manager on this build. The class "
-                     "tables the live heap really carries are in the vtcensus lines; the one with the "
-                     "most game-object-shaped instances is RVA %#llx (%llu instances, %llu shaped) "
-                     "and its first slot RVAs are on the vtslots line - that is where the next hook "
-                     "goes",
-                     g_owner_vote_count, g_objvote_hits,
-                     (unsigned long long)g_vtcensus[cidx].rva, g_vtcensus[cidx].count,
-                     g_vtcensus[cidx].shaped);
-            verdict = verdictBuf;
-        } else {
-            verdict = "OBJECT VOTE matched real objects but +0x20 never repeated - almost as many owners as objects, so +0x20 is not the shared owning manager on this build; and no table of theirs survived in the census, which is itself the finding - read the objhit dump for the class tables the live objects carry";
-        }
-    } else if (g_objvote_hits > 0) {
-        verdict = "OBJECT VOTE matched object-shaped words but no owner reached the distinct-id minimum - the layout is partly recognised";
-    } else if (g_scene_object) {
-        verdict = "an object was adopted but the chain is not fully confirmed";
-    } else if (g_manager_loose_count == 0 && g_manager_saw_cap == 0) {
-        verdict = "NO ARRAY-SHAPED WORD ANYWHERE - the header test itself matched nothing";
-    } else if (g_manager_skipped > 0 || g_manager_probes >= TNX_MANAGER_PROBE_LIMIT) {
-        verdict = "ARRAY TEST BLIND - its probe budget was exhausted; the object vote is the channel that still covered the whole pass";
-    } else if (g_chain_skipped > 0 && !g_scene_object && !g_players_object) {
-        verdict = "CHAIN BLIND - the chain probe hit its limit before the heap was covered, and it found nothing before that; this run proves nothing about the mode";
-    } else if (g_manager_best_live >= TNX_MANAGER_MIN_OBJECTS) {
-        verdict = "a container passed the array test and was recorded, NOT adopted - the chain never matched";
-    } else if (g_manager_best_live >= 1) {
-        verdict = "manager-shaped array seen, but too few live instances -> not a battle";
-    } else if (g_manager_best_count >= TNX_MANAGER_MIN_OBJECTS) {
-        verdict = "count at +0xc is in range but entries are not C++ instances -> wrong layout";
-    } else if (g_manager_skipped > 0) {
-        verdict = "probe budget exhausted -> the pass was blind after that point, raise the limit";
-    } else if (g_manager_probes_total == 0 && g_heap_passes > 0) {
-        verdict = "no manager-like count at +0xc anywhere -> layout @+0xc wrong, or coverage short";
-    } else if (!g_players_object && g_mode_best_objects < TNX_MANAGER_MIN_OBJECTS &&
-               g_heap_passes > 0) {
-        verdict = "NO BATTLE IN WINDOW - nothing battle-shaped existed, this says nothing about the layout";
-    }
-
-    g_slot_hits_total = 0;
-    for (int i = 0; i < TNX_SLOT_COUNT; i++) g_slot_hits_total += (uint64_t)g_slot_hits[i];
-
-    tnx_logf("hooks fired=%llu of %d slots (A1=%llu A2=%llu B1=%llu B2=%llu B3=%llu C1=%llu C2=%llu)",
-             (unsigned long long)g_slot_hits_total, TNX_SLOT_COUNT,
-             (unsigned long long)g_slot_hits[0], (unsigned long long)g_slot_hits[1],
-             (unsigned long long)g_slot_hits[2], (unsigned long long)g_slot_hits[3],
-             (unsigned long long)g_slot_hits[4], (unsigned long long)g_slot_hits[5],
-             (unsigned long long)g_slot_hits[6]);
-
-    if (g_slot_hits_total == 0 && g_heap_passes > 0) {
-
-        tnx_logf("DIAG note: none of the seven slots was ever dispatched - which is NOT the same as "
-                 "the seven classes being absent. The 20:22 run measured a pass from 0x0 and a pass "
-                 "from the window low, both cut off by the same byte budget, and the ninth vtprobe "
-                 "counter read 0 on the first and 92502 on the second. A zero counts only when that "
-                 "pass reports budgetHit=0, which is why the pass line now carries budget=, "
-                 "budgetHit= and readTo= beside scanned= and winSpan=. `vtprobePass=` is this pass, "
-                 "`vtprobeAll=` the running total, `vtprobeFirst=` the address behind each non-zero "
-                 "counter. The classes that DO exist are enumerated by the `vtcensus` lines: "
-                 "`count=` is live instances, `shaped=` how many of them also passed the full object "
-                 "record layout, and `vtslots` gives the first slot RVAs of the two most interesting "
-                 "tables - that is where the next hook goes");
-    }
-
-    tnx_trail_dump();
-
-    tnx_best_candidate_dump();
-
-    tnx_logf("v100 chain gates: vtBad=%d vtNotDC=%d mgrBad=%d mgrNotPlausible=%d mgrNotHeap=%d "
-             "varBad=%d pxBad=%d pyBad=%d inputBad=%d shapeBad=%d arrayRead=%d countRead=%d "
-             "arrayNull=%d countRange=%d live=%d own=%d gid=%d tested=%d logged=%d",
-             g_v55_chain_rej[0], g_v55_chain_rej[1], g_v55_chain_rej[2], g_v55_chain_rej[3],
-             g_v55_chain_rej[4], g_v55_chain_rej[5], g_v55_chain_rej[6], g_v55_chain_rej[7],
-             g_v55_chain_rej[8], g_v55_chain_rej[9], g_v55_chain_rej[10], g_v55_chain_rej[11],
-             g_v55_chain_rej[12], g_v55_chain_rej[13], g_v55_chain_rej[14], g_v55_chain_rej[15],
-             g_v55_chain_rej[16], g_chain_probes, g_v55_layout_logs);
-
-    tnx_logf("DIAG(%s) attempts=%d/%d heapPasses=%d covered=%lluMB probes=%d/%d skipped=%d "
-             "capRej=%d/%d bestCount=%d bestLive=%d mgr=%p adopted=%d vfx=%d mx=%d "
-             "chain=%d/%d chainPass=%d chainSkip=%d stable=%d own=%d gid=%d "
-             "objvote=%llu skipped=%llu owners=%d best=%p gids=%d%s confirm=%d teamCount=%d "
-             "deadOk=%d ownerImg=%llu ownerNoRegion=%llu ownerAboveWin=%llu objImg=%llu "
-             "objShaped=%llu maxVotes=%d "
-             "bigSkip=%d vtcensus=%d/%llu",
-             why ? why : "?", g_votescan_attempts, TNX_VOTESCAN_ATTEMPTS, g_heap_passes,
-             g_heap_covered / (1024ull * 1024ull), g_manager_probes_total, TNX_MANAGER_PROBE_LIMIT,
-             g_manager_skipped, g_manager_cap_rejects, g_manager_saw_cap,
-             g_manager_best_count, g_manager_best_live, (void *)g_players_object,
-             g_mode_strong ? 1 : 0, g_mode_verified_hits, g_mode_best_objects,
-             g_chain_checks, g_chain_probes, g_v55_chain_probes_pass, g_chain_skipped,
-             g_seen_stable,
-             g_chain_best_own, g_chain_best_gid,
-             g_objvote_hits, g_objvote_skipped, g_owner_vote_count,
-             (void *)g_objvote_best_owner, g_objvote_best_gids,
-             g_objvote_best_gids_full ? "+" : "", g_objvote_confirm, g_objvote_best_teamcount,
-              g_objvote_dead_seen, g_objvote_owner_img, g_objvote_owner_reg,
-              g_objvote_owner_above_win, g_objvote_obj_img,
-              g_objvote_shaped, g_objvote_max_votes, g_heap_big_skip,
-              g_vtcensus_used, g_vtcensus_total);
-
-    tnx_logf("DIAG verdict: %s", verdict);
-
-    tnx_slot_diag(why);
-}
-
-static void tnx_scan_globals_for_mode(const char *name) {
-    uintptr_t lo = 0;
-    uintptr_t hi = 0;
-
-    if (!tnx_segment_range(name, &lo, &hi)) {
-        tnx_logf("votescan %s missing", name);
-        return;
-    }
-
-    size_t span = (size_t)(hi - lo);
-
-    if (span < 0x1000 || span > (16u * 1024u * 1024u)) {
-        tnx_logf("votescan %s bad span=%zu", name, span);
-        return;
-    }
-
-    uint8_t *bytes = (uint8_t *)malloc(span);
-
-    if (!bytes) {
-        tnx_logf("votescan %s alloc failed", name);
-        return;
-    }
-
-    if (!tnx_copy(lo, bytes, span)) {
-        free(bytes);
-        tnx_logf("votescan %s read failed", name);
-        return;
-    }
-
-    int hits = 0;
-    int vtHits = 0;
-    int shapeHits = 0;
-    int strongHits = 0;
-    int nearMiss = 0;
-    int verifiedHits = 0;
-
-    for (size_t offset = 0; offset + sizeof(void *) <= span; offset += sizeof(void *)) {
-        uintptr_t object = 0;
-        void *vtable = NULL;
-        BOOL vtMatch = NO;
-        int score = 0;
-        int vfx = -1;
-
-        memcpy(&object, bytes + offset, sizeof(object));
-
-        if (!tnx_pointer_plausible(object)) continue;
-        if (!tnx_heap_resident(object)) continue;
-        if (!tnx_read_ptr(object, &vtable)) continue;
-        if (!vtable) continue;
-
-        vtMatch = tnx_is_mode_vtable((uintptr_t)vtable, NULL);
-        vfx = tnx_verified_vtable((uintptr_t)vtable);
-
-        if (vfx >= 0 || vtMatch || tnx_vtable_shaped((uintptr_t)vtable)) score = tnx_mode_score(object);
-
-        if (score == 0 && !vtMatch && vfx < 0) {
-
-            if (tnx_object_shaped(object)) {
-                nearMiss++;
-
-                if (g_mode_near_logs < 3) {
-                    g_mode_near_logs++;
-                    tnx_report_mode_hit("near", lo + offset, object);
-                }
-            }
-
-            continue;
-        }
-
-        hits++;
-        g_mode_matches++;
-
-        if (vfx >= 0) {
-            g_mode_verified_hits++;
-            verifiedHits++;
-
-            tnx_battle_begin("globals");
-        }
-        if (vtMatch) vtHits++;
-        if (score >= 1) shapeHits++;
-        if (score >= 2) strongHits++;
-
-        if (g_mode_strict_logs < 6 || vfx >= 0) {
-            g_mode_strict_logs++;
-            tnx_report_mode_hit(vfx >= 0 ? "cap" : (score >= 2 ? "strong" : (score == 1 ? "weak" : "vt")),
-                                lo + offset, object);
-        }
-
-        if (vfx >= 0) {
-
-            tnx_adopt_mode(object, YES, "verified");
-        } else if (score >= 2) {
-            tnx_adopt_mode(object, YES, "strong");
-        } else if (score == 1) {
-            tnx_adopt_mode(object, NO, "container");
-        }
-    }
-
-    free(bytes);
-
-    {
-        int index = (strcmp(name, "__DATA_CONST") == 0) ? 1 : 0;
-        int sig = hits * 31 + shapeHits * 131 + strongHits * 1313 + verifiedHits * 131313;
-
-        if (sig != g_scan_sig[index] || (g_votescan_attempts % 30) == 0) {
-            g_scan_sig[index] = sig;
-
-            tnx_logf("votescan %s hits=%d vt=%d shape=%d strong=%d near=%d vfx=%d",
-                     name, hits, vtHits, shapeHits, strongHits, nearMiss, verifiedHits);
-        }
-    }
-}
-
-static void tnx_scan_heap_for_mode(void) {
-    uintptr_t startAddress = g_heap_scan_next;
-    vm_address_t address = (vm_address_t)startAddress;
-    size_t scanned = 0;
-
-    g_manager_probes = 0;
-
-    g_owner_vote_count = 0;
-    g_objvote_hits = 0;
-    g_objvote_skipped = 0;
-    g_objvote_dead_seen = 0;
-    g_objvote_owner_img = 0;
-    g_objvote_owner_reg = 0;
-    g_objvote_owner_above_win = 0;
-    g_objvote_obj_img = 0;
-    g_objvote_max_votes = 0;
-    g_objvote_top_owner = 0;
-    g_objhit_count = 0;
-    g_objhit_full = 0;
-    g_objvote_shaped = 0;
-    g_heap_img_skip = 0;
-    g_heap_ro_skip = 0;
-    g_heap_big_skip = 0;
-    g_heap_big_bytes = 0;
-    g_heap_huge_skip = 0;
-
-    tnx_vtcensus_reset();
-
-    for (int k = 0; k < TNX_VTPROBE_COUNT; k++) g_vtprobe_pass[k] = g_vtprobe_hits[k];
-
-    uintptr_t winLo = g_heap_window_low;
-    uintptr_t winHi = g_heap_window_high;
-
-    uint64_t budgetNow = (winHi > winLo ? (uint64_t)(winHi - winLo) : 0) + (64ull << 20);
-
-    if (budgetNow < TNX_HEAP_SCAN_BUDGET) budgetNow = TNX_HEAP_SCAN_BUDGET;
-    if (budgetNow > TNX_HEAP_SCAN_BUDGET_MAX) budgetNow = TNX_HEAP_SCAN_BUDGET_MAX;
-
-    uintptr_t dcLo = 0;
-    uintptr_t dcHi = 0;
-    BOOL haveDC = tnx_segment_range("__DATA_CONST", &dcLo, &dcHi);
-
-    g_vtcensus_dc_lo = dcLo;
-    g_vtcensus_dc_hi = dcHi;
-    g_vtcensus_d_lo = 0;
-    g_vtcensus_d_hi = 0;
-    tnx_segment_range("__DATA", &g_vtcensus_d_lo, &g_vtcensus_d_hi);
-
-    g_heap_passes++;
-    int regions = 0;
-    int hits = 0;
-    int shapeHits = 0;
-    int strongHits = 0;
-    int verifiedHits = 0;
-
-    uintptr_t readStop = 0;
-    size_t words = 0;
-
-    while (regions < 8192 && scanned < budgetNow) {
-        vm_size_t size = 0;
-        vm_region_basic_info_data_64_t info;
-        mach_msg_type_number_t infoCount = VM_REGION_BASIC_INFO_COUNT_64;
-        mach_port_t objectName = MACH_PORT_NULL;
-
-        kern_return_t result = vm_region_64(
-            mach_task_self(),
-            &address,
-            &size,
-            VM_REGION_BASIC_INFO_64,
-            (vm_region_info_t)&info,
-            &infoCount,
-            &objectName
-        );
-
-        if (objectName != MACH_PORT_NULL) mach_port_deallocate(mach_task_self(), objectName);
-        if (result != KERN_SUCCESS || size == 0) break;
-
-        if (size > (1ull << 30)) {
-            uintptr_t beyond = (uintptr_t)address + (uintptr_t)size;
-
-            if (beyond <= (uintptr_t)address) break;
-
-            if ((info.protection & VM_PROT_WRITE) != 0) {
-                g_heap_big_skip++;
-                g_heap_big_bytes += (unsigned long long)size;
-            } else {
-                g_heap_huge_skip++;
-            }
-
-            address = (vm_address_t)beyond;
-
-            continue;
-        }
-
-        regions++;
-
-        if (tnx_image_segment_name((uintptr_t)address)) {
-            g_heap_img_skip++;
-        } else if ((info.protection & VM_PROT_WRITE) != 0 && size >= 0x1000) {
-            uint64_t remaining = (uint64_t)size;
-            uintptr_t cursor = (uintptr_t)address;
-
-            while (remaining >= 16 && scanned < budgetNow) {
-                size_t chunk = (size_t)(remaining < TNX_HEAP_CHUNK ? remaining : (uint64_t)TNX_HEAP_CHUNK);
-                uint8_t *buffer = (uint8_t *)malloc(chunk);
-
-                if (!buffer) break;
-
-                if (tnx_copy(cursor, buffer, chunk)) {
-                    for (size_t offset = 0; offset + sizeof(uintptr_t) <= chunk; offset += sizeof(uintptr_t)) {
-                        uintptr_t vtable = 0;
-
-                        memcpy(&vtable, buffer + offset, sizeof(vtable));
-
-                        tnx_probe_manager(cursor, offset, buffer, chunk);
-
-                        tnx_vtprobe_note(vtable, cursor + offset);
-
-                        tnx_vtcensus_note(vtable, cursor + offset, buffer, offset, chunk);
-
-                        if (haveDC) {
-                            tnx_probe_mode_chain(cursor, offset, buffer, chunk, dcLo, dcHi);
-
-                            tnx_probe_object_vote(cursor, offset, buffer, chunk, dcLo, dcHi);
-                        }
-
-                        if (!tnx_is_mode_vtable(vtable, NULL) && tnx_verified_vtable(vtable) < 0) continue;
-
-                        hits++;
-                        g_mode_matches++;
-
-                        uintptr_t object = cursor + offset;
-                        int vfx = tnx_verified_vtable(vtable);
-                        int score = tnx_mode_score(object);
-
-                        if (vfx >= 0) {
-                            g_mode_verified_hits++;
-                            verifiedHits++;
-
-                            tnx_battle_begin("heap");
-                        }
-
-                        if (score == 0 && vfx < 0) continue;
-
-                        shapeHits++;
-                        if (score >= 2) strongHits++;
-
-                        if (g_mode_relaxed_logs < 8 || vfx >= 0) {
-                            g_mode_relaxed_logs++;
-                            tnx_report_mode_hit(vfx >= 0 ? "heap-cap" : (score >= 2 ? "heap+" : "heapw"), 0, object);
-                        }
-
-                        if (vfx >= 0) {
-                            tnx_adopt_mode(object, YES, "heap-verified");
-                        } else if (score >= 2) {
-                            tnx_adopt_mode(object, YES, "heap-strong");
-                        } else if (score == 1) {
-                            tnx_adopt_mode(object, NO, "heap-container");
-                        }
-                    }
-                }
-
-                free(buffer);
-
-                size_t step = chunk - sizeof(uintptr_t);
-
-                if (step == 0) break;
-
-                scanned += step;
-                cursor += step;
-                remaining -= step;
-                words += chunk / sizeof(uintptr_t);
-            }
-
-            if (scanned >= budgetNow && remaining >= 16) readStop = cursor;
-        } else {
-
-            g_heap_ro_skip++;
-        }
-
-        uintptr_t next = (uintptr_t)address + (uintptr_t)size;
-        if (next <= (uintptr_t)address) break;
-
-        address = (vm_address_t)next;
-    }
-
-    uintptr_t nextAddress = readStop ? readStop : (uintptr_t)address;
-
-    if (regions >= 8192 || (g_heap_window_high && nextAddress >= g_heap_window_high)) {
-        g_heap_scan_next = g_heap_window_low;
-    } else if (nextAddress <= startAddress) {
-
-        uintptr_t jump = startAddress + (1ull << 30);
-
-        g_heap_scan_next = (g_heap_window_high && jump >= g_heap_window_high) ? g_heap_window_low
-                                                                             : jump;
-    } else {
-        g_heap_scan_next = nextAddress;
-    }
-
-    g_heap_covered += (unsigned long long)scanned;
-
-    char vtbuf[160];
-    char vtpass[160];
-    int vused = 0;
-    int pused = 0;
-
-    for (int k = 0; k < TNX_VTPROBE_COUNT; k++) {
-        if (vused > (int)sizeof(vtbuf) - 24 || pused > (int)sizeof(vtpass) - 24) break;
-
-        vused += snprintf(vtbuf + vused, sizeof(vtbuf) - (size_t)vused, "%s%llu", k ? "," : "",
-                          g_vtprobe_hits[k]);
-        pused += snprintf(vtpass + pused, sizeof(vtpass) - (size_t)pused, "%s%llu", k ? "," : "",
-                          g_vtprobe_hits[k] - g_vtprobe_pass[k]);
-    }
-
-    tnx_object_vote_finish();
-    tnx_vtcensus_dump();
-
-    tnx_logf("votescan heap pass=%d from=%p scanned=%zu words=%zu regions=%d imgSkip=%d roSkip=%d "
-             "bigSkip=%d "
-             "bigBytes=%lluMB hugeSkip=%d budget=%lluMB budgetHit=%d readTo=%p hits=%d vfx=%d mgr=%p "
-             "probes=%d/%d skipped=%d cap=%d/%d loose=%d window=%d bestCount=%d bestLive=%d "
-             "trailBest=%d stable=%d chain=%d/%d ready=%d skip=%d live=%d own=%d gid=%d "
-             "vtprobePass=%s vtprobeAll=%s vtcensus=%d/%llu vtSpill=%llu "
-             "next=%p win=%p..%p winSpan=%lluMB",
-             g_heap_passes, (void *)startAddress, scanned, words, regions, g_heap_img_skip,
-             g_heap_ro_skip,
-             g_heap_big_skip, g_heap_big_bytes / (1024ull * 1024ull), g_heap_huge_skip,
-             budgetNow / (1024ull * 1024ull), readStop ? 1 : 0, (void *)readStop, hits,
-             verifiedHits,
-             (void *)g_players_object, g_manager_probes, TNX_MANAGER_PROBE_LIMIT,
-             g_manager_skipped, g_manager_cap_rejects, g_manager_saw_cap,
-             g_manager_loose_count, g_manager_window_rejects,
-             g_manager_best_count, g_manager_best_live, g_trail_best, g_seen_stable,
-             g_chain_checks, g_chain_probes, g_chain_ready, g_chain_skipped,
-             g_chain_best_live, g_chain_best_own, g_chain_best_gid, vtpass, vtbuf,
-             g_vtcensus_used, g_vtcensus_total, g_vtcensus_spill,
-             (void *)g_heap_scan_next, (void *)winLo, (void *)winHi,
-             (unsigned long long)(winHi > winLo ? (winHi - winLo) / (1024ull * 1024ull) : 0));
-
-    {
-        char firsts[320];
-        int fused = 0;
-
-        for (int k = 0; k < TNX_VTPROBE_COUNT; k++) {
-            if (!g_vtprobe_first[k]) continue;
-            if (fused > (int)sizeof(firsts) - 40) break;
-
-            fused += snprintf(firsts + fused, sizeof(firsts) - (size_t)fused, "%s%d@%p",
-                              fused ? " " : "", k, (void *)g_vtprobe_first[k]);
-        }
-
-        if (fused) tnx_logf("vtprobeFirst pass=%d %s", g_heap_passes, firsts);
-    }
-}
 
 static void tnx_locate_battle_mode(void) {
     if (g_mode_strong) return;
 
     if (g_votescan_attempts >= TNX_VOTESCAN_ATTEMPTS) {
 
-        tnx_diag_report("exhausted");
 
         return;
     }
@@ -8157,7 +4256,6 @@ static void tnx_locate_battle_mode(void) {
     g_votescan_attempts++;
 
     if (g_votescan_attempts == 1) {
-        tnx_heap_regions_refresh();
 
     tnx_logf("heapwin regions=%d lo=%p hi=%p winSpan=%lluMB capped=%d",
              g_heap_region_count, (void *)g_heap_window_low, (void *)g_heap_window_high,
@@ -8171,21 +4269,15 @@ static void tnx_locate_battle_mode(void) {
 
     if ((g_votescan_attempts % TNX_VOTESCAN_GLOBAL_EVERY) == 1) {
 
-        tnx_heap_regions_refresh();
 
-        tnx_scan_globals_for_mode("__DATA");
 
-        if (!g_mode_strong) tnx_scan_globals_for_mode("__DATA_CONST");
     }
 
-    if (!g_mode_strong && (g_votescan_attempts % TNX_VOTESCAN_HEAP_EVERY) == 1) tnx_scan_heap_for_mode();
 
     if (g_mode_strong) {
         tnx_logf("votescan SUCCESS attempt=%d object=%p global=%p",
                  g_votescan_attempts, (void *)g_scene_object, (void *)g_mode_source);
-        tnx_report_mode_hit("found", g_mode_source, g_scene_object);
     } else if ((g_votescan_attempts % TNX_VOTESCAN_HEARTBEAT) == 0) {
-        tnx_diag_report("heartbeat");
     }
 }
 
@@ -8200,41 +4292,6 @@ static uintptr_t tnx_vtable_rva(void *object) {
     return (uintptr_t)vtable - g_base;
 }
 
-static void tnx_dump_mode_refs(const char *tag) {
-    if (!g_scene_object) return;
-
-    tnx_logf("moderef[%s] mode=%p vt=%#llx", tag, (void *)g_scene_object,
-             (unsigned long long)tnx_vtable_rva((void *)g_scene_object));
-
-    int altHits = 0;
-
-    for (uint32_t off = 0; off < 0x100 && altHits < 4; off += 8) {
-        void *field = NULL;
-
-        if (!tnx_read_ptr(g_scene_object + off, &field)) continue;
-        if (!field) continue;
-        if ((uintptr_t)field < 0x10000) continue;
-
-        int32_t probe = 0;
-        tnx_read_i32((uintptr_t)field + TNX_MODE_MODEVAR_OFF, &probe);
-
-        altHits++;
-
-        tnx_logf("v100 modeAlt +%02x -> %p vt=%#llx int124=%d src=A", off, field,
-                 (unsigned long long)tnx_vtable_rva(field), probe);
-    }
-
-    for (int i = 0; i < 3; i++) {
-        uint32_t off = (uint32_t)(TNX_MODE_SLOT_A + i * 8);
-        void *slot = NULL;
-
-        if (!tnx_read_ptr(g_scene_object + off, &slot)) continue;
-        if (!slot) continue;
-
-        tnx_logf("moderef[%s] sl%c +%x -> %p vt=%#llx",
-                 tag, (char)('A' + i), off, slot, (unsigned long long)tnx_vtable_rva(slot));
-    }
-}
 
 static BOOL tnx_obj_slot_fn(uintptr_t object, uintptr_t slot, uintptr_t *rvaOut) {
     void *vtable = NULL;
@@ -8256,7 +4313,6 @@ static BOOL tnx_obj_slot_fn(uintptr_t object, uintptr_t slot, uintptr_t *rvaOut)
 static void tnx_dump_mode_objects(const char *tag) {
     if (!g_scene_object) return;
 
-    tnx_dump_mode_refs(tag);
 
     void *manager = NULL;
     void *array = NULL;
@@ -8339,12 +4395,8 @@ static void tnx_report_manager(const char *tag, uintptr_t manager) {
     if (count < TNX_MANAGER_MIN_OBJECTS || count > TNX_MANAGER_MAX_OBJECTS) return;
     if (capacity < count || capacity > TNX_MGR_CAP_MAX) return;
 
-    tnx_dump_manager(manager, (int)count);
 }
 
-#define TNX_DODGE_RADIUS 320
-#define TNX_DODGE_STEP 600
-#define TNX_DODGE_SCALE 4096
 #define TNX_OBJECT_DETAIL_MAX 8
 #define TNX_TRAIL_MAX 8
 #define TNX_BEST_DETAIL_MAX 12
@@ -8453,44 +4505,7 @@ static int tnx_trail_ranked(int *out, int max) {
     return count;
 }
 
-static void tnx_trail_rebest(void) {
-    int rank[TNX_TRAIL_MAX];
-    int n = tnx_trail_ranked(rank, TNX_TRAIL_MAX);
-    int best = -1;
 
-    for (int k = 0; k < n; k++) {
-        if (tnx_trail_qualifies(rank[k])) {
-            best = rank[k];
-
-            break;
-        }
-    }
-
-    g_trail_best = best;
-
-    if (best < 0 && n > 0 && g_v75_best_wait_logs < 4) {
-        int top = rank[0];
-
-        g_v75_best_wait_logs++;
-
-        tnx_logf("v100 trail: best has teamDistinct=%d posDistinct=%d ascii=%d/%d - not a battle "
-                 "container, waiting for two teams and two positions", g_trail[top].teamDistinct,
-                 g_trail[top].posDistinct, g_trail[top].ascii, g_trail[top].sampled);
-    }
-}
-
-static void tnx_v75_append(char *buf, size_t size, size_t *used, const char *token) {
-    size_t len = strlen(token);
-
-    if (*used && *used + 1 < size) buf[(*used)++] = '+';
-
-    if (*used + len >= size) len = (*used + 1 < size) ? size - *used - 1 : 0;
-
-    memcpy(buf + *used, token, len);
-
-    *used += len;
-    buf[*used] = 0;
-}
 
 static int tnx_v75_trail_verdict(const tnx_trail_t *entry, char *buf, size_t size) {
     char parts[64];
@@ -8498,12 +4513,6 @@ static int tnx_v75_trail_verdict(const tnx_trail_t *entry, char *buf, size_t siz
 
     parts[0] = 0;
 
-    if (!entry->rawOk) tnx_v75_append(parts, sizeof(parts), &used, "image");
-    if (entry->refused == 1) tnx_v75_append(parts, sizeof(parts), &used, "ascii");
-    if (entry->refused == 2) tnx_v75_append(parts, sizeof(parts), &used, "weak");
-    if (entry->refused == 3) tnx_v75_append(parts, sizeof(parts), &used, "noVt");
-    if (entry->teamDistinct < 2) tnx_v75_append(parts, sizeof(parts), &used, "noTeam");
-    if (entry->posDistinct < 2) tnx_v75_append(parts, sizeof(parts), &used, "noPos");
 
     if (!used) return 1;
 
@@ -8606,7 +4615,6 @@ static void tnx_trail_note(uintptr_t manager, int32_t count, int32_t capacity, i
     }
 
 ranked:
-    tnx_trail_rebest();
 }
 
 static void tnx_trail_dump(void) {
@@ -8644,25 +4652,6 @@ static void tnx_slot_table_dump(void) {
     }
 }
 
-static void tnx_raw_object_hex(uintptr_t manager, int limit) {
-    void *array = NULL;
-    int32_t count = 0;
-
-    if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array) || !array) return;
-    if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) return;
-    if (count <= 0) return;
-    if (count > limit) count = limit;
-
-    for (int32_t i = 0; i < count; i++) {
-        void *element = NULL;
-
-        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * sizeof(void *), &element)) break;
-        if (!element) continue;
-
-        tnx_dump_hex("rawObj", (uintptr_t)element, 0x40);
-        tnx_dump_hex("rawObjB", (uintptr_t)element + 0xc0, 0x20);
-    }
-}
 
 typedef struct {
     const char *label;
@@ -8692,51 +4681,7 @@ static const tnx_fact_t g_tnx_facts[] = {
     { NULL, NULL, NULL }
 };
 
-static void tnx_struct_map_dump(void) {
-    tnx_logf("contract: %d invariants, offsets below are the ones actually in use",
-             (int)(sizeof(g_tnx_facts) / sizeof(g_tnx_facts[0])) - 1);
 
-    for (int i = 0; g_tnx_facts[i].label; i++) {
-        tnx_logf("contract %-30s %-6s %s", g_tnx_facts[i].label, g_tnx_facts[i].value,
-                 g_tnx_facts[i].provenance);
-    }
-
-    tnx_logf("contract numbers mode+0x28=%#llx mgr array=%#llx cap=%#llx count=%#llx "
-             "obj team=%#llx d0=%#llx gid=%#llx own=%#llx",
-             (unsigned long long)TNX_MODE_MANAGER_OFF,
-             (unsigned long long)TNX_MGR_ARRAY_OFF,
-             (unsigned long long)TNX_MGR_CAP_OFF,
-             (unsigned long long)TNX_MGR_COUNT_OFF,
-             (unsigned long long)TNX_OBJ_TEAM_OFF,
-             (unsigned long long)TNX_OBJ_DEADFLAG_OFF,
-             (unsigned long long)TNX_OBJ_GLOBALID_OFF,
-             (unsigned long long)TNX_OBJ_OWNERINDEX_OFF);
-
-    tnx_logf("contract slots s88=%#llx s90=%#llx owner=%#llx list=%#llx listCount=%#llx",
-             (unsigned long long)TNX_OBJ_GETX_SLOT,
-             (unsigned long long)TNX_OBJ_GETY_SLOT,
-             (unsigned long long)TNX_SLOT_OWNER_OFF,
-             (unsigned long long)TNX_SLOT_LIST_OFF,
-             (unsigned long long)TNX_SLOT_LISTCOUNT_OFF);
-}
-
-static int64_t tnx_isqrt(int64_t value) {
-    int64_t guess = 0;
-
-    if (value <= 0) return 0;
-    if (value > (int64_t)1 << 62) return (int64_t)1 << 31;
-
-    guess = value;
-
-    for (int i = 0; i < 64; i++) {
-        int64_t next = (guess + value / (guess > 0 ? guess : 1)) / 2;
-
-        if (next >= guess) break;
-        guess = next;
-    }
-
-    return guess;
-}
 
 static int tnx_object_detail(uintptr_t manager, int limit) {
     void *array = NULL;
@@ -9005,9 +4950,6 @@ static int g_v47_coord_ok = 0;
 static int g_v47_coord_usable = 0;
 static int g_v47_coord_distinct = 0;
 static int g_v47_team_off = 0x4c;
-static int g_v47_map_w = 0;
-static int g_v47_map_h = 0;
-static int g_v47_map_ok = 0;
 static uint64_t g_v47_ticks = 0;
 static uint64_t g_v47_threat_ticks = 0;
 static uint64_t g_v47_writes = 0;
@@ -9045,24 +4987,6 @@ static int tnx_v47_verify_setprediction(void) {
     return 1;
 }
 
-static void tnx_v47_read_map(uintptr_t mode) {
-    void *tileMap = NULL;
-    int32_t width = 0;
-    int32_t height = 0;
-
-    g_v47_map_ok = 0;
-    g_v47_map_w = 0;
-    g_v47_map_h = 0;
-
-    if (!tnx_read_ptr(mode + TNX_MODE_TILEMAP_OFF, &tileMap) || !tileMap) return;
-    if (!tnx_read_i32((uintptr_t)tileMap + TNX_TILEMAP_WIDTH_OFF, &width)) return;
-    if (!tnx_read_i32((uintptr_t)tileMap + TNX_TILEMAP_HEIGHT_OFF, &height)) return;
-
-    g_v47_map_w = width;
-    g_v47_map_h = height;
-    g_v47_map_ok = (width >= TNX_V47_MAP_MIN && width <= TNX_V47_MAP_MAX &&
-                    height >= TNX_V47_MAP_MIN && height <= TNX_V47_MAP_MAX) ? 1 : 0;
-}
 
 typedef struct {
     int elementsRead;
@@ -9508,423 +5432,14 @@ static void tnx_v48_discriminate(uintptr_t manager) {
     }
 }
 
-#define TNX_V50_RAW_ELEMS 4
 
-static void tnx_v50_raw_team_probe(uintptr_t manager) {
-    void *data = NULL;
-    int32_t count = 0;
-    int shown = 0;
-    int32_t oldSeen[TNX_V50_RAW_ELEMS];
-    int32_t newSeen[TNX_V50_RAW_ELEMS];
-    int oldDistinct = 0;
-    int newDistinct = 0;
 
-    if (!manager) return;
-    if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &data) || !data) return;
-    if (!tnx_read_i32((uintptr_t)manager + TNX_MGR_COUNT_OFF, &count)) return;
-    if (count <= 0) return;
 
-    if (count > TNX_V50_RAW_ELEMS) count = TNX_V50_RAW_ELEMS;
 
-    for (int32_t i = 0; i < count; i++) {
-        void *element = NULL;
-        int32_t plus40 = 0;
-        int32_t plus4c = 0;
-        int32_t gid = 0;
-        uint8_t dead = 0;
-        int seenOld = 0;
-        int seenNew = 0;
 
-        if (!tnx_read_ptr((uintptr_t)data + (uintptr_t)i * sizeof(void *), &element) || !element) {
-            tnx_logf("v100 raw[%d] element unreadable - the container cannot be walked at all", i);
-
-            continue;
-        }
-
-        tnx_read_i32((uintptr_t)element + TNX_OBJ_TEAM_OFF, &plus40);
-        tnx_read_i32((uintptr_t)element + TNX_OBJ_TEAMENGINE_OFF, &plus4c);
-        tnx_read_i32((uintptr_t)element + TNX_OBJ_GLOBALID_OFF, &gid);
-        tnx_read_u8((uintptr_t)element + TNX_OBJ_DEADFLAG_OFF, &dead);
-
-        {
-            uint8_t b_d4 = 0;
-
-            tnx_read_u8((uintptr_t)element + TNX_V91_DEAD_OFF, &b_d4);
-
-            tnx_logf("v100 raw[%d] %p gid=%d plus40=%d plus4c=%d d0=%u d4=%u - the two candidate "
-                     "dead bytes side by side, so the run shows which one is 0/1 and which is 63",
-                     i, (void *)element, gid, plus40, plus4c, (unsigned)dead, (unsigned)b_d4);
-        }
-
-        for (int j = 0; j < shown; j++) {
-            if (oldSeen[j] == plus40) seenOld = 1;
-            if (newSeen[j] == plus4c) seenNew = 1;
-        }
-
-        if (!seenOld) oldDistinct++;
-        if (!seenNew) newDistinct++;
-
-        oldSeen[shown] = plus40;
-        newSeen[shown] = plus4c;
-        shown++;
-    }
-
-    if (shown <= 0) return;
-
-    tnx_logf("v100 team probe raw=%d distinct(+0x40)=%d distinct(+0x4c)=%d", shown, oldDistinct,
-             newDistinct);
-}
-
-static void tnx_v52_dead_probe(uintptr_t manager) {
-    static const uintptr_t offsets[TNX_V72_DEAD_PROBE_COUNT] = { 0xc8, 0xcc, 0xd0, 0xd4, 0xd8 };
-    static uint64_t calls = 0;
-    void *array = NULL;
-    int32_t count = 0;
-    int zero[TNX_V72_DEAD_PROBE_COUNT] = { 0 };
-    int one[TNX_V72_DEAD_PROBE_COUNT] = { 0 };
-    int other[TNX_V72_DEAD_PROBE_COUNT] = { 0 };
-    int bad[TNX_V72_DEAD_PROBE_COUNT] = { 0 };
-    int skipped = 0;
-    int shown = 0;
-    int flag = -1;
-
-    calls++;
-
-    if ((calls % 5) != 1) return;
-    if (!manager) return;
-    if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array) || !array) return;
-    if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) return;
-    if (count <= 0) return;
-
-    if (count > TNX_V50_RAW_ELEMS) count = TNX_V50_RAW_ELEMS;
-
-    for (int32_t i = 0; i < count; i++) {
-        void *element = NULL;
-        unsigned int bytes[TNX_V72_DEAD_PROBE_COUNT] = { 0 };
-
-        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * sizeof(void *), &element) || !element) {
-            skipped++;
-
-            continue;
-        }
-
-        if (!tnx_pointer_plausible((uintptr_t)element)) {
-            skipped++;
-
-            continue;
-        }
-
-        for (int k = 0; k < TNX_V72_DEAD_PROBE_COUNT; k++) {
-            uint8_t byte = 0;
-
-            if (!tnx_read_u8((uintptr_t)element + offsets[k], &byte)) {
-                bad[k]++;
-
-                continue;
-            }
-
-            bytes[k] = byte;
-
-            if (byte == 0) zero[k]++;
-            else if (byte == 1) one[k]++;
-            else other[k]++;
-        }
-
-        shown++;
-
-        tnx_logf("v100 dead probe elem[%d] %p c8=%02x cc=%02x d0=%02x d4=%02x d8=%02x", i,
-                 (void *)element, bytes[0], bytes[1], bytes[2], bytes[3], bytes[4]);
-    }
-
-    if (!shown) {
-        tnx_logf("v100 dead probe window: nothing measured - %d of %d elements are not plausible "
-                 "pointers, so this container is not an object array and its byte columns mean "
-                 "nothing", skipped, count);
-
-        return;
-    }
-
-    tnx_logf("v100 dead probe window c8=%d/%d/%d/%d cc=%d/%d/%d/%d d0=%d/%d/%d/%d d4=%d/%d/%d/%d "
-             "d8=%d/%d/%d/%d zero/one/other/unreadable of %d readable pointers src=B",
-             zero[0], one[0], other[0], bad[0], zero[1], one[1], other[1], bad[1], zero[2], one[2],
-             other[2], bad[2], zero[3], one[3], other[3], bad[3], zero[4], one[4], other[4], bad[4],
-             shown);
-
-    for (int k = 0; k < TNX_V72_DEAD_PROBE_COUNT; k++) {
-        if (bad[k] == 0 && other[k] == 0 && one[k] > 0 && zero[k] > 0) flag = k;
-    }
-
-    if (flag >= 0) {
-        tnx_logf("v100 dead probe verdict offset=%#llx splits %d readable pointers into %d zero and "
-                 "%d one with no other value - this is the dead flag and it may be used",
-                 (unsigned long long)offsets[flag], shown, zero[flag], one[flag]);
-    } else {
-        tnx_logf("v100 dead probe verdict: no offset at c8/cc/d0/d4/d8 behaves like a flag - each "
-                 "one is either constant or takes values other than 0 and 1, so +0xd0 must not be "
-                 "used as one and the dead byte is not in this window");
-    }
-}
-
-static void tnx_v92_team_dump(const tnx_v47_obj_t *objects, int usable) {
-    int limit = usable < TNX_V92_TEAM_DUMPS ? usable : TNX_V92_TEAM_DUMPS;
-
-    for (int i = 0; i < limit; i++) {
-        uint8_t bytes[16];
-        int32_t i32_40 = 0;
-        int32_t i32_44 = 0;
-        int32_t i32_48 = 0;
-        int32_t i32_4c = 0;
-
-        if (!tnx_read_bytes(objects[i].object + TNX_OBJ_TEAM_OFF, bytes, sizeof(bytes))) continue;
-
-        memcpy(&i32_40, bytes + 0, 4);
-        memcpy(&i32_44, bytes + 4, 4);
-        memcpy(&i32_48, bytes + 8, 4);
-        memcpy(&i32_4c, bytes + 12, 4);
-
-        tnx_logf("v100 teamdump elem[%d] +40..+50 = %02x %02x %02x %02x | %02x %02x %02x %02x | "
-                 "%02x %02x %02x %02x | %02x %02x %02x %02x  i32: 40=%d 44=%d 48=%d 4c=%d  "
-                 "byte@40=%u byte@48=%u byte@4c=%u byte@4d=%u",
-                 i, bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-                 bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14],
-                 bytes[15], i32_40, i32_44, i32_48, i32_4c, (unsigned)bytes[0], (unsigned)bytes[8],
-                 (unsigned)bytes[12], (unsigned)bytes[13]);
-    }
-}
-
-static void tnx_v93_class_dump(const tnx_v47_obj_t *objects, int usable) {
-    uintptr_t classes[TNX_V93_CLASS_DUMPS];
-    int classCount = 0;
-
-    if (g_v93_class_dumps >= TNX_V93_CLASS_DUMPS) return;
-
-    for (int i = 0; i < usable && classCount < TNX_V93_CLASS_DUMPS; i++) {
-        void *vt = NULL;
-        uintptr_t rva = 0;
-        int known = 0;
-
-        if (!tnx_read_ptr(objects[i].object, &vt) || !vt) continue;
-        if ((uintptr_t)vt < g_base) continue;
-
-        rva = (uintptr_t)vt - g_base;
-
-        for (int k = 0; k < classCount; k++) {
-            if (classes[k] == rva) known = 1;
-        }
-
-        if (!known) classes[classCount++] = rva;
-    }
-
-    for (int c = 0; c < classCount; c++) {
-        int shown = 0;
-
-        g_v93_class_dumps++;
-
-        for (int i = 0; i < usable && shown < 4; i++) {
-            void *vt = NULL;
-            uint64_t words[TNX_V93_CLASS_QWORDS];
-
-            if (!tnx_read_ptr(objects[i].object, &vt) || !vt) continue;
-            if ((uintptr_t)vt < g_base) continue;
-            if ((uintptr_t)vt - g_base != classes[c]) continue;
-            if (!tnx_read_bytes(objects[i].object + 0xc0ULL, words, sizeof(words))) continue;
-
-            shown++;
-
-            tnx_logf("v100 classdump class=%#llx elem[%d] gid=%d +c0=%#llx +c8=%#llx +d0=%#llx "
-                     "+d8=%#llx - each class is dumped on its own line, so a projectile cannot "
-                     "supply the value that decides whether a player is dead",
-                     (unsigned long long)classes[c], i, objects[i].gid,
-                     (unsigned long long)words[0], (unsigned long long)words[1],
-                     (unsigned long long)words[2], (unsigned long long)words[3]);
-        }
-
-        if (!shown) {
-            tnx_logf("v100 classdump class=%#llx has no element readable in this container",
-                     (unsigned long long)classes[c]);
-        }
-    }
-}
-
-static void tnx_v48_probe(uintptr_t manager, uintptr_t mode, int verbose) {
-    tnx_v47_obj_t objects[TNX_V47_OBJECT_MAX];
-    int rejected = 0;
-    int usable = 0;
-    int inRange = 0;
-    int distinct = 0;
-    int teamsOld[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
-    int teamsNew[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
-    int distinctOld = 0;
-    int distinctNew = 0;
-
-    memset(objects, 0, sizeof(objects));
-
-    g_v47_probe_done = 1;
-
-    if (mode) tnx_v47_read_map(mode);
-
-    usable = tnx_v48_collect(manager, objects, TNX_V47_OBJECT_MAX, &rejected);
-
-    for (int i = 0; i < usable; i++) {
-        if (objects[i].x > -TNX_V47_COORD_ABS_MAX && objects[i].x < TNX_V47_COORD_ABS_MAX &&
-            objects[i].y > -TNX_V47_COORD_ABS_MAX && objects[i].y < TNX_V47_COORD_ABS_MAX) {
-            inRange++;
-        }
-
-        if (objects[i].teamOld >= 0 && objects[i].teamOld < 8) teamsOld[objects[i].teamOld] = 1;
-        if (objects[i].teamNew >= 0 && objects[i].teamNew < 8) teamsNew[objects[i].teamNew] = 1;
-
-        {
-            int seen = 0;
-
-            for (int j = 0; j < i; j++) {
-                if (objects[j].x == objects[i].x && objects[j].y == objects[i].y) { seen = 1; break; }
-            }
-
-            if (!seen) distinct++;
-        }
-    }
-
-    for (int i = 0; i < 8; i++) {
-        if (teamsOld[i]) distinctOld++;
-        if (teamsNew[i]) distinctNew++;
-    }
-
-    g_v47_team_off = (int)TNX_OBJ_TEAM_OFF;
-
-    {
-        char reasons[320];
-
-        tnx_logf("v100 man walk mode=%p manager=%p usable=%d rejected=%d (%s) mapOk=%d mapW=%d "
-                 "mapH=%d inRange=%d distinct=%d teamsOld=%d teamsNew=%d teamOff=0x%x",
-                 (void *)mode, (void *)manager, usable, rejected,
-                 tnx_v50_reject_text(reasons, sizeof(reasons)), g_v47_map_ok, g_v47_map_w,
-                 g_v47_map_h, inRange, distinct, distinctOld, distinctNew, g_v47_team_off);
-    }
-
-    tnx_logf("v100 walk team reverted to +0x%x with distinct(+0x40)=%d distinct(+0x4c)=%d - the "
-             "v92 teamdump settled it: +0x40 is 1,1,0,0 on four elements while +0x4c reads 0,2,"
-             "29535,0 and 29535 is the pair 0x5f 0x73, so +0x4c is an inline std::string and not a "
-             "side; a distinct count above one is not proof, only the byte dump is",
-             g_v47_team_off, distinctOld, distinctNew);
-
-    tnx_logf("v100 walk offsets team=+0x%x distinctOld=%d distinctNew=%d coord=+0x%llx/+0x%llx "
-             "usable=%d distinct=%d inRange=%d - both fixed constants, not chosen from a sample",
-             g_v47_team_off, distinctOld, distinctNew,
-             (unsigned long long)tnx_v57_coord_x_off(), (unsigned long long)tnx_v57_coord_y_off(),
-             usable, distinct, inRange);
-
-    tnx_v50_raw_team_probe(manager);
-
-    if (!TNX_V113_DEAD_ONCE || !g_v113_dead_probe_done) {
-        g_v113_dead_probe_done = 1;
-        tnx_v52_dead_probe(manager);
-    }
-
-    if (verbose) {
-        tnx_logf("v100 offsets obj off=0x%llx/0x%llx x=0x%llx y=0x%llx teamOld=0x%llx teamNew=0x%llx "
-                 "owner=0x%llx dead=0x%llx active=0x%llx tilemap=0x%llx w=0x%llx",
-                 TNX_MGR_ARRAY_OFF, TNX_MGR_COUNT_OFF, TNX_OBJ_X_OFF, TNX_OBJ_Y_OFF,
-                 TNX_OBJ_TEAM_OFF, TNX_OBJ_TEAMENGINE_OFF, TNX_OBJ_OWNERINDEX_OFF,
-                 TNX_OBJ_DEADFLAG_OFF, TNX_OBJ_ACTIVEFLAG_OFF,
-                 TNX_MODE_TILEMAP_OFF, TNX_TILEMAP_WIDTH_OFF);
-
-        for (int i = 0; i < usable && i < 16; i++) {
-            tnx_logf("v100 player[%02d] at=%p gid=%d pos=(%d,%d) team40=%d own=%d dead=%d active=%d "
-                     "- pos is x and y read at +%#llx/+%#llx as int32, team40 is the side read at "
-                     "+%#llx; neither is selected by a heuristic any more",
-                     i, (void *)objects[i].object, objects[i].gid, objects[i].x, objects[i].y,
-                     objects[i].teamOld, objects[i].ownerIndex, objects[i].dead,
-                     objects[i].activeFlag & 1, (unsigned long long)TNX_OBJ_X_OFF,
-                     (unsigned long long)TNX_OBJ_Y_OFF, (unsigned long long)TNX_OBJ_TEAM_OFF);
-        }
-    }
-
-    g_v47_coord_usable = usable;
-    g_v47_coord_distinct = distinct;
-
-    {
-        int unique = 0;
-
-        for (int i = 0; i < usable; i++) {
-            int seen = 0;
-
-            for (int j = 0; j < i; j++) {
-                if (objects[j].gid == objects[i].gid) {
-                    seen = 1;
-                    break;
-                }
-            }
-
-            if (!seen) unique++;
-        }
-
-        tnx_logf("v100 gid unique=%d of usable=%d distinct=%d - below usable means the container "
-                 "carries duplicate ids and anything grouped by gid groups the wrong elements",
-                 unique, usable, distinct);
-    }
-
-    tnx_v92_team_dump(objects, usable);
-    tnx_v93_class_dump(objects, usable);
-
-    g_v47_coord_ok = (usable >= 2 && inRange == usable && distinct >= 2 &&
-                      (distinctOld >= 2 || distinctNew >= 2)) ? 1 : 0;
-
-    tnx_logf("v100 coords ok=%d (need >=2 objects, all in range, >=2 distinct positions, "
-             "and a team field that splits them)",
-             g_v47_coord_ok);
-
-    {
-        int back = 0;
-        int backRead = 0;
-
-        for (int i = 0; i < usable; i++) {
-            void *backPtr = NULL;
-
-            if (!tnx_read_ptr(objects[i].object + TNX_V88_ELEM_BACK_OFF, &backPtr)) continue;
-
-            backRead++;
-
-            if ((uintptr_t)backPtr == manager) back++;
-        }
-
-        tnx_logf("v100 membership manager=%p usable=%d back=%d read=%d - [elem+%#llx] is the "
-                 "membership test now: an element whose word there names the container belongs to "
-                 "it, and the owner chain through owner+0 and owner+%#llx is no longer consulted",
-                 (void *)manager, usable, back, backRead,
-                 (unsigned long long)TNX_V88_ELEM_BACK_OFF,
-                 (unsigned long long)TNX_MODE_MANAGER_OFF);
-    }
-}
 
 static int g_v50_setpred_blocked_logs = 0;
 
-static int tnx_v50_mode_is_real(uintptr_t mode, uintptr_t expectedManager, uintptr_t *vtOut,
-                                uintptr_t *chainOut) {
-    void *vtable = NULL;
-    void *chain = NULL;
-    uintptr_t rva = 0;
-
-    if (vtOut) *vtOut = 0;
-    if (chainOut) *chainOut = 0;
-
-    if (!mode) return 0;
-
-    if (!tnx_read_ptr(mode, &vtable) || !vtable) return 0;
-
-    rva = (uintptr_t)vtable - g_base;
-
-    if (vtOut) *vtOut = rva;
-
-    if (rva < TNX_DC_RVA_LO || rva >= TNX_DC_RVA_LO + TNX_DC_RVA_SIZE) return 0;
-
-    if (!tnx_read_ptr(mode + TNX_MODE_MANAGER_OFF, &chain)) return 0;
-    if (chainOut) *chainOut = (uintptr_t)chain;
-
-    if (expectedManager && (uintptr_t)chain != expectedManager) return 0;
-
-    return 1;
-}
 
 static int tnx_v90_slot_probe(void) {
     static const uintptr_t slots[TNX_V90_SLOTS] = { TNX_MODE_SLOT_A, TNX_MODE_SLOT_B,
@@ -10019,68 +5534,7 @@ static int tnx_v95_finite(float v) {
     return 1;
 }
 
-static void tnx_v95_joy_dump(uintptr_t base, const char *what) {
-    float a8ac = 0.0f;
-    float cosv = 0.0f;
-    float sinv = 0.0f;
-    float ax = 0.0f;
-    float ay = 0.0f;
-    float bx = 0.0f;
-    float by = 0.0f;
-    uint8_t raw[2];
-    unsigned state = 0;
 
-    if (!base) return;
-
-    tnx_read_f32(base + 0x8acULL, &a8ac);
-    tnx_read_f32(base + 0x8f4ULL, &cosv);
-    tnx_read_f32(base + 0x8f8ULL, &sinv);
-    tnx_read_f32(base + 0x9b8ULL, &ax);
-    tnx_read_f32(base + 0x9bcULL, &ay);
-    tnx_read_f32(base + 0x9c0ULL, &bx);
-    tnx_read_f32(base + 0x9c4ULL, &by);
-
-    if (tnx_read_bytes(base + 0xed7ULL, raw, sizeof(raw))) {
-        state = (unsigned)(raw[0] | ((uint16_t)raw[1] << 8));
-    }
-
-    tnx_logf("v100 joy %s=%p a8ac=%.3f cos=%.3f sin=%.3f A=(%.3f,%.3f) B=(%.3f,%.3f) state=%u - "
-             "the offsets the JS build reads are read here on this object as floats, so a run "
-             "shows whether this build keeps the joystick in the same window", what, (void *)base,
-             a8ac, cosv, sinv, ax, ay, bx, by, state);
-}
-
-static void tnx_v95_find_joy(uintptr_t scene) {
-    if (!scene) return;
-
-    for (uintptr_t off = 0; off < 0x1000; off += 8) {
-        void *child = NULL;
-        float ax = 0.0f;
-        float ay = 0.0f;
-        float bx = 0.0f;
-        float by = 0.0f;
-        float cosv = 0.0f;
-        float sinv = 0.0f;
-
-        if (!tnx_read_ptr(scene + off, &child) || !child) continue;
-        if (!tnx_heap_contains((uintptr_t)child)) continue;
-        if (!tnx_read_f32((uintptr_t)child + 0x9b8ULL, &ax)) continue;
-        if (!tnx_read_f32((uintptr_t)child + 0x9bcULL, &ay)) continue;
-        if (!tnx_read_f32((uintptr_t)child + 0x9c0ULL, &bx)) continue;
-        if (!tnx_read_f32((uintptr_t)child + 0x9c4ULL, &by)) continue;
-        if (!tnx_read_f32((uintptr_t)child + 0x8f4ULL, &cosv)) continue;
-        if (!tnx_read_f32((uintptr_t)child + 0x8f8ULL, &sinv)) continue;
-
-        if (!tnx_v95_finite(ax) || !tnx_v95_finite(ay)) continue;
-        if (!tnx_v95_finite(bx) || !tnx_v95_finite(by)) continue;
-        if (!tnx_v95_finite(cosv) || !tnx_v95_finite(sinv)) continue;
-
-        tnx_logf("v100 findjoy scene+%#llx -> %p A=(%.3f,%.3f) B=(%.3f,%.3f) cos=%.3f sin=%.3f - a "
-                 "heap pointer of the scene whose joystick window reads as finite floats, which "
-                 "is the object the JS build writes", (unsigned long long)off, child, ax, ay, bx,
-                 by, cosv, sinv);
-    }
-}
 
 static int tnx_v98_clip_walk(int32_t ax, int32_t ay, int32_t bx, int32_t by, int32_t cell,
                              const uint8_t *solid, int gw, int gh, int32_t *outX, int32_t *outY) {
@@ -10248,68 +5702,6 @@ static int tnx_v97_moved(void) {
     return moved;
 }
 
-static void tnx_v97_group(uintptr_t base, const uint32_t *now, const uint32_t *prev,
-                          const int *spots, int from, int to, int *budget) {
-    float f0 = 0.0f;
-    float f1 = 0.0f;
-    int start = spots[from];
-    int end = spots[to];
-    int len = to - from + 1;
-    int quiet = 1;
-
-    float first = 0.0f;
-    float last = 0.0f;
-    uint32_t a = prev[start];
-    uint32_t b = now[start];
-
-    memcpy(&f0, &a, 4);
-    memcpy(&f1, &b, 4);
-    memcpy(&first, &prev[start], 4);
-    memcpy(&last, &now[start], 4);
-
-    for (int k = 1; k <= TNX_V97_QUIET; k++) {
-        if (start - k < 0) break;
-        if (now[start - k] != prev[start - k]) quiet = 0;
-    }
-
-    for (int k = 1; k <= TNX_V97_QUIET; k++) {
-        if (end + k >= TNX_V99_FLOATS) break;
-        if (now[end + k] != prev[end + k]) quiet = 0;
-    }
-
-    if (*budget <= 0) return;
-
-    *budget -= 1;
-
-    tnx_logf("v100 group base=%p start=+%#x len=%d quiet=%d first %.4f -> %.4f last %.4f -> %.4f - "
-             "a run of adjacent slots that moved, and quiet means the %d slots on both sides stood "
-             "still, which is what separates a vector from a buffer", (void *)base, start * 4, len,
-             quiet, first, last, f0, f1, TNX_V97_QUIET);
-
-    if (len >= 2 && len <= TNX_V97_GROUPS_MAXLEN) {
-        for (int k = from; k + 1 <= to; k++) {
-            float x0 = 0.0f;
-            float y0 = 0.0f;
-            float sum = 0.0f;
-            int i = spots[k];
-
-            if (spots[k + 1] != i + 1) continue;
-
-            memcpy(&x0, &now[i], 4);
-            memcpy(&y0, &now[i + 1], 4);
-            if (!tnx_v95_finite(x0) || !tnx_v95_finite(y0)) continue;
-
-            sum = x0 * x0 + y0 * y0;
-
-            if (sum > 1.0f - TNX_V97_COSSIN_TOL && sum < 1.0f + TNX_V97_COSSIN_TOL) {
-                tnx_logf("v100 rotation base=%p +%#x +%#x cos=%.4f sin=%.4f sum=%.4f - the pair is "
-                         "two CHANGED slots that are strictly adjacent, so a normalised vector "
-                         "elsewhere in the window cannot raise this line",
-                         (void *)base, i * 4, (i + 1) * 4, x0, y0, sum);
-            }
-        }
-    }
-}
 
 static void tnx_v96_tick(void) {
     uintptr_t bases[TNX_V96_BASES];
@@ -10495,7 +5887,6 @@ static void tnx_v96_tick(void) {
                 if (k - from >= TNX_V97_GROUP_MIN) {
                     groups++;
 
-                    tnx_v97_group(bases[b], now, slot->prev, spots, from, k - 1, &budget);
                 }
 
                 from = k;
@@ -10583,28 +5974,6 @@ static void tnx_v99_inputmgr_probe(void) {
     }
 }
 
-static void tnx_v91_scalar_dump(uintptr_t mode, uintptr_t client) {
-    int32_t variation = 0;
-    int32_t px = 0;
-    int32_t py = 0;
-    int32_t ec = 0;
-
-    if (g_v91_scan_container != (uintptr_t)g_players_array) return;
-    if (!mode) return;
-
-    tnx_read_i32(mode + TNX_MODE_MODEVAR_OFF, &variation);
-    tnx_read_i32(mode + TNX_MODE_PREDICTX_OFF, &px);
-    tnx_read_i32(mode + TNX_MODE_PREDICTY_OFF, &py);
-    tnx_read_i32(mode + 0xecULL, &ec);
-
-    tnx_logf("v100 scalars mode+%#llx=%d mode+%#llx=%d mode+%#llx=%d mode+0xec=%d client=%p "
-             "container=%p - the mode variation, the prediction pair and the mode int the sig walk "
-             "compares, printed in the same run as the own scan",
-             (unsigned long long)TNX_MODE_MODEVAR_OFF, variation,
-             (unsigned long long)TNX_MODE_PREDICTX_OFF, px,
-             (unsigned long long)TNX_MODE_PREDICTY_OFF, py, ec, (void *)client,
-             (void *)g_players_object);
-}
 
 
 static int tnx_v101_word(uintptr_t address, uint32_t *out) {
@@ -10647,81 +6016,7 @@ static uintptr_t tnx_v101_entry(uintptr_t rva) {
     return 0;
 }
 
-static void tnx_v101_rva_audit(void) {
-    static const struct { const char *name; uintptr_t rva; } t[] = {
-        { "getTeamStars", TNX_V101_GETTEAMSTARS_RVA },
-        { "modePairSetter", TNX_V101_MODEPAIRSET_RVA },
-        { "getOwnCharacter", RVA_LOGICBATTLEMODECLIENT_GETOWNCHARACTER },
-        { "getOwnPlayerTeam", RVA_LOGICBATTLEMODECLIENT_GETOWNPLAYERTEAM },
-        { "setClientPredictionMoveTo", RVA_LOGICBATTLEMODECLIENT_SETCLIENTPREDICTIONMOVETO },
-        { "objMgrClient_getGameObjects", RVA_LOGICGAMEOBJECTMANAGERCLIENT__GETGAMEOBJECTS },
-        { "objMgrClient_findGameObject", RVA_LOGICGAMEOBJECTMANAGERCLIENT__FINDGAMEOBJECT },
-        { "objClient_getGlobalID", RVA_LOGICGAMEOBJECTCLIENT_GETGLOBALID },
-        { "objClient_getX", RVA_LOGICGAMEOBJECTCLIENT_GETX },
-        { "objClient_getY", RVA_LOGICGAMEOBJECTCLIENT_GETY },
-        { "battleMode_getInstance", RVA_BATTLEMODE_GETINSTANCE },
-        { "gameStateManager_isState", RVA_GAMESTATEMANAGER__ISSTATE },
-        { "messageManager_receiveMessage", RVA_MESSAGEMANAGER__RECEIVEMESSAGE },
-        { "stage_addChild", RVA_STAGE_ADDCHILD },
-        { NULL, 0 }
-    };
-    int i;
 
-    if (g_v101_audited || !g_base) return;
-
-    g_v101_audited = 1;
-
-    tnx_logf("v101 rva audit: word is the four bytes at the rva, prev the four bytes before it - "
-             "prologue says whether that word opens a frame, term says whether prev ends the "
-             "previous function, entry means either of the two holds, callable is the engine's own "
-             "stricter test, so a row with entry=yes callable=no is a leaf function the engine "
-             "refuses and a row with entry=no is an rva inside another function that no call can "
-             "ever reach");
-
-    for (i = 0; t[i].name; i++) {
-        uintptr_t a = g_base + t[i].rva;
-        uint32_t w = 0;
-        uint32_t wm = 0;
-        const char *rule = tnx_prologue_rule(a);
-
-        tnx_v101_word(a, &w);
-        tnx_v101_word(a - 4, &wm);
-
-        tnx_logf("v101 rva audit %-26s rva=%#llx word=%#x prev=%#x prologue=%s term=%d "
-                 "entry=%s callable=%s",
-                 t[i].name, (unsigned long long)t[i].rva, (unsigned)w, (unsigned)wm,
-                 rule ? rule : "?", tnx_v101_is_term(wm),
-                 tnx_v101_entry(t[i].rva) ? "yes" : "no",
-                 (tnx_callable(t[i].rva) && tnx_looks_like_start(a)) ? "yes" : "no");
-    }
-}
-
-static void tnx_v101_head_dump(void) {
-    int i;
-
-    if (g_v101_head_logs || !g_players_object) return;
-
-    g_v101_head_logs = 1;
-
-    tnx_logf("v101 head dump container=%p - the five floats the group walk reported as a rising "
-             "run are read here as qwords and as float pairs so the timer verdict is not taken "
-             "from a single reading",
-             (void *)g_players_object);
-
-    for (i = 0; i < 5; i++) {
-        uint64_t q = tnx_v68_word(g_players_object + 0x80ULL + (uintptr_t)i * 8ULL);
-        uint32_t lo = (uint32_t)(q & 0xffffffffULL);
-        uint32_t hi = (uint32_t)(q >> 32);
-        float flo = 0.0f;
-        float fhi = 0.0f;
-
-        memcpy(&flo, &lo, sizeof(flo));
-        memcpy(&fhi, &hi, sizeof(fhi));
-
-        tnx_logf("v101 head dump +%#x qword=%#llx lo=%#x hi=%#x asfloat=(%.4f, %.4f)",
-                 0x80 + i * 8, (unsigned long long)q, (unsigned)lo, (unsigned)hi, flo, fhi);
-    }
-}
 
 static void tnx_v101_actuator(uintptr_t mode, int x, int y);
 
@@ -10794,7 +6089,6 @@ static void tnx_v101_own_index_probe(void) {
         g_v101_own_from = "index-miss";
     }
 
-    tnx_v101_head_dump();
 
     if (TNX_V101_ACTUATOR && taken) {
         tnx_v101_actuator(chosen == 0 ? (uintptr_t)g_players_object : (uintptr_t)g_scene_object,
@@ -10802,88 +6096,6 @@ static void tnx_v101_own_index_probe(void) {
     }
 }
 
-static void tnx_v101_wide_scan(void) {
-    uintptr_t bases[4];
-    static const char *names[4] = { "container", "mode", "client", "inputMgr" };
-    uintptr_t array = g_players_array;
-    int32_t count = g_players_count;
-    int b;
-    int i;
-
-    if (!array || count <= 0) return;
-    if (g_v101_wide_runs >= TNX_V101_WIDE_ATTEMPTS) return;
-
-    g_v101_wide_runs++;
-
-    bases[0] = g_players_object;
-    bases[1] = (uintptr_t)g_scene_object;
-    bases[2] = 0;
-    bases[3] = 0;
-
-    if (g_scene_object) {
-        void *hop = NULL;
-
-        if (tnx_read_ptr((uintptr_t)g_scene_object + TNX_MODE_MANAGER_OFF, &hop) && hop) {
-            bases[2] = (uintptr_t)hop;
-        }
-
-        hop = NULL;
-
-        if (tnx_read_ptr((uintptr_t)g_scene_object + TNX_MODE_INPUTMGR_OFF, &hop) && hop) {
-            bases[3] = (uintptr_t)hop;
-        }
-    }
-
-    tnx_logf("v101 wide scan run=%d window=%#x bases container=%p mode=%p client=%p inputMgr=%p "
-             "array=%p count=%d - the container itself is scanned too and the window is the one "
-             "the v100 run asked for instead of %#x",
-             g_v101_wide_runs, TNX_V101_WIDE_QWORDS * 8, (void *)bases[0], (void *)bases[1],
-             (void *)bases[2], (void *)bases[3], (void *)array, count, TNX_V99_SCAN_QWORDS * 8);
-
-    for (b = 0; b < 4; b++) {
-        if (!bases[b]) continue;
-
-        for (i = 0; i < TNX_V101_WIDE_QWORDS; i++) {
-            uintptr_t off = (uintptr_t)i * 8ULL;
-            uintptr_t value = (uintptr_t)tnx_v68_word(bases[b] + off);
-            uintptr_t index = 0;
-
-            if (!value) continue;
-            if (value <= array) continue;
-            if (value >= array + (uintptr_t)count * 8ULL) continue;
-            if ((value - array) % 8ULL) continue;
-
-            index = (value - array) / 8ULL;
-            g_v101_wide_hits++;
-
-            if (g_v101_wide_hits <= 8) {
-                tnx_logf("v101 wide scan %s+%#llx = %p is element[%llu] of array=%p count=%d - a "
-                         "word that points into the container, taken only after the narrow pass "
-                         "came back empty",
-                         names[b], (unsigned long long)off, (void *)value,
-                         (unsigned long long)index, (void *)array, count);
-            }
-
-            if (g_v101_own_index < 0) {
-                g_v101_own_index = (int)index;
-                g_v101_own_ptr = value;
-                g_v101_own_from = "wide";
-            }
-        }
-    }
-
-    if (!g_v101_wide_hits && !g_v101_miss_logs) {
-        g_v101_miss_logs = 1;
-
-        tnx_logf("v101 wide scan nothing in container+0x00..+%#x, mode+0x00..+%#x, "
-                 "client+0x00..+%#x or inputMgr+0x00..+%#x points into array=%p count=%d - own is "
-                 "then not reachable as a pointer at all and only the index route at +%#llx can "
-                 "name it",
-                 TNX_V101_WIDE_QWORDS * 8, TNX_V101_WIDE_QWORDS * 8, TNX_V101_WIDE_QWORDS * 8,
-                 TNX_V101_WIDE_QWORDS * 8, (void *)array, count,
-                 (unsigned long long)TNX_V101_OWNIDX_OFF);
-    }
-}
 
 static void tnx_v101_actuator(uintptr_t mode, int x, int y) {
     if (!TNX_V101_ACTUATOR) return;
@@ -10893,78 +6105,7 @@ static void tnx_v101_actuator(uintptr_t mode, int x, int y) {
 }
 
 
-static int tnx_write_i32(uintptr_t address, int32_t value) {
-    if (address & 3) return 0;
 
-    return tnx_write_bytes(address, &value, sizeof(value)) ? 1 : 0;
-}
-
-static int tnx_v102_elem_verdict(uintptr_t elem, char *why, size_t whyLen) {
-    void *vtable = NULL;
-    uintptr_t vtRva = 0;
-    int32_t gid = 0;
-    int32_t x = 0;
-    int32_t y = 0;
-    int32_t teamOld = 0;
-    int32_t teamNew = 0;
-    uint8_t dead = 0;
-
-    if (why) why[0] = 0;
-    if (!elem) {
-        if (why) snprintf(why, whyLen, "null");
-        return 0;
-    }
-
-    if (tnx_v75_element_ascii(elem)) {
-        if (why) snprintf(why, whyLen, "ascii");
-        return 0;
-    }
-
-    if (!tnx_read_ptr(elem, &vtable) || !vtable) {
-        if (why) snprintf(why, whyLen, "noVtRead");
-        return 0;
-    }
-
-    vtRva = (uintptr_t)vtable - g_base;
-
-    if (vtRva < TNX_DC_RVA_LO || vtRva >= TNX_DC_RVA_LO + TNX_DC_RVA_SIZE) {
-        if (why) snprintf(why, whyLen, "rejNoVt vtRva=%#llx", (unsigned long long)vtRva);
-        return 0;
-    }
-
-    if (!tnx_read_i32(elem + TNX_OBJ_GLOBALID_OFF, &gid) ||
-        !tnx_read_i32(elem + tnx_v57_coord_x_off(), &x) ||
-        !tnx_read_i32(elem + tnx_v57_coord_y_off(), &y) ||
-        !tnx_read_i32(elem + TNX_OBJ_TEAM_OFF, &teamOld) ||
-        !tnx_read_i32(elem + TNX_V91_TEAM_OFF, &teamNew) ||
-        !tnx_read_u8(elem + TNX_OBJ_DEADFLAG_OFF, &dead)) {
-        if (why) snprintf(why, whyLen, "unreadable vtRva=%#llx", (unsigned long long)vtRva);
-        return 0;
-    }
-
-    if (gid == 0) {
-        if (why) snprintf(why, whyLen, "rejGidZero vtRva=%#llx pos=(%d,%d)",
-                          (unsigned long long)vtRva, x, y);
-        return 0;
-    }
-
-    if (x <= -TNX_V47_COORD_ABS_MAX || x >= TNX_V47_COORD_ABS_MAX ||
-        y <= -TNX_V47_COORD_ABS_MAX || y >= TNX_V47_COORD_ABS_MAX) {
-        if (why) snprintf(why, whyLen, "rejOutOfRange gid=%d pos=(%d,%d)", gid, x, y);
-        return 0;
-    }
-
-    if (!((teamOld >= 0 && teamOld <= TNX_OBJ_TEAM_MAX) ||
-          (teamNew >= 0 && teamNew <= TNX_OBJ_TEAM_MAX))) {
-        if (why) snprintf(why, whyLen, "rejTeamMissing gid=%d t40=%d t4c=%d",
-                          gid, teamOld, teamNew);
-        return 0;
-    }
-
-    if (why) snprintf(why, whyLen, "ok vtRva=%#llx gid=%d pos=(%d,%d) t40=%d t4c=%d dead=%d",
-                      (unsigned long long)vtRva, gid, x, y, teamOld, teamNew, dead);
-    return 1;
-}
 
 static void tnx_v102_own_probe(void) {
     uintptr_t cand[2];
@@ -11056,7 +6197,6 @@ static void tnx_v102_own_probe(void) {
             g_v102_own_base = b;
             g_v102_own_from = (b == 0) ? "container+e0" : "scene+e0";
 
-            tnx_v106_own_dump(g_v102_own_ptr);
         }
     }
 
@@ -11137,309 +6277,15 @@ static int tnx_v102_take_own(const tnx_v47_obj_t *objects, int usable, int *inde
     return 0;
 }
 
-static void tnx_v102_pos_trace(const tnx_v47_obj_t *objects, int usable) {
-    int i;
-
-    if (!objects || usable <= 0) return;
-    if (usable > TNX_V47_OBJECT_MAX) usable = TNX_V47_OBJECT_MAX;
-
-    for (i = 0; i < g_v102_trace_n && i < usable; i++) {
-        if (g_v102_trace_obj[i] != objects[i].object) continue;
-        if (g_v102_trace_x[i] == objects[i].x && g_v102_trace_y[i] == objects[i].y) continue;
-
-        if (g_v102_trace_logs < TNX_V102_TRACE_MAX) {
-            g_v102_trace_logs++;
-            tnx_logf("v102 pos gid=%d d=(%+d,%+d) from=(%d,%d) to=(%d,%d) own=%d",
-                     objects[i].gid, objects[i].x - g_v102_trace_x[i],
-                     objects[i].y - g_v102_trace_y[i], g_v102_trace_x[i], g_v102_trace_y[i],
-                     objects[i].x, objects[i].y,
-                     (objects[i].object == g_v102_own_ptr) ? 1 : 0);
-        }
-    }
-
-    g_v102_trace_n = usable;
-
-    for (i = 0; i < usable; i++) {
-        g_v102_trace_obj[i] = objects[i].object;
-        g_v102_trace_x[i] = objects[i].x;
-        g_v102_trace_y[i] = objects[i].y;
-    }
-}
-
-static void tnx_v102_write_test(const tnx_v47_obj_t *objects, int usable, int ownIndex) {
-    int32_t curX = 0;
-    int32_t curY = 0;
-    int wantX = 0;
-    int wantY = 0;
-
-    g_v102_tick++;
-
-    if (!TNX_V102_WRITE_TEST) return;
-    if (!g_scene_object) return;
-
-    tnx_v102_pos_trace(objects, usable);
-
-    if (g_v102_write_count >= TNX_V102_WRITE_TICKS) return;
-    if (g_v102_tick - g_v102_write_last < TNX_V102_WRITE_EVERY) return;
-
-    g_v102_write_last = g_v102_tick;
-
-    if (!tnx_read_i32((uintptr_t)g_scene_object + TNX_MODE_PREDICTX_OFF, &curX) ||
-        !tnx_read_i32((uintptr_t)g_scene_object + TNX_MODE_PREDICTY_OFF, &curY)) {
-        tnx_logf("v102 wtest cannot read mode+%#llx/+%#llx",
-                 (unsigned long long)TNX_MODE_PREDICTX_OFF,
-                 (unsigned long long)TNX_MODE_PREDICTY_OFF);
-        return;
-    }
-
-    if (!g_v102_write_base_ok && curX != 0 && curY != 0) {
-        g_v102_write_base_ok = 1;
-        g_v102_write_base_x = curX;
-        g_v102_write_base_y = curY;
-    }
-
-    g_v102_write_phase = g_v102_write_phase ? 0 : 1;
-    wantX = (g_v102_write_base_ok ? g_v102_write_base_x : curX) +
-            (g_v102_write_phase ? TNX_V102_WRITE_STEP : 0);
-    wantY = (g_v102_write_base_ok ? g_v102_write_base_y : curY) +
-            (g_v102_write_phase ? TNX_V102_WRITE_STEP : 0);
-
-    if (g_v47_setpred) {
-        ((void (*)(void *, int, int))g_v47_setpred)((void *)g_scene_object, wantX, wantY);
-    } else {
-        tnx_write_i32((uintptr_t)g_scene_object + TNX_MODE_PREDICTX_OFF, wantX);
-        tnx_write_i32((uintptr_t)g_scene_object + TNX_MODE_PREDICTY_OFF, wantY);
-    }
-
-    g_v102_write_count++;
-
-    tnx_logf("v102 wtest #%d mode=%p phase=%d base=(%d,%d) read=(%d,%d) wrote=(%d,%d) own=%d "
-             "setpred=%p - the write goes through the verified leaf setter at rva %#llx that "
-             "stores straight into +%#llx and +%#llx",
-             g_v102_write_count, (void *)g_scene_object, g_v102_write_phase,
-             g_v102_write_base_x, g_v102_write_base_y, curX, curY, wantX, wantY, ownIndex,
-             (void *)g_v47_setpred, (unsigned long long)TNX_V102_SETPRED_RVA,
-             (unsigned long long)TNX_MODE_PREDICTX_OFF,
-             (unsigned long long)TNX_MODE_PREDICTY_OFF);
-}
-
-static void tnx_v102_audit_all(void) {
-    int i;
-
-    if (g_v102_audited || !g_base) return;
-
-    g_v102_audited = 1;
-
-    tnx_logf("v102 audit tag=%s entries=%d - every row of the rva table the engine can reach is "
-             "tested here, entry means the four bytes at the rva open a frame or the word before "
-             "them is a return, callable is the engine test that a call site needs",
-             TNX_BUILD_TAG, (int)(sizeof(g_rvas) / sizeof(g_rvas[0])) - 1);
-
-    for (i = 0; g_rvas[i].name; i++) {
-        uintptr_t a = g_base + g_rvas[i].rva;
-        uint32_t w = 0;
-        uint32_t wm = 0;
-        const char *rule = tnx_prologue_rule(a);
-
-        tnx_v101_word(a, &w);
-        tnx_v101_word(a - 4, &wm);
-
-        tnx_logf("v102 audit %-52s rva=%#llx word=%#x prev=%#x rule=%-9s entry=%s callable=%s",
-                 g_rvas[i].name, (unsigned long long)g_rvas[i].rva, (unsigned)w, (unsigned)wm,
-                 rule ? rule : "?", tnx_v101_entry(g_rvas[i].rva) ? "yes" : "no",
-                 (tnx_callable(g_rvas[i].rva) && tnx_looks_like_start(a)) ? "yes" : "no");
-    }
-
-    tnx_logf("v102 anchors getTeamStars=%#llx setpred=%#llx modePairSet=%#llx tileLookup=%#llx "
-             "subGetter=%#llx - these five are the ones the disassembly of this build confirmed",
-             (unsigned long long)TNX_V102_GETTEAMSTARS_RVA,
-             (unsigned long long)TNX_V102_SETPRED_RVA,
-             (unsigned long long)TNX_V102_MODEPAIRSET_RVA,
-             (unsigned long long)TNX_V102_TILELOOKUP_RVA,
-             (unsigned long long)TNX_V102_SUBGETTER_RVA);
-}
 
 
-static void tnx_v103_arm(void) {
-    if (g_v103_armed || !g_base) return;
 
-    g_v103_armed = 1;
 
-    g_v103_sp4 = tnx_v101_entry(TNX_V103_SETPRED4_RVA);
-    g_v103_sp2 = tnx_v101_entry(TNX_V103_SETPRED2_RVA);
-    g_v103_addinput = tnx_v101_entry(TNX_V103_ADDINPUT_RVA);
 
-    tnx_logf("v103 rva audit tag=%s setPredMoveTo4 rva=%#llx entry=%s callable=%s | setter2 "
-             "rva=%#llx entry=%s callable=%s | addInput rva=%#llx entry=%s callable=%s",
-             TNX_BUILD_TAG,
-             (unsigned long long)TNX_V103_SETPRED4_RVA, g_v103_sp4 ? "yes" : "no",
-             tnx_callable(TNX_V103_SETPRED4_RVA) ? "yes" : "no",
-             (unsigned long long)TNX_V103_SETPRED2_RVA, g_v103_sp2 ? "yes" : "no",
-             tnx_callable(TNX_V103_SETPRED2_RVA) ? "yes" : "no",
-             (unsigned long long)TNX_V103_ADDINPUT_RVA, g_v103_addinput ? "yes" : "no",
-             tnx_callable(TNX_V103_ADDINPUT_RVA) ? "yes" : "no");
 
-    tnx_logf("v103 rva bodies 0xac3a58 = str w1,[x0,#0x10c]; str w2,[x0,#0x110]; strb w3,[x0,#0x114]; "
-             "mov w8,#1; strb w8,[x0,#0xac]; ret, four arguments and it is called by the battle "
-             "update at 0x79de14 and 0x7a7270 right after the input message is enqueued; "
-             "0xac3f20 = str w1,[x0,#0x1d4]; str w2,[x0,#0x1d8]; ret, the two argument pair the "
-             "v102 run wrote and the game never read back; 0x74675c = enqueue, it maps message+0x8 "
-             "through the 21 entry table at %#llx and pushes the pointer into the queue at "
-             "manager+0x20, then stamps a sequence number into message+0x0",
-             (unsigned long long)TNX_V103_KEY_TABLE_VM);
 
-    tnx_logf("plan v103, breakthrough from the v102 run and the Frida reference:");
-    tnx_logf("the dodge now has both ends. own resolved from scene+e0 at +0 index=1");
-    tnx_logf("object=0x131d7c600, target=0x14900a1c0, vector=(1050,3750),");
-    tnx_logf("actuatorReached=1 and the only closed door is prediction, which stays");
-    tnx_logf("zero on every tick (mode+0x1d4=0 mode+0x1d8=0). The reason chain ends");
-    tnx_logf("at predictionZero, which is exactly the last of the five gates, so");
-    tnx_logf("everything before it passed. The Frida reference (a mod for a different");
-    tnx_logf("build) shows the actuator is NOT a store into scene+0x58+8: movement");
-    tnx_logf("is a NEW 200-byte ClientInput message with type=2 at +0x4, x at +0x8,");
-    tnx_logf("y at +0xc, handed to ClientInputManager::addInput(*(scene+0x58), msg).");
-    tnx_logf("So v103 (1) resolves ClientInput::ctor and ClientInputManager::addInput");
-    tnx_logf("in THIS binary via radare2 before the build; (2) replaces the");
-    tnx_logf("prediction write with a real addInput call; (3) validates with a");
-    tnx_logf("single test move and a read-back of own.pos on the next tick; (4) only");
-    tnx_logf("then enables the threat walk and the clip; (5) prints the inputmgr");
-    tnx_logf("chain and the addInput result every tenth tick.");
 
-    tnx_logf("plan v103 revision after the static pass on the attached binary - "
-             "addInput IS found and it is %#llx: first argument is the manager, second the message, "
-             "it maps message+0x8 through the 21 entry table at %#llx, pushes the pointer into the "
-             "queue at manager+0x20 (array at +0x0, count at +0xc) and stamps a sequence number into "
-             "message+0x0. The message layout of the reference does NOT hold in this build: "
-             "message+0x8 is the dedup key, so type and x/y are not at +0x4/+0x8/+0xc and a hand "
-             "built message would be enqueued as garbage and later freed. What the same battle "
-             "update calls immediately after the enqueue is the four argument setter %#llx "
-             "(str w1,[x0,#0x10c]; str w2,[x0,#0x110]; strb w3,[x0,#0x114]; strb 1,[x0,#0xac]; ret) "
-             "at 0x79de14 and 0x7a7270, so v103 drives that first and keeps the message route until "
-             "the ctor of this build is located",
-             (unsigned long long)TNX_V103_ADDINPUT_RVA, (unsigned long long)TNX_V103_KEY_TABLE_VM,
-             (unsigned long long)TNX_V103_SETPRED4_RVA);
-}
 
-static int g_v112_flag_arm = 0;
-static int g_v112_flag_logs = 0;
-static uint64_t g_v112_flag_tick = 0;
-static int g_v112_flag_before = -1;
-static int g_v112_flag_after = -1;
-static int g_v112_flag_consumed = -1;
-static int g_v112_flag_ticks = -1;
-static int g_v112_pos_logs = 0;
-static uint64_t g_v112_pos_tick = 0;
-
-static int tnx_v112_read_flag(void) {
-    uint8_t b = 0;
-
-    if (!g_scene_object) return -1;
-    if (!tnx_read_u8((uintptr_t)g_scene_object + TNX_V112_FLAG_OFF, &b)) return -1;
-
-    return (int)b;
-}
-
-static void tnx_v112_flag_arm(void) {
-    g_v112_flag_before = tnx_v112_read_flag();
-    g_v112_flag_tick = g_v103_tick;
-    g_v112_flag_after = -1;
-    g_v112_flag_consumed = -1;
-    g_v112_flag_ticks = -1;
-    g_v112_flag_arm = 1;
-}
-
-static void tnx_v112_flagwatch(void) {
-    int now;
-
-    if (!g_v112_flag_arm) return;
-
-    now = tnx_v112_read_flag();
-
-    if (g_v112_flag_after < 0) g_v112_flag_after = now;
-
-    if (g_v112_flag_consumed < 0) {
-        if (now == 0) {
-            g_v112_flag_consumed = 1;
-            g_v112_flag_ticks = (int)(g_v103_tick - g_v112_flag_tick);
-        } else if (g_v103_tick - g_v112_flag_tick >= TNX_V112_FLAG_MAX_TICKS) {
-            g_v112_flag_consumed = 0;
-            g_v112_flag_ticks = (int)(g_v103_tick - g_v112_flag_tick);
-        }
-    }
-
-    if (g_v112_flag_consumed < 0) return;
-    if (g_v112_flag_logs >= 4) return;
-
-    g_v112_flag_logs++;
-    g_v112_flag_arm = 0;
-
-    tnx_logf("v112 flagwatch scene=%p ac_before=%d ac_after=%d ac_final=%d ticks=%d consumed=%d "
-             "setterRva=%#llx readerRva=%#llx - the byte at +%#llx is raised by the setter and the class "
-             "update reads it with ldrb then clears it with strb wzr before it forwards the movement, so "
-             "consumed=1 means the write entered the pipeline and consumed=0 means the byte was left "
-             "standing and the setter is bookkeeping",
-             (void *)g_scene_object, g_v112_flag_before, g_v112_flag_after, now, g_v112_flag_ticks,
-             g_v112_flag_consumed, (unsigned long long)TNX_V112_SETPRED4_RVA,
-             (unsigned long long)TNX_V112_READER_RVA, (unsigned long long)TNX_V112_FLAG_OFF);
-}
-
-static void tnx_v112_pos_watch(const tnx_v47_obj_t *objects, int usable, int ownIndex) {
-    uintptr_t element = 0;
-    void *vt = NULL;
-    uintptr_t vtRva = 0;
-    float fx = 0.0f;
-    float fy = 0.0f;
-    float f2x = 0.0f;
-    float f2y = 0.0f;
-    float gx = 0.0f;
-    float gy = 0.0f;
-    int gxOk = 0;
-    int gyOk = 0;
-
-    if (!objects || ownIndex < 0 || ownIndex >= usable) return;
-    if (g_v103_tick < TNX_V112_POS_EVERY) return;
-    if (g_v103_tick - g_v112_pos_tick < TNX_V112_POS_EVERY) return;
-    if (g_v112_pos_logs >= 24) return;
-
-    g_v112_pos_tick = g_v103_tick;
-    g_v112_pos_logs++;
-
-    element = objects[ownIndex].object;
-
-    if (!element) return;
-
-    if (tnx_read_ptr(element, &vt) && vt) vtRva = (uintptr_t)vt - g_base;
-
-    tnx_read_f32(element + TNX_V112_POS_X_OFF, &fx);
-    tnx_read_f32(element + TNX_V112_POS_Y_OFF, &fy);
-    tnx_read_f32(element + TNX_V112_POS2_X_OFF, &f2x);
-    tnx_read_f32(element + TNX_V112_POS2_Y_OFF, &f2y);
-
-    if (vtRva == TNX_V112_ELEM_VT_RVA) {
-        void *fn = NULL;
-
-        if (tnx_read_ptr((uintptr_t)vt + TNX_V112_GETX_SLOT, &fn) && fn) {
-            gx = ((float (*)(void *))fn)((void *)element);
-            gxOk = 1;
-        }
-
-        fn = NULL;
-
-        if (tnx_read_ptr((uintptr_t)vt + TNX_V112_GETY_SLOT, &fn) && fn) {
-            gy = ((float (*)(void *))fn)((void *)element);
-            gyOk = 1;
-        }
-    }
-
-    tnx_logf("v112 poswatch elem=%p vtRva=%#llx f10=%.4f f1c=%.4f f20=%.4f f24=%.4f getX=%.4f getY=%.4f "
-             "getXOk=%d getYOk=%d int30=%d int34=%d gid=%d tick=%llu - the class keeps its position as "
-             "the float pair at +%#llx/+%#llx behind getX and getY, sampled every %d ticks so a move "
-             "during the battle shows even while the int pair the walk reads stays zero",
-             (void *)element, (unsigned long long)vtRva, fx, fy, f2x, f2y, gx, gy, gxOk, gyOk,
-             objects[ownIndex].x, objects[ownIndex].y, objects[ownIndex].gid,
-             (unsigned long long)g_v103_tick, (unsigned long long)TNX_V112_POS_X_OFF,
-             (unsigned long long)TNX_V112_POS_Y_OFF, TNX_V112_POS_EVERY);
-}
 
 static int g_v113_test_state = 0;
 static uint64_t g_v113_test_tick = 0;
@@ -11461,10 +6307,8 @@ static int g_v113_readback_tick = -1;
 static int g_v113_hop2_logs = 0;
 static int g_v113_hop2_filled = 0;
 static uintptr_t g_v113_hop2 = 0;
-static int g_v113_queue_logs = 0;
 static int g_v113_window_logs = 0;
 static uint64_t g_v113_push_frame = 0;
-static int g_v113_frame_logs = 0;
 static int g_v115_mode_wait_logs = 0;
 static int g_v115_mode_seen7 = 0;
 static int g_v115_mode_max = 0;
@@ -11481,17 +6325,8 @@ static int g_v126_q_after = -1;
 static void *g_v126_q_last = NULL;
 static int32_t g_v126_scene_before_x = 0;
 static int32_t g_v126_scene_before_y = 0;
-static int g_v126_wtest_h1_off = 0;
-static int g_v126_chain_logs = 0;
 static uint64_t g_v126_watch_from = 0;
 static int g_v126_watch_logs = 0;
-static int g_v126_own_ok = 0;
-static int32_t g_v126_own_x = 0;
-static int32_t g_v126_own_y = 0;
-static int32_t g_v126_box_lo = 0;
-static int32_t g_v126_box_hi = 0;
-static const char *g_v126_own_tag = "none";
-static int g_v126_ownmatch_logs = 0;
 
 static uintptr_t tnx_v113_entry(uintptr_t rva);
 static void *tnx_v113_manager(void);
@@ -11727,21 +6562,7 @@ static int tnx_v113_enqueue(int x, int y) {
     return 1;
 }
 
-static const char *tnx_v113_state_x(int32_t v) {
-    if (v == g_v113_enq_x) return "MATCH";
-    if (v == -1) return "RESET";
-    if (v == 0) return "DEFAULT";
 
-    return "other";
-}
-
-static const char *tnx_v113_state_y(int32_t v) {
-    if (v == g_v113_enq_y && g_v113_enq_y != 0) return "MATCH";
-    if (v == -1) return "RESET";
-    if (v == 0) return (g_v113_enq_y == 0) ? "MATCH=DEFAULT" : "DEFAULT";
-
-    return "other";
-}
 
 static int tnx_v115_mode(void) {
     int32_t mode = -1;
@@ -11785,12 +6606,6 @@ static uintptr_t tnx_v115_client(void) {
 
 static uint32_t g_v116_mode_hist[TNX_V116_HIST_MODES];
 static int64_t g_v116_last_mode = -1;
-static int32_t g_v116_interp_prev_x = 0;
-static int32_t g_v116_interp_prev_y = 0;
-static int g_v116_interp_have = 0;
-static uint64_t g_v116_interp_moves = 0;
-static uint64_t g_v116_interp_checks = 0;
-static uint64_t g_v116_interp_tick = 0;
 static int g_v116_hist_logs = 0;
 
 static int tnx_v116_interp(int32_t *x, int32_t *y) {
@@ -11940,7 +6755,7 @@ static void tnx_v129_chain(void) {
     static int done = 0;
     uintptr_t scene = (uintptr_t)g_scene_object;
     uintptr_t battle = tnx_v129_battle_global();
-    uintptr_t holder = 0;
+    void *holder = NULL;
     uintptr_t own = 0;
     uintptr_t slotOwn = 0;
     int32_t slotGid = 0;
@@ -11985,7 +6800,7 @@ static void tnx_v129_chain(void) {
              "the engine's own index into hop0 and the only name of own that is not a guess",
              (void *)scene, (unsigned long long)TNX_V126_OWN_OFF, slot,
              (unsigned long long)TNX_V126_OWN_INNER_OFF, holder,
-             (holder == own) ? "holder" : "own", (void *)own, (own == scene) ? 1 : 0,
+             ((uintptr_t)holder == own) ? "holder" : "own", (void *)own, (own == scene) ? 1 : 0,
              (unsigned long long)TNX_V129_BATTLE_RVA, (void *)battle,
              (void *)slotOwn, g_v129_own_slot_idx, slotGid, TNX_V129_OWN_EXPECT_GID,
              (unsigned long long)TNX_V128_CTRL_RAW_X_OFF, rawOk, rawX, rawY, g_v129_own_slot_ok,
@@ -12352,9 +7167,6 @@ static void tnx_v128_witness_line(int plus) {
 }
 
 
-static int g_v117_match_idx = -1;
-static int g_v117_match_gid = -1;
-static int g_v117_match_streak = 0;
 static int g_v117_gate2_seen = 0;
 static int g_v117_gate3_seen = 0;
 
@@ -12383,912 +7195,58 @@ static int tnx_v117_src(uintptr_t off, int32_t *x, int32_t *y, int *flag) {
 }
 
 
-static int32_t g_v118_src30_prev_x = 0;
-static int32_t g_v118_src30_prev_y = 0;
-static int32_t g_v118_src38_prev_x = 0;
-static int32_t g_v118_src38_prev_y = 0;
-static int g_v118_src30_have = 0;
-static int g_v118_src38_have = 0;
-static uint64_t g_v118_src30_moves = 0;
-static uint64_t g_v118_src38_moves = 0;
-static int g_v118_w_eq_x = 0;
-static int g_v118_w_eq_y = 0;
-
-static int tnx_v118_weq(int32_t a, int32_t b, int32_t out, int32_t d) {
-    if (d == 0) return -1;
-
-    return (int)(((int64_t)(out - b) * 1000) / (int64_t)d);
-}
-
-static uintptr_t tnx_v118_mode_ptr(uintptr_t off) {
-    void *o = NULL;
-
-    if (!g_scene_object) return 0;
-    if (!tnx_read_ptr((uintptr_t)g_scene_object + off, &o)) return 0;
-
-    return (uintptr_t)o;
-}
 
 
-static uint64_t g_v119_gate1_tick = 0;
-static uint64_t g_v119_gate2_tick = 0;
-static uint64_t g_v119_gate3_tick = 0;
-static int g_v119_elig_logs = 0;
-static int g_v119_elig_any = 0;
-static uint64_t g_v119_pin_done = 0;
-
-static void tnx_v119_gate_ticks(void) {
-    if (!g_v119_gate1_tick && tnx_v115_mode() == TNX_V115_MODE_TARGET) g_v119_gate1_tick = g_v103_tick;
-    if (!g_v119_gate2_tick && tnx_v115_inner() == 1) g_v119_gate2_tick = g_v103_tick;
-
-    if (!g_v119_gate3_tick) {
-        int f = -1;
-
-        if (tnx_v117_src(TNX_V117_GATE3_PTR_OFF, NULL, NULL, &f) && f >= 0) g_v119_gate3_tick = g_v103_tick;
-    }
-}
-
-static void tnx_v119_elements(void) {
-    tnx_v47_obj_t objs[8];
-    int rej = 0;
-    int n = 0;
-    int i;
-    char buf[320];
-    char posBuf[96];
-    size_t used = 0;
-    size_t posUsed = 0;
-    int any = 0;
-
-    posBuf[0] = 0;
-
-    if (!g_players_object) return;
-    if (g_v119_elig_logs >= 30) return;
-    if (g_v103_tick % 25) return;
-
-    n = tnx_v48_collect((uintptr_t)g_players_object, objs, 8, &rej);
-
-    if (n <= 0) return;
-
-    g_v119_elig_logs++;
-
-    for (i = 0; i < n; i++) {
-        uint8_t elig = 0;
-        int32_t p214 = 0;
-        int32_t p220 = 0;
-        int32_t p224 = 0;
-
-        tnx_read_u8(objs[i].object + TNX_V119_ELIG_OFF, &elig);
-        tnx_read_i32(objs[i].object + TNX_V119_PROP_214_OFF, &p214);
-        tnx_read_i32(objs[i].object + TNX_V119_PROP_220_OFF, &p220);
-        tnx_read_i32(objs[i].object + TNX_V119_PROP_224_OFF, &p224);
-
-        if (elig == 1) {
-            any++;
-            posUsed += (size_t)snprintf(posBuf + posUsed, sizeof(posBuf) - posUsed, "%d,", i);
-        }
-
-        used += (size_t)snprintf(buf + used, sizeof(buf) - used, "[%d gid=%d elig=%d p214=%d p220=%d p224=%d]",
-                                 i, objs[i].gid, (int)elig, p214, p220, p224);
-        if (used >= sizeof(buf) - 96) break;
-    }
-
-    if (any) g_v119_elig_any = 1;
-
-    {
-        uint8_t ownB = 0;
-
-        if (g_players_object) {
-            tnx_v47_obj_t ownObjs[8];
-            int ownRej = 0;
-
-            if (tnx_v48_collect((uintptr_t)g_players_object, ownObjs, 8, &ownRej) > 0) {
-                tnx_read_u8(ownObjs[0].object + TNX_V119_ELIG_OFF, &ownB);
-            }
-        }
-
-        tnx_logf("v122 eligible own_elig=%d own_byte1fd=%#x pos=%s n=%d anyElig=%d anyEver=%d %s - the "
-                 "interpolation filter",
-                 (int)ownB, (unsigned)ownB, posBuf, n, any, g_v119_elig_any, buf);
-    }
-
-    tnx_logf("v119 eligibleNote the filter at %#x takes an element "
-             "only when the virtual slot +0x28 returns 1 and the byte at +%#llx is 1, and that byte is "
-             "loaded from the property list index %#x by the loader at %#llx which is reached from the "
-             "message path %#llx, so an element with elig=0 is dropped before the lerp no matter what any "
-             "writer or queue does",
-             (unsigned long long)0xac22c4, (unsigned long long)TNX_V119_ELIG_OFF,
-             (unsigned)0x1e2, (unsigned long long)0xa30b30ULL, (unsigned long long)0x7b322cULL);
-}
-
-static void tnx_v119_pin(void) {
-    tnx_v47_obj_t objs[8];
-    int rej = 0;
-    int n = 0;
-    int i;
-
-    if (!TNX_V119_TEST_ENABLE) return;
-    if (g_v119_pin_done) return;
-    if (!g_players_object) return;
-    if (tnx_v115_mode() != TNX_V115_MODE_TARGET) return;
-
-    n = tnx_v48_collect((uintptr_t)g_players_object, objs, 8, &rej);
-
-    if (n <= 0) return;
-
-    g_v119_pin_done = 1;
-
-    for (i = 0; i < n; i++) {
-        uint8_t b = 1;
-
-        tnx_write_bytes(objs[i].object + TNX_V119_ELIG_OFF, &b, sizeof(b));
-    }
-
-    tnx_logf("v119 pin set elig=1 on %d elements at +%#llx - this is the cheap test that does not need the "
-             "message ctor or the queue: if the loader at %#llx refreshes the byte on the next packet the "
-             "pin dies, and if it survives and client+%#llx starts moving then eligibility was the only "
-             "blocker", n, (unsigned long long)TNX_V119_ELIG_OFF, (unsigned long long)0xa30b30ULL,
-             (unsigned long long)TNX_V115_CLIENT_POS_X_OFF);
-}
 
 
-static int32_t g_v120_f138_prev = 0;
-static int32_t g_v120_f13c_prev = 0;
-static int g_v120_f_have = 0;
+
+
+
+
+
 static uint64_t g_v120_reloads = 0;
-static int g_v120_holder_logged = 0;
-static int g_v120_ent_logs = 0;
-
-static void tnx_v120_thermometer(void) {
-    int32_t from = 0;
-    int32_t to = 0;
-
-    if (!g_scene_object) return;
-    if (!tnx_read_i32((uintptr_t)g_scene_object + TNX_V120_FROM_OFF, &from)) return;
-    if (!tnx_read_i32((uintptr_t)g_scene_object + TNX_V120_TO_OFF, &to)) return;
-
-    if (g_v120_f_have && (from != g_v120_f138_prev || to != g_v120_f13c_prev)) g_v120_reloads++;
-
-    g_v120_f138_prev = from;
-    g_v120_f13c_prev = to;
-    g_v120_f_have = 1;
-}
-
-static void tnx_v120_holder_note(void) {
-    if (g_v120_holder_logged) return;
-    if (g_v103_tick < 10) return;
-
-    g_v120_holder_logged = 1;
-
-    tnx_logf("v122 holder=unavail lifetime=per-frame reason=scratch classRva=%#llx - the property holder cannot be used as a "
-             "network thermometer: the mode update allocates two %#x byte holders with %#llx every frame at "
-             "%#x and %#x, stores them only in stack slots, fills them through the loader %#llx and drops "
-             "them, so nothing persistent carries the packets; the readable proxy is the last loaded "
-             "from/to pair at mode+%#llx/+%#llx, which is exactly the pair that gates the snapshot reload",
-             (unsigned long long)TNX_V120_HOLDER_VT_RVA, (unsigned)TNX_V120_HOLDER_SIZE,
-             (unsigned long long)TNX_V120_HOLDER_CTOR_RVA,
-             (unsigned)0xac2104, (unsigned)0xac2114, (unsigned long long)0xa24278ULL,
-             (unsigned long long)TNX_V120_FROM_OFF, (unsigned long long)TNX_V120_TO_OFF);
-}
-
-static void tnx_v120_entities(void) {
-    uintptr_t getter = tnx_v113_entry(TNX_V120_ENTITY_GETTER_RVA);
-    void *obj = NULL;
-    void *container = NULL;
-    int32_t count = -1;
-    char buf[280];
-    size_t used = 0;
-    int i;
-
-    if (!g_scene_object || !getter) return;
-    if (g_v120_ent_logs >= 30) return;
-    if (g_v103_tick % 25) return;
-
-    if (!tnx_read_ptr((uintptr_t)g_scene_object + TNX_V117_GATE3_PTR_OFF, &obj) || !obj) return;
-
-    container = ((void *(*)(void *))getter)(obj);
-
-    if (!container) return;
-
-    tnx_read_i32((uintptr_t)container + 0xc, &count);
-
-    if (count < 0) return;
-
-    if (count > 12) count = 12;
-
-    g_v120_ent_logs++;
-
-    for (i = 0; i < count; i++) {
-        void *e = NULL;
-        void *vt = NULL;
-        uintptr_t r = 0;
-        uint8_t el = 0;
-
-        if (!tnx_read_ptr((uintptr_t)container + (uintptr_t)i * 8ULL, &e) || !e) continue;
-
-        if (tnx_read_ptr((uintptr_t)e, &vt) && vt) r = (uintptr_t)vt - g_base;
-
-        tnx_read_u8((uintptr_t)e + TNX_V119_ELIG_OFF, &el);
-
-        used += (size_t)snprintf(buf + used, sizeof(buf) - used, "[%d vt=%#llx elig=%d]", i,
-                                 (unsigned long long)r, (int)el);
-        if (used >= sizeof(buf) - 64) break;
-    }
-
-    tnx_logf("v120 entities node=%p list=%p count=%d %s - this is the real candidate list taken as "
-             "mode+%#llx through the getter %#llx, so an entry here with vtable %#llx is a live brawler and "
-             "an entry with another vtable is a lobby or roster slot; logInterp=%d - it needs the getter "
-             "call because the mode holds the node and not the array",
-             obj, container, count, buf, (unsigned long long)TNX_V117_GATE3_PTR_OFF,
-             (unsigned long long)TNX_V120_ENTITY_GETTER_RVA, (unsigned long long)0xff5440ULL,
-             (tnx_v115_mode() == TNX_V115_MODE_TARGET && tnx_v115_inner() == 1) ? 1 : 0);
-}
 
 
-static uint64_t g_v122_prev_win_reloads = 0;
-static uint64_t g_v122_win_mark = 0;
+
+
+
 static uint64_t g_v122_pre_reloads = 0;
 static uint64_t g_v122_pre_frames = 0;
-static int g_v122_pre_logged = 0;
-static int g_v122_ent2_logs = 0;
 
 static uint64_t g_v121_push_frame = 0;
 static uint64_t g_v121_win_reloads = 0;
 static int g_v121_win_stage = 0;
-static uint64_t g_v121_traj_logs = 0;
-static uint64_t g_v121_rate_marks = 0;
-
-static uint64_t g_v121_rate_prev = 0;
-
-static void tnx_v121_traj(void) {
-    void *arr = NULL;
-    int32_t count = 0;
-    int32_t tnow = 0;
-    char buf[300];
-    size_t used = 0;
-    int i;
-    int32_t seqA = 0;
-    int32_t seqB = 0;
-
-    if (!g_scene_object) return;
-    if (g_v121_traj_logs >= 30) return;
-    if (g_v103_tick % 25) return;
-
-    if (!tnx_read_ptr((uintptr_t)g_scene_object + TNX_V121_TRAJ_ARR_OFF, &arr) || !arr) return;
-    if (!tnx_read_i32((uintptr_t)g_scene_object + TNX_V121_TRAJ_COUNT_OFF, &count)) return;
-    if (!tnx_read_i32((uintptr_t)g_scene_object + TNX_V121_TRAJ_TIME_OFF, &tnow)) return;
-
-    g_v121_traj_logs++;
-
-    for (i = 0; i < count && i < 10; i++) {
-        void *e = NULL;
-        int32_t seq = 0;
-        void *blk = NULL;
-
-        if (!tnx_read_ptr((uintptr_t)arr + (uintptr_t)i * 8ULL, &e) || !e) continue;
-        tnx_read_i32((uintptr_t)e + TNX_V121_ENTRY_SEQ_OFF, &seq);
-        tnx_read_ptr((uintptr_t)e + TNX_V121_ENTRY_BLOCK_OFF, &blk);
-
-        if (i == 0) seqA = seq;
-        if (i == 1) seqB = seq;
-
-        used += (size_t)snprintf(buf + used, sizeof(buf) - used, "[%d seq=%d blk=%p]", i, seq, blk);
-        if (used >= sizeof(buf) - 64) break;
-    }
-
-    {
-        int cadence = 0;
-        int stale = 0;
-
-        if (count >= 2 && seqB > seqA) cadence = ((seqB - seqA) / (count - 1)) * 50;
-        stale = (tnow - seqA) * 50;
-
-        tnx_logf("v122 traj count=%d time=%d seqHead=%d seqTail=%d cadenceMs=%d stalenessMs=%d arr=%p "
-                 "seq0=%d seq1=%d ", count, tnow, seqA, seqB, cadence, stale, arr, seqA, seqB);
-    }
-
-    tnx_logf("v122 trajdetail arr=%p count=%d time=%d seq0=%d seq1=%d %s - this list at mode+%#llx with count at "
-             "+%#llx is the interpolation source: the update brackets the current time %d between two "
-             "entries, takes the block at entry+%#llx and lerps it into the client pair, while entry+%#llx "
-             "is the entry time, so a growing seq spacing is the packet cadence and a frozen list means "
-             "the server sent nothing new",
-             arr, count, tnow, seqA, seqB, buf,
-             (unsigned long long)TNX_V121_TRAJ_ARR_OFF,
-             (unsigned long long)TNX_V121_TRAJ_COUNT_OFF, tnow,
-             (unsigned long long)TNX_V121_ENTRY_BLOCK_OFF,
-             (unsigned long long)TNX_V121_ENTRY_SEQ_OFF);
-}
-
-static void tnx_v121_window(void) {
-    uint64_t d;
-
-    if (g_v121_rate_marks == 0 || (g_v48_ticks - g_v121_rate_marks) >= 300) {
-        g_v121_rate_marks = g_v48_ticks;
-
-        tnx_logf("v121 reloadRate reloads=%llu delta=%llu per5s=%llu - an absolute reload count says "
-                 "nothing because the gate only fires when the cached from/to pair changes, so a standing "
-                 "player produces zero reloads even with a perfect connection and only the rate over a "
-                 "window is meaningful",
-                 (unsigned long long)g_v120_reloads,
-                 (unsigned long long)(g_v120_reloads - g_v121_rate_prev),
-                 (unsigned long long)(g_v120_reloads - g_v121_rate_prev));
-
-        g_v121_rate_prev = g_v120_reloads;
-    }
-
-    if (!g_v121_push_frame) return;
-
-    d = g_v48_ticks - g_v121_push_frame;
-
-    if (g_v121_win_stage == 0 && !g_v122_pre_logged && d >= 1) {
-        g_v122_pre_logged = 1;
-
-        tnx_logf("v122 winPre preFrames=%llu preReloads=%llu preRate5s=%llu - the baseline is taken from the "
-                 "rolling %d frame window and not from a lifetime count, because the reload gate fires only "
-                 "when the cached timestamp pair changes",
-                 (unsigned long long)(g_v122_pre_frames - g_v122_win_mark),
-                 (unsigned long long)g_v122_pre_reloads, (unsigned long long)g_v122_prev_win_reloads,
-                 TNX_V122_PRE_FRAMES);
-    }
-
-    if (g_v121_win_stage == 0 && d > TNX_V121_WIN1_FRAMES) {
-        g_v121_win_stage = 1;
-
-        tnx_logf("v122 winA push+0..%dF reloads=%llu rate=%llu per %dF - a round trip of 50 to 150 ms lands "
-                 "here on a fast connection, so a jump against winPre means the server answered",
-                 TNX_V121_WIN1_FRAMES, (unsigned long long)(g_v120_reloads - g_v121_win_reloads),
-                 (unsigned long long)(g_v120_reloads - g_v121_win_reloads), TNX_V121_WIN1_FRAMES);
-
-        g_v121_win_reloads = g_v120_reloads;
-    }
-
-    if (g_v121_win_stage == 1 && d > TNX_V121_WIN2_FRAMES) {
-        g_v121_win_stage = 2;
-
-        tnx_logf("v122 winB push+%d..%dF reloads=%llu rate=%llu per %dF - second window, so a slow answer "
-                 "is separated from no answer instead of being lumped into one verdict",
-                 TNX_V121_WIN1_FRAMES, TNX_V121_WIN2_FRAMES,
-                 (unsigned long long)(g_v120_reloads - g_v121_win_reloads),
-                 (unsigned long long)(g_v120_reloads - g_v121_win_reloads),
-                 (TNX_V121_WIN2_FRAMES - TNX_V121_WIN1_FRAMES));
-    }
-}
 
 
 
-static void tnx_v122_prewin(void) {
-    if (g_v122_win_mark == 0 || (g_v48_ticks - g_v122_win_mark) >= TNX_V122_PRE_FRAMES) {
-        g_v122_win_mark = g_v48_ticks;
-        g_v122_prev_win_reloads = g_v120_reloads;
-    }
-}
 
-static uint64_t g_v125_calls_to_991440 = 0;
+
+
+
 
 static int tnx_is_heap(uintptr_t v) {
     return (v >= TNX_V125_HEAP_LO && v < TNX_V125_HEAP_HI && (v & 0x7) == 0) ? 1 : 0;
 }
 
-static void tnx_v125_bounds(uintptr_t own) {
-    int32_t bx = 0;
-    int32_t by = 0;
 
-    if (!own) return;
-    if (!tnx_is_heap(own)) {
-        tnx_logf("v125 bounds skip own=%p notHeap=1 - the element pointer failed the heap and alignment "
-                 "guard, so the two word read is skipped instead of dereferencing it", (void *)own);
 
-        return;
-    }
 
-    if (!tnx_read_i32(own + TNX_V122_BOUND_X_OFF, &bx)) return;
-    if (!tnx_read_i32(own + TNX_V122_BOUND_Y_OFF, &by)) return;
 
-    tnx_logf("v125 bounds own=%p bx=%d by=%d calls991440=%llu - the box comes from the walked element "
-             "itself now; the old route called the getter %#llx and then %#llx on whatever it returned, "
-             "and that is the call that crashed with x0=%#llx because x0+%#x is exactly the reported FAR",
-             (void *)own, bx, by, (unsigned long long)g_v125_calls_to_991440,
-             (unsigned long long)TNX_V122_OWN_GETTER_RVA,
-             (unsigned long long)TNX_V122_RESOLVE_SELF_RVA, (unsigned long long)0x100010055ULL,
-             (unsigned)0xf8);
-}
 
-static void tnx_v122_entities2(void) {
-    uintptr_t getter = tnx_v113_entry(TNX_V120_ENTITY_GETTER_RVA);
-    void *obj = NULL;
-    void *container = NULL;
-    char buf[340];
-    size_t used = 0;
-    int32_t count = -1;
-    int i;
 
-    if (!g_scene_object || !getter) return;
-    if (g_v122_ent2_logs >= 12) return;
-    if (g_v103_tick % 50) return;
 
-    if (!tnx_read_ptr((uintptr_t)g_scene_object + TNX_V117_GATE3_PTR_OFF, &obj) || !obj) return;
 
-    container = ((void *(*)(void *))getter)(obj);
 
-    if (!container) return;
 
-    tnx_read_i32((uintptr_t)container + 0xc, &count);
 
-    if (count <= 0) return;
 
-    if (count > 8) count = 8;
 
-    g_v122_ent2_logs++;
-
-    for (i = 0; i < count; i++) {
-        void *e = NULL;
-        void *vt = NULL;
-        uintptr_t r = 0;
-        uint8_t el = 0;
-        int32_t px = 0;
-        int32_t py = 0;
-        int32_t gid = 0;
-
-        if (!tnx_read_ptr((uintptr_t)container + (uintptr_t)i * 8ULL, &e) || !e) continue;
-
-        if (tnx_read_ptr((uintptr_t)e, &vt) && vt) r = (uintptr_t)vt - g_base;
-
-        tnx_read_u8((uintptr_t)e + TNX_V119_ELIG_OFF, &el);
-        tnx_read_i32((uintptr_t)e + TNX_V122_POS_X_OFF, &px);
-        tnx_read_i32((uintptr_t)e + TNX_V122_POS_Y_OFF, &py);
-        tnx_read_i32((uintptr_t)e + TNX_V112_GID_OFF, &gid);
-
-        used += (size_t)snprintf(buf + used, sizeof(buf) - used,
-                                 "[%d vt=%#llx elig=%d pos=(%d,%d) gid=%d]", i,
-                                 (unsigned long long)r, (int)el, px, py, gid);
-        if (used >= sizeof(buf) - 64) break;
-    }
-
-    tnx_logf("v122 entities2 count=%d %s - vt %#llx is a brawler and %#llx is a lobby or roster slot, so "
-             "this line decides whether the interpolation list carries live units or UI rows",
-             count, buf, (unsigned long long)0xff5440ULL, (unsigned long long)0xf9e248ULL);
-}
-
-
-static int g_v123_dump_done = 0;
-static uintptr_t g_v123_w1_elem = 0;
-static int32_t g_v123_w1_x = 0;
-static int32_t g_v123_w1_y = 0;
-static int32_t g_v123_w1_was_x = 0;
-static int32_t g_v123_w1_was_y = 0;
-static uint64_t g_v123_w1_frame = 0;
-static int g_v123_w1_state = 0;
-static int g_v123_w2_state = 0;
-static int g_v127_w2_off = 0;
-
-static int tnx_v123_hop2_arr(void **containerOut, void **arrOut, int32_t *countOut) {
-    void *outer = NULL;
-    void *container = NULL;
-    void *arr = NULL;
-    int32_t count = 0;
-
-    if (!g_scene_object) return 0;
-    if (!tnx_read_ptr((uintptr_t)g_scene_object + TNX_V115_CLIENT_OFF, &outer) || !outer) return 0;
-    if (!tnx_read_ptr((uintptr_t)outer + TNX_V115_CLIENT_OFF, &container) || !container) return 0;
-    if (!tnx_read_ptr((uintptr_t)container + TNX_MGR_ARRAY_OFF, &arr) || !arr) return 0;
-    if (!tnx_read_i32((uintptr_t)container + TNX_MGR_COUNT_OFF, &count)) return 0;
-    if (count <= 0 || count > 16) return 0;
-
-    if (containerOut) *containerOut = container;
-    if (arrOut) *arrOut = arr;
-    if (countOut) *countOut = count;
-
-    return 1;
-}
-
-static void tnx_v123_hop2dump(void) {
-    void *container = NULL;
-    void *arr = NULL;
-    int32_t count = 0;
-    int32_t i = 0;
-    int ownIdx = -1;
-    int ownGid = -1;
-    void *h1arr = NULL;
-    int32_t h1count = 0;
-
-    if (g_v123_dump_done) return;
-    if (g_v103_tick < 2) return;
-    if (!tnx_v123_hop2_arr(&container, &arr, &count)) return;
-
-    g_v123_dump_done = 1;
-
-    if (g_players_object) {
-        void *piece = NULL;
-
-        if (tnx_read_ptr((uintptr_t)g_players_object + TNX_MGR_ARRAY_OFF, &piece)) h1arr = piece;
-
-        tnx_read_i32((uintptr_t)g_players_object + TNX_MGR_COUNT_OFF, &h1count);
-        tnx_read_i32((uintptr_t)g_players_object + TNX_V123_OWN_IDX_OFF, &ownIdx);
-
-        if (h1arr && ownIdx >= 0 && ownIdx < h1count) {
-            void *e = NULL;
-
-            if (tnx_read_ptr((uintptr_t)h1arr + (uintptr_t)ownIdx * 8ULL, &e) && e) {
-                tnx_read_i32((uintptr_t)e + TNX_V112_GID_OFF, &ownGid);
-            }
-        }
-    }
-
-    tnx_logf("v125 hop2 use ptr=%p arr=%p count=%d ownIdxHop1=%d ownGid=%d isHeap=%d caller=%#llx - this "
-             "line runs before anything else reads the fresh list and isHeap gates every later use",
-             container, arr, count, ownIdx, ownGid, tnx_is_heap((uintptr_t)container),
-             (unsigned long long)0xa24278ULL);
-
-    tnx_logf("v123 hop2dump container=%p arr=%p count=%d ownIdxHop1=%d ownGid=%d - the fresh hop2 list is "
-             "read only, never adopted in this build, and own is looked up by gid and not by pointer",
-             container, arr, count, ownIdx, ownGid);
-
-    for (i = 0; i < count && i < 12; i++) {
-        void *e = NULL;
-        void *vt = NULL;
-        uintptr_t r = 0;
-        int32_t gid = 0;
-        int32_t team = 0;
-        int32_t x = 0;
-        int32_t y = 0;
-        uint8_t h1 = 0;
-        uint8_t h7 = 0;
-        int isOwn = 0;
-
-        if (!tnx_read_ptr((uintptr_t)arr + (uintptr_t)i * 8ULL, &e) || !e) continue;
-
-        if (tnx_read_ptr((uintptr_t)e, &vt) && vt) r = (uintptr_t)vt - g_base;
-
-        tnx_read_i32((uintptr_t)e + TNX_V112_GID_OFF, &gid);
-        tnx_read_i32((uintptr_t)e + TNX_OBJ_TEAM_OFF, &team);
-        tnx_read_i32((uintptr_t)e + TNX_OBJ_X_OFF, &x);
-        tnx_read_i32((uintptr_t)e + TNX_OBJ_Y_OFF, &y);
-        tnx_read_u8((uintptr_t)e + TNX_V119_ELIG_OFF, &h1);
-        tnx_read_u8((uintptr_t)e + TNX_V115_GATE_BYTE_OFF, &h7);
-
-        if (ownGid >= 0 && gid == ownGid) isOwn = 1;
-
-        tnx_logf("v123 hop2[%d] p=%p vt=%#llx gid50=%d t40=%d xy=(%d,%d) h1fd=%d h7a=%d own=%d",
-                 i, e, (unsigned long long)r, gid, team, x, y, (int)h1, (int)h7, isOwn);
-    }
-}
-
-static void tnx_v123_writes(const tnx_v47_obj_t *objects, int usable, int ownIndex) {
-    if (usable <= 0 || !objects) return;
-
-    if (!TNX_V126_WTEST_H1) {
-        if (!g_v126_wtest_h1_off) {
-            g_v126_wtest_h1_off = 1;
-
-            tnx_logf("v126 wtestH1 off - the hop1 int pair at +%#llx/+%#llx was proven writable with held=1 "
-                     "in the v125 run, but hop1 is a roster whose elements carry no coordinates at all, so "
-                     "that write put (1,1) into the walked own element and turned the coordinate census it "
-                     "was meant to help into evidence of its own injection: the v125 run reported "
-                     "distinct=2 and coords ok=1 on a list whose own element had been moved by this test, "
-                     "and the readback of the enqueue test then matched that injected pair instead of the "
-                     "pushed one",
-                     (unsigned long long)TNX_OBJ_X_OFF, (unsigned long long)TNX_OBJ_Y_OFF);
-        }
-
-        g_v123_w1_state = 2;
-    } else if (g_v123_w1_state == 0) {
-        uintptr_t e = objects[(ownIndex >= 0 && ownIndex < usable) ? ownIndex : 0].object;
-        int32_t vx = 0;
-        int32_t vy = 0;
-
-        if (!e) return;
-
-        tnx_read_i32(e + TNX_OBJ_X_OFF, &g_v123_w1_was_x);
-        tnx_read_i32(e + TNX_OBJ_Y_OFF, &g_v123_w1_was_y);
-
-        g_v123_w1_x = g_v123_w1_was_x + 1;
-        g_v123_w1_y = g_v123_w1_was_y + 1;
-        vx = g_v123_w1_x;
-        vy = g_v123_w1_y;
-
-        tnx_write_bytes(e + TNX_OBJ_X_OFF, &vx, sizeof(vx));
-        tnx_write_bytes(e + TNX_OBJ_Y_OFF, &vy, sizeof(vy));
-
-        g_v123_w1_elem = e;
-        g_v123_w1_frame = g_v48_ticks;
-        g_v123_w1_state = 1;
-
-        tnx_logf("v123 wtestH1 wrote elem=%p x=%d y=%d was=(%d,%d) - a hop1 slot takes one synthetic write "
-                 "in the int pair to prove whether that pair is writable at all, before any network route "
-                 "is trusted",
-                 (void *)e, g_v123_w1_x, g_v123_w1_y, g_v123_w1_was_x, g_v123_w1_was_y);
-    } else if (g_v123_w1_state == 1 && (g_v48_ticks - g_v123_w1_frame) >= TNX_V123_WRITE_WAIT) {
-        int32_t x = 0;
-        int32_t y = 0;
-
-        g_v123_w1_state = 2;
-
-        tnx_read_i32(g_v123_w1_elem + TNX_OBJ_X_OFF, &x);
-        tnx_read_i32(g_v123_w1_elem + TNX_OBJ_Y_OFF, &y);
-
-        tnx_logf("v123 wtestH1 held=%d now=(%d,%d) want=(%d,%d) frames=%llu - held=0 means something else "
-                 "wrote the pair back, held=1 means the write survives and the int pair is a plain store",
-                 (x == g_v123_w1_x && y == g_v123_w1_y) ? 1 : 0, x, y, g_v123_w1_x, g_v123_w1_y,
-                 (unsigned long long)(g_v48_ticks - g_v123_w1_frame));
-    }
-
-    if (g_v127_w2_off) {
-        g_v123_w2_state = 2;
-    } else if (g_v123_w2_state == 0) {
-        g_v127_w2_off = 1;
-
-        tnx_logf("v127 wtestH2 off - hop2 %#llx was proven writable in the v126 run (elem[0] took the "
-                 "pair and read back ten units shifted), and the same pair at +%#llx/+%#llx is now the "
-                 "target of path (c), which reads it back a full second later instead of five frames: two "
-                 "writers on one field would make the held= answer meaningless",
-                 (unsigned long long)0xff5440ULL, (unsigned long long)TNX_OBJ_X_OFF,
-                 (unsigned long long)TNX_OBJ_Y_OFF);
-
-        return;
-    }
-
-}
-
-static void *tnx_v126_battle(void) {
-    uintptr_t fn = tnx_v113_entry(TNX_V113_GETBATTLE_RVA);
-
-    if (!fn) return NULL;
-
-    return ((void *(*)(void))fn)();
-}
-
-static int tnx_v126_plausible(int32_t v) {
-    if (v <= 0) return 0;
-    if (v > 100000) return 0;
-
-    return 1;
-}
-
-static void tnx_v126_ownmatch(void) {
-    void *container = NULL;
-    void *arr = NULL;
-    int32_t count = 0;
-    int32_t i = 0;
-    int hit = -1;
-    int32_t team = 0;
-    int32_t hx = 0;
-    int32_t hy = 0;
-
-    if (!g_v126_own_ok) return;
-    if (g_v126_ownmatch_logs >= 4) return;
-    if (!tnx_v123_hop2_arr(&container, &arr, &count)) return;
-
-    for (i = 0; i < count && i < 16; i++) {
-        void *e = NULL;
-        int32_t x = 0;
-        int32_t y = 0;
-
-        if (!tnx_read_ptr((uintptr_t)arr + (uintptr_t)i * 8ULL, &e) || !e) continue;
-
-        tnx_read_i32((uintptr_t)e + TNX_OBJ_X_OFF, &x);
-        tnx_read_i32((uintptr_t)e + TNX_OBJ_Y_OFF, &y);
-
-        if (x == g_v126_own_x && y == g_v126_own_y) {
-            hit = (int)i;
-            hx = x;
-            hy = y;
-
-            tnx_read_i32((uintptr_t)e + TNX_OBJ_TEAM_OFF, &team);
-
-            break;
-        }
-    }
-
-    g_v126_ownmatch_logs++;
-
-    tnx_logf("v126 ownmatch tag=%s own=(%d,%d) box=(%d,%d) hop2Index=%d team=%d elem=(%d,%d) - own is taken "
-             "from the membership chain and then matched into the brawler list by its coordinate pair, "
-             "which is the index the dodge needs: the hop1 list names own by the gid at +%#llx and the "
-             "slot index at +%#llx but carries no position at all, and the hop2 list carries the positions "
-             "but a zero id on every element, so the pair is the only key the two lists share",
-             g_v126_own_tag, g_v126_own_x, g_v126_own_y, g_v126_box_lo, g_v126_box_hi, hit, team, hx, hy,
-             (unsigned long long)TNX_V112_GID_OFF, (unsigned long long)TNX_V123_OWN_IDX_OFF);
-}
-
-static void tnx_v126_chain_one(const char *tag, uintptr_t base) {
-    void *p = NULL;
-    void *q = NULL;
-    void *box = NULL;
-    void *vt = NULL;
-    uintptr_t vtq = 0;
-    uintptr_t vtr = 0;
-    uint32_t raw = 0;
-    int32_t qx = -1;
-    int32_t qy = -1;
-    int32_t inA = -1;
-    int32_t inB = -1;
-    int32_t boxLo = -1;
-    int32_t boxHi = -1;
-
-    if (!base) return;
-
-    tnx_read_u32(base + TNX_V126_OWN_OFF, &raw);
-
-    if (!tnx_read_ptr(base + TNX_V126_OWN_OFF, &p) || !p) {
-        tnx_logf("v126 chain %-7s base=%p +%#llx raw=%#x p=0 - nothing readable behind the one field "
-                 "getOwnCharacter %#llx dereferences, so this object is not a receiver that chain accepts",
-                 tag, (void *)base, (unsigned long long)TNX_V126_OWN_OFF, raw,
-                 (unsigned long long)0x7b9050ULL);
-
-        return;
-    }
-
-    if (!tnx_read_ptr((uintptr_t)p + TNX_V126_OWN_INNER_OFF, &q) || !q) {
-        tnx_logf("v126 chain %-7s base=%p p=%p inner=0 - the first hop reads but its +%#llx is null, so "
-                 "the own character is not behind this base this tick",
-                 tag, (void *)base, p, (unsigned long long)TNX_V126_OWN_INNER_OFF);
-
-        return;
-    }
-
-    if (tnx_read_ptr((uintptr_t)q, &vt) && vt) vtq = (uintptr_t)vt - g_base;
-
-    tnx_read_i32((uintptr_t)q + TNX_OBJ_X_OFF, &qx);
-    tnx_read_i32((uintptr_t)q + TNX_OBJ_Y_OFF, &qy);
-    tnx_read_i32((uintptr_t)q + TNX_V112_INPUT_X_OFF, &inA);
-    tnx_read_i32((uintptr_t)q + TNX_V112_INPUT_Y_OFF, &inB);
-
-    if (tnx_read_ptr((uintptr_t)q + TNX_V126_BOX_PTR_OFF, &box) && box) {
-        vtr = (uintptr_t)box - g_base;
-
-        tnx_read_i32((uintptr_t)box + TNX_V126_BOX_MIN_OFF, &boxLo);
-        tnx_read_i32((uintptr_t)box + TNX_V126_BOX_MIN_OFF + 4, &boxHi);
-    }
-
-    if (!g_v126_own_ok && vtq && tnx_v126_plausible(boxLo) && tnx_v126_plausible(boxHi) &&
-        qx > -TNX_V75_COORD_MAX && qx < TNX_V75_COORD_MAX &&
-        qy > -TNX_V75_COORD_MAX && qy < TNX_V75_COORD_MAX) {
-        g_v126_own_ok = 1;
-        g_v126_own_x = qx;
-        g_v126_own_y = qy;
-        g_v126_box_lo = boxLo;
-        g_v126_box_hi = boxHi;
-        g_v126_own_tag = tag;
-    }
-
-    tnx_logf("v126 chain %-7s base=%p +%#llx raw=%#x p=%p q=%p vtq=%#llx pos=(%d,%d) in10c=%d in110=%d "
-             "box=%p vtr=%#llx bounds=(%d,%d) - this is the chain the battle update walks at %#llx: "
-             "getOwnCharacter reads the word at +%#llx off its receiver, the own character is that "
-             "object's +%#llx, the own position is the int pair at +%#llx/+%#llx, the input the setter "
-             "%#llx stores lives at +%#llx/+%#llx on the same object, and the clamp box is +%#llx of the "
-             "object the own character holds at +%#llx, so a line whose bounds reads as a plausible map "
-             "size at once names the receiver and the own position of this battle",
-             tag, (void *)base, (unsigned long long)TNX_V126_OWN_OFF, raw, p, q,
-             (unsigned long long)vtq, qx, qy, inA, inB, box, (unsigned long long)vtr, boxLo, boxHi,
-             (unsigned long long)0x79de48ULL, (unsigned long long)TNX_V126_OWN_OFF,
-             (unsigned long long)TNX_V126_OWN_INNER_OFF, (unsigned long long)TNX_OBJ_X_OFF,
-             (unsigned long long)TNX_OBJ_Y_OFF, (unsigned long long)TNX_V112_SETPRED4_RVA,
-             (unsigned long long)TNX_V112_INPUT_X_OFF, (unsigned long long)TNX_V112_INPUT_Y_OFF,
-             (unsigned long long)TNX_V126_BOX_MIN_OFF, (unsigned long long)TNX_V126_BOX_PTR_OFF);
-}
-
-static void tnx_v126_chain(void) {
-    void *container = NULL;
-    void *arr = NULL;
-    int32_t count = 0;
-
-    if (g_v126_chain_logs >= TNX_V126_CHAIN_LOGS) return;
-    if (g_v103_tick % TNX_V126_CHAIN_EVERY) return;
-
-    g_v126_chain_logs++;
-
-    tnx_v126_chain_one("scene", (uintptr_t)g_scene_object);
-    tnx_v126_chain_one("player", (uintptr_t)g_players_object);
-    tnx_v126_chain_one("battle", (uintptr_t)tnx_v126_battle());
-    tnx_v126_chain_one("input", (uintptr_t)tnx_v113_manager());
-
-    if (tnx_v123_hop2_arr(&container, &arr, &count)) {
-        tnx_v126_chain_one("hop2", (uintptr_t)container);
-    }
-
-    tnx_v126_ownmatch();
-}
-
-static void tnx_v126_watch(void) {
-    void *container = NULL;
-    void *arr = NULL;
-    int32_t count = 0;
-    uint64_t d = 0;
-    char buf[320];
-    size_t used = 0;
-    int32_t i = 0;
-
-    if (!g_v126_enq_ok) return;
-    if (g_v126_watch_logs >= TNX_V126_WATCH_LOGS) return;
-    if (!g_v126_watch_from) g_v126_watch_from = g_v48_ticks;
-
-    d = g_v48_ticks - g_v126_watch_from;
-
-    if (d > TNX_V126_WATCH_TICKS) return;
-    if (d % TNX_V126_WATCH_EVERY) return;
-    if (!tnx_v123_hop2_arr(&container, &arr, &count)) return;
-
-    g_v126_watch_logs++;
-    buf[0] = '\0';
-
-    for (i = 0; i < count && i < 8; i++) {
-        void *e = NULL;
-        int32_t x = 0;
-        int32_t y = 0;
-
-        if (!tnx_read_ptr((uintptr_t)arr + (uintptr_t)i * 8ULL, &e) || !e) continue;
-
-        tnx_read_i32((uintptr_t)e + TNX_OBJ_X_OFF, &x);
-        tnx_read_i32((uintptr_t)e + TNX_OBJ_Y_OFF, &y);
-
-        used += (size_t)snprintf(buf + used, sizeof(buf) - used, "[%d (%d,%d)]", (int)i, x, y);
-
-        if (used >= sizeof(buf) - 40) break;
-    }
-
-    tnx_logf("v126 watch t=+%llu msg=%p %s - the brawler list is sampled after the real enqueue, so the "
-             "pair that changes is the object the pushed input reached, and that identifies own and proves "
-             "the actuator without a readback on an object this build cannot yet name",
-             (unsigned long long)d, g_v126_msg, buf);
-}
-
-static void tnx_v117_match(int32_t ix, int32_t iy) {
-    tnx_v47_obj_t objs[8];
-    int rej = 0;
-    int n = 0;
-    int best = -1;
-    int bestGid = -1;
-    int64_t bestd = 0;
-    int i;
-
-    if (!g_players_object) return;
-
-    n = tnx_v48_collect((uintptr_t)g_players_object, objs, 8, &rej);
-
-    if (n <= 0) return;
-
-    for (i = 0; i < n; i++) {
-        int32_t ex = 0;
-        int32_t ey = 0;
-        int64_t d;
-
-        if (!tnx_v117_pair(objs[i].object, &ex, &ey)) continue;
-
-        d = (int64_t)(ex - ix) * (int64_t)(ex - ix) + (int64_t)(ey - iy) * (int64_t)(ey - iy);
-
-        if (best < 0 || d < bestd) {
-            best = i;
-            bestd = d;
-            bestGid = objs[i].gid;
-        }
-    }
-
-    if (best < 0) return;
-
-    g_v117_match_streak = (best == g_v117_match_idx) ? g_v117_match_streak + 1 : 0;
-    g_v117_match_idx = best;
-    g_v117_match_gid = bestGid;
-
-    tnx_logf("v117 ownInterp matchElem=%d matchGid=%d streak=%d dist2=%lld n=%d own=(%d,%d) mode=%d "
-             "gate1=%d gate2=%d gate3=%d - the nearest element is matched on its own pair at +%#llx/+%#llx, "
-             "so a stable index with a rising streak is hypothesis H1, the client pair is that element's own "
-             "position, while an index that keeps changing means H2, the pair is a screen space or camera "
-             "target that drifts between elements",
-             best, bestGid, g_v117_match_streak, (long long)bestd, n, ix, iy, tnx_v115_mode(),
-             (tnx_v115_mode() == TNX_V115_MODE_TARGET) ? 1 : 0,
-             (tnx_v115_inner() == 1) ? 1 : 0, (tnx_v115_inner() == 1) ? 1 : 0,
-             (unsigned long long)TNX_V115_CLIENT_POS_X_OFF,
-             (unsigned long long)TNX_V115_CLIENT_POS_Y_OFF);
-}
 
 static void tnx_v116_frame(void) {
     int mode = tnx_v115_mode();
 
     if (mode >= 0 && mode < TNX_V116_HIST_MODES) g_v116_mode_hist[mode]++;
 
-    tnx_v119_gate_ticks();
-    tnx_v120_thermometer();
-    tnx_v121_window();
-    tnx_v122_prewin();
     if (tnx_v115_inner() == 1 && mode == TNX_V115_MODE_TARGET) g_v117_gate2_seen++;
     if (tnx_v117_src(TNX_V117_GATE3_PTR_OFF, NULL, NULL, NULL)) g_v117_gate3_seen++;
 
@@ -13320,111 +7278,7 @@ static void tnx_v116_frame(void) {
     }
 }
 
-static void tnx_v116_interp_line(void) {
-    int32_t x = 0;
-    int32_t y = 0;
-    int moved = 0;
 
-    if (!tnx_v116_interp(&x, &y)) return;
-    if (g_v103_tick - g_v116_interp_tick < TNX_V116_INTERP_TICKS) return;
-
-    g_v116_interp_tick = g_v103_tick;
-    g_v116_interp_checks++;
-
-    if (g_v116_interp_have) moved = (x != g_v116_interp_prev_x || y != g_v116_interp_prev_y) ? 1 : 0;
-    if (moved) g_v116_interp_moves++;
-
-    tnx_v117_match(x, y);
-
-    {
-        int32_t s30x = 0;
-        int32_t s30y = 0;
-        int f30 = -1;
-        int32_t s38x = 0;
-        int32_t s38y = 0;
-        int f38 = -1;
-
-        tnx_v117_src(TNX_V115_GATE_PTR_OFF, &s30x, &s30y, &f30);
-        tnx_v117_src(TNX_V117_GATE3_PTR_OFF, &s38x, &s38y, &f38);
-
-        uintptr_t p30 = tnx_v118_mode_ptr(TNX_V115_GATE_PTR_OFF);
-        uintptr_t p38 = tnx_v118_mode_ptr(TNX_V117_GATE3_PTR_OFF);
-        int32_t dx = s30x - s38x;
-        int32_t dy = s30y - s38y;
-        int s30moved = 0;
-        int s38moved = 0;
-
-        if (g_v118_src30_have) s30moved = (s30x != g_v118_src30_prev_x || s30y != g_v118_src30_prev_y) ? 1 : 0;
-        if (g_v118_src38_have) s38moved = (s38x != g_v118_src38_prev_x || s38y != g_v118_src38_prev_y) ? 1 : 0;
-        if (s30moved) g_v118_src30_moves++;
-        if (s38moved) g_v118_src38_moves++;
-
-        if (dx < 0) dx = -dx;
-        if (dy < 0) dy = -dy;
-
-        g_v118_w_eq_x = (dx < TNX_V119_DENOM_MIN) ? -999 : tnx_v118_weq(s30x, s38x, x, (s30x - s38x));
-        g_v118_w_eq_y = (dy < TNX_V119_DENOM_MIN) ? -999 : tnx_v118_weq(s30y, s38y, y, (s30y - s38y));
-
-        tnx_logf("v119 src30=(%d,%d) f30=%d src38=(%d,%d) f38=%d srcEq=%d denomX=%d denomY=%d dCX=%d dCY=%d d38X=%d "
-                 "d38Y=%d wEqX=%d wEqY=%d "
-                 "s30moved=%d s38moved=%d src30Moves=%llu src38Moves=%llu client=(%d,%d) gate2Seen=%d "
-                 "gate3Seen=%d - w28 itself is a register inside the mode update and no hook can reach it "
-                 "because %#llx has no data slot, but the effective weight is recoverable from the three "
-                 "pairs: wEq~1000 means the client sits on src30, wEq~0 means it sits on src38, wEq=-999 means denom "
-                 "was under %d so no weight is claimed at all, and the raw dC/d38 columns are printed so "
-                 "a real 500 cannot be mistaken for rounding noise; srcEq=1 makes the lerp meaningless "
-                 "because both ends are one pointer",
-                 s30x, s30y, f30, s38x, s38y, f38, (p30 == p38) ? 1 : 0, dx, dy, x - s30x, y - s30y,
-                 x - s38x, y - s38y, g_v118_w_eq_x, g_v118_w_eq_y, s30moved, s38moved,
-                 (unsigned long long)g_v118_src30_moves, (unsigned long long)g_v118_src38_moves, x, y,
-                 g_v117_gate2_seen, g_v117_gate3_seen, (unsigned long long)0xa26890ULL,
-                 TNX_V119_DENOM_MIN);
-
-        g_v118_src30_prev_x = s30x;
-        g_v118_src30_prev_y = s30y;
-        g_v118_src38_prev_x = s38x;
-        g_v118_src38_prev_y = s38y;
-        g_v118_src30_have = 1;
-        g_v118_src38_have = 1;
-    }
-
-    tnx_logf("v116 ownInterp prev=(%d,%d) now=(%d,%d) delta=%d moves=%llu checks=%llu mode=%d gate=%d - "
-             "the pair at client+%#llx/+%#llx is written every frame by %#llx inside the mode gate, so it "
-             "is the live own position: delta=1 with no test at all already means the engine moves own and "
-             "the walk pair at +%#llx/+%#llx was never the position",
-             g_v116_interp_prev_x, g_v116_interp_prev_y, x, y, moved,
-             (unsigned long long)g_v116_interp_moves, (unsigned long long)g_v116_interp_checks,
-             tnx_v115_mode(), tnx_v115_gate(), (unsigned long long)TNX_V115_CLIENT_POS_X_OFF,
-             (unsigned long long)TNX_V115_CLIENT_POS_Y_OFF, (unsigned long long)0xa26890ULL,
-             (unsigned long long)TNX_OBJ_X_OFF, (unsigned long long)TNX_OBJ_Y_OFF);
-
-    g_v116_interp_prev_x = x;
-    g_v116_interp_prev_y = y;
-    g_v116_interp_have = 1;
-}
-
-static void tnx_v116_hist_line(void) {
-    uint32_t rest = 0;
-    int i;
-
-    if (g_v103_tick % TNX_V116_HIST_TICKS) return;
-    if (g_v116_hist_logs >= TNX_V116_HIST_LOGS) return;
-
-    for (i = 8; i < TNX_V116_HIST_MODES; i++) rest += g_v116_mode_hist[i];
-
-    g_v116_hist_logs++;
-
-    tnx_logf("v117 modeHist m0=%u m1=%u m2=%u m3=%u m4=%u m5=%u m6=%u m7=%u rest=%u gate1=%d gate2=%d "
-             "gate3=%d g1t=%llu g2t=%llu g3t=%llu anyElig=%d f138=%d f13c=%d snapStampF138=%d snapStampF13c=%d reloads=%llu interpMoves=%llu - the histogram separates a momentary mode 7 in a transition frame from a "
-             "mode that never reaches 7 at all, which a single binary saw7 flag cannot do",
-             g_v116_mode_hist[0], g_v116_mode_hist[1], g_v116_mode_hist[2], g_v116_mode_hist[3],
-             g_v116_mode_hist[4], g_v116_mode_hist[5], g_v116_mode_hist[6], g_v116_mode_hist[7], rest,
-             (tnx_v115_mode() == TNX_V115_MODE_TARGET) ? 1 : 0, (tnx_v115_inner() == 1) ? 1 : 0,
-             g_v117_gate3_seen, (unsigned long long)g_v119_gate1_tick,
-             (unsigned long long)g_v119_gate2_tick, (unsigned long long)g_v119_gate3_tick,
-             g_v119_elig_any, g_v120_f138_prev, g_v120_f13c_prev, g_v120_f138_prev, g_v120_f13c_prev,
-             (unsigned long long)g_v120_reloads, (unsigned long long)g_v116_interp_moves);
-}
 
 static int tnx_v113_fields_pair(uintptr_t *srcOut, int32_t *xOut, int32_t *yOut) {
     uintptr_t own = tnx_v127_own_obj();
@@ -13457,53 +7311,6 @@ static int tnx_v113_fields(void) {
     return (x == g_v113_enq_x && y == g_v113_enq_y) ? 1 : 0;
 }
 
-static void tnx_v113_frame_window(void) {
-    uint64_t d = 0;
-    int32_t inX = 0;
-    int32_t inY = 0;
-
-    if (!g_v113_push_frame) return;
-
-    d = g_v48_ticks - g_v113_push_frame;
-
-    if (d > TNX_V113_FRAME_WINDOW) return;
-    if (g_v113_frame_logs >= 40) return;
-
-    g_v113_frame_logs++;
-
-    if (g_scene_object) {
-        tnx_read_i32((uintptr_t)g_scene_object + TNX_V112_INPUT_X_OFF, &inX);
-        tnx_read_i32((uintptr_t)g_scene_object + TNX_V112_INPUT_Y_OFF, &inY);
-    }
-
-    {
-        uintptr_t client = tnx_v115_client();
-        int32_t cx = 0;
-        int32_t cy = 0;
-        int32_t ck = 0;
-
-        if (client) {
-            tnx_read_i32(client + TNX_V115_CLIENT_POS_X_OFF, &cx);
-            tnx_read_i32(client + TNX_V115_CLIENT_POS_Y_OFF, &cy);
-        }
-
-        tnx_read_i32((uintptr_t)g_scene_object + TNX_V112_INPUT_K_OFF, &ck);
-
-        tnx_logf("v117 frame tick=%llu frame=+%llu qcount=%d mode=%d gate=%d inner=%d in10c=%d(%s) "
-                 "in110=%d(%s) in114=%d client80=%d client84=%d - the window carries the mode id because "
-                 "three different causes leave the same empty readback: the queue not being consumed, "
-                 "the queue consumed while the +%#llx branch is gated because mode != %d, and the branch "
-                 "running while the apply path never touches +%#llx; gate=1 means mode == %d and "
-                 "(*[mode+%#llx])+%#x == 1; client80/client84 is the pair %#llx writes on the client at "
-                 "client+%#llx, which is the interpolation output and the sharpest position signal here",
-                 (unsigned long long)g_v103_tick, (unsigned long long)d, tnx_v113_queue_count(NULL),
-                 tnx_v115_mode(), tnx_v115_gate(), tnx_v115_inner(), inX, tnx_v113_state_x(inX),
-                 inY, tnx_v113_state_y(inY), ck, cx, cy, (unsigned long long)TNX_V113_READER_RVA,
-                 TNX_V115_MODE_TARGET, (unsigned long long)TNX_V112_INPUT_X_OFF, TNX_V115_MODE_TARGET,
-                 (unsigned long long)TNX_V115_GATE_PTR_OFF, (unsigned)TNX_V115_GATE_BYTE_OFF,
-                 (unsigned long long)0xa26890ULL, (unsigned long long)TNX_V115_CLIENT_POS_X_OFF);
-    }
-}
 
 static void tnx_v113_window(int plus) {
     int32_t inX = 0;
@@ -13528,34 +7335,6 @@ static void tnx_v113_window(int plus) {
              tnx_v113_fields(), TNX_V127_FRAME_EVERY);
 }
 
-static void tnx_v127_statics(void) {
-    static int done = 0;
-
-    if (done) return;
-
-    done = 1;
-
-    tnx_logf("v127 statics, read out of the binary instead of assumed: the apply gate the queue feeds is "
-             "NOT a mode id - %#llx is 'ldrb w8,[rcv+%#llx]; cmp w8,#1; b.ne' and the flag it tests is "
-             "written by the setter %#llx itself as 'strb 1', so path (b) opens that door by construction "
-             "while a queue message never reaches it; the applier behind the gate is %#llx, which reads "
-             "the pair from +%#llx/+%#llx, takes the target from [rcv+%#llx] and calls %#llx; the "
-             "cmp-against-7 that the plan hunted lives in the SCENE class %#llx slots +0x50 and +0x68 "
-             "(%#llx and %#llx read [this+%#llx] against 7) and has nothing to do with the input path; "
-             "the queue drain %#llx pops the tail while msg[+%#llx] <= manager+%#llx and then frees the "
-             "message through %#llx without applying it, so the queue is the buffer that goes out to the "
-             "server and never the local apply path; the second setter %#llx has exactly one caller, "
-             "%#llx, which is the resource loader, so it is construction state and not an actuator",
-             (unsigned long long)TNX_V113_READER_RVA, (unsigned long long)TNX_V127_GATE_FLAG_OFF,
-             (unsigned long long)TNX_V112_SETPRED4_RVA, (unsigned long long)0x9fe350ULL,
-             (unsigned long long)TNX_V127_GATE_X_OFF, (unsigned long long)TNX_V127_GATE_Y_OFF,
-             (unsigned long long)TNX_V126_BOX_PTR_OFF, (unsigned long long)0x9fe4a4ULL,
-             (unsigned long long)0xfe9d00ULL, (unsigned long long)0x8c7f9cULL,
-             (unsigned long long)0x8c7fbcULL, (unsigned long long)0xcULL,
-             (unsigned long long)0x746d18ULL, (unsigned long long)TNX_V113_SEQ_OFF,
-             (unsigned long long)0x10ULL, (unsigned long long)0xd8d9f0ULL,
-             (unsigned long long)0xac3f20ULL, (unsigned long long)0xa26520ULL);
-}
 
 static void tnx_v127_readback(int plus) {
     uintptr_t elem = g_v127_elem;
@@ -13740,7 +7519,6 @@ static void tnx_v113_test(const tnx_v47_obj_t *objects, int usable, int ownIndex
         g_v122_pre_reloads = g_v120_reloads;
         g_v122_pre_frames = g_v48_ticks;
 
-        tnx_v125_bounds(objects[ownIndex].object);
 
         g_v121_push_frame = g_v48_ticks;
         g_v121_win_stage = 0;
@@ -13877,48 +7655,6 @@ static void tnx_v113_test(const tnx_v47_obj_t *objects, int usable, int ownIndex
              g_v113_readback_tick, usable);
 }
 
-static void tnx_v113_queue_line(void) {
-    uintptr_t mgr = 0;
-    int count = tnx_v113_queue_count(&mgr);
-    int32_t inX = 0;
-    int32_t inY = 0;
-    int32_t inK = 0;
-
-    if (g_v103_tick % TNX_V113_QUEUE_EVERY) return;
-    if (g_v113_queue_logs >= 240) return;
-
-    g_v113_queue_logs++;
-
-    if (g_v113_queue_logs == 1) {
-        tnx_logf("v113 statics: reader branch %#llx sits in the mode update %#llx which is a per frame "
-                 "update called from exactly one site %#llx as mode->update(dt, elapsed) with x0 = "
-                 "[obj+0x28], so the +0xac branch is not dead code and consumed=0 can only mean the "
-                 "branch gates closed on this object; the object forwarded to %#llx is the loop body at "
-                 "0xac277c stored to the local [sp+0x40] and reloaded into x22 and then x25, so it is the "
-                 "iterated battle entity and not a fixed offset on the scene",
-                 (unsigned long long)TNX_V113_READER_RVA,
-                 (unsigned long long)TNX_V113_READER_ENTRY_RVA,
-                 (unsigned long long)TNX_V113_READER_CALLER_RVA,
-                 (unsigned long long)0x9fe350ULL);
-    }
-
-    if (g_scene_object) {
-        tnx_read_i32((uintptr_t)g_scene_object + TNX_V112_INPUT_X_OFF, &inX);
-        tnx_read_i32((uintptr_t)g_scene_object + TNX_V112_INPUT_Y_OFF, &inY);
-        tnx_read_i32((uintptr_t)g_scene_object + TNX_V112_INPUT_K_OFF, &inK);
-    }
-
-    tnx_logf("v115 queue tick=%llu count=%d mode=%d gate=%d mgr=%p sceneState=%d flags=%llu ac=%d "
-             "in10c=%d in110=%d in114=%d resetSentinel=%d - the count is printed every tick because the "
-             "verdict of this run is whether it rises after the push and falls after the consumer ran, "
-             "and the reader at %#llx and addInput at %#llx have no data slot so no hook can count them; "
-             "in110=-1 marks the reset path, while the apply target of the consumer is a larger object "
-             "because %#x is written on it",
-             (unsigned long long)g_v103_tick, count, tnx_v115_mode(), tnx_v115_gate(), (void *)mgr,
-             g_v103_prev_state, (unsigned long long)g_v113_enqueues, tnx_v112_read_flag(), inX, inY, inK,
-             (inY == -1) ? 1 : 0, (unsigned long long)TNX_V113_READER_RVA,
-             (unsigned long long)TNX_V113_ADDINPUT_RVA, (unsigned)0x528);
-}
 
 static void tnx_v113_hop2(void) {
     void *outer = NULL;
@@ -13970,245 +7706,10 @@ static void tnx_v113_hop2(void) {
     if (e0 && vt0Rva == TNX_V112_ELEM_VT_RVA) tnx_v112_deref_dump((uintptr_t)e0);
 }
 
-static void tnx_v103_read_mgr(void) {
-    void *mgr = NULL;
-    void *queue = NULL;
-    int32_t count = 0;
 
-    if (!g_scene_object) {
-        g_v103_mgr = 0;
-        return;
-    }
 
-    if (!tnx_read_ptr((uintptr_t)g_scene_object + TNX_V103_INPUTMGR_OFF, &mgr) || !mgr) {
-        g_v103_mgr = 0;
-        return;
-    }
 
-    g_v103_mgr = (uintptr_t)mgr;
 
-    if (!g_v105_start_logged && g_v103_prev_state == 5) {
-        g_v105_start_logged = 1;
-
-        tnx_logf("v105 battle-start scene=%p mgr=%p attempt=%d tick=%llu - logged once the scene and "
-                 "the manager word are both live, because on the state edge the scene is still null",
-                 (void *)g_scene_object, (void *)g_v103_mgr, g_v103_attempt,
-                 (unsigned long long)g_v103_tick);
-    }
-
-    if (tnx_read_ptr((uintptr_t)mgr + TNX_V103_MGR_QUEUE_OFF, &queue) && queue) {
-        tnx_read_i32((uintptr_t)queue + 0xc, &count);
-    }
-
-    if (g_v103_mgr_logs < 4) {
-        g_v103_mgr_logs++;
-
-        tnx_logf("v103 inputmgr scene=%p mgr=+%#llx->%p queue=+%#llx->%p count=+0xc->%d - the engine "
-                 "loads this exact word in the battle update: bl %#llx; ldr x0,[x0,#0x58]; mov x1,msg; "
-                 "bl %#llx, so this object is the first argument of the enqueue",
-                 (void *)g_scene_object, (unsigned long long)TNX_V103_INPUTMGR_OFF, mgr,
-                 (unsigned long long)TNX_V103_MGR_QUEUE_OFF, queue, count,
-                 (unsigned long long)TNX_V103_GETBATTLE_RVA,
-                 (unsigned long long)TNX_V103_ADDINPUT_RVA);
-    }
-}
-
-static int tnx_v103_send(int32_t x, int32_t y) {
-    if (!g_scene_object) return 0;
-
-    if (g_v103_sp4) {
-        ((void (*)(void *, int, int, int))g_v103_sp4)((void *)g_scene_object, x, y,
-                                                     TNX_V103_ACTUATOR_FLAG);
-        g_v103_writes++;
-        g_v103_last_x = x;
-        g_v103_last_y = y;
-
-        return 1;
-    }
-
-    if (TNX_V103_USE_PRED2 && g_v103_sp2) {
-        ((void (*)(void *, int, int))g_v103_sp2)((void *)g_scene_object, x, y);
-        g_v103_writes++;
-        g_v103_last_x = x;
-        g_v103_last_y = y;
-
-        return 1;
-    }
-
-    return 0;
-}
-
-static void tnx_v103_test(const tnx_v47_obj_t *objects, int usable, int ownIndex) {
-    int32_t x = 0;
-    int32_t y = 0;
-
-    if (!TNX_V103_SEND_TEST) return;
-    if (!objects || ownIndex < 0 || ownIndex >= usable) return;
-    if (!g_v103_mgr) return;
-    if (g_v103_test_state >= 3) return;
-
-    if (g_v103_test_state == 0) {
-        g_v103_test_state = 1;
-        g_v103_test_tick = g_v103_tick;
-        g_v103_test_before_x = objects[ownIndex].x;
-        g_v103_test_before_y = objects[ownIndex].y;
-
-        tnx_v103_send(objects[ownIndex].x + TNX_V103_TEST_STEP, objects[ownIndex].y);
-        tnx_v112_flag_arm();
-
-        tnx_logf("v103 inputmgr test sent=(%d,%d) from own=(%d,%d) gid=%d step=%d short=%d long=%d "
-                 "writes=%llu - one test move through the four argument setter, own position is read "
-                 "back twice because a client only prediction gets rolled back by the server one or "
-                 "more ticks later",
-                 objects[ownIndex].x + TNX_V103_TEST_STEP, objects[ownIndex].y,
-                 g_v103_test_before_x, g_v103_test_before_y, objects[ownIndex].gid,
-                 TNX_V103_TEST_STEP, TNX_V103_TEST_WAIT, TNX_V103_TEST_WAIT_LONG,
-                 (unsigned long long)g_v103_writes);
-
-        return;
-    }
-
-    if (g_v103_test_state == 1) {
-        if (g_v103_tick - g_v103_test_tick < TNX_V103_TEST_WAIT) return;
-
-        g_v103_test_state = 2;
-        g_v103_test_after_x = objects[ownIndex].x;
-        g_v103_test_after_y = objects[ownIndex].y;
-        g_v103_moved = (g_v103_test_after_x != g_v103_test_before_x ||
-                        g_v103_test_after_y != g_v103_test_before_y) ? 1 : 0;
-
-        tnx_logf("v103 inputmgr test short before=(%d,%d) after=(%d,%d) moved=%d wait=%d writes=%llu",
-                 g_v103_test_before_x, g_v103_test_before_y, g_v103_test_after_x,
-                 g_v103_test_after_y, g_v103_moved, TNX_V103_TEST_WAIT,
-                 (unsigned long long)g_v103_writes);
-
-        return;
-    }
-
-    if (g_v103_tick - g_v103_test_tick < TNX_V103_TEST_WAIT_LONG) return;
-
-    g_v103_test_state = 3;
-    g_v103_tested = 1;
-
-    x = objects[ownIndex].x;
-    y = objects[ownIndex].y;
-    g_v103_moved2 = (x != g_v103_test_before_x || y != g_v103_test_before_y) ? 1 : 0;
-    g_v103_kept = (g_v103_moved && x == g_v103_test_after_x && y == g_v103_test_after_y) ? 1 : 0;
-    g_v103_ok = (g_v103_moved && g_v103_kept) ? 1 : 0;
-
-    tnx_logf("v103 inputmgr test long before=(%d,%d) after=(%d,%d) after2=(%d,%d) moved=%d moved2=%d "
-             "kept=%d verdict=%s writes=%llu - kept needs the short shift to have happened and the "
-             "long read to still hold it, verdict=real means the four argument setter drives the "
-             "character, verdict=client-only means the shift was rolled back and the message route "
-             "at rva %#llx is next, verdict=dead means this setter is not the actuator either",
-             g_v103_test_before_x, g_v103_test_before_y, g_v103_test_after_x, g_v103_test_after_y,
-             x, y, g_v103_moved, g_v103_moved2, g_v103_kept,
-             (g_v103_moved && g_v103_kept) ? "real" : (g_v103_moved ? "client-only" : "dead"),
-             (unsigned long long)g_v103_writes, (unsigned long long)TNX_V103_ADDINPUT_RVA);
-}
-
-static void tnx_v103_log(const tnx_v47_obj_t *objects, int usable, int ownIndex) {
-    if (g_v103_tick % TNX_V103_LOG_EVERY) return;
-
-    tnx_logf("v103 inputmgr: scene=%p mgr=%p test=%d writes=%llu last=(%d,%d) own=%d,%d channel=%s "
-             "tick=%llu",
-             (void *)g_scene_object, (void *)g_v103_mgr, g_v103_tested,
-             (unsigned long long)g_v103_writes, g_v103_last_x, g_v103_last_y,
-             (objects && ownIndex >= 0 && ownIndex < usable) ? objects[ownIndex].x : 0,
-             (objects && ownIndex >= 0 && ownIndex < usable) ? objects[ownIndex].y : 0,
-             g_v103_sp4 ? "setPredMoveTo4" : (g_v103_sp2 ? "setPred2" : "none"),
-             (unsigned long long)g_v103_tick);
-}
-
-static void tnx_v103_other_containers(const tnx_v47_obj_t *objects, int usable) {
-    uintptr_t others[TNX_V103_MAX_OTHERS];
-    int counts[TNX_V103_MAX_OTHERS];
-    int n = 0;
-    int i;
-    int j;
-
-    if (!objects || usable <= 0) return;
-
-    for (i = 0; i < usable && i < TNX_V47_OBJECT_MAX; i++) {
-        void *other = NULL;
-        uintptr_t obj = (uintptr_t)objects[i].object;
-
-        if (!obj) continue;
-        if (!tnx_read_ptr(obj + TNX_V103_OTHER_ELEM_OFF, &other) || !other) continue;
-        if (other == (void *)g_players_object) continue;
-        if (other == (void *)g_players_array) continue;
-
-        for (j = 0; j < n; j++) {
-            if (others[j] == (uintptr_t)other) break;
-        }
-
-        if (j < n) {
-            counts[j]++;
-            continue;
-        }
-
-        if (n < TNX_V103_MAX_OTHERS) {
-            others[n] = (uintptr_t)other;
-            counts[n] = 1;
-            n++;
-        }
-    }
-
-    if (!n) return;
-
-    if (g_v103_other_logs < 4) {
-        g_v103_other_logs++;
-
-        for (i = 0; i < n; i++) {
-            tnx_logf("v103 other container=%p elements=%d at elem+%#llx - a second list the battle "
-                     "objects point at, the projectile list the dodge needs has to live here",
-                     (void *)others[i], counts[i], (unsigned long long)TNX_V103_OTHER_ELEM_OFF);
-        }
-    }
-
-    if (g_v103_other_detail >= TNX_V103_OTHER_DETAIL) return;
-
-    for (i = 0; i < n; i++) {
-        void *array = NULL;
-        int32_t count = 0;
-        int shown = 0;
-        int k;
-
-        if (!tnx_read_ptr(others[i], &array) || !array) continue;
-        if (!tnx_read_i32(others[i] + 0xc, &count)) continue;
-        if (count <= 0 || count > 4096) continue;
-
-        g_v103_other_detail++;
-
-        tnx_logf("v103 other detail container=%p array=%p count=%d - walking it with the same header "
-                 "probe the container census uses",
-                 (void *)others[i], array, count);
-
-        for (k = 0; k < count && k < 64 && shown < 8; k++) {
-            void *p = NULL;
-            int32_t gid = 0;
-            int32_t team = 0;
-            int32_t px = 0;
-            int32_t py = 0;
-
-            if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)k * 8ULL, &p) || !p) continue;
-            if (tnx_v75_element_ascii((uintptr_t)p)) continue;
-
-            tnx_read_i32((uintptr_t)p + TNX_OBJ_GLOBALID_OFF, &gid);
-            tnx_read_i32((uintptr_t)p + tnx_v57_coord_x_off(), &px);
-            tnx_read_i32((uintptr_t)p + tnx_v57_coord_y_off(), &py);
-            tnx_read_i32((uintptr_t)p + TNX_V91_TEAM_OFF, &team);
-
-            if (!gid) continue;
-
-            shown++;
-            tnx_logf("v103 other[%d] elem=%p gid=%d pos=(%d,%d) team=%d own=%d", k, p, gid, px, py,
-                     team, ((uintptr_t)p == g_v102_own_ptr) ? 1 : 0);
-        }
-
-        return;
-    }
-}
 
 static void tnx_v103_state_note(int state) {
     if (g_v103_prev_state == 5 && state != 5) {
@@ -14279,17 +7780,11 @@ static int tnx_v91_own_scan(void) {
     bases[1] = client;
     bases[2] = inputMgr;
 
-    tnx_v101_rva_audit();
     tnx_v101_own_index_probe();
 
     tnx_v102_own_probe();
-    tnx_v102_audit_all();
 
     g_v103_tick++;
-    tnx_v103_arm();
-    tnx_v103_read_mgr();
-    tnx_v112_flagwatch();
-    tnx_v113_queue_line();
 
     if (!g_v101_setpred) g_v101_setpred = tnx_v101_entry(TNX_V101_MODEPAIRSET_RVA);
 
@@ -14300,7 +7795,6 @@ static int tnx_v91_own_scan(void) {
                  (unsigned long long)TNX_V101_MODEPAIRSET_RVA);
     }
 
-    if (g_v101_own_index < 0) tnx_v101_wide_scan();
 
     for (int b = 0; b < TNX_V99_SCAN_BASES; b++) {
         if (!bases[b]) continue;
@@ -14351,15 +7845,11 @@ static int tnx_v91_own_scan(void) {
                  (unsigned)(TNX_V99_SCAN_QWORDS * 8));
     }
 
-    tnx_v91_scalar_dump(g_scene_object, client);
 
-    tnx_v95_joy_dump(g_scene_object, "scene");
-    tnx_v95_joy_dump(client, "client");
 
     if (!g_v95_find_joy_done) {
         g_v95_find_joy_done = 1;
 
-        tnx_v95_find_joy(g_scene_object);
     }
 
     return found;
@@ -14508,19 +7998,9 @@ static void tnx_v90_gate_report(int slotHit) {
 
             if (!ownFound) ownFound = tnx_v102_take_own(objects, usable, &ownIndex, &ownFrom);
 
-            tnx_v102_write_test(objects, usable, ownFound ? ownIndex : -1);
 
-            tnx_v103_test(objects, usable, ownFound ? ownIndex : -1);
-            tnx_v103_log(objects, usable, ownFound ? ownIndex : -1);
-            tnx_v103_other_containers(objects, usable);
-            tnx_v112_pos_watch(objects, usable, ownFound ? ownIndex : -1);
             tnx_v113_hop2();
             tnx_v113_test(objects, usable, ownFound ? ownIndex : -1);
-            tnx_v123_hop2dump();
-            tnx_v123_writes(objects, usable, ownFound ? ownIndex : -1);
-            tnx_v126_chain();
-            tnx_v126_watch();
-            tnx_v127_statics();
         }
     }
 
@@ -14715,7 +8195,6 @@ static void tnx_autododge_v48(void) {
         }
     }
 
-    tnx_v113_frame_window();
     tnx_v116_frame();
 
     g_v48_ticks++;
@@ -14789,14 +8268,6 @@ static void tnx_autododge_v48(void) {
                      (unsigned long long)TNX_V115_CLIENT_POS_Y_OFF);
         }
 
-        tnx_v116_interp_line();
-        tnx_v116_hist_line();
-        tnx_v119_elements();
-        tnx_v119_pin();
-        tnx_v120_holder_note();
-        tnx_v120_entities();
-        tnx_v121_traj();
-        tnx_v122_entities2();
         tnx_v90_gate_report(tnx_v90_slot_probe());
     }
 
@@ -14909,7 +8380,6 @@ static void tnx_autododge_v48(void) {
             if (resolved) {
                 int loud = (changed || managerChanged || !g_v47_probe_done);
 
-                tnx_v48_probe((uintptr_t)resolved, g_scene_object, loud);
 
                 if (loud) tnx_v48_discriminate((uintptr_t)resolved);
             } else {
@@ -15218,52 +8688,7 @@ static BOOL tnx_v56_vtable_in_image(uintptr_t vtable) {
     return NO;
 }
 
-static int tnx_v73_inst_is_manager(uintptr_t value, uintptr_t *arrayOut, int32_t *countOut) {
-    void *array = NULL;
-    int32_t count = 0;
 
-    if (!value) return 0;
-    if (!tnx_manager_shape(value)) return 0;
-    if (!tnx_read_ptr(value + TNX_MGR_ARRAY_OFF, &array) || !array) return 0;
-    if (!tnx_read_i32(value + TNX_MGR_COUNT_OFF, &count)) return 0;
-    if (count < TNX_MANAGER_MIN_OBJECTS || count > TNX_MANAGER_MAX_OBJECTS) return 0;
-
-    if (arrayOut) *arrayOut = (uintptr_t)array;
-    if (countOut) *countOut = count;
-
-    return 1;
-}
-
-static void tnx_v73_inst_report(int index, const char *which, uintptr_t value) {
-    uintptr_t array = 0;
-    void *vtable = NULL;
-    void *manager = NULL;
-    int32_t count = 0;
-    int isManager = 0;
-    int isMode = 0;
-
-    if (!value) return;
-
-    isManager = tnx_v73_inst_is_manager(value, &array, &count);
-
-    if (tnx_read_ptr(value, &vtable) && vtable && tnx_v56_vtable_in_image((uintptr_t)vtable) &&
-        tnx_read_ptr(value + TNX_MODE_MANAGER_OFF, &manager) && manager &&
-        tnx_v73_inst_is_manager((uintptr_t)manager, NULL, NULL)) {
-        isMode = 1;
-
-        if (tnx_v73_inst_is_manager((uintptr_t)manager, &array, &count)) isManager = 1;
-    }
-
-    if (!isManager && !isMode) return;
-
-    g_v73_inst_positive++;
-
-    tnx_logf("v100 inst %s %s=%p seg=%c isManager=%d isMode=%d vt=%p mgr=%p array=%p count=%d "
-             "live=%d - a hooked engine instance is itself a container",
-             g_slot_specs[index].shortTag, which, (void *)value, tnx_v72_seg_code(value), isManager,
-             isMode, vtable, manager, (void *)array, count,
-             tnx_manager_live_count(isMode ? (uintptr_t)manager : value));
-}
 
 static void tnx_v73_instance_probe(int index, void *self, uint64_t arg1) {
     uint32_t bit = 0;
@@ -15276,8 +8701,6 @@ static void tnx_v73_instance_probe(int index, void *self, uint64_t arg1) {
     g_v73_inst_mask |= bit;
     g_v73_inst_slots++;
 
-    tnx_v73_inst_report(index, "this", (uintptr_t)self);
-    tnx_v73_inst_report(index, "arg1", (uintptr_t)arg1);
 
     if (!g_v73_inst_summary && (g_v73_inst_slots >= TNX_V73_INST_SLOTS || g_v50_ticks >= 30)) {
         g_v73_inst_summary = 1;
@@ -16281,31 +9704,7 @@ static void tnx_v56_mode_capture(uintptr_t candidate) {
              capacity, g_v57_cand_ticks);
 }
 
-static void tnx_v59_tag(char tags[][8], int *count, const char *tag) {
-    if (!tag) return;
-    if (*count >= TNX_V59_TAG_MAX) return;
 
-    snprintf(tags[*count], 8, "%s", tag);
-    (*count)++;
-}
-
-static void tnx_v59_join(char tags[][8], int count, char *out, size_t outSize) {
-    size_t used = 0;
-
-    out[0] = 0;
-
-    for (int i = 0; i < count; i++) {
-        if (used + strlen(tags[i]) + 2 >= outSize) break;
-
-        if (used) {
-            out[used++] = ',';
-            out[used] = 0;
-        }
-
-        strncat(out, tags[i], outSize - used - 1);
-        used = strlen(out);
-    }
-}
 
 static void tnx_v59_hook_summary(void) {
     static int printed = -1;
@@ -16316,8 +9715,6 @@ static void tnx_v59_hook_summary(void) {
 
     printed = g_v59_drop_count + g_v59_keep_count;
 
-    tnx_v59_join(g_v59_drop_tags, g_v59_drop_count, drops, sizeof(drops));
-    tnx_v59_join(g_v59_keep_tags, g_v59_keep_count, keeps, sizeof(keeps));
 
     tnx_logf("v100 hooks dropped: %s reason=zero-entries-in-30-ticks", drops[0] ? drops : "none");
     tnx_logf("v100 hooks kept: %s reason=real-pointer-slot-or-wide", keeps[0] ? keeps : "none");
@@ -16326,26 +9723,22 @@ static void tnx_v59_hook_summary(void) {
 static void tnx_v59_hook_note(int index) {
     if (index < 0 || index >= TNX_SLOT_COUNT) return;
     if (g_slot_specs[index].control) {
-        tnx_v59_tag(g_v59_drop_tags, &g_v59_drop_count, g_slot_specs[index].shortTag);
         tnx_v57_drop_hook(index);
 
         return;
     }
 
     if (g_slot_specs[index].slotRva) {
-        tnx_v59_tag(g_v59_keep_tags, &g_v59_keep_count, g_slot_specs[index].shortTag);
 
         return;
     }
 
     if (g_slot_slots[index] > TNX_V59_SLOT_WIDE) {
         if (g_v50_ticks <= TNX_V59_DROP_TICKS) {
-            tnx_v59_tag(g_v59_keep_tags, &g_v59_keep_count, g_slot_specs[index].shortTag);
 
             return;
         }
 
-        tnx_v59_tag(g_v59_drop_tags, &g_v59_drop_count, g_slot_specs[index].shortTag);
         tnx_v57_drop_hook(index);
 
         tnx_logf("v100 hook %s dropped reason=60-ticks-zero-hits", g_slot_specs[index].shortTag);
@@ -16353,7 +9746,6 @@ static void tnx_v59_hook_note(int index) {
         return;
     }
 
-    tnx_v59_tag(g_v59_keep_tags, &g_v59_keep_count, g_slot_specs[index].shortTag);
 
     tnx_logf("v100 hook %s kept: %d slot(s), narrow and silent - a one-slot hook costs one "
              "comparison per call site, and the v72 log shows this rule throwing away ten of them "
@@ -16546,25 +9938,6 @@ static int tnx_v56_objhit_walk(void) {
     return n;
 }
 
-static void tnx_v56_route_clientinput(void) {
-    uintptr_t thisPtr = g_slot_object[12];
-    uint64_t result = 0;
-
-    if (g_v56_route_done) return;
-    if (!g_addr_setprediction) return;
-
-    for (int i = 0; !thisPtr && i < TNX_SLOT_COUNT; i++) {
-        thisPtr = g_slot_object[i];
-    }
-
-    if (!thisPtr) return;
-
-    g_v56_route_done = 1;
-
-    result = ((uint64_t (*)(void *, int, int))g_addr_setprediction)((void *)thisPtr, 0, 0);
-
-    tnx_logf("v100 route clientinput returned=%llu", (unsigned long long)result);
-}
 
 static void tnx_v56_dodge_tick(void) {
     static uintptr_t setpredFn = 0;
@@ -16584,7 +9957,6 @@ static void tnx_v56_dodge_tick(void) {
             tnx_logf("v100 dodge from objhit list n=%d", tnx_v56_objhit_walk());
         }
 
-        if (g_v56_mode_ticks == TNX_V56_ROUTE_WAIT_TICKS) tnx_v56_route_clientinput();
 
         return;
     }
@@ -16633,7 +10005,6 @@ static void tnx_v56_dodge_tick(void) {
         newY = g_v56_py + (int)(perpY * (float)TNX_V56_WALK_STEP);
 
         if (g_v103_sp4 && TNX_V103_DODGE_USE_PRED4) {
-            tnx_v103_send(newX, newY);
         } else {
             if (!setpredFn) setpredFn = g_base + TNX_RVA_SETPREDICTION;
 
@@ -16704,7 +10075,6 @@ static void tnx_slot_pump(void) {
         if (strcmp(reason, "vtable-garbage") == 0) return;
     }
 
-    tnx_dump_hex("slotObj", object, 0x100);
 
     void *bridge = NULL;
 
@@ -16718,7 +10088,6 @@ static void tnx_slot_pump(void) {
             tnx_logf("slot bridgeMgr=%p vt=%#llx", bridgeManager,
                      (unsigned long long)tnx_vtable_rva(bridgeManager));
 
-            tnx_dump_hex("slotMgrA", (uintptr_t)bridgeManager, 0x40);
         }
     }
 
@@ -16745,7 +10114,6 @@ static void tnx_slot_pump(void) {
                      tnx_manager_live_count((uintptr_t)modeManager));
         }
 
-        tnx_dump_hex("slotMgr28", (uintptr_t)modeManager, 0x40);
     }
 
     void *inputManager = NULL;
@@ -16754,7 +10122,6 @@ static void tnx_slot_pump(void) {
         tnx_logf("slot +58 inputMgr=%p vt=%#llx", inputManager,
                  (unsigned long long)tnx_vtable_rva(inputManager));
 
-        tnx_dump_hex("slotInMgr", (uintptr_t)inputManager, 0x40);
     }
 
     if (g_slot_arg1[first]) {
@@ -16774,7 +10141,6 @@ static void tnx_slot_pump(void) {
         if (plan && tnx_manager_live_count(plan) >= TNX_MANAGER_MIN_OBJECTS) {
             int detailed = tnx_object_detail(plan, TNX_OBJECT_DETAIL_MAX);
 
-            tnx_raw_object_hex(plan, 2);
 
             if (detailed > 0) tnx_dodge_all_teams(plan);
         }
@@ -16803,102 +10169,6 @@ static void tnx_slot_pump(void) {
     tnx_dump_mode_objects("slot");
 }
 
-static void tnx_dump_objc_inventory(const char *tag) {
-    int total = objc_getClassList(NULL, 0);
-
-    if (total <= 0) {
-        tnx_logf("objc[%s] no classes", tag ? tag : "?");
-        return;
-    }
-
-    if (total > 200000) total = 200000;
-
-    Class *classes = (Class *)malloc(sizeof(Class) * (size_t)total);
-
-    if (!classes) return;
-
-    static const char *noise[] = {
-        "Sentry", "Firebase", "AppsFlyer", "GUL", "Zendesk", "sczendesk", "Helpshift",
-        "SKAdNetwork", "GAD", "FIR", "nanopb", "GTM", "GSDK", "UI", "NS", "WK", "CA",
-        "CL", "CN", "AV", "MTL", "LS", "__", NULL
-    };
-
-    static const char *gameplay[] = {
-        "Joy", "Stick", "Input", "Touch", "Aim", "Target", "Fire", "Shoot", "Move",
-        "Character", "Object", "Manager", "Battle", "Logic", "Player", "Unit",
-        "Hud", "HUD", "Screen", "View", "Render", "Stage", "Sprite", "Scene",
-        "Mode", "Game", "State", "Resource", "Text", "Label", "Button", "Node", NULL
-    };
-
-    int count = objc_getClassList(classes, total);
-    int inImage = 0;
-    int named = 0;
-    int detailed = 0;
-
-    tnx_logf("objc[%s] classes=%d", tag ? tag : "?", count);
-
-    for (int i = 0; i < count; i++) {
-        const char *name = class_getName(classes[i]);
-
-        if (!name) continue;
-        if (!tnx_image_owns_address(g_base, (uintptr_t)classes[i])) continue;
-
-        inImage++;
-
-        BOOL skip = NO;
-
-        for (int n = 0; noise[n]; n++) {
-            if (strncmp(name, noise[n], strlen(noise[n])) == 0) {
-                skip = YES;
-                break;
-            }
-        }
-
-        if (skip) continue;
-
-        if (named < 800) {
-            tnx_logf("objc[%s] cls %s", tag ? tag : "?", name);
-            named++;
-        }
-
-        BOOL interesting = NO;
-
-        for (int g = 0; gameplay[g]; g++) {
-            if (strstr(name, gameplay[g])) {
-                interesting = YES;
-                break;
-            }
-        }
-
-        if (!interesting || detailed >= 80) continue;
-
-        detailed++;
-
-        unsigned mcount = 0;
-        Method *methods = class_copyMethodList(classes[i], &mcount);
-
-        tnx_logf("objc[%s] == %s methods=%u", tag ? tag : "?", name, mcount);
-
-        if (methods) {
-            for (unsigned m = 0; m < mcount && m < 24; m++) {
-                const char *sel = sel_getName(method_getName(methods[m]));
-                const char *types = method_getTypeEncoding(methods[m]);
-
-                tnx_logf("objc[%s]    -[%s %s] %s",
-                         tag ? tag : "?", name, sel ? sel : "?", types ? types : "?");
-            }
-
-            if (mcount > 24) tnx_logf("objc[%s]    ... %u more", tag ? tag : "?", mcount - 24);
-
-            free(methods);
-        }
-    }
-
-    tnx_logf("objc[%s] total=%d inImage=%d named=%d detailed=%d",
-             tag ? tag : "?", count, inImage, named, detailed);
-
-    free(classes);
-}
 
 static void setup(void) {
     if (g_setup_done) return;
@@ -16918,11 +10188,6 @@ static void setup(void) {
 
     if (TNX_V98_CLIP_SELFTEST) tnx_v98_clip_selftest();
 
-    tnx_dump_structs();
-    tnx_dump_verified();
-    tnx_dump_rvas();
-    tnx_probe_classes();
-    tnx_dump_protocols();
 
     tnx_objc_arm("MetalView", "render");
     tnx_objc_arm("NullView", "render");
@@ -16936,7 +10201,6 @@ static void setup(void) {
     }
 
     tnx_slot_table_dump();
-    tnx_struct_map_dump();
 
     tnx_logf("build=%s slots=%d control=%d types>=%d scanEvery=%d heapEvery=%d attempts=%d "
              "arrayProbeLimit=%d chainProbeLimit=%d voteMin=%d voteConfirm=%d voteTeamsMin=%d "
@@ -17575,7 +10839,6 @@ static void setup(void) {
              "mach_port_deallocate - and reports any call outside it as a header question, so "
              "mach_vm_write is named as a foreign call instead of passing as clean");
 
-    tnx_start_timer();
 
     tlog([NSString stringWithFormat:@"setup completed successfully armed=%d", g_objc_armed]);
 }

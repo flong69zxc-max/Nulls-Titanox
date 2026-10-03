@@ -310,7 +310,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_136"
+#define TNX_BUILD_TAG "titanox_137"
 
 #define TNX_RVA_SETPREDICTION 0x00ac3f20ULL
 #define TNX_OBJ_X_OFF 0x30ULL
@@ -3523,8 +3523,6 @@ static int tnx_v80_state_tick(void) {
 
             tnx_v81_players_dump(players, (uintptr_t)array, count, capacity);
         }
-
-        tnx_v132_battle_alert((uintptr_t)g_scene_object, players, count, chosen);
     }
 
     g_manager_count = count;
@@ -3834,8 +3832,7 @@ static void tnx_alert_battle_check(void) {
                  g_manager_best_count, (void *)g_scene_object, (void *)g_players_object,
                  (void *)candidate);
 
-        tnx_v132_battle_alert(g_scene_object, g_players_object, g_players_count,
-                              g_v105_last_choice);
+        tnx_v132_battle_alert(g_scene_object, 0);
     }
 }
 

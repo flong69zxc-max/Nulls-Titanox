@@ -310,7 +310,31 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_143"
+#define TNX_BUILD_TAG "titanox_144"
+
+/* v144 - the segfault in the actuator call.
+ *
+ * "v129 actuate ... own=0xff000000ff ... called 0xac3a58(own,...)" and the earlier
+ * call=1 own=0x0 are the same defect: tnx_v127_own_obj returns the VALUE at [p+0x28]
+ * without ever validating it. tnx_read_ptr checks the address, not what comes back, so a
+ * stale or reused slot hands 0xff000000ff straight to the callee and the first
+ * "str w1,[x0,#0x10c]" writes to an unmapped page.
+ *
+ * Three changes, and they are independent on purpose:
+ *   (1) tnx_v127_own_obj validates its result (aligned, readable, vtable inside
+ *       __DATA_CONST) and returns 0 instead of garbage. This is the root.
+ *   (2) the receiver is chosen from an ordered candidate list, each candidate validated
+ *       by tnx_v144_cand_ok before the call, and every candidate is logged with its
+ *       vtable so the log names the object instead of crashing on it.
+ *   (3) the candidate list carries the v135-list own element as its last entry, which is
+ *       the object the walk and the min-gid resolver already agree on.
+ *
+ * Note on the "called 0xac3a58(own,...)" text in the v129 actuate line: that string is
+ * descriptive and sits outside the "if (doSetter && fn && own)" block, so with
+ * TNX_V129_MODE 1 (doSetter=0) the setter was never called from there. The line now
+ * prints setterRan= so the question cannot be asked again. */
+#define TNX_V144_MIN_OBJ_BYTES 0x118ULL
+#define TNX_V144_CAND_LOGS 12
 
 /* v143 - build fixes over v142, plus dead-code removal.
  *
@@ -7736,19 +7760,118 @@ static int g_v127_setter_called = 0;
 static int g_v127_elem_called = 0;
 static int g_v127_rb_logs = 0;
 
-static uintptr_t tnx_v127_own_obj(void) {
+/* ---------------------------------------------------------------------------
+ * v144 candidate validation.
+ *
+ * Every pointer this tweak hands to a game function goes through here first. The check is
+ * on the VALUE, not on the address it was read from: aligned, in a readable region, and
+ * carrying a vtable in __DATA_CONST. 0xff000000ff fails the alignment and the vtable test,
+ * which is exactly what the v140/v141 builds did not do before calling 0xac3a58.
+ * ------------------------------------------------------------------------- */
+static uintptr_t g_v144_own_elem = 0;
+static int g_v144_own_logs = 0;
+static uint64_t g_v144_cand_logs = 0;
+static uint64_t g_v144_raw_writes = 0;
+static uint64_t g_v144_raw_skips = 0;
+
+static int tnx_v144_vt_ok(uintptr_t obj, uintptr_t *vtOut) {
+    void *vt = NULL;
+    uintptr_t vtRva = 0;
+
+    if (vtOut) *vtOut = 0;
+    if (!obj) return 0;
+    if (obj & 7) return 0;
+    if (!tnx_read_ptr(obj, &vt) || !vt) return 0;
+    if ((uintptr_t)vt < g_base) return 0;
+
+    vtRva = (uintptr_t)vt - g_base;
+
+    if (vtRva < TNX_DC_RVA_LO || vtRva >= TNX_DC_RVA_LO + TNX_DC_RVA_SIZE) return 0;
+
+    if (vtOut) *vtOut = (uintptr_t)vt;
+
+    return 1;
+}
+
+static int tnx_v144_cand_ok(uintptr_t cand, const char **why, uintptr_t *vtOut) {
+    uintptr_t vt = 0;
+    int32_t gate = 0;
+
+    if (vtOut) *vtOut = 0;
+
+    if (!cand) {
+        if (why) *why = "null";
+
+        return 0;
+    }
+
+    if (cand & 7) {
+        if (why) *why = "unaligned";
+
+        return 0;
+    }
+
+    if (!tnx_addr_readable(cand, TNX_V144_MIN_OBJ_BYTES)) {
+        if (why) *why = "not-readable";
+
+        return 0;
+    }
+
+    if (!tnx_v144_vt_ok(cand, &vt)) {
+        if (why) *why = "vtable-not-in-data-const";
+
+        return 0;
+    }
+
+    if (!tnx_read_i32(cand + TNX_V127_GATE_FLAG_OFF, &gate)) {
+        if (why) *why = "gate-unreadable";
+
+        return 0;
+    }
+
+    if (why) *why = "ok";
+    if (vtOut) *vtOut = vt;
+
+    return 1;
+}
+
+static uintptr_t tnx_v144_hop(uintptr_t base, int *whyOut) {
     void *p = NULL;
     void *q = NULL;
 
-    if (g_scene_object && tnx_read_ptr(g_scene_object + TNX_V126_OWN_OFF, &p) && p &&
-        tnx_read_ptr((uintptr_t)p + TNX_V126_OWN_INNER_OFF, &q) && q) {
-        return (uintptr_t)q;
+    if (whyOut) *whyOut = 0;
+    if (!base) {
+        if (whyOut) *whyOut = 1;
+
+        return 0;
     }
 
-    if (g_players_object && tnx_read_ptr(g_players_object + TNX_V126_OWN_OFF, &p) && p &&
-        tnx_read_ptr((uintptr_t)p + TNX_V126_OWN_INNER_OFF, &q) && q) {
-        return (uintptr_t)q;
+    if (!tnx_read_ptr(base + TNX_V140_CTRL_MODE_OFF, &p) || !p) {
+        if (whyOut) *whyOut = 2;
+
+        return 0;
     }
+
+    if (!tnx_read_ptr((uintptr_t)p + TNX_V126_OWN_INNER_OFF, &q) || !q) {
+        if (whyOut) *whyOut = 3;
+
+        return 0;
+    }
+
+    return (uintptr_t)q;
+}
+
+static uintptr_t tnx_v127_own_obj(void) {
+    uintptr_t cand = tnx_v144_hop((uintptr_t)g_scene_object, NULL);
+
+    /* v144: the value that comes back is validated before it is returned. The v140 form
+     * returned whatever sat at [p+0x28] - tnx_read_ptr only proves the address was
+     * readable - so a stale slot produced 0xff000000ff and the actuator wrote through it. */
+    if (cand && tnx_v144_vt_ok(cand, NULL)) return cand;
+
+    cand = tnx_v144_hop((uintptr_t)g_players_object, NULL);
+
+    if (cand && tnx_v144_vt_ok(cand, NULL)) return cand;
 
     return 0;
 }
@@ -8555,6 +8678,7 @@ static void tnx_v128_actuate(void) {
     int32_t pairAfterK = 0;
     int32_t gateBefore = -1;
     int32_t gateAfter = -1;
+    int setterRan = 0;
     int doWrite = (TNX_V129_MODE == TNX_V129_MODE_WRITE ||
                    TNX_V129_MODE == TNX_V129_MODE_BOTH) ? 1 : 0;
     int doSetter = (TNX_V129_MODE == TNX_V129_MODE_SETTER ||
@@ -8574,10 +8698,20 @@ static void tnx_v128_actuate(void) {
         g_v128_have_wit = 1;
     }
 
+    /* v144: the pair is written only when it actually moves. The v143 log showed
+     * "wrote raw+0xfa4 (30,9) over (30,9)", i.e. the previous tick had already put it there,
+     * so a per-tick rewrite is a no-op that only adds noise and a write the battle update
+     * never sees change. */
     if (doWrite && ctrl && tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_X_OFF, &raw_keep_x) &&
         tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &raw_keep_y)) {
-        tnx_write_bytes(ctrl + TNX_V128_CTRL_RAW_X_OFF, &raw_x, sizeof(raw_x));
-        tnx_write_bytes(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &raw_y, sizeof(raw_y));
+        if (raw_keep_x != raw_x || raw_keep_y != raw_y) {
+            tnx_write_bytes(ctrl + TNX_V128_CTRL_RAW_X_OFF, &raw_x, sizeof(raw_x));
+            tnx_write_bytes(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &raw_y, sizeof(raw_y));
+
+            g_v144_raw_writes++;
+        } else {
+            g_v144_raw_skips++;
+        }
     }
 
     if (doSetter && fn && own) {
@@ -8601,6 +8735,8 @@ static void tnx_v128_actuate(void) {
 
         ((void (*)(void *, int, int, int))fn)((void *)own, wx + TNX_V129_DX, wy + TNX_V129_DY,
                                               TNX_V127_SETFLAG);
+
+        setterRan = 1;
 
         tnx_read_i32(own + TNX_V112_INPUT_X_OFF, &pairAfterX);
         tnx_read_i32(own + TNX_V112_INPUT_Y_OFF, &pairAfterY);
@@ -8641,14 +8777,16 @@ static void tnx_v128_actuate(void) {
         g_v128_act_logs++;
 
         tnx_logf("v129 actuate mode=%d call=%d doWrite=%d doSetter=%d own=%p scene=%p wrote raw+%#llx "
-                 "(%d,%d) over (%d,%d) on the scene and called %#llx(own,%d,%d,%d) from the witness "
+                 "(%d,%d) over (%d,%d) on the scene, setterRan=%d, wouldCall %#llx(own,%d,%d,%d) from "
+                 "the witness "
                  "(%d,%d) - mode %d is chain-only and never reaches this line, %d writes only the raw "
                  "pair the battle update clamps for itself, %d calls only the setter and %d does both; "
                  "the pair is %d,%d and not the old %d,%d, because the message carries clamp(position + "
                  "step) and a step of hundreds is a teleport the server has no reason to accept",
                  TNX_V129_MODE, g_v128_calls, doWrite, doSetter, (void *)own, (void *)ctrl,
                  (unsigned long long)TNX_V128_CTRL_RAW_X_OFF, raw_x, raw_y, raw_keep_x, raw_keep_y,
-                 (unsigned long long)TNX_V112_SETPRED4_RVA, wx + TNX_V129_DX, wy + TNX_V129_DY,
+                 setterRan, (unsigned long long)TNX_V112_SETPRED4_RVA, wx + TNX_V129_DX,
+                 wy + TNX_V129_DY,
                  TNX_V127_SETFLAG, wx, wy, TNX_V129_MODE_CHAIN, TNX_V129_MODE_WRITE,
                  TNX_V129_MODE_SETTER, TNX_V129_MODE_BOTH, TNX_V129_DX, TNX_V129_DY,
                  TNX_V128_RAW_X, TNX_V128_RAW_Y);
@@ -10120,27 +10258,50 @@ static int tnx_v140_sidestep(int32_t ox, int32_t oy, float *sumX, float *sumY, i
     return hits;
 }
 
-static uintptr_t tnx_v140_mode_obj(void) {
-    uintptr_t m = tnx_v127_own_obj();
+static uintptr_t tnx_v144_mode_pick(uintptr_t *vtOut, const char **whoOut, const char **whyOut) {
+    uintptr_t cand[3];
+    const char *names[3] = { "engine-chain", "players-chain", "v135-list-own" };
+    int i;
 
-    if (m) return m;
+    cand[0] = tnx_v144_hop((uintptr_t)g_scene_object, NULL);
+    cand[1] = tnx_v144_hop((uintptr_t)g_players_object, NULL);
+    cand[2] = g_v144_own_elem;
 
-    {
-        void *p = NULL;
-        void *q = NULL;
+    if (vtOut) *vtOut = 0;
+    if (whoOut) *whoOut = "none";
+    if (whyOut) *whyOut = "none-ok";
 
-        if (g_scene_object && tnx_read_ptr(g_scene_object + TNX_V140_CTRL_MODE_OFF, &p) && p &&
-            tnx_read_ptr((uintptr_t)p + TNX_V126_OWN_INNER_OFF, &q) && q) {
-            return (uintptr_t)q;
+    for (i = 0; i < 3; i++) {
+        const char *why = "?";
+        uintptr_t vt = 0;
+
+        if (tnx_v144_cand_ok(cand[i], &why, &vt)) {
+            if (vtOut) *vtOut = vt;
+            if (whoOut) *whoOut = names[i];
+            if (whyOut) *whyOut = why;
+
+            return cand[i];
+        }
+
+        if (g_v144_cand_logs < TNX_V144_CAND_LOGS) {
+            g_v144_cand_logs++;
+
+            tnx_logf("v144 candidate #%d %s ptr=%p vt=%p reject=%s - every candidate is validated "
+                     "before the actuator is called and every one is named, so a run either writes "
+                     "through a checked object or says which check failed instead of segfaulting",
+                     i, names[i], (void *)cand[i], (void *)vt, why);
         }
     }
 
     return 0;
 }
 
-static int tnx_v140_mode_write(int x, int y, int flag) {
+static int tnx_v144_mode_write(int x, int y, int flag) {
     uintptr_t fn = tnx_v113_entry(TNX_V140_MODEPAIR_RVA);
-    uintptr_t mode = tnx_v140_mode_obj();
+    uintptr_t vt = 0;
+    const char *who = "none";
+    const char *why = "none-ok";
+    uintptr_t mode = 0;
     int32_t beforeGate = -1;
     int32_t beforeX = 0;
     int32_t beforeY = 0;
@@ -10151,14 +10312,29 @@ static int tnx_v140_mode_write(int x, int y, int flag) {
     int32_t afterK = 0;
     int kept = 0;
 
-    if (!fn || !mode) {
+    if (!fn || !tnx_callable(TNX_V140_MODEPAIR_RVA)) {
         if (g_v140_write_logs < TNX_V140_WRITE_LOGS) {
             g_v140_write_logs++;
 
-            tnx_logf("v140 mode-write BLOCKED fn=%p mode=%p scene=%p - the actuator needs the mode "
-                     "object the engine reaches through ctrl+%#llx and neither the inner slot nor the "
-                     "scene chain produced one", (void *)fn, (void *)mode, (void *)g_scene_object,
-                     (unsigned long long)TNX_V140_CTRL_MODE_OFF);
+            tnx_logf("v144 actuate skip: actuator not callable fn=%p rva=%#llx scene=%p", (void *)fn,
+                     (unsigned long long)TNX_V140_MODEPAIR_RVA, (void *)g_scene_object);
+        }
+
+        return 0;
+    }
+
+    mode = tnx_v144_mode_pick(&vt, &who, &why);
+
+    if (!mode) {
+        if (g_v140_write_logs < TNX_V140_WRITE_LOGS) {
+            g_v140_write_logs++;
+
+            tnx_logf("v144 actuate skip: no valid this why=%s scene=%p players=%p listOwn=%p "
+                     "sceneMode=%p playersMode=%p - the call is not made at all rather than made "
+                     "with an unchecked pointer, and the reject reason names the check that failed",
+                     why, (void *)g_scene_object, (void *)g_players_object, (void *)g_v144_own_elem,
+                     (void *)tnx_v144_hop((uintptr_t)g_scene_object, NULL),
+                     (void *)tnx_v144_hop((uintptr_t)g_players_object, NULL));
         }
 
         return 0;
@@ -10168,6 +10344,15 @@ static int tnx_v140_mode_write(int x, int y, int flag) {
     tnx_read_i32(mode + TNX_V127_GATE_X_OFF, &beforeX);
     tnx_read_i32(mode + TNX_V127_GATE_Y_OFF, &beforeY);
     tnx_read_i32(mode + TNX_V112_INPUT_K_OFF, &beforeK);
+
+    if (g_v140_write_logs < TNX_V140_WRITE_LOGS) {
+        g_v140_write_logs++;
+
+        tnx_logf("v144 actuate own=%p vt=%p from=%s want=(%d,%d) flag=%d gateBefore=%d - vt has to be "
+                 "compared against the element classes the census prints (0xff57b0 for the moving "
+                 "ones) to settle whether the actuator receiver is the element or the mode object",
+                 (void *)mode, (void *)vt, who, x, y, flag, beforeGate);
+    }
 
     ((void (*)(void *, int, int, int))fn)((void *)mode, x, y, flag);
 
@@ -10179,12 +10364,12 @@ static int tnx_v140_mode_write(int x, int y, int flag) {
     if (g_v140_write_logs < TNX_V140_WRITE_LOGS) {
         g_v140_write_logs++;
 
-        tnx_logf("v140 mode-write mode=%p fn=%#llx want=(%d,%d) flag=%d gateBefore=%d gateAfter=%d "
-                 "before=(%d,%d,%d) after=(%d,%d,%d) kept=%d - kept is the read back of the pair the "
-                 "engine consumes at 0xac3424, so gateAfter=1 with kept=1 is the only combination "
-                 "that means the next logic tick has a destination",
-                 (void *)mode, (unsigned long long)TNX_V140_MODEPAIR_RVA, x, y, flag, beforeGate,
-                 afterGate, beforeX, beforeY, beforeK, afterX, afterY, afterK, kept);
+        tnx_logf("v144 mode-write own=%p vt=%p from=%s want=(%d,%d) flag=%d gateBefore=%d "
+                 "gateAfter=%d before=(%d,%d,%d) after=(%d,%d,%d) kept=%d - kept is the read back of "
+                 "the pair the engine consumes at 0xac3424, so gateAfter=1 with kept=1 is the only "
+                 "combination that means the next logic tick has a destination",
+                 (void *)mode, (void *)vt, who, x, y, flag, beforeGate, afterGate, beforeX, beforeY,
+                 beforeK, afterX, afterY, afterK, kept);
     }
 
     return kept;
@@ -10581,6 +10766,24 @@ static void tnx_autododge_v48(void) {
             return;
         }
 
+        /* v144: publish the element the walk and the min-gid resolver agree on, so the actuator
+         * has a checked fallback receiver this tick instead of re-deriving one from a slot that
+         * may hold a stale value. */
+        g_v144_own_elem = objects[ownIndex].object;
+
+        if (g_v144_own_logs < 8) {
+            uintptr_t ownVt = 0;
+
+            g_v144_own_logs++;
+
+            tnx_v144_vt_ok((uintptr_t)g_v144_own_elem, &ownVt);
+
+            tnx_logf("v144 dodge own elem=%p vt=%p from=%s index=%d pos=(%d,%d) - this is the last "
+                     "candidate the actuator may use and the vtable printed here is the one to "
+                     "compare with the census classes", (void *)g_v144_own_elem, (void *)ownVt,
+                     ownFrom, ownIndex, objects[ownIndex].x, objects[ownIndex].y);
+        }
+
         if (!g_v91_own_logged) {
             g_v91_own_logged = 1;
 
@@ -10728,14 +10931,14 @@ static void tnx_autododge_v48(void) {
                          "only caller in the image is the deserializer at 0xa26520, so a write that "
                          "lands there is stored and never consumed",
                          (void *)g_scene_object, (unsigned long long)thisVt, (void *)thisChain,
-                         (void *)g_v48_manager, targetX, targetY, (void *)tnx_v140_mode_obj(),
+                         (void *)g_v48_manager, targetX, targetY, (void *)g_v144_own_elem,
                          (unsigned long long)TNX_V140_MODEPAIR_RVA,
                          (unsigned long long)TNX_RVA_SETPREDICTION,
                          (unsigned long long)TNX_RVA_SETPREDICTION);
             }
         }
 
-        if (!tnx_v140_mode_write(targetX, targetY, TNX_V140_MODEPAIR_FLAG)) {
+        if (!tnx_v144_mode_write(targetX, targetY, TNX_V140_MODEPAIR_FLAG)) {
             ((tnx_v47_setpred_t)g_v47_setpred)((void *)g_scene_object, targetX, targetY);
         }
 

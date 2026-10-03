@@ -310,7 +310,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_137"
+#define TNX_BUILD_TAG "titanox_138"
 
 #define TNX_RVA_SETPREDICTION 0x00ac3f20ULL
 #define TNX_OBJ_X_OFF 0x30ULL
@@ -375,6 +375,8 @@ static int g_v103_tested = 0;
 static int g_v103_ok = 0;
 static uint64_t g_v103_writes = 0;
 static uint64_t g_v103_tick = 0;
+static uint64_t g_v138_dodge_calls = 0;
+static uint64_t g_v138_render_calls = 0;
 static int g_v103_attempt = 0;
 static int g_v103_prev_state = -1;
 static int g_v103_other_logs = 0;
@@ -523,6 +525,12 @@ static const char *g_v101_own_from = "none";
 #define TNX_V134_OWN_LOGS 6
 #define TNX_V134_ALERT_GAP_MS 20000
 #define TNX_V135_OWN_LOGS 6
+#define TNX_V138_PLAYER_GID_MAX 2000000
+#define TNX_V138_CENSUS_MS 30000
+#define TNX_V138_CALL_LOGS 4
+#define TNX_V138_CALL_EVERY 600
+#define TNX_V138_NP_DUMPS 8
+#define TNX_V138_NP_PTR_OFF 0x38ULL
 #define TNX_V135_GIDOFF_LOGS 6
 #define TNX_V134_CENSUS_DELTA 5
 
@@ -874,10 +882,11 @@ static int g_v85_field_scans = 0;
 static int g_v86_elem_dumps = 0;
 static int g_v86_hop2_census = 0;
 static int g_v86_type3_floats = 0;
-static uintptr_t g_v88_census_container = 0;
 static uintptr_t g_v134_census_container = 0;
 static int32_t g_v134_census_count = 0;
 static uintptr_t g_v134_census_array = 0;
+static uintptr_t g_v134_census_first = 0;
+static uint64_t g_v134_census_ms = 0;
 static int g_v88_elem_full_dumps = 0;
 static int g_v88_walk_relogs = 0;
 static uint64_t g_v89_walk_tick = 0;
@@ -2593,6 +2602,11 @@ static void tnx_v132_battle_alert(uintptr_t scene, uintptr_t scenePrev) {
     g_v132_alert_scene = scene;
     g_v132_alert_ms = now;
 
+    tnx_logf("v138 alert shown prev=%p now=%p sinceMs=%llu gapMs=%d - printed after both gates, so "
+             "the menu line that follows cannot be mistaken for a call that skipped them",
+             (void *)scenePrev, (void *)scene, (unsigned long long)g_v132_alert_ms,
+             TNX_V134_ALERT_GAP_MS);
+
     tnx_v62_alert_menu([NSString stringWithFormat:
         @"Вход в бой\nscene=%p (было %p)\ncontainer=%p count=%d\ngid=%d..%d\nown=min gid",
         (void *)scene, (void *)scenePrev, (void *)g_players_object, g_players_count,
@@ -2648,23 +2662,40 @@ static void tnx_v81_container_census(uintptr_t array, int32_t count, uintptr_t c
 
     if (!array || count <= 0) return;
 
-    if (container == g_v134_census_container && (uintptr_t)array == g_v134_census_array) {
-        int32_t delta = count > g_v134_census_count ? count - g_v134_census_count
-                                                    : g_v134_census_count - count;
+    {
+        void *firstPtr = NULL;
+        uintptr_t first = 0;
+        uint64_t nowMs = (uint64_t)(CFAbsoluteTimeGetCurrent() * 1000.0);
+        int same = (container == g_v134_census_container &&
+                    (uintptr_t)array == g_v134_census_array);
+        int firstChanged = 0;
 
-        if (g_v134_census_count <= 0 || delta < TNX_V134_CENSUS_DELTA) return;
+        if (tnx_read_ptr(array, &firstPtr) && firstPtr) first = (uintptr_t)firstPtr;
+        firstChanged = (first != g_v134_census_first);
 
-        tnx_logf("v135 census rearmed container=%p count=%d last=%d delta=%d - the census is no "
-                 "longer taken once per container, because the v134 run left it at the first count "
-                 "it saw and the non-player class 0xff56d8 never got into a census at all; a change "
-                 "of at least %d elements on the same container re-arms it, which is the shape the "
-                 "counts 6 and 29 in one battle have",
-                 (void *)container, count, g_v134_census_count, delta, TNX_V134_CENSUS_DELTA);
+        if (same && !firstChanged && g_v134_census_ms &&
+            nowMs - g_v134_census_ms < TNX_V138_CENSUS_MS) {
+            return;
+        }
+
+        if (same) {
+            tnx_logf("v138 census rearmed container=%p array=%p count=%d lastCount=%d first=%p "
+                     "lastFirst=%p firstChanged=%d sinceMs=%llu - the count delta rule of v135 fired "
+                     "on every second of the battle because this vector is the object registry and "
+                     "it grows and shrinks with projectiles, so the census printed twenty times and "
+                     "the log drowned; it is now taken when the first element changes or after %d ms",
+                     (void *)container, (void *)array, count, g_v134_census_count, (void *)first,
+                     (void *)g_v134_census_first, firstChanged,
+                     (unsigned long long)(g_v134_census_ms ? nowMs - g_v134_census_ms : 0),
+                     TNX_V138_CENSUS_MS);
+        }
+
+        g_v134_census_container = container;
+        g_v134_census_count = count;
+        g_v134_census_array = (uintptr_t)array;
+        g_v134_census_first = (uintptr_t)first;
+        g_v134_census_ms = nowMs;
     }
-
-    g_v134_census_container = container;
-    g_v134_census_count = count;
-    g_v134_census_array = (uintptr_t)array;
 
     if (count > TNX_V81_DUMP_QWORDS) count = TNX_V81_DUMP_QWORDS;
 
@@ -2704,7 +2735,7 @@ static void tnx_v81_container_census(uintptr_t array, int32_t count, uintptr_t c
         tnx_read_i32((uintptr_t)element + TNX_OBJ_TEAM_OFF, &team);
         tnx_read_i32((uintptr_t)element + TNX_OBJ_GLOBALID_OFF, &gid);
 
-        if (gid >= TNX_V75_GID_FLOOR && gid < TNX_V75_GID_MAX &&
+        if (gid >= TNX_V75_GID_FLOOR && gid < TNX_V138_PLAYER_GID_MAX &&
             team >= 0 && team <= TNX_V75_TEAM_MAX) {
             ok = 1;
             snprintf(why, sizeof(why), "gid=%d in [%d,%d) and team=%d in range - accepted on the id "
@@ -2858,7 +2889,6 @@ static void tnx_v81_container_census(uintptr_t array, int32_t count, uintptr_t c
     }
 
     g_v81_census_logs++;
-    g_v88_census_container = container;
     g_v134_census_container = container;
 
     histText[0] = 0;
@@ -3531,7 +3561,7 @@ static int tnx_v80_state_tick(void) {
         capacity <= TNX_MGR_CAP_MAX && array) {
 
         if (g_v82_hop_chosen == 1) {
-            if (!g_v86_hop2_census && players != g_v88_census_container) {
+            if (!g_v86_hop2_census && players != g_v134_census_container) {
                 g_v86_hop2_census = 1;
 
                 tnx_logf("v100 census armed on hop2: hop=%d container=%p count=%d array=%p - the "
@@ -3979,7 +4009,19 @@ static void tnx_run_workload(void) {
 static void tnx_objc_rep0(id self, SEL _cmd) {
     tnx_objc_hook_t *hook = tnx_objc_find(self, _cmd);
 
+    g_v138_render_calls++;
+
     if (hook) hook->hits++;
+
+    if (g_v138_render_calls <= TNX_V138_CALL_LOGS ||
+        (g_v138_render_calls % TNX_V138_CALL_EVERY) == 0) {
+        tnx_logf("v138 render CALLED n=%llu self=%p inHook=%d base=%p scene=%p - the dodge is driven "
+                 "from this callback and nothing else, so this line is the first thing to check when "
+                 "the dodge prints nothing: if it is absent the whole workload is never entered and "
+                 "the state has nothing to do with the dodge's own gates",
+                 (unsigned long long)g_v138_render_calls, (void *)self, g_inside_hook, (void *)g_base,
+                 (void *)g_scene_object);
+    }
 
     if (hook && !g_inside_hook && tnx_objc_targets(self, hook)) {
         g_inside_hook = YES;
@@ -5610,6 +5652,7 @@ typedef struct {
     int32_t   ownerIndex;
     int32_t   teamOld;
     int32_t   teamNew;
+    int32_t   typeWord;
     uint8_t   dead;
     uint8_t   activeFlag;
 } tnx_v47_obj_t;
@@ -5693,6 +5736,7 @@ typedef struct {
     int rejAscii;
     int rejNoVt;
     int rejGidZero;
+    int rejNonPlayer;
     int rejOutOfRange;
     int rejTeamMissing;
     int deadSeen;
@@ -5703,9 +5747,10 @@ static tnx_v50_reject_t g_v50_reject;
 static const char *tnx_v50_reject_text(char *buf, size_t size) {
     snprintf(buf, size,
              "elements=%d rejNull=%d rejUnreadable=%d rejAscii=%d rejNoVt=%d rejGidZero=%d "
-             "rejOutOfRange=%d rejTeamMissing=%d deadSeen=%d",
+             "rejNonPlayer=%d rejOutOfRange=%d rejTeamMissing=%d deadSeen=%d",
              g_v50_reject.elementsRead, g_v50_reject.rejNull, g_v50_reject.rejUnreadable,
              g_v50_reject.rejAscii, g_v50_reject.rejNoVt, g_v50_reject.rejGidZero,
+             g_v50_reject.rejNonPlayer,
              g_v50_reject.rejOutOfRange, g_v50_reject.rejTeamMissing, g_v50_reject.deadSeen);
 
     return buf;
@@ -5876,6 +5921,14 @@ static int tnx_v48_collect(uintptr_t manager, tnx_v47_obj_t *out, int capacity, 
 
         entry.gid = tnx_v106_gid_at(entry.object, gidOff);
 
+        {
+            uintptr_t tw = 0;
+
+            tnx_v86_element_type((uintptr_t)vtable, &tw);
+
+            entry.typeWord = (int32_t)tw;
+        }
+
         if (!tnx_read_i32(entry.object + tnx_v57_coord_x_off(), &entry.x) ||
             !tnx_read_i32(entry.object + tnx_v57_coord_y_off(), &entry.y) ||
             !tnx_read_i32(entry.object + TNX_OBJ_OWNERINDEX_OFF, &entry.ownerIndex) ||
@@ -5885,6 +5938,42 @@ static int tnx_v48_collect(uintptr_t manager, tnx_v47_obj_t *out, int capacity, 
             !tnx_read_u8(entry.object + TNX_OBJ_ACTIVEFLAG_OFF, &entry.activeFlag)) {
             g_v50_reject.rejUnreadable++;
             bad++;
+
+            continue;
+        }
+
+        if (entry.gid >= TNX_V138_PLAYER_GID_MAX) {
+            g_v50_reject.rejNonPlayer++;
+            bad++;
+
+            if (g_v138_dump_np < TNX_V138_NP_DUMPS) {
+                int32_t npX = 0;
+                int32_t npY = 0;
+                int32_t np70 = 0;
+                int32_t np74 = 0;
+                void *np38 = NULL;
+                uintptr_t npRva = vtRva;
+
+                g_v138_dump_np++;
+
+                tnx_read_i32(entry.object + TNX_OBJ_X_OFF, &npX);
+                tnx_read_i32(entry.object + TNX_OBJ_Y_OFF, &npY);
+                tnx_read_i32(entry.object + TNX_V134_V70_OFF, &np70);
+                tnx_read_i32(entry.object + TNX_V134_V70_OFF + 4ULL, &np74);
+                tnx_read_ptr(entry.object + TNX_V138_NP_PTR_OFF, &np38);
+
+                tnx_logf("v138 nonplayer elem=%p classRva=%#llx gid=%d team=%d x+%#llx=%d y+%#llx=%d "
+                         "+%#llx=%d +%#llx=%d ptr+%#llx=%p - an element outside the player id window "
+                         "is named once with the fields a projectile would need, because the claim "
+                         "that this class is a projectile was an analogy from its id range and not a "
+                         "measurement, and a position that changes while the element exists and then "
+                         "disappears is what would settle it",
+                         (void *)entry.object, (unsigned long long)npRva, entry.gid, entry.teamOld,
+                         (unsigned long long)TNX_OBJ_X_OFF, npX, (unsigned long long)TNX_OBJ_Y_OFF, npY,
+                         (unsigned long long)TNX_V134_V70_OFF, np70,
+                         (unsigned long long)(TNX_V134_V70_OFF + 4ULL), np74,
+                         (unsigned long long)TNX_V138_NP_PTR_OFF, np38);
+            }
 
             continue;
         }
@@ -7786,7 +7875,7 @@ static int tnx_v134_own_by_min_gid(uintptr_t array, int32_t count, uintptr_t *el
 
         gid = tnx_v106_gid((uintptr_t)element, NULL);
 
-        if (gid < TNX_V75_GID_FLOOR || gid >= TNX_V75_GID_MAX) continue;
+        if (gid < TNX_V75_GID_FLOOR || gid >= TNX_V138_PLAYER_GID_MAX) continue;
         if (!tnx_read_i32((uintptr_t)element + TNX_OBJ_TEAM_OFF, &team)) continue;
         if (team < 0 || team > TNX_V75_TEAM_MAX) continue;
 
@@ -7848,7 +7937,7 @@ static int tnx_v134_own_from_list(const tnx_v47_obj_t *objects, int usable, int 
     for (i = 0; i < usable; i++) {
         int32_t gid = objects[i].gid;
 
-        if (gid < TNX_V75_GID_FLOOR || gid >= TNX_V75_GID_MAX) continue;
+        if (gid < TNX_V75_GID_FLOOR || gid >= TNX_V138_PLAYER_GID_MAX) continue;
         if (objects[i].teamOld < 0 || objects[i].teamOld > TNX_V75_TEAM_MAX) continue;
 
         accepted++;
@@ -9384,9 +9473,24 @@ static void tnx_autododge_v48(void) {
     int threats = 0;
     int threatsAlive = 0;
 
+    g_v138_dodge_calls++;
+
+    if (g_v138_dodge_calls <= TNX_V138_CALL_LOGS ||
+        (g_v138_dodge_calls % TNX_V138_CALL_EVERY) == 0) {
+        tnx_logf("v138 dodge CALLED n=%llu base=%p scene=%p container=%p array=%p count=%d hop=%d "
+                 "gidFloor=%d gidMax=%d playerMax=%d - printed before every early return and keyed "
+                 "on the number of calls and not on a tick counter, because the v137 run printed no "
+                 "probe line at all and the two possible reasons, a gate before the line and a "
+                 "counter that never advanced, cannot be told apart from the absence of a line",
+                 (unsigned long long)g_v138_dodge_calls, (void *)g_base, (void *)g_scene_object,
+                 (void *)g_players_object, (void *)g_players_array, g_players_count, g_v82_hop_chosen,
+                 TNX_V75_GID_FLOOR, TNX_V75_GID_MAX, TNX_V138_PLAYER_GID_MAX);
+    }
+
     if (!g_base) return;
 
-    if (g_v135_probe_tick != g_v50_ticks && (g_v50_ticks < 5 || (g_v50_ticks % 5) == 0)) {
+    if (g_v138_dodge_calls <= TNX_V138_CALL_LOGS ||
+        (g_v138_dodge_calls % TNX_V138_CALL_EVERY) == 0) {
         uintptr_t probeOwn = 0;
         int32_t probeGid = 0;
         int32_t probeTeam = 0;

@@ -163,7 +163,6 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 
 #define TNX_OWNER_VOTE_MAX 128
 #define TNX_OWNER_VOTE_MIN 3
-#define TNX_OWNER_VOTE_GID_MAX 64
 #define TNX_OWNER_VOTE_VT_MAX 4
 
 #define TNX_OWNER_VOTE_TEAMS_MIN 2
@@ -315,7 +314,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_127"
+#define TNX_BUILD_TAG "titanox_132"
 
 #define TNX_RVA_SETPREDICTION 0x00ac3f20ULL
 #define TNX_OBJ_X_OFF 0x30ULL
@@ -519,8 +518,15 @@ static const char *g_v101_own_from = "none";
 #define TNX_V75_ASCII_WINDOW 32
 #define TNX_V75_ASCII_RATIO 30
 #define TNX_V75_TEAM_MAX 15
-#define TNX_V75_GID_MAX 1000000
+#define TNX_V75_GID_MAX 10000000
+#define TNX_V75_GID_FLOOR 1000000
 #define TNX_V75_COORD_MAX 100000
+
+#define TNX_V132_HUNT_LO 0x20ULL
+#define TNX_V132_HUNT_HI 0x88ULL
+#define TNX_V132_HUNT_STEP 4ULL
+#define TNX_V132_HUNT_LIMIT 10000
+#define TNX_V132_HUNT_LINES 3
 
 #define TNX_V73_STATE_DROPPED (-2)
 
@@ -590,19 +596,6 @@ static int g_chain_best_gid = 0;
 static int g_seen_stable = 0;
 static unsigned long long g_vtprobe_hits[TNX_VTPROBE_COUNT];
 
-typedef struct {
-    uintptr_t owner;
-    int votes;
-    int teamMask;
-    int deadOk;
-    int vtCount;
-    uintptr_t vt[TNX_OWNER_VOTE_VT_MAX];
-    uint32_t gidSeen[TNX_OWNER_VOTE_GID_MAX];
-    int gidSeenCount;
-    int gidFull;
-} tnx_owner_vote_t;
-
-static tnx_owner_vote_t g_owner_votes[TNX_OWNER_VOTE_MAX];
 static int g_owner_vote_count = 0;
 static unsigned long long g_objvote_hits = 0;
 static unsigned long long g_objvote_skipped = 0;
@@ -969,7 +962,6 @@ static int tnx_v80_state_tick(void);
 static void tnx_v81_players_dump(uintptr_t players, uintptr_t array, int32_t count,
                                  int32_t capacity);
 static void tnx_v81_container_census(uintptr_t array, int32_t count, uintptr_t container);
-static int tnx_v81_is_battle_object(uintptr_t object, char *why, size_t whyLen);
 static int tnx_v82_container_header(uintptr_t object, uintptr_t *arrayOut, int32_t *countOut,
                                     int32_t *capOut, char *why, size_t whyLen);
 static void tnx_v82_hop_dump(uintptr_t client, uintptr_t inner);
@@ -1342,10 +1334,10 @@ static const struct {
     { "A1/vt1002548+10/ad4ed0", "A1", 0x00ad4ed0ULL, 0x01002598ULL, tnx_slot_repl_0, 0 },
     { "A2/vt1002548+07/ad521c", "A2", 0x00ad521cULL, 0x01002580ULL, tnx_slot_repl_1, 0 },
 
-    { "B1/vt0ff5720+05/a2e5b8", "B1", 0x00a2e5b8ULL, 0x00ff5748ULL, tnx_slot_repl_2, 0 },
+    { "B1/off-vt0ff5720-no-data-slot", "B1", 0, 0, tnx_slot_repl_2, 0 },
 
-    { "B2/vt0ff5720+03/a2d250 setOwner", "B2", 0x00a2d250ULL, 0x00ff5738ULL, tnx_slot_repl_3, 0 },
-    { "B3/vt0ff5720+07/a2d6ac", "B3", 0x00a2d6acULL, 0x00ff5758ULL, tnx_slot_repl_4, 0 },
+    { "B2/off-vt0ff5720-no-data-slot", "B2", 0, 0, tnx_slot_repl_3, 0 },
+    { "B3/off-vt0ff5720-no-data-slot", "B3", 0, 0, tnx_slot_repl_4, 0 },
 
     { "C1/Stage::addChild @c33690", "C1", 0x00c33690ULL, 0x01011f50ULL, tnx_slot_repl_5, 1 },
     { "C2/hotflag @b9dc24", "C2", 0x00b9dc24ULL, 0, tnx_slot_repl_6, 1 },
@@ -2391,40 +2383,6 @@ static void tnx_overlay_update(void) {
 static int g_alert_shown = 0;
 static uint64_t g_alert_cleared_ms = 0;
 
-static void tnx_alert_show(NSString *title, NSString *message) {
-
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *window = nil;
-        UIViewController *host = nil;
-
-        for (UIWindow *candidate in [UIApplication sharedApplication].windows) {
-            if (candidate.isKeyWindow) {
-                window = candidate;
-                break;
-            }
-        }
-
-        if (!window) window = [UIApplication sharedApplication].keyWindow;
-        if (!window) return;
-
-        host = window.rootViewController;
-
-        if (!host) return;
-
-        while (host.presentedViewController) host = host.presentedViewController;
-
-        UIAlertController *alert =
-            [UIAlertController alertControllerWithTitle:title
-                                               message:message
-                                        preferredStyle:UIAlertControllerStyleAlert];
-
-        [alert addAction:[UIAlertAction actionWithTitle:@"OK"
-                                                 style:UIAlertActionStyleDefault
-                                               handler:nil]];
-
-        [host presentViewController:alert animated:YES completion:nil];
-    });
-}
 
 static void tnx_v62_alert_menu(NSString *info) {
     NSString *text = [info copy];
@@ -2454,7 +2412,7 @@ static void tnx_v62_alert_menu(NSString *info) {
         while (host.presentedViewController) host = host.presentedViewController;
 
         UIAlertController *menu =
-            [UIAlertController alertControllerWithTitle:@"Titanox v62"
+            [UIAlertController alertControllerWithTitle:@"Titanox"
                                                 message:text
                                          preferredStyle:UIAlertControllerStyleAlert];
 
@@ -2464,11 +2422,14 @@ static void tnx_v62_alert_menu(NSString *info) {
 
         [menu addAction:[UIAlertAction actionWithTitle:@"Состояние"
                                                  style:UIAlertActionStyleDefault
-                                                handler:^(UIAlertAction *action) {
+                                               handler:^(UIAlertAction *action) {
             tnx_v62_alert_menu([NSString stringWithFormat:
-                @"scene=%p source=%s sigHits=%d\nchainHits=%d classesPass=%d\nplayers=%p count=%d",
-                (void *)g_scene_object, g_v62_mode_source, g_v64_modesig_hits, g_v59_chain_hits,
-                g_v62_class_pass, (void *)g_players_object, g_manager_count]);
+                @"scene=%p\ncontainer=%p count=%d hop=%d\narray=%p cap=%d\ngid=%d..%d live=%d\n"
+                @"slots=%d alerts=%s",
+                (void *)g_scene_object, (void *)g_players_object, g_players_count,
+                g_v105_last_choice, (void *)g_players_array, g_players_cap, g_v132_gid_lo,
+                g_v132_gid_hi, g_manager_last_live, TNX_SLOT_COUNT,
+                g_v62_alerts_off ? @"выкл" : @"вкл"]);
         }]];
 
         [menu addAction:[UIAlertAction actionWithTitle:@"Скрыть алерты"
@@ -2633,77 +2594,147 @@ static void tnx_v81_players_dump(uintptr_t players, uintptr_t array, int32_t cou
 
 
 
-static int tnx_v81_is_battle_object(uintptr_t object, char *why, size_t whyLen) {
-    void *vt = NULL;
-    void *def = NULL;
-    int32_t gid = 0;
-    int32_t team = 0;
-    int32_t kind = 0;
-    uint8_t dead = 0;
+static uintptr_t g_v132_hunt_container = 0;
+static int g_v132_hunt_logs = 0;
+static int32_t g_v132_gid_lo = 0;
+static int32_t g_v132_gid_hi = 0;
+static uintptr_t g_v132_alert_scene = 0;
 
-    if (!object) {
-        snprintf(why, whyLen, "null");
-        return 0;
+static BOOL tnx_v132_read_i16(uintptr_t at, int16_t *out) {
+    return tnx_read_bytes(at, out, sizeof(int16_t));
+}
+
+static void tnx_v132_coord_hunt(uintptr_t array, int32_t count, uintptr_t container) {
+    uintptr_t pick[2] = { 0, 0 };
+    int32_t pickGid[2] = { 0, 0 };
+    char in32[2][640];
+    char in16[2][640];
+    char diff32[400];
+    char diff16[400];
+    int n = 0;
+    int32_t i = 0;
+    uintptr_t off = 0;
+
+    if (!array || count <= 0 || !container) return;
+    if (container == g_v132_hunt_container) return;
+    if (g_v132_hunt_logs >= TNX_V132_HUNT_LINES) return;
+
+    g_v132_hunt_container = container;
+
+    for (i = 0; i < count && n < 2; i++) {
+        void *element = NULL;
+        int32_t gid = 0;
+
+        if (!tnx_read_ptr(array + (uintptr_t)i * sizeof(void *), &element) || !element) continue;
+        if (!tnx_read_i32((uintptr_t)element + TNX_OBJ_GLOBALID_OFF, &gid)) continue;
+        if (gid <= 0) continue;
+        if (n == 1 && gid == pickGid[0]) continue;
+
+        if (n == 0) {
+            g_v132_gid_lo = gid;
+            g_v132_gid_hi = gid;
+        } else if (gid < g_v132_gid_lo) {
+            g_v132_gid_lo = gid;
+        } else if (gid > g_v132_gid_hi) {
+            g_v132_gid_hi = gid;
+        }
+
+        pick[n] = (uintptr_t)element;
+        pickGid[n] = gid;
+        n++;
     }
 
-    if (!tnx_heap_resident(object)) {
-        snprintf(why, whyLen, "not-heap");
-        return 0;
+    if (n < 2) {
+        tnx_logf("v132 coords container=%p count=%d found=%d - the hunt needs two elements with "
+                 "different ids to separate a coordinate from a constant, and this container "
+                 "yielded only %d, so no offset list is printed; the id at +%#llx is the only field "
+                 "proven here",
+                 (void *)container, count, n, n, (unsigned long long)TNX_OBJ_GLOBALID_OFF);
+
+        return;
     }
 
-    if (!tnx_read_ptr(object, &vt) || !vt) {
-        snprintf(why, whyLen, "no-vt");
-        return 0;
+    g_v132_hunt_logs++;
+
+    in32[0][0] = 0;
+    in32[1][0] = 0;
+    in16[0][0] = 0;
+    in16[1][0] = 0;
+    diff32[0] = 0;
+    diff16[0] = 0;
+
+    for (off = TNX_V132_HUNT_LO; off < TNX_V132_HUNT_HI; off += TNX_V132_HUNT_STEP) {
+        int32_t v[2] = { 0, 0 };
+        int k = 0;
+
+        for (k = 0; k < 2; k++) {
+            char tmp[64];
+
+            if (!tnx_read_i32(pick[k] + off, &v[k])) v[k] = 0;
+
+            if (v[k] != 0 && v[k] > -TNX_V132_HUNT_LIMIT && v[k] < TNX_V132_HUNT_LIMIT) {
+                snprintf(tmp, sizeof(tmp), " +%#llx=%d", (unsigned long long)off, v[k]);
+                strncat(in32[k], tmp, sizeof(in32[k]) - strlen(in32[k]) - 1);
+            }
+        }
+
+        if (v[0] != v[1] && v[0] != 0 && v[1] != 0 &&
+            v[0] > -TNX_V132_HUNT_LIMIT && v[0] < TNX_V132_HUNT_LIMIT &&
+            v[1] > -TNX_V132_HUNT_LIMIT && v[1] < TNX_V132_HUNT_LIMIT) {
+            char tmp[48];
+
+            snprintf(tmp, sizeof(tmp), " +%#llx=%d/%d", (unsigned long long)off, v[0], v[1]);
+            strncat(diff32, tmp, sizeof(diff32) - strlen(diff32) - 1);
+        }
     }
 
-    if (!tnx_v77_vtable_is_data((uintptr_t)vt)) {
-        const char *seg = tnx_image_segment_name((uintptr_t)vt);
+    for (off = TNX_V132_HUNT_LO; off + 2ULL <= TNX_V132_HUNT_HI; off += 2ULL) {
+        int16_t h[2] = { 0, 0 };
+        int k = 0;
 
-        snprintf(why, whyLen, "vt-not-data seg=%s", seg ? seg : "-");
-        return 0;
+        for (k = 0; k < 2; k++) {
+            char tmp[64];
+
+            if (!tnx_v132_read_i16(pick[k] + off, &h[k])) h[k] = 0;
+
+            if (h[k] != 0 && h[k] > -TNX_V132_HUNT_LIMIT && h[k] < TNX_V132_HUNT_LIMIT) {
+                snprintf(tmp, sizeof(tmp), " +%#llx=%d", (unsigned long long)off, h[k]);
+                strncat(in16[k], tmp, sizeof(in16[k]) - strlen(in16[k]) - 1);
+            }
+        }
+
+        if (h[0] != h[1] && h[0] != 0 && h[1] != 0 &&
+            h[0] > -TNX_V132_HUNT_LIMIT && h[0] < TNX_V132_HUNT_LIMIT &&
+            h[1] > -TNX_V132_HUNT_LIMIT && h[1] < TNX_V132_HUNT_LIMIT) {
+            char tmp[48];
+
+            snprintf(tmp, sizeof(tmp), " +%#llx=%d/%d", (unsigned long long)off, h[0], h[1]);
+            strncat(diff16, tmp, sizeof(diff16) - strlen(diff16) - 1);
+        }
     }
 
-    tnx_read_i32(object + TNX_OBJ_GLOBALID_OFF, &gid);
-    tnx_read_i32(object + TNX_OBJ_TEAM_OFF, &team);
-    tnx_read_u8(object + TNX_OBJ_DEADFLAG_OFF, &dead);
+    tnx_logf("v132 coords container=%p count=%d gidA=%d ptrA=%p gidB=%d ptrB=%p window=%#llx..%#llx "
+             "| i32A=%s | i32B=%s | i16A=%s | i16B=%s | differ32=%s | differ16=%s - every word of "
+             "both elements that is non-zero and inside +-%d is printed and the differ lists keep "
+             "only the offsets where the two elements disagree, because a coordinate changes with "
+             "the element while a constant field cannot, and +%#llx/+%#llx are the two offsets this "
+             "build used to read as the position",
+             (void *)container, count, pickGid[0], (void *)pick[0], pickGid[1], (void *)pick[1],
+             (unsigned long long)TNX_V132_HUNT_LO, (unsigned long long)TNX_V132_HUNT_HI,
+             in32[0], in32[1], in16[0], in16[1], diff32, diff16, TNX_V132_HUNT_LIMIT,
+             (unsigned long long)TNX_OBJ_X_OFF, (unsigned long long)TNX_OBJ_Y_OFF);
+}
 
-    if (!tnx_read_ptr(object + TNX_V82_ELEM_DEF_OFF, &def) || !def) {
-        const char *seg = tnx_image_segment_name((uintptr_t)def);
+static void tnx_v132_battle_alert(uintptr_t scene, uintptr_t container, int32_t count, int hop) {
+    if (!scene) return;
+    if (g_v62_alerts_off) return;
+    if (scene == g_v132_alert_scene) return;
 
-        snprintf(why, whyLen, "no-def at +%#llx seg=%s - 0x382cc8 is ldr x0,[x0,%#llx], the engine "
-                 "reaches every element's definition through it and reads the kind there",
-                 (unsigned long long)TNX_V82_ELEM_DEF_OFF, seg ? seg : "-",
-                 (unsigned long long)TNX_V82_ELEM_DEF_OFF);
-        return 0;
-    }
+    g_v132_alert_scene = scene;
 
-    tnx_read_i32((uintptr_t)def + TNX_V79_KIND_OFF, &kind);
-
-    if (gid > 0 && gid < TNX_V75_GID_MAX) {
-        snprintf(why, whyLen, "gid=%d team=%d def=%p defKind=%d dead=%d", gid, team, def, kind,
-                 dead);
-        return 1;
-    }
-
-    if (kind <= 0 || kind > TNX_V82_KIND_MAX) {
-        snprintf(why, whyLen, "gid=0 and defKind=%d at def+%#llx - no global id on the element and "
-                 "no kind on the definition it points to, so nothing here identifies a game "
-                 "object", kind, (unsigned long long)TNX_V79_KIND_OFF);
-        return 0;
-    }
-
-    if (team < 0 || team > TNX_V75_TEAM_MAX) {
-        snprintf(why, whyLen, "defKind=%d but team=%d is outside 0..%d", kind, team,
-                 TNX_V75_TEAM_MAX);
-        return 0;
-    }
-
-    snprintf(why, whyLen, "defKind=%d team=%d def=%p dead=%d gid=0 - accepted on the kind the "
-             "engine itself reads, at [[element+%#llx]+%#llx]",
-             kind, team, def, dead, (unsigned long long)TNX_V82_ELEM_DEF_OFF,
-             (unsigned long long)TNX_V79_KIND_OFF);
-
-    return 1;
+    tnx_v62_alert_menu([NSString stringWithFormat:
+        @"Вход в бой\nscene=%p\ncontainer=%p count=%d hop=%d\ngid=%d..%d\ncoords: строка v132 coords",
+        (void *)scene, (void *)container, count, hop, g_v132_gid_lo, g_v132_gid_hi]);
 }
 
 static int tnx_v86_element_type(uintptr_t vt, uintptr_t *wordOut) {
@@ -2775,11 +2806,24 @@ static void tnx_v81_container_census(uintptr_t array, int32_t count, uintptr_t c
             continue;
         }
 
-        ok = tnx_v81_is_battle_object((uintptr_t)element, why, sizeof(why));
-
         tnx_read_ptr((uintptr_t)element, &vt);
         tnx_read_i32((uintptr_t)element + TNX_OBJ_TEAM_OFF, &team);
         tnx_read_i32((uintptr_t)element + TNX_OBJ_GLOBALID_OFF, &gid);
+
+        if (gid >= TNX_V75_GID_FLOOR && gid < TNX_V75_GID_MAX &&
+            team >= 0 && team <= TNX_V75_TEAM_MAX) {
+            ok = 1;
+            snprintf(why, sizeof(why), "gid=%d in [%d,%d) and team=%d in range - accepted on the id "
+                     "the engine itself assigns, with no definition pointer read at all",
+                     gid, TNX_V75_GID_FLOOR, TNX_V75_GID_MAX, team);
+        } else {
+            ok = 0;
+            snprintf(why, sizeof(why), "gid=%d outside [%d,%d) or team=%d outside 0..%d - refused "
+                     "with no definition pointer read at all, because the v127 run showed the def "
+                     "field empty at the moment the census looks at it and every element was called "
+                     "unaccepted on that empty field while carrying a real id",
+                     gid, TNX_V75_GID_FLOOR, TNX_V75_GID_MAX, team, TNX_V75_TEAM_MAX);
+        }
         tnx_read_i32((uintptr_t)element + TNX_V86_HYP_TEAM_OFF, &teamHyp);
         tnx_read_i32((uintptr_t)element + TNX_V86_HYP_BYTE_OFF, &byte48);
         if (tnx_read_ptr((uintptr_t)element + TNX_V88_ELEM_BACK_OFF, &backPtr) &&
@@ -3508,6 +3552,9 @@ static int tnx_v80_state_tick(void) {
 
             tnx_v81_players_dump(players, (uintptr_t)array, count, capacity);
         }
+
+        tnx_v132_coord_hunt((uintptr_t)array, count, players);
+        tnx_v132_battle_alert((uintptr_t)g_scene_object, players, count, chosen);
     }
 
     g_manager_count = count;
@@ -3817,7 +3864,8 @@ static void tnx_alert_battle_check(void) {
                  g_manager_best_count, (void *)g_scene_object, (void *)g_players_object,
                  (void *)candidate);
 
-        tnx_alert_show(@"Titanox", @"Вход в бой обнаружен");
+        tnx_v132_battle_alert(g_scene_object, g_players_object, g_players_count,
+                              g_v105_last_choice);
     }
 }
 
@@ -10395,14 +10443,15 @@ static void setup(void) {
 
     tnx_logf("build=%s slots=%d control=%d types>=%d scanEvery=%d heapEvery=%d attempts=%d "
              "arrayProbeLimit=%d chainProbeLimit=%d voteMin=%d voteConfirm=%d voteTeamsMin=%d "
-             "ownerVoteMax=%d gidMax=%d objhitDump=%d censusMax=%d censusPrint=%d censusSlots=%d "
+             "gidFloor=%d gidMax=%d objhitDump=%d censusMax=%d censusPrint=%d censusSlots=%d "
              "budgetMin=%lluMB budgetMax=%lluMB",
              TNX_BUILD_TAG, TNX_SLOT_COUNT - buildControls, buildControls, TNX_MODE_MIN_TYPES,
              TNX_VOTESCAN_GLOBAL_EVERY, TNX_VOTESCAN_HEAP_EVERY, TNX_VOTESCAN_ATTEMPTS,
              TNX_MANAGER_PROBE_LIMIT, TNX_CHAIN_PROBE_LIMIT, TNX_OWNER_VOTE_MIN,
-             TNX_OWNER_VOTE_CONFIRM, TNX_OWNER_VOTE_TEAMS_MIN, TNX_OWNER_VOTE_MAX,
-             TNX_OWNER_VOTE_GID_MAX, TNX_OBJ_HIT_PRINT_MAX, TNX_VTCENSUS_MAX, TNX_VTCENSUS_PRINT,
-             TNX_VTCENSUS_SLOTS, TNX_HEAP_SCAN_BUDGET / (1024ull * 1024ull),
+             TNX_OWNER_VOTE_CONFIRM, TNX_OWNER_VOTE_TEAMS_MIN,
+             TNX_V75_GID_FLOOR, TNX_V75_GID_MAX, TNX_OBJ_HIT_PRINT_MAX, TNX_VTCENSUS_MAX,
+             TNX_VTCENSUS_PRINT, TNX_VTCENSUS_SLOTS,
+             TNX_HEAP_SCAN_BUDGET / (1024ull * 1024ull),
              TNX_HEAP_SCAN_BUDGET_MAX / (1024ull * 1024ull));
 
     tnx_logf("plan v49: (1) the left-hand panel is REMOVED -- the overlay draws nothing now -- "

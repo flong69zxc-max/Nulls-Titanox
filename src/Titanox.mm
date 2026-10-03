@@ -296,6 +296,8 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_V123_WRITE_WAIT 5
 #define TNX_V123_STEP 10
 #define TNX_V123_OWN_IDX_OFF 0xe0ULL
+#define TNX_V125_HEAP_LO 0x100000000ULL
+#define TNX_V125_HEAP_HI 0x300000000ULL
 
 static int g_v123_defer_logs = 0;
 #define TNX_V115_GATE_BYTE_OFF 0x7aULL
@@ -335,7 +337,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_124"
+#define TNX_BUILD_TAG "titanox_125"
 
 #define TNX_RVA_SETPREDICTION 0x00ac3f20ULL
 #define TNX_OBJ_X_OFF 0x30ULL
@@ -1839,10 +1841,12 @@ static void tnx_slot_install_one(int index) {
 
         if (tnx_read_u32(target, &w)) {
             if ((w & 0xFFC003FFu) == 0xD10003FFu) prologue = 1;
-            if ((w & 0xFFC07FFFu) == 0xA9007BFDu) prologue = 1;
-            if ((w & 0xFFC07FFFu) == 0xA9807BFDu) prologue = 1;
+            if ((w & 0xFF4003E0u) == 0xA90003E0u) prologue = 1;
+            if ((w & 0xFF4003E0u) == 0xA80003E0u) prologue = 1;
             if (w == 0xD503237Fu) prologue = 1;
+            if (w == 0xD503245Fu) prologue = 1;
             if (w == 0xD65F03C0u) prologue = 1;
+            if (w == 0x910003FDu) prologue = 1;
             if ((w & 0xFF000000u) == 0x14000000u) prologue = 1;
             if ((w & 0x9F000000u) == 0x10000000u) prologue = 1;
         }
@@ -11833,36 +11837,34 @@ static void tnx_v122_prewin(void) {
     }
 }
 
-static uintptr_t tnx_v122_own(void) {
-    uintptr_t f1 = tnx_v113_entry(TNX_V122_OWN_GETTER_RVA);
-    uintptr_t f2 = tnx_v113_entry(TNX_V122_RESOLVE_SELF_RVA);
-    void *mid = NULL;
-    void *own = NULL;
+static uint64_t g_v125_calls_to_991440 = 0;
 
-    if (!f1 || !f2 || !g_scene_object) return 0;
-
-    mid = ((void *(*)(void *))f1)((void *)g_scene_object);
-
-    if (!mid) return 0;
-
-    own = ((void *(*)(void *))f2)(mid);
-
-    return (uintptr_t)own;
+static int tnx_is_heap(uintptr_t v) {
+    return (v >= TNX_V125_HEAP_LO && v < TNX_V125_HEAP_HI && (v & 0x7) == 0) ? 1 : 0;
 }
 
-static void tnx_v122_bounds(void) {
-    uintptr_t own = tnx_v122_own();
+static void tnx_v125_bounds(uintptr_t own) {
     int32_t bx = 0;
     int32_t by = 0;
 
     if (!own) return;
+    if (!tnx_is_heap(own)) {
+        tnx_logf("v125 bounds skip own=%p notHeap=1 - the element pointer failed the heap and alignment "
+                 "guard, so the two word read is skipped instead of dereferencing it", (void *)own);
+
+        return;
+    }
+
     if (!tnx_read_i32(own + TNX_V122_BOUND_X_OFF, &bx)) return;
     if (!tnx_read_i32(own + TNX_V122_BOUND_Y_OFF, &by)) return;
 
-    tnx_logf("v122 bounds own=%p bx=%d by=%d - the battle update clamps the pushed x to [1, bx-2] and y "
-             "to [1, by-2] before it builds the message, so a payload outside that box is not the input "
-             "the engine would ever send and a no-op push must stay inside it",
-             (void *)own, bx, by);
+    tnx_logf("v125 bounds own=%p bx=%d by=%d calls991440=%llu - the box comes from the walked element "
+             "itself now; the old route called the getter %#llx and then %#llx on whatever it returned, "
+             "and that is the call that crashed with x0=%#llx because x0+%#x is exactly the reported FAR",
+             (void *)own, bx, by, (unsigned long long)g_v125_calls_to_991440,
+             (unsigned long long)TNX_V122_OWN_GETTER_RVA,
+             (unsigned long long)TNX_V122_RESOLVE_SELF_RVA, (unsigned long long)0x100010055ULL,
+             (unsigned)0xf8);
 }
 
 static void tnx_v122_entities2(void) {
@@ -11990,6 +11992,11 @@ static void tnx_v123_hop2dump(void) {
             }
         }
     }
+
+    tnx_logf("v125 hop2 use ptr=%p arr=%p count=%d ownIdxHop1=%d ownGid=%d isHeap=%d caller=%#llx - this "
+             "line runs before anything else reads the fresh list and isHeap gates every later use",
+             container, arr, count, ownIdx, ownGid, tnx_is_heap((uintptr_t)container),
+             (unsigned long long)0xa24278ULL);
 
     tnx_logf("v123 hop2dump container=%p arr=%p count=%d ownIdxHop1=%d ownGid=%d - the fresh hop2 list is "
              "read only, never adopted in this build, and own is looked up by gid and not by pointer",
@@ -12474,7 +12481,7 @@ static void tnx_v113_test(const tnx_v47_obj_t *objects, int usable, int ownIndex
         g_v122_pre_reloads = g_v120_reloads;
         g_v122_pre_frames = g_v48_ticks;
 
-        tnx_v122_bounds();
+        tnx_v125_bounds(objects[ownIndex].object);
 
         g_v121_push_frame = g_v48_ticks;
         g_v121_win_stage = 0;

@@ -189,6 +189,23 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_HEAP_SCAN_BUDGET_MAX (768ull * 1024ull * 1024ull)
 
 #define TNX_OBJ_GLOBALID_OFF 0x8ULL
+#define TNX_V106_GID_FALLBACK_OFF 0x50ULL
+#define TNX_V106_COORD_SOFT 0
+#define TNX_V107_INNER_OFF 0x70ULL
+#define TNX_V108_OWNER_MAX 8
+#define TNX_V109_MAX 16
+#define TNX_V110_WIRE_OWNER 1
+#define TNX_V110_WIRE_MIN_COUNT 6
+#define TNX_V110_HOPCHOSEN_DIRECT 2
+#define TNX_V109_PROXY_VT 0x1009290ULL
+#define TNX_V109_SELFREF_VT 0xf97a28ULL
+#define TNX_V109_COMBAT_VT_A 0xff57b0ULL
+#define TNX_V109_COMBAT_VT_B 0xff5440ULL
+#define TNX_V109_COMBAT_VT_C 0xff5100ULL
+#define TNX_V108_OWNER_LOGS 16
+#define TNX_V107_SCAN_FROM 0x00
+#define TNX_V107_SCAN_TO 0x124
+#define TNX_V107_SCAN_MAX 6
 
 #define TNX_OBJ_TEAM_OFF 0x40ULL
 #define TNX_OBJ_OWNERINDEX_OFF 0x3cULL
@@ -214,7 +231,7 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_105"
+#define TNX_BUILD_TAG "titanox_110"
 
 #define TNX_RVA_SETPREDICTION 0x00ac3f20ULL
 #define TNX_OBJ_X_OFF 0x30ULL
@@ -3557,6 +3574,432 @@ static void tnx_v82_hop_dump(uintptr_t client, uintptr_t inner) {
     }
 }
 
+static int32_t tnx_v106_gid(uintptr_t element, int32_t *offOut);
+
+static uintptr_t g_v108_owner = 0;
+static int g_v109_done = 0;
+static uintptr_t g_v110_owner = 0;
+static int g_v110_wired = 0;
+
+static void tnx_v109_owner_probe(uintptr_t client, uintptr_t inner) {
+    uintptr_t cand[TNX_V109_MAX];
+    int freq[TNX_V109_MAX];
+    int32_t cnt[TNX_V109_MAX];
+    int32_t cap[TNX_V109_MAX];
+    uintptr_t vt0[TNX_V109_MAX];
+    void *elem0p[TNX_V109_MAX];
+    int comb[TNX_V109_MAX];
+    int rank[TNX_V109_MAX];
+    char why[TNX_V109_MAX][64];
+    int nc = 0;
+    int badptr = 0;
+    int best = -1;
+    int i;
+    int j;
+    int k;
+
+    if (g_v109_done) return;
+    if (!g_objhit_count) return;
+
+    g_v109_done = 1;
+
+    for (i = 0; i < g_objhit_count; i++) {
+        uintptr_t owner = g_objhits[i].owner;
+
+        if (!owner) continue;
+
+        if (owner < 0x100000000ULL || owner >= 0x800000000ULL) {
+            badptr++;
+            continue;
+        }
+
+        for (j = 0; j < nc; j++) {
+            if (cand[j] == owner) break;
+        }
+
+        if (j < nc) {
+            freq[j]++;
+            continue;
+        }
+
+        if (nc >= TNX_V109_MAX) continue;
+
+        cand[nc] = owner;
+        freq[nc] = 1;
+        cnt[nc] = 0;
+        cap[nc] = 0;
+        vt0[nc] = 0;
+        comb[nc] = 0;
+        elem0p[nc] = NULL;
+        why[nc][0] = 0;
+        nc++;
+    }
+
+    for (j = 0; j < nc; j++) {
+        uintptr_t array = 0;
+        int32_t count = 0;
+        int32_t capacity = 0;
+        void *elem0 = NULL;
+        void *vt = NULL;
+        int combat = 0;
+        int e;
+        int ok = tnx_v82_container_header(cand[j], &array, &count, &capacity, why[j], sizeof(why[j]));
+
+        cnt[j] = count;
+        cap[j] = capacity;
+
+        if (ok) {
+            for (e = 0; e < 3; e++) {
+                void *ep = NULL;
+                void *vtp = NULL;
+
+                if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)e * 8ULL, &ep) || !ep) continue;
+                if (!tnx_read_ptr((uintptr_t)ep, &vtp) || !vtp) continue;
+
+                if (e == 0) {
+                    elem0 = ep;
+                    vt = vtp;
+                    vt0[j] = (uintptr_t)vtp - g_base;
+                }
+
+                if ((uintptr_t)vtp - g_base == TNX_V109_COMBAT_VT_A ||
+                    (uintptr_t)vtp - g_base == TNX_V109_COMBAT_VT_B ||
+                    (uintptr_t)vtp - g_base == TNX_V109_COMBAT_VT_C) combat = 1;
+            }
+
+            if (vt0[j] == TNX_V109_PROXY_VT) {
+                ok = 0;
+                snprintf(why[j], sizeof(why[j]), "proxy-class-veto");
+            } else if (vt0[j] == TNX_V109_SELFREF_VT) {
+                ok = 0;
+                snprintf(why[j], sizeof(why[j]), "selfref-class-veto");
+            } else {
+                snprintf(why[j], sizeof(why[j]), "ok combat=%d", combat);
+            }
+        }
+
+        comb[j] = combat;
+        elem0p[j] = elem0;
+
+        if (ok) {
+            if (best < 0) best = j;
+            else if (freq[j] > freq[best]) best = j;
+            else if (freq[j] == freq[best] && combat > 0) best = j;
+        }
+    }
+
+    for (j = 0; j < nc; j++) rank[j] = j;
+
+    for (j = 0; j + 1 < nc; j++) {
+        for (k = 0; k + 1 < nc - j; k++) {
+            if (freq[rank[k]] < freq[rank[k + 1]]) {
+                int t = rank[k];
+
+                rank[k] = rank[k + 1];
+                rank[k + 1] = t;
+            }
+        }
+    }
+
+    for (j = 0; j < nc && j < 4; j++) {
+        uintptr_t owner = cand[rank[j]];
+        int chain = (owner == client || owner == inner || owner == (uintptr_t)g_players_object) ? 1 : 0;
+
+        tnx_logf("v108 ownerprobe %s: owner=%p freq=%d/%d header=%s count=%d cap=%d elem0vt=%#llx "
+                 "chain-match=%d found-via=objhit badptr=%d - the owner is chosen by how often the live "
+                 "battle objects name it and not by which candidate passed the header first",
+                 (j == 0) ? "top" : "runner-up", (void *)owner, freq[rank[j]], g_objhit_count,
+                 why[rank[j]], cnt[rank[j]], cap[rank[j]], (unsigned long long)vt0[rank[j]], chain,
+                 badptr);
+    }
+
+    if (best >= 0) {
+        const char *wireWhy = (const char *)"not-wired";
+        uintptr_t wireArray = 0;
+        int32_t wireCount = 0;
+        int wire = 0;
+
+        g_v108_owner = cand[best];
+
+        if (!TNX_V110_WIRE_OWNER) wireWhy = (const char *)"flag-off";
+        else if (!comb[best]) wireWhy = (const char *)"not-combat-class";
+        else if (!elem0p[best]) wireWhy = (const char *)"elem0-null";
+        else if (cnt[best] < TNX_V110_WIRE_MIN_COUNT) wireWhy = (const char *)"count-below-floor";
+        else if (!tnx_read_ptr(cand[best] + TNX_MGR_ARRAY_OFF, &wireArray) || !wireArray) wireWhy = (const char *)"array-null";
+        else if (!tnx_read_i32(cand[best] + TNX_MGR_COUNT_OFF, &wireCount) || wireCount <= 0) wireWhy = (const char *)"count-unreadable";
+        else wire = 1;
+
+        if (wire) {
+            g_v110_owner = cand[best];
+
+            tnx_logf("v109 owner wired into walk owner=%p count=%d cap=%d array=%p elem0=%p elem0vt=%#llx - the "
+                     "owner that ownerprobe picked is written into the walk globals in this same run and the hop "
+                     "selection is marked %d so the chain cannot overwrite it",
+                     (void *)cand[best], cnt[best], cap[best], (void *)wireArray, elem0p[best],
+                     (unsigned long long)vt0[best], TNX_V110_HOPCHOSEN_DIRECT);
+        } else {
+            tnx_logf("v109 owner NOT wired reason=%s owner=%p comb=%d count=%d elem0=%p elem0vt=%#llx - the walk "
+                     "stays on the hop path for this run and the ownerprobe table above is what to read",
+                     wireWhy, (void *)cand[best], comb[best], cnt[best], elem0p[best],
+                     (unsigned long long)vt0[best]);
+        }
+    }
+}
+
+static int g_v107_cand_logs = 0;
+static int g_v107_scan_logs = 0;
+static int g_v107_deref_logs = 0;
+
+static void tnx_v107_deref_dump(uintptr_t element) {
+    void *inner = NULL;
+    int i;
+
+    if (!element) return;
+    if (g_v107_deref_logs >= 4) return;
+
+    if (!tnx_read_ptr(element + TNX_V107_INNER_OFF, &inner) || !inner) {
+        tnx_logf("v107 deref elem=%p +%#llx is null or unreadable - the own element keeps nothing behind "
+                 "that pointer", (void *)element, (unsigned long long)TNX_V107_INNER_OFF);
+
+        return;
+    }
+
+    g_v107_deref_logs++;
+
+    tnx_logf("v107 deref elem=%p inner=+%#llx->%p - the own element matches its neighbour byte for byte "
+             "apart from the id at +%#llx and the dead byte, so a real position can only live behind this "
+             "pointer", (void *)element, (unsigned long long)TNX_V107_INNER_OFF, inner,
+             (unsigned long long)TNX_V106_GID_FALLBACK_OFF);
+
+    for (i = 0; i < 16; i++) {
+        uint64_t q = tnx_v68_word((uintptr_t)inner + (uintptr_t)i * 8ULL);
+        uint32_t lo = (uint32_t)(q & 0xffffffffULL);
+        uint32_t hi = (uint32_t)(q >> 32);
+        float loF = 0.0f;
+        float hiF = 0.0f;
+
+        memcpy(&loF, &lo, sizeof(loF));
+        memcpy(&hiF, &hi, sizeof(hiF));
+
+        tnx_logf("v107 deref +%#04x = %#018llx lo=%d hi=%d loF=%.3f hiF=%.3f", i * 8,
+                 (unsigned long long)q, (int32_t)lo, (int32_t)hi, loF, hiF);
+    }
+}
+
+static void tnx_v107_cand_probe(const char *tag, uintptr_t container) {
+    void *array = NULL;
+    int32_t count = 0;
+    int32_t own = -1;
+    int32_t ownTeam = -1;
+    uintptr_t vt0 = 0;
+    uintptr_t vt1 = 0;
+    int samples = 0;
+    int gidOk = 0;
+    int teamOk = 0;
+    int coordOk = 0;
+    int i;
+
+    if (!container) return;
+    if (g_v107_cand_logs >= 24) return;
+
+    if (!tnx_read_ptr(container + TNX_MGR_ARRAY_OFF, &array) || !array) {
+        g_v107_cand_logs++;
+
+        tnx_logf("v107 cand tag=%-8s at=%p array=+%#llx is null - the candidate carries no list at all",
+                 tag, (void *)container, (unsigned long long)TNX_MGR_ARRAY_OFF);
+
+        return;
+    }
+
+    tnx_read_i32(container + TNX_MGR_COUNT_OFF, &count);
+    tnx_read_i32(container + TNX_V102_OWNIDX_OFF, &own);
+    tnx_read_i32(container + TNX_V102_OWNTEAM_OFF, &ownTeam);
+
+    for (i = 0; i < count && i < 6; i++) {
+        void *element = NULL;
+        void *vtable = NULL;
+        int32_t gid = 0;
+        int32_t team = 0;
+        int32_t x = 0;
+        int32_t y = 0;
+
+        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * 8ULL, &element) || !element) continue;
+
+        samples++;
+
+        if (tnx_read_ptr((uintptr_t)element, &vtable) && vtable) {
+            if (i == 0) vt0 = (uintptr_t)vtable - g_base;
+            if (i == 1) vt1 = (uintptr_t)vtable - g_base;
+        }
+
+        gid = tnx_v106_gid((uintptr_t)element, NULL);
+        tnx_read_i32((uintptr_t)element + TNX_V91_TEAM_OFF, &team);
+        tnx_read_i32((uintptr_t)element + TNX_OBJ_X_OFF, &x);
+        tnx_read_i32((uintptr_t)element + TNX_OBJ_Y_OFF, &y);
+
+        if (gid) gidOk++;
+        if (team >= 0 && team <= 7) teamOk++;
+        if (x > -TNX_V47_COORD_ABS_MAX && x < TNX_V47_COORD_ABS_MAX &&
+            y > -TNX_V47_COORD_ABS_MAX && y < TNX_V47_COORD_ABS_MAX) coordOk++;
+    }
+
+    g_v107_cand_logs++;
+
+    tnx_logf("v107 cand tag=%-8s at=%p array=%p count=%d own=%d ownTeam=%d samples=%d gidOk=%d teamOk=%d "
+             "coordOk=%d vt0=%#llx vt1=%#llx ownSlot=%s - every candidate is reported and not only the "
+             "winner, so a list that carries real coordinates and real teams can be told apart from the "
+             "slot table that carries only the own index",
+             tag, (void *)container, array, count, own, ownTeam, samples, gidOk, teamOk, coordOk,
+             (unsigned long long)vt0, (unsigned long long)vt1,
+             (own >= 0 && own < count) ? "valid" : "invalid");
+}
+
+static void tnx_v107_coord_scan(uintptr_t container) {
+    void *array = NULL;
+    void *e0 = NULL;
+    void *e1 = NULL;
+    int32_t count = 0;
+    char buf[256];
+    size_t used = 0;
+    int found = 0;
+    int gidPairOnly = 1;
+    int off;
+
+    if (!container) return;
+    if (g_v107_scan_logs >= 8) return;
+    if (!tnx_read_ptr(container + TNX_MGR_ARRAY_OFF, &array) || !array) return;
+    if (!tnx_read_i32(container + TNX_MGR_COUNT_OFF, &count) || count < 2) return;
+    if (!tnx_read_ptr((uintptr_t)array, &e0) || !e0) return;
+    if (!tnx_read_ptr((uintptr_t)array + 8ULL, &e1) || !e1) return;
+
+    buf[0] = 0;
+
+    for (off = TNX_V107_SCAN_FROM; off + 4 <= TNX_V107_SCAN_TO; off += 4) {
+        int32_t a = 0;
+        int32_t b = 0;
+
+        if (!tnx_read_i32((uintptr_t)e0 + (uintptr_t)off, &a)) continue;
+        if (!tnx_read_i32((uintptr_t)e1 + (uintptr_t)off, &b)) continue;
+        if (a == b) continue;
+        if (a < 0 || a > 10000 || b < 0 || b > 10000) continue;
+        if (found >= TNX_V107_SCAN_MAX) break;
+
+        if (off != (int)TNX_OBJ_GLOBALID_OFF && off != (int)TNX_V106_GID_FALLBACK_OFF) gidPairOnly = 0;
+
+        found++;
+        used += (size_t)snprintf(buf + used, sizeof(buf) - used, "(%#x,%d,%d)", off, a, b);
+        if (used >= sizeof(buf) - 48) break;
+    }
+
+    g_v107_scan_logs++;
+
+    tnx_logf("v107 coord scan container=%p elem0=%p elem1=%p pairs=%d gidPairOnly=%d [%s] - a coordinate pair "
+             "has to differ between two elements and sit inside the map range, and a hit that only lands on "
+             "the id slots at +%#llx/+%#llx proves nothing because those are ids, not positions",
+             (void *)container, e0, e1, found, gidPairOnly, buf,
+             (unsigned long long)TNX_OBJ_GLOBALID_OFF, (unsigned long long)TNX_V106_GID_FALLBACK_OFF);
+}
+
+static int g_v106_gid_logs = 0;
+static int g_v106_coord_logs = 0;
+static int g_v106_dump_done = 0;
+
+static int32_t tnx_v106_gid(uintptr_t element, int32_t *offOut) {
+    int32_t gid = 0;
+    int32_t alt = 0;
+
+    if (offOut) *offOut = 0;
+    if (!element) return 0;
+
+    if (tnx_read_i32(element + TNX_OBJ_GLOBALID_OFF, &gid) && gid) {
+        if (offOut) *offOut = (int32_t)TNX_OBJ_GLOBALID_OFF;
+
+        return gid;
+    }
+
+    if (tnx_read_i32(element + TNX_V106_GID_FALLBACK_OFF, &alt) && alt) {
+        if (offOut) *offOut = (int32_t)TNX_V106_GID_FALLBACK_OFF;
+
+        if (g_v106_gid_logs < 6) {
+            void *vtable = NULL;
+            uintptr_t vtRva = 0;
+
+            g_v106_gid_logs++;
+
+            if (tnx_read_ptr(element, &vtable) && vtable) vtRva = (uintptr_t)vtable - g_base;
+
+            tnx_logf("v106 gid fallback element=%p vtRva=%#llx +%#llx=0 +%#llx=%d - the walk used to "
+                     "reject this row as rejGidZero by reading the wrong field, so every usable count "
+                     "came out short",
+                     (void *)element, (unsigned long long)vtRva,
+                     (unsigned long long)TNX_OBJ_GLOBALID_OFF,
+                     (unsigned long long)TNX_V106_GID_FALLBACK_OFF, alt);
+        }
+
+        return alt;
+    }
+
+    return 0;
+}
+
+static void tnx_v106_own_dump(uintptr_t element) {
+    void *vtable = NULL;
+    uintptr_t vtRva = 0;
+    int i;
+
+    if (!element || g_v106_dump_done) return;
+
+    g_v106_dump_done = 1;
+
+    if (tnx_read_ptr(element, &vtable) && vtable) vtRva = (uintptr_t)vtable - g_base;
+
+    tnx_logf("v106 own dump elem=%p vtRva=%#llx - raw qwords of the own element, because this class "
+             "keeps its id at +%#llx and not at +%#llx, so the walk can no longer assume that the "
+             "coordinate pair sits at +%#llx/+%#llx either; a pair of small integers in the same "
+             "neighbourhood is the pair to use",
+             (void *)element, (unsigned long long)vtRva,
+             (unsigned long long)TNX_V106_GID_FALLBACK_OFF, (unsigned long long)TNX_OBJ_GLOBALID_OFF,
+             (unsigned long long)TNX_OBJ_X_OFF, (unsigned long long)TNX_OBJ_Y_OFF);
+
+    for (i = 0; i < 13; i++) {
+        uint64_t q = tnx_v68_word(element + (uintptr_t)i * 8ULL);
+        uint32_t lo = (uint32_t)(q & 0xffffffffULL);
+        uint32_t hi = (uint32_t)(q >> 32);
+        float loF = 0.0f;
+        float hiF = 0.0f;
+
+        memcpy(&loF, &lo, sizeof(loF));
+        memcpy(&hiF, &hi, sizeof(hiF));
+
+        tnx_logf("v106 own dump +%#04x = %#018llx lo=%d hi=%d loF=%.3f hiF=%.3f", i * 8,
+                 (unsigned long long)q, (int32_t)lo, (int32_t)hi, loF, hiF);
+    }
+
+    tnx_v107_deref_dump(element);
+}
+
+static void tnx_v106_cand_dump(uintptr_t c0, uintptr_t c1, int s0, int s1, int chosen) {
+    int32_t n0 = 0;
+    int32_t o0 = -1;
+    int32_t n1 = 0;
+    int32_t o1 = -1;
+
+    if (c0) {
+        tnx_read_i32(c0 + TNX_MGR_COUNT_OFF, &n0);
+        tnx_read_i32(c0 + TNX_V102_OWNIDX_OFF, &o0);
+    }
+
+    if (c1) {
+        tnx_read_i32(c1 + TNX_MGR_COUNT_OFF, &n1);
+        tnx_read_i32(c1 + TNX_V102_OWNIDX_OFF, &o1);
+    }
+
+    tnx_logf("v106 hop candidates chosen=%d score0=%d score1=%d count0=%d own0=%d count1=%d own1=%d - "
+             "both hops are printed while the chosen list is short, because a container with a larger "
+             "count and a valid own slot is the one the hop has to prefer",
+             chosen, s0, s1, n0, o0, n1, o1);
+}
+
 static int g_v105_score_logs = 0;
 static int g_v105_last_choice = -2;
 static int g_v105_hop_logs = 0;
@@ -3595,9 +4038,8 @@ static int tnx_v105_container_score(uintptr_t container) {
         if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * 8ULL, &element) || !element) continue;
 
         samples++;
-        gid = 0;
         team = 0;
-        tnx_read_i32((uintptr_t)element + TNX_OBJ_GLOBALID_OFF, &gid);
+        gid = tnx_v106_gid((uintptr_t)element, NULL);
         tnx_read_i32((uintptr_t)element + TNX_V91_TEAM_OFF, &team);
         if (gid) gidOk++;
         if (team >= 0 && team <= 7) teamOk++;
@@ -3605,6 +4047,8 @@ static int tnx_v105_container_score(uintptr_t container) {
 
     if (gidOk) score += 3;
     if (teamOk) score += 1;
+    if (count >= 3) score += 2;
+    if (count >= 6) score += 2;
 
     if (g_v105_score_logs < 12) {
         g_v105_score_logs++;
@@ -3652,8 +4096,9 @@ static int tnx_v105_own_verdict(uintptr_t element, char *why, size_t whyLen) {
         return 0;
     }
 
-    if (!tnx_read_i32(element + TNX_OBJ_GLOBALID_OFF, &gid) ||
-        !tnx_read_i32(element + tnx_v57_coord_x_off(), &x) ||
+    gid = tnx_v106_gid(element, NULL);
+
+    if (!tnx_read_i32(element + tnx_v57_coord_x_off(), &x) ||
         !tnx_read_i32(element + tnx_v57_coord_y_off(), &y) ||
         !tnx_read_i32(element + TNX_OBJ_TEAM_OFF, &teamOld) ||
         !tnx_read_i32(element + TNX_V91_TEAM_OFF, &teamNew) ||
@@ -3796,8 +4241,16 @@ static int tnx_v80_state_tick(void) {
     } else if (g_v105_hop_logs < 6) {
         g_v105_hop_logs++;
 
-        tnx_logf("v105 hop-select steady chosen=%d score0=%d score1=%d - container=%p count=%d",
-                 chosen, score[0], score[1], (void *)g_players_object, g_players_count);
+        tnx_v106_cand_dump((uintptr_t)client, (uintptr_t)inner, score[0], score[1], chosen);
+    }
+
+    if (g_v103_tick < 4 || (g_v103_tick % 90) == 0) {
+        tnx_v109_owner_probe((uintptr_t)client, (uintptr_t)inner);
+        tnx_v107_cand_probe((const char *)"client", (uintptr_t)client);
+        tnx_v107_cand_probe((const char *)"inner", (uintptr_t)inner);
+        tnx_v107_cand_probe((const char *)"owner", g_v108_owner);
+        tnx_v107_coord_scan((uintptr_t)g_players_object);
+        tnx_v107_coord_scan(g_v108_owner);
     }
 
     if (scene != g_v82_hop_scene) {
@@ -3830,6 +4283,31 @@ static int tnx_v80_state_tick(void) {
             tnx_v85_ptr_field_dump("client", client, 0x58ULL, TNX_V85_FIELD_QWORDS);
             tnx_v85_ptr_field_dump("client", client, 0x68ULL, TNX_V85_FIELD_QWORDS);
             tnx_v85_ptr_field_dump("client", client, 0x80ULL, TNX_V85_FIELD_QWORDS);
+        }
+    }
+
+    if (TNX_V110_WIRE_OWNER && g_v110_owner) {
+        void *directArray = NULL;
+        int32_t directCount = 0;
+
+        if (tnx_read_ptr(g_v110_owner + TNX_MGR_ARRAY_OFF, &directArray) && directArray &&
+            tnx_read_i32(g_v110_owner + TNX_MGR_COUNT_OFF, &directCount) && directCount > 0) {
+            g_players_object = g_v110_owner;
+            g_players_array = (uintptr_t)directArray;
+            g_players_count = directCount;
+            g_v82_hop_chosen = TNX_V110_HOPCHOSEN_DIRECT;
+
+            if (!g_v110_wired) {
+                g_v110_wired = 1;
+
+                tnx_logf("v109 owner wired route=direct owner=%p array=%p count=%d chosen=%d - the walk reads the "
+                         "owner list from this tick on; chosen stays above one because a negative value already "
+                         "means no container elsewhere in the engine path",
+                         (void *)g_v110_owner, (void *)directArray, directCount,
+                         TNX_V110_HOPCHOSEN_DIRECT);
+            }
+
+            return 0;
         }
     }
 
@@ -8298,8 +8776,9 @@ static int tnx_v48_collect(uintptr_t manager, tnx_v47_obj_t *out, int capacity, 
             continue;
         }
 
-        if (!tnx_read_i32(entry.object + TNX_OBJ_GLOBALID_OFF, &entry.gid) ||
-            !tnx_read_i32(entry.object + tnx_v57_coord_x_off(), &entry.x) ||
+        entry.gid = tnx_v106_gid(entry.object, NULL);
+
+        if (!tnx_read_i32(entry.object + tnx_v57_coord_x_off(), &entry.x) ||
             !tnx_read_i32(entry.object + tnx_v57_coord_y_off(), &entry.y) ||
             !tnx_read_i32(entry.object + TNX_OBJ_OWNERINDEX_OFF, &entry.ownerIndex) ||
             !tnx_read_i32(entry.object + TNX_OBJ_TEAM_OFF, &entry.teamOld) ||
@@ -8321,10 +8800,30 @@ static int tnx_v48_collect(uintptr_t manager, tnx_v47_obj_t *out, int capacity, 
 
         if (entry.x <= -TNX_V47_COORD_ABS_MAX || entry.x >= TNX_V47_COORD_ABS_MAX ||
             entry.y <= -TNX_V47_COORD_ABS_MAX || entry.y >= TNX_V47_COORD_ABS_MAX) {
-            g_v50_reject.rejOutOfRange++;
-            bad++;
+            if (g_v106_coord_logs < 6) {
+                void *tvtable = NULL;
+                uintptr_t tvtRva = 0;
 
-            continue;
+                g_v106_coord_logs++;
+
+                if (tnx_read_ptr(entry.object, &tvtable) && tvtable) tvtRva = (uintptr_t)tvtable - g_base;
+
+                tnx_logf("v106 coord suspect elem=%p vtRva=%#llx +%#llx=%d +%#llx=%d gid=%d - this class "
+                         "carries neither its id nor its coordinates where the walk looks for them, so "
+                         "the row is dropped as rejOutOfRange and usable stays below two; turn "
+                         "TNX_V106_COORD_SOFT on to let it through and let the per entry coord gate "
+                         "downstream decide",
+                         (void *)entry.object, (unsigned long long)tvtRva,
+                         (unsigned long long)TNX_OBJ_X_OFF, entry.x,
+                         (unsigned long long)TNX_OBJ_Y_OFF, entry.y, entry.gid);
+            }
+
+            if (!TNX_V106_COORD_SOFT) {
+                g_v50_reject.rejOutOfRange++;
+                bad++;
+
+                continue;
+            }
         }
 
         if (!((entry.teamOld >= 0 && entry.teamOld <= TNX_OBJ_TEAM_MAX) ||
@@ -10051,6 +10550,9 @@ static void tnx_v102_own_probe(void) {
         int32_t team = -1;
         int32_t eid = 0;
         int32_t eteam = 0;
+        int32_t elemGid = 0;
+        int32_t gidOff = 0;
+        const char *sigField = (const char *)"none";
         char why[128];
         int sig = 0;
         int valid = 0;
@@ -10077,8 +10579,21 @@ static void tnx_v102_own_probe(void) {
             if (tnx_read_ptr((uintptr_t)array + (uintptr_t)idx * 8ULL, &elem) && elem) {
                 if (tnx_read_i32((uintptr_t)elem + TNX_V102_ELEM_ID_OFF, &eid) &&
                     tnx_read_i32((uintptr_t)elem + TNX_V102_ELEM_TEAM_OFF, &eteam)) {
-                    sig = (eid == idx) ? 1 : 0;
-                    if (!sig && team >= 0 && team <= TNX_OBJ_TEAM_MAX && eteam == team) sig = 2;
+                    elemGid = tnx_v106_gid((uintptr_t)elem, &gidOff);
+
+                    if (eid == idx && eid != 0) {
+                        sig = 1;
+                        sigField = (const char *)"idAt48";
+                    } else if (team >= 0 && team <= TNX_OBJ_TEAM_MAX && eteam == team) {
+                        sig = 2;
+                        sigField = (const char *)"teamAt4c";
+                    } else if (idx == 0 && elemGid != 0) {
+                        sig = 3;
+                        sigField = (const char *)"slotZeroWithGid";
+                    } else {
+                        sig = 0;
+                        sigField = (const char *)"none";
+                    }
                 }
             }
         }
@@ -10089,13 +10604,15 @@ static void tnx_v102_own_probe(void) {
 
         if (g_v102_own_logs < 10) {
             g_v102_own_logs++;
-            tnx_logf("v102 own base=%-9s at=%p array=+%#llx->%p globalArray=%p count=+%#llx->%d "
-                     "idx=+%#llx->%d ownTeam=+%#llx->%d elem=%p elemId=%d elemTeam=%d sig=%d "
-                     "collector=%s",
-                     cname[b], (void *)cand[b], (unsigned long long)TNX_V102_ARRAY_OFF,
-                     (void *)array, (void *)g_players_array, (unsigned long long)TNX_V102_COUNT_OFF,
-                     count, (unsigned long long)TNX_V102_OWNIDX_OFF, idx,
-                     (unsigned long long)TNX_V102_OWNTEAM_OFF, team, elem, eid, eteam, sig, why);
+            tnx_logf("v102 own base=%-9s at=%p count=+%#llx->%d idx=+%#llx->%d ownTeam=+%#llx->%d "
+                     "elem=%p elemId=+%#llx->%d elemTeam=+%#llx->%d elemGid=+%#llx->%d sig=%d "
+                     "sigField=%s collector=%s",
+                     cname[b], (void *)cand[b], (unsigned long long)TNX_V102_COUNT_OFF, count,
+                     (unsigned long long)TNX_V102_OWNIDX_OFF, idx,
+                     (unsigned long long)TNX_V102_OWNTEAM_OFF, team, elem,
+                     (unsigned long long)TNX_V102_ELEM_ID_OFF, eid,
+                     (unsigned long long)TNX_V102_ELEM_TEAM_OFF, eteam,
+                     (unsigned long long)(uintptr_t)gidOff, elemGid, sig, sigField, why);
         }
 
         if (sig && valid && !taken) {
@@ -10105,6 +10622,8 @@ static void tnx_v102_own_probe(void) {
             g_v102_own_team = team;
             g_v102_own_base = b;
             g_v102_own_from = (b == 0) ? "container+e0" : "scene+e0";
+
+            tnx_v106_own_dump(g_v102_own_ptr);
         }
     }
 
@@ -10129,8 +10648,9 @@ static int tnx_v102_inject_own(tnx_v47_obj_t *objects, int usable, int capacity)
     memset(&entry, 0, sizeof(entry));
     entry.object = g_v102_own_ptr;
 
-    if (!tnx_read_i32(entry.object + TNX_OBJ_GLOBALID_OFF, &entry.gid) ||
-        !tnx_read_i32(entry.object + tnx_v57_coord_x_off(), &entry.x) ||
+    entry.gid = tnx_v106_gid(entry.object, NULL);
+
+    if (!tnx_read_i32(entry.object + tnx_v57_coord_x_off(), &entry.x) ||
         !tnx_read_i32(entry.object + tnx_v57_coord_y_off(), &entry.y) ||
         !tnx_read_i32(entry.object + TNX_OBJ_OWNERINDEX_OFF, &entry.ownerIndex) ||
         !tnx_read_i32(entry.object + TNX_OBJ_TEAM_OFF, &entry.teamOld) ||
@@ -10637,6 +11157,12 @@ static void tnx_v103_state_note(int state) {
         g_v103_attempt++;
 
         g_v105_start_logged = 0;
+        g_v106_dump_done = 0;
+        g_v106_coord_logs = 0;
+        g_v109_done = 0;
+        g_v108_owner = 0;
+        g_v110_owner = 0;
+        g_v110_wired = 0;
     }
 
     g_v103_prev_state = state;

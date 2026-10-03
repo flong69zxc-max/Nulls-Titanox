@@ -207,6 +207,29 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_V107_SCAN_TO 0x124
 #define TNX_V107_SCAN_MAX 6
 
+#define TNX_V112_FLAG_OFF 0xacULL
+#define TNX_V112_INPUT_X_OFF 0x10cULL
+#define TNX_V112_INPUT_Y_OFF 0x110ULL
+#define TNX_V112_INPUT_K_OFF 0x114ULL
+#define TNX_V112_INNER_OFF 0x70ULL
+#define TNX_V112_ELEM40_OFF 0x40ULL
+#define TNX_V112_POS_X_OFF 0x10ULL
+#define TNX_V112_POS_Y_OFF 0x1cULL
+#define TNX_V112_POS2_X_OFF 0x20ULL
+#define TNX_V112_POS2_Y_OFF 0x24ULL
+#define TNX_V112_GETX_SLOT 0x88ULL
+#define TNX_V112_GETY_SLOT 0x90ULL
+#define TNX_V112_DEREF_QWORDS 64
+#define TNX_V112_FLAG_MAX_TICKS 6
+#define TNX_V112_POS_EVERY 30
+#define TNX_V112_INDEX_OFF 0x48ULL
+#define TNX_V112_TEAM_OFF2 0x4cULL
+#define TNX_V112_DEAD_OFF 0xd0ULL
+#define TNX_V112_GID_OFF 0x50ULL
+#define TNX_V112_ELEM_VT_RVA 0xf9e248ULL
+#define TNX_V112_SETPRED4_RVA 0xac3a58ULL
+#define TNX_V112_READER_RVA 0xac3424ULL
+
 #define TNX_OBJ_TEAM_OFF 0x40ULL
 #define TNX_OBJ_OWNERINDEX_OFF 0x3cULL
 #define TNX_OBJ_DEADFLAG_OFF 0xd0ULL
@@ -231,7 +254,7 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_111"
+#define TNX_BUILD_TAG "titanox_112"
 
 #define TNX_RVA_SETPREDICTION 0x00ac3f20ULL
 #define TNX_OBJ_X_OFF 0x30ULL
@@ -285,6 +308,7 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_V99_SCAN_BASES 3
 
 static void tnx_v103_state_note(int state);
+static void tnx_v112_deref_dump(uintptr_t element);
 
 static uintptr_t g_v103_sp4 = 0;
 static uintptr_t g_v103_sp2 = 0;
@@ -3754,28 +3778,74 @@ static int g_v107_cand_logs = 0;
 static int g_v107_scan_logs = 0;
 static int g_v107_deref_logs = 0;
 
-static void tnx_v107_deref_dump(uintptr_t element) {
+static void tnx_v112_deref_dump(uintptr_t element) {
     void *inner = NULL;
+    void *vt = NULL;
+    uintptr_t vtRva = 0;
+    uint64_t raw40 = 0;
+    float fx = 0.0f;
+    float fy = 0.0f;
+    float f2x = 0.0f;
+    float f2y = 0.0f;
+    float gx = 0.0f;
+    float gy = 0.0f;
+    int gxOk = 0;
+    int gyOk = 0;
     int i;
 
     if (!element) return;
     if (g_v107_deref_logs >= 4) return;
 
-    if (!tnx_read_ptr(element + TNX_V107_INNER_OFF, &inner) || !inner) {
-        tnx_logf("v107 deref elem=%p +%#llx is null or unreadable - the own element keeps nothing behind "
-                 "that pointer", (void *)element, (unsigned long long)TNX_V107_INNER_OFF);
+    g_v107_deref_logs++;
+
+    if (tnx_read_ptr(element, &vt) && vt) vtRva = (uintptr_t)vt - g_base;
+
+    tnx_read_f32(element + TNX_V112_POS_X_OFF, &fx);
+    tnx_read_f32(element + TNX_V112_POS_Y_OFF, &fy);
+    tnx_read_f32(element + TNX_V112_POS2_X_OFF, &f2x);
+    tnx_read_f32(element + TNX_V112_POS2_Y_OFF, &f2y);
+
+    if (vtRva == TNX_V112_ELEM_VT_RVA) {
+        void *fn = NULL;
+
+        if (tnx_read_ptr((uintptr_t)vt + TNX_V112_GETX_SLOT, &fn) && fn) {
+            gx = ((float (*)(void *))fn)((void *)element);
+            gxOk = 1;
+        }
+
+        fn = NULL;
+
+        if (tnx_read_ptr((uintptr_t)vt + TNX_V112_GETY_SLOT, &fn) && fn) {
+            gy = ((float (*)(void *))fn)((void *)element);
+            gyOk = 1;
+        }
+    }
+
+    raw40 = tnx_v68_word(element + (uintptr_t)TNX_V112_ELEM40_OFF);
+
+    tnx_logf("v112 elem pos elem=%p vtRva=%#llx f10=%.4f f1c=%.4f f20=%.4f f24=%.4f getX=%.4f getY=%.4f "
+             "getXOk=%d getYOk=%d q40=%#018llx - the class table slots at +%#llx and +%#llx are ldr s0 "
+             "from +%#llx and +%#llx, so this class keeps its position as floats and the int pair the "
+             "walk reads at +%#llx/+%#llx is zero by design and never was the coordinate",
+             (void *)element, (unsigned long long)vtRva, fx, fy, f2x, f2y, gx, gy, gxOk, gyOk,
+             (unsigned long long)raw40, (unsigned long long)TNX_V112_GETX_SLOT,
+             (unsigned long long)TNX_V112_GETY_SLOT, (unsigned long long)TNX_V112_POS_X_OFF,
+             (unsigned long long)TNX_V112_POS_Y_OFF, (unsigned long long)TNX_OBJ_X_OFF,
+             (unsigned long long)TNX_OBJ_Y_OFF);
+
+    if (!tnx_read_ptr(element + TNX_V112_INNER_OFF, &inner) || !inner) {
+        tnx_logf("v112 deref elem=%p +%#llx is null or unreadable - the own element keeps nothing behind "
+                 "that pointer", (void *)element, (unsigned long long)TNX_V112_INNER_OFF);
 
         return;
     }
 
-    g_v107_deref_logs++;
+    tnx_logf("v112 deref elem=%p inner=+%#llx->%p qwords=%d - the dump is widened from sixteen words to "
+             "sixty four because a float pair past the first sixteen is what the earlier run could not "
+             "see", (void *)element, (unsigned long long)TNX_V112_INNER_OFF, inner,
+             TNX_V112_DEREF_QWORDS);
 
-    tnx_logf("v107 deref elem=%p inner=+%#llx->%p - the own element matches its neighbour byte for byte "
-             "apart from the id at +%#llx and the dead byte, so a real position can only live behind this "
-             "pointer", (void *)element, (unsigned long long)TNX_V107_INNER_OFF, inner,
-             (unsigned long long)TNX_V106_GID_FALLBACK_OFF);
-
-    for (i = 0; i < 16; i++) {
+    for (i = 0; i < TNX_V112_DEREF_QWORDS; i++) {
         uint64_t q = tnx_v68_word((uintptr_t)inner + (uintptr_t)i * 8ULL);
         uint32_t lo = (uint32_t)(q & 0xffffffffULL);
         uint32_t hi = (uint32_t)(q >> 32);
@@ -3785,7 +3855,7 @@ static void tnx_v107_deref_dump(uintptr_t element) {
         memcpy(&loF, &lo, sizeof(loF));
         memcpy(&hiF, &hi, sizeof(hiF));
 
-        tnx_logf("v107 deref +%#04x = %#018llx lo=%d hi=%d loF=%.3f hiF=%.3f", i * 8,
+        tnx_logf("v112 deref +%#04x = %#018llx lo=%d hi=%d loF=%.3f hiF=%.3f", i * 8,
                  (unsigned long long)q, (int32_t)lo, (int32_t)hi, loF, hiF);
     }
 }
@@ -3888,7 +3958,10 @@ static void tnx_v107_coord_scan(uintptr_t container) {
         if (a < 0 || a > 10000 || b < 0 || b > 10000) continue;
         if (found >= TNX_V107_SCAN_MAX) break;
 
-        if (off != (int)TNX_OBJ_GLOBALID_OFF && off != (int)TNX_V106_GID_FALLBACK_OFF) gidPairOnly = 0;
+        if (off != (int)TNX_OBJ_GLOBALID_OFF && off != (int)TNX_V106_GID_FALLBACK_OFF &&
+            off != (int)TNX_V112_INDEX_OFF && off != (int)TNX_V112_TEAM_OFF2 &&
+            off != (int)TNX_V112_DEAD_OFF && off != (int)TNX_V102_OWNIDX_OFF &&
+            off != (int)TNX_V102_OWNTEAM_OFF) gidPairOnly = 0;
 
         found++;
         used += (size_t)snprintf(buf + used, sizeof(buf) - used, "(%#x,%d,%d)", off, a, b);
@@ -3897,10 +3970,14 @@ static void tnx_v107_coord_scan(uintptr_t container) {
 
     g_v107_scan_logs++;
 
-    tnx_logf("v107 coord scan container=%p elem0=%p elem1=%p pairs=%d gidPairOnly=%d [%s] - a coordinate pair "
-             "has to differ between two elements and sit inside the map range, and a hit that only lands on "
-             "the id slots at +%#llx/+%#llx proves nothing because those are ids, not positions",
+    tnx_logf("v112 coord scan container=%p elem0=%p elem1=%p pairs=%d gidPairOnly=%d [%s] - the index at "
+             "+%#x, the team at +%#x, the dead byte at +%#x and the own pair at +%#x/+%#x are counted as "
+             "known non coordinate fields now, because a slot index of 0..5 differs between two elements "
+             "and used to clear gidPairOnly on its own, so the earlier scan reported (0x48,0,1) as a "
+             "candidate pair while only the id slots at +%#llx/+%#llx remain as ids",
              (void *)container, e0, e1, found, gidPairOnly, buf,
+             (unsigned)TNX_V112_INDEX_OFF, (unsigned)TNX_V112_TEAM_OFF2, (unsigned)TNX_V112_DEAD_OFF,
+             (unsigned)TNX_V102_OWNIDX_OFF, (unsigned)TNX_V102_OWNTEAM_OFF,
              (unsigned long long)TNX_OBJ_GLOBALID_OFF, (unsigned long long)TNX_V106_GID_FALLBACK_OFF);
 }
 
@@ -3979,7 +4056,7 @@ static void tnx_v106_own_dump(uintptr_t element) {
                  (unsigned long long)q, (int32_t)lo, (int32_t)hi, loF, hiF);
     }
 
-    tnx_v107_deref_dump(element);
+    tnx_v112_deref_dump(element);
 }
 
 static void tnx_v106_cand_dump(uintptr_t c0, uintptr_t c1, int s0, int s1, int chosen) {
@@ -10892,6 +10969,127 @@ static void tnx_v103_arm(void) {
              (unsigned long long)TNX_V103_SETPRED4_RVA);
 }
 
+static int g_v112_flag_arm = 0;
+static int g_v112_flag_logs = 0;
+static uint64_t g_v112_flag_tick = 0;
+static int g_v112_flag_before = -1;
+static int g_v112_flag_after = -1;
+static int g_v112_flag_consumed = -1;
+static int g_v112_flag_ticks = -1;
+static int g_v112_pos_logs = 0;
+static uint64_t g_v112_pos_tick = 0;
+
+static int tnx_v112_read_flag(void) {
+    uint8_t b = 0;
+
+    if (!g_scene_object) return -1;
+    if (!tnx_read_u8((uintptr_t)g_scene_object + TNX_V112_FLAG_OFF, &b)) return -1;
+
+    return (int)b;
+}
+
+static void tnx_v112_flag_arm(void) {
+    g_v112_flag_before = tnx_v112_read_flag();
+    g_v112_flag_tick = g_v103_tick;
+    g_v112_flag_after = -1;
+    g_v112_flag_consumed = -1;
+    g_v112_flag_ticks = -1;
+    g_v112_flag_arm = 1;
+}
+
+static void tnx_v112_flagwatch(void) {
+    int now;
+
+    if (!g_v112_flag_arm) return;
+
+    now = tnx_v112_read_flag();
+
+    if (g_v112_flag_after < 0) g_v112_flag_after = now;
+
+    if (g_v112_flag_consumed < 0) {
+        if (now == 0) {
+            g_v112_flag_consumed = 1;
+            g_v112_flag_ticks = (int)(g_v103_tick - g_v112_flag_tick);
+        } else if (g_v103_tick - g_v112_flag_tick >= TNX_V112_FLAG_MAX_TICKS) {
+            g_v112_flag_consumed = 0;
+            g_v112_flag_ticks = (int)(g_v103_tick - g_v112_flag_tick);
+        }
+    }
+
+    if (g_v112_flag_consumed < 0) return;
+    if (g_v112_flag_logs >= 4) return;
+
+    g_v112_flag_logs++;
+    g_v112_flag_arm = 0;
+
+    tnx_logf("v112 flagwatch scene=%p ac_before=%d ac_after=%d ac_final=%d ticks=%d consumed=%d "
+             "setterRva=%#llx readerRva=%#llx - the byte at +%#llx is raised by the setter and the class "
+             "update reads it with ldrb then clears it with strb wzr before it forwards the movement, so "
+             "consumed=1 means the write entered the pipeline and consumed=0 means the byte was left "
+             "standing and the setter is bookkeeping",
+             (void *)g_scene_object, g_v112_flag_before, g_v112_flag_after, now, g_v112_flag_ticks,
+             g_v112_flag_consumed, (unsigned long long)TNX_V112_SETPRED4_RVA,
+             (unsigned long long)TNX_V112_READER_RVA, (unsigned long long)TNX_V112_FLAG_OFF);
+}
+
+static void tnx_v112_pos_watch(const tnx_v47_obj_t *objects, int usable, int ownIndex) {
+    uintptr_t element = 0;
+    void *vt = NULL;
+    uintptr_t vtRva = 0;
+    float fx = 0.0f;
+    float fy = 0.0f;
+    float f2x = 0.0f;
+    float f2y = 0.0f;
+    float gx = 0.0f;
+    float gy = 0.0f;
+    int gxOk = 0;
+    int gyOk = 0;
+
+    if (!objects || ownIndex < 0 || ownIndex >= usable) return;
+    if (g_v103_tick < TNX_V112_POS_EVERY) return;
+    if (g_v103_tick - g_v112_pos_tick < TNX_V112_POS_EVERY) return;
+    if (g_v112_pos_logs >= 24) return;
+
+    g_v112_pos_tick = g_v103_tick;
+    g_v112_pos_logs++;
+
+    element = objects[ownIndex].object;
+
+    if (!element) return;
+
+    if (tnx_read_ptr(element, &vt) && vt) vtRva = (uintptr_t)vt - g_base;
+
+    tnx_read_f32(element + TNX_V112_POS_X_OFF, &fx);
+    tnx_read_f32(element + TNX_V112_POS_Y_OFF, &fy);
+    tnx_read_f32(element + TNX_V112_POS2_X_OFF, &f2x);
+    tnx_read_f32(element + TNX_V112_POS2_Y_OFF, &f2y);
+
+    if (vtRva == TNX_V112_ELEM_VT_RVA) {
+        void *fn = NULL;
+
+        if (tnx_read_ptr((uintptr_t)vt + TNX_V112_GETX_SLOT, &fn) && fn) {
+            gx = ((float (*)(void *))fn)((void *)element);
+            gxOk = 1;
+        }
+
+        fn = NULL;
+
+        if (tnx_read_ptr((uintptr_t)vt + TNX_V112_GETY_SLOT, &fn) && fn) {
+            gy = ((float (*)(void *))fn)((void *)element);
+            gyOk = 1;
+        }
+    }
+
+    tnx_logf("v112 poswatch elem=%p vtRva=%#llx f10=%.4f f1c=%.4f f20=%.4f f24=%.4f getX=%.4f getY=%.4f "
+             "getXOk=%d getYOk=%d int30=%d int34=%d gid=%d tick=%llu - the class keeps its position as "
+             "the float pair at +%#llx/+%#llx behind getX and getY, sampled every %d ticks so a move "
+             "during the battle shows even while the int pair the walk reads stays zero",
+             (void *)element, (unsigned long long)vtRva, fx, fy, f2x, f2y, gx, gy, gxOk, gyOk,
+             objects[ownIndex].x, objects[ownIndex].y, objects[ownIndex].gid,
+             (unsigned long long)g_v103_tick, (unsigned long long)TNX_V112_POS_X_OFF,
+             (unsigned long long)TNX_V112_POS_Y_OFF, TNX_V112_POS_EVERY);
+}
+
 static void tnx_v103_read_mgr(void) {
     void *mgr = NULL;
     void *queue = NULL;
@@ -10976,6 +11174,7 @@ static void tnx_v103_test(const tnx_v47_obj_t *objects, int usable, int ownIndex
         g_v103_test_before_y = objects[ownIndex].y;
 
         tnx_v103_send(objects[ownIndex].x + TNX_V103_TEST_STEP, objects[ownIndex].y);
+        tnx_v112_flag_arm();
 
         tnx_logf("v103 inputmgr test sent=(%d,%d) from own=(%d,%d) gid=%d step=%d short=%d long=%d "
                  "writes=%llu - one test move through the four argument setter, own position is read "
@@ -11209,6 +11408,7 @@ static int tnx_v91_own_scan(void) {
     g_v103_tick++;
     tnx_v103_arm();
     tnx_v103_read_mgr();
+    tnx_v112_flagwatch();
 
     if (!g_v101_setpred) g_v101_setpred = tnx_v101_entry(TNX_V101_MODEPAIRSET_RVA);
 
@@ -11424,6 +11624,7 @@ static void tnx_v90_gate_report(int slotHit) {
             tnx_v103_test(objects, usable, ownFound ? ownIndex : -1);
             tnx_v103_log(objects, usable, ownFound ? ownIndex : -1);
             tnx_v103_other_containers(objects, usable);
+            tnx_v112_pos_watch(objects, usable, ownFound ? ownIndex : -1);
         }
     }
 

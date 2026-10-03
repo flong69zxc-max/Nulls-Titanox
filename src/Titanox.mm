@@ -310,7 +310,26 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_140"
+#define TNX_BUILD_TAG "titanox_141"
+
+/* v141 - two roots, both proven by reading this file, and both upstream of everything v140 added.
+ *
+ * (1) tnx_objc_targets opens on hook->wantedCount > 0. That field was initialised to 0 in
+ *     tnx_objc_arm and is never written anywhere else, so the gate returned NO for every hook
+ *     and tnx_run_workload was never entered. "v138 render CALLED" printed because it sits
+ *     before the gate; "dodge CALLED" is the first line inside tnx_autododge_v48, i.e. behind
+ *     it. That is why no v140 line ever appeared either - collect, the proj tracker, the
+ *     threat test and the mode write are all downstream of tnx_run_workload.
+ *     inHook is not the gate: it is g_inside_hook read before it is set, so it is 0 on the
+ *     outermost render call by construction.
+ *
+ * (2) tnx_locate_battle_mode published g_players_object from the modesig container but not
+ *     g_players_array/g_players_count. The hop adoption below is guarded by
+ *     (players != g_players_object), so once the container was already equal the array was
+ *     never refreshed and the own resolver walked the previous battle's list. The v129 line
+ *     "container=0x121313c60 array=0x1474ca580" against "v106 gid fallback
+ *     element=0x131c68400" is that pair disagreeing. */
+#define TNX_V141_ARRAY_VOTE_LOGS 8
 
 /* v140 - offsets confirmed by disassembling the game binary itself.
  * TNX_V140_MODEPAIR_RVA 0xac3a58 is the only setter the engine's own input path calls:
@@ -2537,11 +2556,26 @@ static void tnx_v64_modesig_tick(void) {
 
 
         if (count >= 2 && cap >= count && cap <= TNX_MGR_CAP_MAX) {
+            void *mgrArray = NULL;
+
             g_players_object = (uintptr_t)mgr;
             g_manager_count = count;
 
-            tnx_logf("v100 modesig container obj=%p mgr=%p count=%d cap=%d src=SIG", (void *)found,
-                     mgr, count, cap);
+            /* v141: the list is published together with the container. Writing the container
+             * alone left g_players_array on the previous battle's list, and the hop adoption
+             * (guarded by players != g_players_object) then never fired because the container
+             * was already equal - so the own resolver walked a foreign array all battle. That
+             * is the pair "container=0x121313c60 array=0x1474ca580" against
+             * "v106 gid fallback element=0x131c68400" in the v140 run. */
+            if (tnx_read_ptr((uintptr_t)mgr + TNX_MGR_ARRAY_OFF, &mgrArray) && mgrArray) {
+                g_players_array = (uintptr_t)mgrArray;
+                g_players_count = count;
+            }
+
+            tnx_logf("v141 modesig container obj=%p mgr=%p array=%p count=%d cap=%d src=SIG - the "
+                     "array and the count are published with the container, so the walk and the "
+                     "resolver cannot name different lists", (void *)found, mgr, mgrArray, count,
+                     cap);
         }
     }
 }
@@ -3567,7 +3601,22 @@ static int tnx_v80_state_tick(void) {
         return 1;
     }
 
-    if (players != g_players_object) {
+    {
+        static int v141_array_vote_logs = 0;
+
+        if ((uintptr_t)array != g_players_array && players == g_players_object &&
+            v141_array_vote_logs < TNX_V141_ARRAY_VOTE_LOGS) {
+            v141_array_vote_logs++;
+
+            tnx_logf("v141 array moved without the container container=%p hop=%d oldArray=%p "
+                     "newArray=%p count=%d - the pair is republished on the array alone, because "
+                     "the container can stay equal while the engine reallocates or swaps the "
+                     "list, and that difference is what made the resolver read a foreign array",
+                     (void *)players, chosen, (void *)g_players_array, array, count);
+        }
+    }
+
+    if (players != g_players_object || (uintptr_t)array != g_players_array) {
         g_players_object = players;
         g_players_array = (uintptr_t)array;
         g_players_count = count;
@@ -4045,6 +4094,15 @@ static void tnx_objc_rep0(id self, SEL _cmd) {
 
     if (g_v138_render_calls <= TNX_V138_CALL_LOGS ||
         (g_v138_render_calls % TNX_V138_CALL_EVERY) == 0) {
+        tnx_logf("v141 render CALLED n=%llu self=%p hook=%p wanted=%d targets=%d inHook=%d "
+                 "base=%p scene=%p - the workload runs on exactly this condition, so hook=0 or "
+                 "targets=0 is the whole reason a dodge line does not exist; inHook is read "
+                 "before it is set and is 0 on the outermost call by construction, it is not the "
+                 "gate; the v138 line above ",
+                 (unsigned long long)g_v138_render_calls, (__bridge void *)self, (void *)hook,
+                 hook ? hook->wantedCount : -1, tnx_objc_targets(self, hook) ? 1 : 0,
+                 g_inside_hook, (void *)g_base, (void *)g_scene_object);
+
         tnx_logf("v138 render CALLED n=%llu self=%p inHook=%d base=%p scene=%p - the dodge is driven "
                  "from this callback and nothing else, so this line is the first thing to check when "
                  "the dodge prints nothing: if it is absent the whole workload is never entered and "
@@ -4159,7 +4217,15 @@ static int tnx_objc_arm(const char *clsName, const char *selName) {
         g_objc_hooks[i].selName = selName;
         g_objc_hooks[i].signature = types;
         g_objc_hooks[i].hits = 0;
-        g_objc_hooks[i].wantedCount = 0;
+
+        /* v141: this is the root of "no dodge line ever". tnx_objc_targets opens on
+         * wantedCount > 0, the field was zeroed here and filled nowhere else, so the gate
+         * returned NO on every call and tnx_run_workload was never entered. The hook is
+         * installed on owner, and the guard exists because tnx_objc_find falls back to the
+         * single hook that carries the selector even when the class does not match - so
+         * owner is exactly the class the gate must accept. */
+        g_objc_hooks[i].wanted[0] = owner;
+        g_objc_hooks[i].wantedCount = 1;
 
 
         g_objc_armed++;

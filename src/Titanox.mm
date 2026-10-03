@@ -9561,6 +9561,8 @@ static void tnx_v101_head_dump(void) {
     }
 }
 
+static void tnx_v101_actuator(uintptr_t mode, int x, int y);
+
 static void tnx_v101_own_index_probe(void) {
     uintptr_t cand[2];
     static const char *cname[2] = { "container", "scene" };

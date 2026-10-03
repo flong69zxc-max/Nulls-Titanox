@@ -296,6 +296,8 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_V123_WRITE_WAIT 5
 #define TNX_V123_STEP 10
 #define TNX_V123_OWN_IDX_OFF 0xe0ULL
+
+static int g_v123_defer_logs = 0;
 #define TNX_V115_GATE_BYTE_OFF 0x7aULL
 #define TNX_V115_CLIENT_OFF 0x28ULL
 #define TNX_V115_CLIENT_POS_X_OFF 0x80ULL
@@ -333,7 +335,7 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_123"
+#define TNX_BUILD_TAG "titanox_124"
 
 #define TNX_RVA_SETPREDICTION 0x00ac3f20ULL
 #define TNX_OBJ_X_OFF 0x30ULL
@@ -1832,12 +1834,10 @@ static void tnx_slot_install_one(int index) {
     }
 
     {
-        int32_t word = 0;
+        uint32_t w = 0;
         int prologue = 0;
 
-        if (tnx_read_i32(target, &word)) {
-            uint32_t w = (uint32_t)word;
-
+        if (tnx_read_u32(target, &w)) {
             if ((w & 0xFFC003FFu) == 0xD10003FFu) prologue = 1;
             if ((w & 0xFFC07FFFu) == 0xA9007BFDu) prologue = 1;
             if ((w & 0xFFC07FFFu) == 0xA9807BFDu) prologue = 1;
@@ -1851,7 +1851,7 @@ static void tnx_slot_install_one(int index) {
             tnx_logf("slot %s: reject-nonfunc target=%p firstWord=%#x - the first instruction is not a "
                      "prologue, a leaf return, a branch or an adrp, so this is not a function entry and a "
                      "stub placed here would be entered with the caller's scratch registers intact",
-                     g_slot_specs[index].tag, (void *)target, (unsigned)(word & 0xFFFFFFFF));
+                     g_slot_specs[index].tag, (void *)target, (unsigned)w);
 
             return;
         }
@@ -11251,7 +11251,6 @@ static int g_v113_window_logs = 0;
 static uint64_t g_v113_push_frame = 0;
 static int g_v113_frame_logs = 0;
 static int g_v115_mode_wait_logs = 0;
-static int g_v123_defer_logs = 0;
 static int g_v115_mode_seen7 = 0;
 static int g_v115_mode_max = 0;
 static int g_v115_gate_seen = 0;

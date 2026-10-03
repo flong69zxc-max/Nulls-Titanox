@@ -161,9 +161,7 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
     0x1008d30,
 };
 
-#define TNX_OWNER_VOTE_MAX 128
 #define TNX_OWNER_VOTE_MIN 3
-#define TNX_OWNER_VOTE_VT_MAX 4
 
 #define TNX_OWNER_VOTE_TEAMS_MIN 2
 
@@ -224,8 +222,6 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_V119_DENOM_MIN 4
 #define TNX_V123_MAX_SLOTS 32
 #define TNX_V123_HOP2_DEFER 0
-#define TNX_V125_HEAP_LO 0x100000000ULL
-#define TNX_V125_HEAP_HI 0x300000000ULL
 
 #define TNX_V126_ALLOC_GOT_RVA 0x00f78180ULL
 #define TNX_V126_TYPE_MOVE 0xa
@@ -314,7 +310,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_135"
+#define TNX_BUILD_TAG "titanox_136"
 
 #define TNX_RVA_SETPREDICTION 0x00ac3f20ULL
 #define TNX_OBJ_X_OFF 0x30ULL
@@ -508,7 +504,6 @@ static const char *g_v101_own_from = "none";
 
 #define TNX_V82_CLIENT_HOP_OFF 0x28ULL
 #define TNX_V82_ELEM_DEF_OFF 0x10ULL
-#define TNX_V82_KIND_MAX 0x1000
 #define TNX_V82_HOPS 2
 #define TNX_V82_HOP_DUMPS 4
 #define TNX_V68_PENDING_MAX 8
@@ -528,6 +523,7 @@ static const char *g_v101_own_from = "none";
 #define TNX_V134_OWN_LOGS 6
 #define TNX_V134_ALERT_GAP_MS 20000
 #define TNX_V135_OWN_LOGS 6
+#define TNX_V135_GIDOFF_LOGS 6
 #define TNX_V134_CENSUS_DELTA 5
 
 #define TNX_V73_STATE_DROPPED (-2)
@@ -784,13 +780,6 @@ static void tnx_logf(const char *format, ...) {
     tnx_write_line(buffer);
 }
 
-static void tnx_battle_begin(const char *why) {
-    if (g_battle_capture) return;
-
-    g_battle_capture = YES;
-
-    tnx_logf("battle capture ON (%s) -> Documents/Titanox.battle.log", why ? why : "?");
-}
 
 #define TNX_SLOT_COUNT 32
 #define TNX_ALERT_SIGHTINGS 2
@@ -888,6 +877,7 @@ static int g_v86_type3_floats = 0;
 static uintptr_t g_v88_census_container = 0;
 static uintptr_t g_v134_census_container = 0;
 static int32_t g_v134_census_count = 0;
+static uintptr_t g_v134_census_array = 0;
 static int g_v88_elem_full_dumps = 0;
 static int g_v88_walk_relogs = 0;
 static uint64_t g_v89_walk_tick = 0;
@@ -1454,28 +1444,6 @@ static int g_ag_objectCount = 0;
 
 
 
-static void tnx_inline_install(uintptr_t rva, const char *tag, void *replacement,
-                               tnx_slot_fn_t *original, int *status) {
-    uintptr_t target = g_base + rva;
-
-    *status = 0;
-
-    if (!target) return;
-
-
-    if (!brk_install((void *)target, replacement)) {
-        tnx_logf("inline %s: install failed target=%p (%s)", tag, (void *)target,
-                 hook_last_error() ? hook_last_error() : "-");
-
-        return;
-    }
-
-    *original = (tnx_slot_fn_t)brk_original_ptr((void *)target);
-    *status = 1;
-
-    tnx_logf("inline %s: installed target=%p trampoline=%p", tag, (void *)target,
-             (void *)*original);
-}
 
 static void tnx_slot_install_one(int index) {
     uintptr_t target = 0;
@@ -2600,7 +2568,7 @@ static uint64_t g_v132_alert_ms = 0;
 
 
 
-static void tnx_v132_battle_alert(uintptr_t scene, uintptr_t container, int32_t count, int hop) {
+static void tnx_v132_battle_alert(uintptr_t scene, uintptr_t scenePrev) {
     uint64_t now = 0;
 
     if (!scene) return;
@@ -2610,15 +2578,14 @@ static void tnx_v132_battle_alert(uintptr_t scene, uintptr_t container, int32_t 
     now = (uint64_t)(CFAbsoluteTimeGetCurrent() * 1000.0);
 
     if (g_v132_alert_ms && now - g_v132_alert_ms < TNX_V134_ALERT_GAP_MS) {
-        tnx_logf("v135 alert withheld scene=%p container=%p count=%d hop=%d sinceMs=%llu nowMs=%llu "
-                 "gapMs=%d - the scene edge alone is not enough, because the v132 run showed the "
-                 "battle screen pointer move several times inside one battle start and the same menu "
-                 "came up ten times in ten seconds; the gate is on wall clock and not on the tick "
-                 "counter, because a tick counter that advances once per five passes made the first "
-                 "attempt of this gate pass the check it was written to fail",
-                 (void *)scene, (void *)container, count, hop,
-                 (unsigned long long)g_v132_alert_ms, (unsigned long long)now,
-                 TNX_V134_ALERT_GAP_MS);
+        tnx_logf("v135 alert withheld prev=%p now=%p sinceMs=%llu nowMs=%llu gapMs=%d - the alert "
+                 "call moved off the container change and onto the scene edge, because the v134 run "
+                 "showed the menu ten times in ten seconds while the scene pointer in the heartbeat "
+                 "never moved: the call sat in the container-change block, so every hop flip looked "
+                 "like a battle entry; prev and now are printed so a real repeat is distinguishable "
+                 "from the old misfire",
+                 (void *)scenePrev, (void *)scene, (unsigned long long)g_v132_alert_ms,
+                 (unsigned long long)now, TNX_V134_ALERT_GAP_MS);
 
         return;
     }
@@ -2627,8 +2594,9 @@ static void tnx_v132_battle_alert(uintptr_t scene, uintptr_t container, int32_t 
     g_v132_alert_ms = now;
 
     tnx_v62_alert_menu([NSString stringWithFormat:
-        @"Вход в бой\nscene=%p\ncontainer=%p count=%d hop=%d\ngid=%d..%d\nown=min gid",
-        (void *)scene, (void *)container, count, hop, g_v132_gid_lo, g_v132_gid_hi]);
+        @"Вход в бой\nscene=%p (было %p)\ncontainer=%p count=%d\ngid=%d..%d\nown=min gid",
+        (void *)scene, (void *)scenePrev, (void *)g_players_object, g_players_count,
+        g_v132_gid_lo, g_v132_gid_hi]);
 }
 
 static int tnx_v86_element_type(uintptr_t vt, uintptr_t *wordOut) {
@@ -2680,7 +2648,7 @@ static void tnx_v81_container_census(uintptr_t array, int32_t count, uintptr_t c
 
     if (!array || count <= 0) return;
 
-    if (container == g_v134_census_container) {
+    if (container == g_v134_census_container && (uintptr_t)array == g_v134_census_array) {
         int32_t delta = count > g_v134_census_count ? count - g_v134_census_count
                                                     : g_v134_census_count - count;
 
@@ -2696,6 +2664,7 @@ static void tnx_v81_container_census(uintptr_t array, int32_t count, uintptr_t c
 
     g_v134_census_container = container;
     g_v134_census_count = count;
+    g_v134_census_array = (uintptr_t)array;
 
     if (count > TNX_V81_DUMP_QWORDS) count = TNX_V81_DUMP_QWORDS;
 
@@ -3036,6 +3005,14 @@ static int g_v110_wired = 0;
 static int g_v106_gid_logs = 0;
 static int g_v106_coord_logs = 0;
 static int g_v106_dump_done = 0;
+
+static int32_t tnx_v106_gid_at(uintptr_t element, uintptr_t off) {
+    int32_t gid = 0;
+
+    if (off && tnx_read_i32(element + off, &gid)) return gid;
+
+    return 0;
+}
 
 static int32_t tnx_v106_gid(uintptr_t element, int32_t *offOut) {
     int32_t gid = 0;
@@ -3378,7 +3355,10 @@ static int tnx_v80_state_tick(void) {
     scene = (uintptr_t)value;
 
     if (scene != g_scene_object) {
+        uintptr_t scenePrev = g_scene_object;
+
         g_scene_object = scene;
+        tnx_v132_battle_alert(scene, scenePrev);
 
         tnx_logf("v100 scene=%p from slot+%#llx at state=%d - the screen factory 0x8ce048 builds "
                  "state %d as new(0x98) plus the constructor 0x8c51f8, which stores %#llx at [+0], "
@@ -5659,6 +5639,8 @@ static int g_v47_giveup_logs = 0;
 static uint64_t g_v48_ticks = 0;
 static int g_v48_entry_logs = 0;
 static uint64_t g_v135_probe_tick = 0;
+static tnx_v47_obj_t g_dodge_probe_list[TNX_V47_OBJECT_MAX];
+static int g_dodge_probe_usable = 0;
 static uintptr_t g_v48_manager = 0;
 
 static int tnx_v47_verify_setprediction(void) {
@@ -5779,11 +5761,56 @@ static void tnx_v127_gidless_scan(uintptr_t manager) {
     }
 }
 
+static int g_v135_gidoff_logs = 0;
+
+static uintptr_t tnx_v135_list_gid_off(uintptr_t array, int32_t count) {
+    uintptr_t off = TNX_OBJ_GLOBALID_OFF;
+    int sawAt8 = 0;
+    int sawAt50 = 0;
+    int i = 0;
+    int32_t v = 0;
+
+    if (!array || count <= 0) return off;
+
+    for (i = 0; i < count && i < 4; i++) {
+        void *element = NULL;
+
+        if (!tnx_read_ptr(array + (uintptr_t)i * sizeof(void *), &element) || !element) continue;
+
+        if (tnx_read_i32((uintptr_t)element + TNX_OBJ_GLOBALID_OFF, &v) && v != 0) sawAt8++;
+        if (tnx_read_i32((uintptr_t)element + TNX_V106_GID_FALLBACK_OFF, &v) && v != 0) sawAt50++;
+    }
+
+    if (sawAt8 > 0) {
+        off = TNX_OBJ_GLOBALID_OFF;
+    } else if (sawAt50 > 0) {
+        off = TNX_V106_GID_FALLBACK_OFF;
+    }
+
+    if (g_v135_gidoff_logs < TNX_V135_GIDOFF_LOGS) {
+        g_v135_gidoff_logs++;
+
+        tnx_logf("v135 gid-off array=%p count=%d chosen=+%#llx sawAt+%#llx=%d sawAt+%#llx=%d - the id "
+                 "offset is chosen ONCE for the whole list from its first four elements and not per "
+                 "element, because a per-element choice would read the roster class (id at +%#llx) "
+                 "and the player class (id at +%#llx) with different offsets inside one list and the "
+                 "smallest id would then be meaningless",
+                 (void *)array, count, (unsigned long long)off,
+                 (unsigned long long)TNX_OBJ_GLOBALID_OFF, sawAt8,
+                 (unsigned long long)TNX_V106_GID_FALLBACK_OFF, sawAt50,
+                 (unsigned long long)TNX_V106_GID_FALLBACK_OFF,
+                 (unsigned long long)TNX_OBJ_GLOBALID_OFF);
+    }
+
+    return off;
+}
+
 static int tnx_v48_collect(uintptr_t manager, tnx_v47_obj_t *out, int capacity, int *rejected) {
     void *data = NULL;
     int32_t count = 0;
     int usable = 0;
     int bad = 0;
+    uintptr_t gidOff = TNX_OBJ_GLOBALID_OFF;
 
     memset(&g_v50_reject, 0, sizeof(g_v50_reject));
 
@@ -5797,6 +5824,8 @@ static int tnx_v48_collect(uintptr_t manager, tnx_v47_obj_t *out, int capacity, 
     if (count <= 0) return 0;
 
     if (count > capacity) count = capacity;
+
+    gidOff = tnx_v135_list_gid_off((uintptr_t)data, count);
 
     for (int32_t i = 0; i < count && usable < capacity; i++) {
         void *element = NULL;
@@ -5848,7 +5877,7 @@ static int tnx_v48_collect(uintptr_t manager, tnx_v47_obj_t *out, int capacity, 
             continue;
         }
 
-        entry.gid = tnx_v106_gid(entry.object, NULL);
+        entry.gid = tnx_v106_gid_at(entry.object, gidOff);
 
         if (!tnx_read_i32(entry.object + tnx_v57_coord_x_off(), &entry.x) ||
             !tnx_read_i32(entry.object + tnx_v57_coord_y_off(), &entry.y) ||
@@ -5951,6 +5980,9 @@ static void tnx_v48_discriminate(uintptr_t manager) {
     memset(words, 0, sizeof(words));
 
     usable = tnx_v48_collect(manager, objects, TNX_V47_OBJECT_MAX, &rejected);
+
+    g_dodge_probe_usable = usable;
+    if (usable > 0) memcpy(g_dodge_probe_list, objects, (size_t)usable * sizeof(g_dodge_probe_list[0]));
 
     if (usable == 0) {
         char reasons[320];
@@ -7820,7 +7852,7 @@ static int tnx_v134_own_from_list(const tnx_v47_obj_t *objects, int usable, int 
         int32_t gid = objects[i].gid;
 
         if (gid < TNX_V75_GID_FLOOR || gid >= TNX_V75_GID_MAX) continue;
-        if (objects[i].team < 0 || objects[i].team > TNX_V75_TEAM_MAX) continue;
+        if (objects[i].teamOld < 0 || objects[i].teamOld > TNX_V75_TEAM_MAX) continue;
 
         accepted++;
 
@@ -8234,9 +8266,6 @@ static int g_v121_win_stage = 0;
 
 
 
-static int tnx_is_heap(uintptr_t v) {
-    return (v >= TNX_V125_HEAP_LO && v < TNX_V125_HEAP_HI && (v & 0x7) == 0) ? 1 : 0;
-}
 
 
 
@@ -9372,6 +9401,22 @@ static void tnx_autododge_v48(void) {
 
         if (probeOwn) tnx_read_i32(probeOwn + TNX_OBJ_TEAM_OFF, &probeTeam);
         if (g_players_object) tnx_read_i32(g_players_object + TNX_MGR_COUNT_OFF, &probeCount);
+
+        {
+            int listIdx = -1;
+            const char *listFrom = "none";
+            int32_t listGid = -1;
+
+            if (tnx_v134_own_from_list(g_dodge_probe_list, g_dodge_probe_usable, &listIdx, &listFrom)) {
+                listGid = g_dodge_probe_list[listIdx].gid;
+            }
+
+            tnx_logf("v135 dodge list usable=%d from=%s idx=%d gid=%d minGidSeen=%d chosenGid=%d "
+                     "chosenIdx=%d - the resolver runs on the very array the walk collected and "
+                     "reports which entry it picked, so a disagreement between the smallest id seen "
+                     "and the id chosen is visible in one line instead of being inferred",
+                     g_dodge_probe_usable, listFrom, listIdx, listGid, probeGid, listGid, listIdx);
+        }
 
         tnx_logf("v135 dodge probe tick=%llu frames=%llu scene=%p container=%p array=%p count=%d "
                  "hop=%d own=%p ownGid=%d ownTeam=%d coordOk=%d coordUsable=%d writeTest=%d - this "

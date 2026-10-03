@@ -314,7 +314,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_132"
+#define TNX_BUILD_TAG "titanox_133"
 
 #define TNX_RVA_SETPREDICTION 0x00ac3f20ULL
 #define TNX_OBJ_X_OFF 0x30ULL
@@ -968,6 +968,7 @@ static void tnx_v82_hop_dump(uintptr_t client, uintptr_t inner);
 static char tnx_v72_seg_code(uintptr_t value);
 static const char *tnx_image_segment_name(uintptr_t value);
 static void tnx_v62_alert_menu(NSString *info);
+static NSString *tnx_v132_status_text(void);
 static void tnx_v64_modesig_tick(void);
 static BOOL tnx_v56_vtable_in_image(uintptr_t vtable);
 static uintptr_t tnx_v60_strip_ptr(uintptr_t value);
@@ -2423,13 +2424,7 @@ static void tnx_v62_alert_menu(NSString *info) {
         [menu addAction:[UIAlertAction actionWithTitle:@"Состояние"
                                                  style:UIAlertActionStyleDefault
                                                handler:^(UIAlertAction *action) {
-            tnx_v62_alert_menu([NSString stringWithFormat:
-                @"scene=%p\ncontainer=%p count=%d hop=%d\narray=%p cap=%d\ngid=%d..%d live=%d\n"
-                @"slots=%d alerts=%s",
-                (void *)g_scene_object, (void *)g_players_object, g_players_count,
-                g_v105_last_choice, (void *)g_players_array, g_players_cap, g_v132_gid_lo,
-                g_v132_gid_hi, g_manager_last_live, TNX_SLOT_COUNT,
-                g_v62_alerts_off ? @"выкл" : @"вкл"]);
+            tnx_v62_alert_menu(tnx_v132_status_text());
         }]];
 
         [menu addAction:[UIAlertAction actionWithTitle:@"Скрыть алерты"
@@ -2607,6 +2602,12 @@ static BOOL tnx_v132_read_i16(uintptr_t at, int16_t *out) {
 static void tnx_v132_coord_hunt(uintptr_t array, int32_t count, uintptr_t container) {
     uintptr_t pick[2] = { 0, 0 };
     int32_t pickGid[2] = { 0, 0 };
+    int32_t pickTeam[2] = { 0, 0 };
+    float pickFx[2] = { 0.0f, 0.0f };
+    float pickFy[2] = { 0.0f, 0.0f };
+    int32_t oddGid = 0;
+    int32_t oddTeam = 0;
+    uintptr_t oddPtr = 0;
     char in32[2][640];
     char in16[2][640];
     char diff32[400];
@@ -2621,12 +2622,25 @@ static void tnx_v132_coord_hunt(uintptr_t array, int32_t count, uintptr_t contai
 
     g_v132_hunt_container = container;
 
-    for (i = 0; i < count && n < 2; i++) {
+    for (i = 0; i < count; i++) {
         void *element = NULL;
         int32_t gid = 0;
+        int32_t team = 0;
 
         if (!tnx_read_ptr(array + (uintptr_t)i * sizeof(void *), &element) || !element) continue;
         if (!tnx_read_i32((uintptr_t)element + TNX_OBJ_GLOBALID_OFF, &gid)) continue;
+
+        tnx_read_i32((uintptr_t)element + TNX_OBJ_TEAM_OFF, &team);
+
+        if (team < 0 || team > 1) {
+            if (!oddPtr) {
+                oddPtr = (uintptr_t)element;
+                oddGid = gid;
+                oddTeam = team;
+            }
+        }
+
+        if (n >= 2) continue;
         if (gid <= 0) continue;
         if (n == 1 && gid == pickGid[0]) continue;
 
@@ -2641,15 +2655,23 @@ static void tnx_v132_coord_hunt(uintptr_t array, int32_t count, uintptr_t contai
 
         pick[n] = (uintptr_t)element;
         pickGid[n] = gid;
+        pickTeam[n] = team;
+
+        if (!tnx_read_f32((uintptr_t)element + TNX_OBJ_X_OFF, &pickFx[n])) pickFx[n] = 0.0f;
+        if (!tnx_read_f32((uintptr_t)element + TNX_OBJ_Y_OFF, &pickFy[n])) pickFy[n] = 0.0f;
+
         n++;
     }
 
     if (n < 2) {
-        tnx_logf("v132 coords container=%p count=%d found=%d - the hunt needs two elements with "
-                 "different ids to separate a coordinate from a constant, and this container "
-                 "yielded only %d, so no offset list is printed; the id at +%#llx is the only field "
-                 "proven here",
-                 (void *)container, count, n, n, (unsigned long long)TNX_OBJ_GLOBALID_OFF);
+        tnx_logf("v132 coords container=%p count=%d found=%d oddPtr=%p oddGid=%d oddTeam=%d - the "
+                 "hunt needs two elements with different ids to separate a coordinate from a "
+                 "constant and this container yielded only %d; the odd element is the first whose "
+                 "team at +%#llx is neither 0 nor 1, which in the v129 run was the single element "
+                 "with team -1 and gid one past the last player, so it is either the own marker or "
+                 "the camera and it is named here even when no pair is available",
+                 (void *)container, count, n, (void *)oddPtr, oddGid, oddTeam, n,
+                 (unsigned long long)TNX_OBJ_TEAM_OFF);
 
         return;
     }
@@ -2713,16 +2735,22 @@ static void tnx_v132_coord_hunt(uintptr_t array, int32_t count, uintptr_t contai
         }
     }
 
-    tnx_logf("v132 coords container=%p count=%d gidA=%d ptrA=%p gidB=%d ptrB=%p window=%#llx..%#llx "
-             "| i32A=%s | i32B=%s | i16A=%s | i16B=%s | differ32=%s | differ16=%s - every word of "
-             "both elements that is non-zero and inside +-%d is printed and the differ lists keep "
-             "only the offsets where the two elements disagree, because a coordinate changes with "
-             "the element while a constant field cannot, and +%#llx/+%#llx are the two offsets this "
-             "build used to read as the position",
-             (void *)container, count, pickGid[0], (void *)pick[0], pickGid[1], (void *)pick[1],
-             (unsigned long long)TNX_V132_HUNT_LO, (unsigned long long)TNX_V132_HUNT_HI,
-             in32[0], in32[1], in16[0], in16[1], diff32, diff16, TNX_V132_HUNT_LIMIT,
-             (unsigned long long)TNX_OBJ_X_OFF, (unsigned long long)TNX_OBJ_Y_OFF);
+    tnx_logf("v132 coords container=%p count=%d gidA=%d teamA=%d ptrA=%p gidB=%d teamB=%d ptrB=%p "
+             "window=%#llx..%#llx | i32A=%s | i32B=%s | i16A=%s | i16B=%s | differ32=%s | "
+             "differ16=%s | floatA=(%g,%g) floatB=(%g,%g) | oddPtr=%p oddGid=%d oddTeam=%d - every "
+             "word of both elements that is non-zero and inside +-%d is printed and the differ lists "
+             "keep only the offsets where the two elements disagree, because a coordinate changes "
+             "with the element while a constant field cannot; +%#llx/+%#llx are the pair this build "
+             "reads as the position and the float pair is the same two words as floats, which is the "
+             "case the v129 run could not tell apart from zero; the odd element is the first whose "
+             "team at +%#llx is neither 0 nor 1",
+             (void *)container, count, pickGid[0], pickTeam[0], (void *)pick[0], pickGid[1],
+             pickTeam[1], (void *)pick[1], (unsigned long long)TNX_V132_HUNT_LO,
+             (unsigned long long)TNX_V132_HUNT_HI, in32[0], in32[1], in16[0], in16[1], diff32, diff16,
+             (double)pickFx[0], (double)pickFy[0], (double)pickFx[1], (double)pickFy[1],
+             (void *)oddPtr, oddGid, oddTeam, TNX_V132_HUNT_LIMIT,
+             (unsigned long long)TNX_OBJ_X_OFF, (unsigned long long)TNX_OBJ_Y_OFF,
+             (unsigned long long)TNX_OBJ_TEAM_OFF);
 }
 
 static void tnx_v132_battle_alert(uintptr_t scene, uintptr_t container, int32_t count, int hop) {
@@ -3338,6 +3366,15 @@ static int tnx_v105_own_verdict(uintptr_t element, char *why, size_t whyLen) {
     }
 
     return 1;
+}
+
+static NSString *tnx_v132_status_text(void) {
+    return [NSString stringWithFormat:
+        @"scene=%p\ncontainer=%p count=%d hop=%d\narray=%p cap=%d\ngid=%d..%d live=%d\n"
+        @"slots=%d alerts=%s",
+        (void *)g_scene_object, (void *)g_players_object, g_players_count, g_v105_last_choice,
+        (void *)g_players_array, g_players_cap, g_v132_gid_lo, g_v132_gid_hi, g_manager_last_live,
+        TNX_SLOT_COUNT, g_v62_alerts_off ? @"выкл" : @"вкл"];
 }
 
 static int tnx_v80_state_tick(void) {

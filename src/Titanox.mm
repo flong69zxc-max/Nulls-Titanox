@@ -313,7 +313,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_165"
+#define TNX_BUILD_TAG "titanox_189"
 
 #define TNX_V165_RAW_INPUT 1
 #define TNX_V165_JOY_MAG 600.0f
@@ -368,7 +368,28 @@ static int g_v123_defer_logs = 0;
 #define TNX_V179_SHOT_GID_MAX 3000000
 #define TNX_V186_MIN_USABLE 1
 #define TNX_V180_DRIVE 1
-#define TNX_V180_HOLD_TICKS 30
+
+#define TNX_V189_HOLD_TICKS 3
+#define TNX_V189_STEP 120.0f
+#define TNX_V189_PAIR_ONLY 0
+#define TNX_V189_MATE_CLEAR 240.0f
+#define TNX_V189_MATE_MAX 8
+#define TNX_V189_PLAYER_MAX 12
+#define TNX_V189_TEAM_LOGS 8
+#define TNX_V189_ATTRIB_R2 (700.0f * 700.0f)
+#define TNX_V189_ATTRIB_MARGIN 1.5f
+#define TNX_V189_ATTRIB_LOGS 8
+#define TNX_V189_RESPAWN_JUMP 1200
+#define TNX_V189_RESPAWN_VISIBLE 90
+#define TNX_V189_CAND 3
+#define TNX_V189_HOLD_FRAMES 10
+#define TNX_V189_LEARN_LOGS 6
+#define TNX_V189_LIFE_MAX_LOGS 64
+#define TNX_V189_STATE_INIT 0
+#define TNX_V189_STATE_ALIVE 1
+#define TNX_V189_STATE_DEAD 2
+#define TNX_V189_STATE_RESPAWN 3
+#define TNX_V189_DRIVE_LOGS 24
 #define TNX_V177_CLEAR_STICK 0
 #define TNX_V174_DT_MAX 12
 #define TNX_V174_STICK_TTL 3
@@ -2705,6 +2726,42 @@ static UILabel *g_overlay = NULL;
 static double g_overlay_last = 0.0;
 static int g_scan_ticks = 0;
 
+/* v189: what this build believes about its own life. The value is declared up here because the
+   on-screen label is written from the render path far below and has to show it: the state of the
+   character is a thing the user has to be able to read off the screen, not something to infer from
+   a missing dodge line. */
+static int g_v189_state = TNX_V189_STATE_INIT;
+
+/* The players of this match, published once per tick by the same pass that resolves own: own's
+   position, the side own is on, and the players that side carries besides own. The team report
+   used to be a single number, so nothing downstream could tell a teammate from an enemy; the
+   roster and the mate list are what the ring and the shot attribution read. */
+static int g_v189_pl_n = 0;
+static int32_t g_v189_pl_x[TNX_V189_PLAYER_MAX];
+static int32_t g_v189_pl_y[TNX_V189_PLAYER_MAX];
+static int32_t g_v189_pl_team[TNX_V189_PLAYER_MAX];
+static int32_t g_v189_pl_mine[TNX_V189_PLAYER_MAX];
+static int g_v189_mate_n = 0;
+static int32_t g_v189_mate_x[TNX_V189_MATE_MAX];
+static int32_t g_v189_mate_y[TNX_V189_MATE_MAX];
+static int g_v189_mate_logs = 0;
+static int g_v189_own_x = 0;
+static int g_v189_own_y = 0;
+static int g_v189_own_team = -1;
+static int g_v189_attrib_hits = 0;
+static int g_v189_attrib_miss = 0;
+static int g_v189_attrib_logs = 0;
+static int g_v189_block_hits = 0;
+static int g_v189_label_builds = 0;
+
+static const char *tnx_v189_state_name(void) {
+    if (g_v189_state == TNX_V189_STATE_DEAD) return "DEAD";
+    if (g_v189_state == TNX_V189_STATE_RESPAWN) return "respawn";
+    if (g_v189_state == TNX_V189_STATE_ALIVE) return "alive";
+
+    return "init";
+}
+
 static void tnx_overlay_attach(NSString *text) {
     UIWindow *window = nil;
 
@@ -3774,10 +3831,11 @@ static int tnx_v105_own_verdict(uintptr_t element, char *why, size_t whyLen) {
 static NSString *tnx_v132_status_text(void) {
     return [NSString stringWithFormat:
         @"scene=%p\ncontainer=%p count=%d hop=%d\narray=%p cap=%d\ngid=%d..%d live=%d\n"
-        @"slots=%d alerts=%s",
+        @"slots=%d alerts=%s\nlife=%s own=(%d,%d) team=%d mates=%d",
         (void *)g_scene_object, (void *)g_players_object, g_players_count, g_v105_last_choice,
         (void *)g_players_array, g_players_cap, g_v132_gid_lo, g_v132_gid_hi, g_manager_last_live,
-        TNX_SLOT_COUNT, g_v62_alerts_off ? @"выкл" : @"вкл"];
+        TNX_SLOT_COUNT, g_v62_alerts_off ? @"выкл" : @"вкл", tnx_v189_state_name(),
+        g_v189_own_x, g_v189_own_y, g_v189_own_team, g_v189_mate_n];
 }
 
 static int tnx_v80_state_tick(void) {
@@ -4360,12 +4418,23 @@ static void tnx_render_watermark(void) {
 
     if (!g_label_clip || !g_label_tf) return;
 
-    if (strcmp(g_label_text, TNX_LABEL) != 0) {
-        void *sc = tnx_sc_string(TNX_LABEL);
-        if (!sc) return;
+    {
+        char want[64];
+        int n = snprintf(want, sizeof(want), "%s [%s]", TNX_BUILD_TAG, tnx_v189_state_name());
 
-        g_label_sc = sc;
-        snprintf(g_label_text, sizeof(g_label_text), "%s", TNX_LABEL);
+        /* v189: the label carries the life state. It was the fixed constant TNX_LABEL, so the
+           screen said nothing about whether the character is alive, dead or just respawned, and
+           that is the one thing a player cannot read off the log while playing. The interned
+           string is rebuilt only when the text really changes, because building it allocates. */
+        if (n > 0 && (size_t)n < sizeof(want) && strcmp(g_label_text, want) != 0) {
+            void *sc = tnx_sc_string(want);
+
+            if (sc) {
+                g_label_sc = sc;
+                snprintf(g_label_text, sizeof(g_label_text), "%s", want);
+                g_v189_label_builds++;
+            }
+        }
     }
 
     if (!g_label_sc) return;
@@ -10473,6 +10542,120 @@ static void tnx_v90_gate_report(int slotHit) {
 
 
 
+/* v189: the players of this match, and which of them are on this side.
+
+   Nothing in this file used them. The ring scored a heading only against threat segments, so a
+   heading that ran through a teammate's body was scored exactly like open ground: the character
+   walked into him, the engine's own collision stopped it there and the shot it was supposed to
+   dodge went through - which is the 3v3 report. The same missing report is why a teammate's shot
+   could be scored as a threat: a shot carries a side, but the side of own was one number with no
+   roster behind it, and a shot whose team byte is unreadable reads -1 and survives every filter.
+   The attached log has exactly that case, gid=4000000 team=-1, so the side is now also taken from
+   the spawn point: a shot starts on its owner's body, so the nearest player to the spawn names
+   the side, and an ambiguous spawn stays unknown and stays a threat. */
+static int tnx_v189_team_at(const tnx_v47_obj_t *objects, int index) {
+    if (!objects || index < 0) return -1;
+
+    return (g_v47_team_off == (int)TNX_OBJ_TEAM_OFF) ? objects[index].teamOld
+                                                     : objects[index].teamNew;
+}
+
+static void tnx_v189_roster(int ownIndex, int ownTeam, const tnx_v47_obj_t *objects, int usable) {
+    int i = 0;
+    int matesBefore = g_v189_mate_n;
+
+    g_v189_pl_n = 0;
+    g_v189_mate_n = 0;
+    g_v189_own_team = ownTeam;
+
+    for (i = 0; i < usable && g_v189_pl_n < TNX_V189_PLAYER_MAX; i++) {
+        int32_t team = 0;
+
+        if (objects[i].gid < TNX_V179_PLAYER_GID) continue;
+        if (objects[i].gid >= TNX_V179_SHOT_GID) continue;
+
+        team = tnx_v189_team_at(objects, i);
+
+        g_v189_pl_x[g_v189_pl_n] = objects[i].x;
+        g_v189_pl_y[g_v189_pl_n] = objects[i].y;
+        g_v189_pl_team[g_v189_pl_n] = team;
+        g_v189_pl_mine[g_v189_pl_n] = (i == ownIndex) ? 1 : 0;
+        g_v189_pl_n++;
+
+        if (i == ownIndex) {
+            g_v189_own_x = objects[i].x;
+            g_v189_own_y = objects[i].y;
+
+            continue;
+        }
+
+        if (team != ownTeam) continue;
+        if (g_v189_mate_n >= TNX_V189_MATE_MAX) continue;
+
+        g_v189_mate_x[g_v189_mate_n] = objects[i].x;
+        g_v189_mate_y[g_v189_mate_n] = objects[i].y;
+        g_v189_mate_n++;
+    }
+
+    if (g_v189_mate_n != matesBefore || g_v189_mate_logs < TNX_V189_TEAM_LOGS) {
+        g_v189_mate_logs++;
+
+        tnx_logf("v189 roster players=%d mates=%d ownTeam=%d own=(%d,%d) blocked=%d - the players "
+                 "of this side are read in this one pass, so the ring has a body to refuse a "
+                 "heading for and the shot attribution below has a body to attribute a spawn point "
+                 "to; a mates count that stays at zero in a team match means the team byte is still "
+                 "read four bytes off, because 3v3 carries two teammates besides own",
+                 g_v189_pl_n, g_v189_mate_n, ownTeam, g_v189_own_x, g_v189_own_y,
+                 g_v189_block_hits);
+    }
+}
+
+static int tnx_v189_mate_blocked(float x, float y) {
+    int i = 0;
+    float r2 = TNX_V189_MATE_CLEAR * TNX_V189_MATE_CLEAR;
+
+    if (g_v189_mate_n <= 0) return 0;
+
+    for (i = 0; i < g_v189_mate_n; i++) {
+        float dx = x - (float)g_v189_mate_x[i];
+        float dy = y - (float)g_v189_mate_y[i];
+
+        if (dx * dx + dy * dy <= r2) return 1;
+    }
+
+    return 0;
+}
+
+static int tnx_v189_own_side_spawn(int32_t sx, int32_t sy) {
+    int i = 0;
+    int best = -1;
+    float bestD = 0.0f;
+    float secondD = -1.0f;
+
+    if (g_v189_own_team < 0) return -1;
+    if (g_v189_pl_n <= 0) return -1;
+
+    for (i = 0; i < g_v189_pl_n; i++) {
+        float dx = (float)sx - (float)g_v189_pl_x[i];
+        float dy = (float)sy - (float)g_v189_pl_y[i];
+        float d2 = dx * dx + dy * dy;
+
+        if (best < 0 || d2 < bestD) {
+            secondD = (best < 0) ? -1.0f : bestD;
+            bestD = d2;
+            best = i;
+        } else if (secondD < 0.0f || d2 < secondD) {
+            secondD = d2;
+        }
+    }
+
+    if (best < 0) return -1;
+    if (bestD > TNX_V189_ATTRIB_R2) return -1;
+    if (secondD >= 0.0f && bestD * TNX_V189_ATTRIB_MARGIN > secondD) return -1;
+
+    return (g_v189_pl_team[best] == g_v189_own_team) ? 1 : 0;
+}
+
 typedef struct {
     uintptr_t elem;
     uintptr_t classRva;
@@ -10622,15 +10805,40 @@ static int tnx_v140_proj_scan(uintptr_t manager, int32_t count) {
             uintptr_t teamOff = (g_v47_team_off == (int)TNX_OBJ_TEAM_OFF) ? TNX_OBJ_TEAM_OFF
                                                                          : TNX_V91_TEAM_OFF;
             int32_t pteam = -1;
+            int attributed = 0;
 
             if (tnx_read_i32((uintptr_t)element + teamOff, &pteam) && pteam >= 0 &&
                 pteam <= TNX_OBJ_TEAM_MAX) {
                 g_v140_projs[slot].team = pteam;
-
-                if (pteam == g_v167_own_team) g_v167_proj_own++;
-                else g_v167_proj_other++;
             } else {
-                g_v140_projs[slot].team = -1;
+                int side = tnx_v189_own_side_spawn(px, py);
+
+                if (side == 1 && g_v189_own_team >= 0) {
+                    g_v140_projs[slot].team = g_v189_own_team;
+                    g_v189_attrib_hits++;
+                    attributed = 1;
+                } else {
+                    g_v140_projs[slot].team = -1;
+                    g_v189_attrib_miss++;
+                }
+            }
+
+            if (g_v140_projs[slot].team >= 0) {
+                if (g_v140_projs[slot].team == g_v167_own_team) g_v167_proj_own++;
+                else g_v167_proj_other++;
+            }
+
+            if (attributed && g_v189_attrib_logs < TNX_V189_ATTRIB_LOGS) {
+                g_v189_attrib_logs++;
+
+                tnx_logf("v189 own shot by spawn gid=%d side=%d ownTeam=%d spawn=(%d,%d) own=(%d,%d)"
+                         " hits=%d miss=%d - the team byte on this element is unreadable, so the "
+                         "side comes from the spot the shot started on: a projectile leaves its "
+                         "owner's body, so the nearest player to the first position that was seen "
+                         "names the side, and an ambiguous or distant spawn stays unknown and stays "
+                         "a threat, because calling an enemy shot ours opens a hole, not closes one",
+                         gid, g_v140_projs[slot].team, g_v167_own_team, px, py, g_v189_own_x,
+                         g_v189_own_y, g_v189_attrib_hits, g_v189_attrib_miss);
             }
         }
 
@@ -11764,36 +11972,400 @@ static int32_t g_v180_tx = 0;
 static int32_t g_v180_ty = 0;
 static uint64_t g_v180_hold = 0;
 
-static void tnx_v180_drive(void) {
+/* --- v189 drive ------------------------------------------------------------------------------
+   v180 sent the ring's own pick as the destination of the type 2 client input, and that pick is a
+   point up to TNX_V172_MAX_DIST units away. The input is a POSITION, and this file's own note from
+   v170 names the consequence: a step larger than a walk cycle can express is not a walk, it is a
+   lerp of the body, which is the slide. The cap that says so is TNX_V170_STEP, and it was only ever
+   applied in the legacy write path far below, which the v180 drive bypasses. It is applied here
+   now: the pair carries the heading, the message carries one frame of travel towards it, and both
+   are reissued every frame the dodge is engaged, which is what a held stick does. The heading is
+   also held for TNX_V189_HOLD_TICKS instead of TNX_V180_HOLD_TICKS - at the measured 780 units a
+   second the old 30 tick hold kept walking the character for half a second after the last
+   decision, which is the other half of the same report. TNX_V189_PAIR_ONLY is the one switch that
+   still needs a device: at 1 only the pair is written, which is exactly what the engine's own touch
+   handler writes, so a log from such a run says whether the walk cycle follows the pair alone. */
+
+static int g_v189_drive_ticks = 0;
+static int g_v189_drive_logs = 0;
+static uint64_t g_v189_queue_calls = 0;
+static uint64_t g_v189_queue_skips = 0;
+static int32_t g_v189_sent_dx = 0;
+static int32_t g_v189_sent_dy = 0;
+static int32_t g_v189_last_tx = 0;
+static int32_t g_v189_last_ty = 0;
+static uint64_t g_v189_last_decision = 0;
+static int64_t g_v189_decide_x = 0;
+static int64_t g_v189_decide_y = 0;
+static int g_v189_drift_logs = 0;
+
+static int tnx_v189_drive(void) {
     int32_t ownX = 0;
     int32_t ownY = 0;
     float dx = 0.0f;
     float dy = 0.0f;
+    float len = 0.0f;
     int held = 0;
+    int32_t tx = 0;
+    int32_t ty = 0;
 
     if (g_v160_active) {
         g_v180_tx = g_v160_tx;
         g_v180_ty = g_v160_ty;
         g_v180_hold = g_v48_ticks;
         held = 1;
-    } else if (g_v180_hold && (g_v48_ticks - g_v180_hold) <= TNX_V180_HOLD_TICKS) {
+    } else if (g_v180_hold && (g_v48_ticks - g_v180_hold) <= TNX_V189_HOLD_TICKS) {
         held = 1;
     }
 
     if (!held) {
         tnx_v174_stick(0, 0.0f, 0.0f);
 
-        return;
+        return 0;
     }
 
-    if (!tnx_v178_own(&ownX, &ownY)) return;
+    if (!tnx_v178_own(&ownX, &ownY)) return 0;
 
     dx = (float)(g_v180_tx - ownX);
     dy = (float)(g_v180_ty - ownY);
+    len = sqrtf(dx * dx + dy * dy);
+
+    if (len < 0.0001f) {
+        tnx_v174_stick(0, 0.0f, 0.0f);
+
+        return 0;
+    }
 
     tnx_v174_stick(1, dx, dy);
 
-    tnx_v113_enqueue(g_v180_tx, g_v180_ty);
+    tx = ownX + (int32_t)((double)dx / (double)len * (double)TNX_V189_STEP);
+    ty = ownY + (int32_t)((double)dy / (double)len * (double)TNX_V189_STEP);
+
+    if (!TNX_V189_PAIR_ONLY) {
+        tnx_v113_enqueue(tx, ty);
+        g_v189_queue_calls++;
+    } else {
+        g_v189_queue_skips++;
+    }
+
+    g_v189_sent_dx = tx - ownX;
+    g_v189_sent_dy = ty - ownY;
+    g_v189_last_tx = tx;
+    g_v189_last_ty = ty;
+    g_v189_drive_ticks++;
+
+    if (g_v160_active) {
+        g_v189_last_decision = g_v48_ticks;
+        g_v189_decide_x = ownX;
+        g_v189_decide_y = ownY;
+    }
+
+    if (g_v189_drive_logs < TNX_V189_DRIVE_LOGS ||
+        ((g_v48_ticks % 60) == 0 && g_v189_drive_logs < 240)) {
+        g_v189_drive_logs++;
+
+        tnx_logf("v189 drive held=%d engaged=%d own=(%d,%d) pick=(%d,%d) sent=(%d,%d) step=%.0f "
+                 "pair=(%d,%d) queue=%llu skipped=%llu pairOnly=%d holdTicks=%d - the step handed "
+                 "to the client input is one frame of travel and not the pick, so the body is "
+                 "walked instead of carried; a sent distance that has grown back to the pick means "
+                 "something below put the uncapped target back", held, g_v160_active, ownX, ownY,
+                 g_v180_tx, g_v180_ty, tx, ty,
+                 (double)sqrtf((float)(g_v189_sent_dx * g_v189_sent_dx +
+                                       g_v189_sent_dy * g_v189_sent_dy)),
+                 g_v174_stick_x, g_v174_stick_y, (unsigned long long)g_v189_queue_calls,
+                 (unsigned long long)g_v189_queue_skips, TNX_V189_PAIR_ONLY, TNX_V189_HOLD_TICKS);
+    }
+
+    return 1;
+}
+
+/* --- v189 own death and respawn -----------------------------------------------------------------
+   v167 held the whole dodge on the byte at own+TNX_V91_DEAD_OFF, and that byte reads 0, 1 and 63
+   on live objects, so the guard held while the player was alive and the run was read as a wrong
+   offset; v169 turned the guard off and printed three candidates instead. Since then nothing knows
+   whether own is dead, and the attached log carries no death at all.
+
+   What IS provable from this side is the respawn: the character is teleported, so own's position
+   jumps by thousands of units between two frames where a walk covers about thirteen. That event is
+   the positive control for the flag, and it is used as one: the three candidates are sampled every
+   frame, and if one of them changed across a respawn and then held its new value for
+   TNX_V189_HOLD_FRAMES frames, that candidate is the flag and the value it held before the event is
+   the dead value. Only a candidate learned that way may hold the dodge, so a wrong guess can never
+   leave the character standing - which is exactly how v167 failed. Until the first respawn the
+   three values are printed on every change, so a run that carries a death also names the flag by
+   hand. */
+
+static int g_v189_cand_now[TNX_V189_CAND];
+static int g_v189_cand_frame[TNX_V189_CAND];
+static int g_v189_cand_changes[TNX_V189_CAND];
+static int g_v189_cand_seen = 0;
+static int g_v189_dead_slot = -1;
+static int g_v189_dead_value = 0;
+static int g_v189_pending = 0;
+static int g_v189_pending_tick = 0;
+static int g_v189_pre[TNX_V189_CAND];
+static int32_t g_v189_prev_x = 0;
+static int32_t g_v189_prev_y = 0;
+static int g_v189_prev_valid = 0;
+static int g_v189_respawn_tick = 0;
+static int g_v189_respawns = 0;
+static int g_v189_life_logs = 0;
+static int g_v189_signal_logs = 0;
+static int g_v189_learn_logs = 0;
+
+static void tnx_v189_candidates(uintptr_t ownElem, int *out) {
+    uint8_t deadByte = 0;
+    int32_t ownAlive = -1;
+    int32_t ctrlAlive = -1;
+    uintptr_t ctrl = tnx_v150_controller();
+
+    out[0] = -1;
+    out[1] = -1;
+    out[2] = -1;
+
+    if (ownElem && tnx_read_bytes(ownElem + TNX_V91_DEAD_OFF, &deadByte, sizeof(deadByte))) {
+        out[0] = (int)deadByte;
+    }
+
+    if (ownElem && tnx_read_i32(ownElem + TNX_V127_OWN_ALIVE_OFF, &ownAlive)) out[1] = (int)ownAlive;
+
+    if (ctrl && tnx_read_i32(ctrl + TNX_V128_CTRL_ALIVE_OFF, &ctrlAlive)) out[2] = (int)ctrlAlive;
+}
+
+static const char *tnx_v189_cand_name(int slot) {
+    if (slot == 0) return "own+d4";
+    if (slot == 1) return "own+140";
+    if (slot == 2) return "ctrl+f80";
+
+    return "none";
+}
+
+static void tnx_v189_clear_life(void) {
+    g_v167_stage = 0;
+    g_v167_stuck = 0;
+    g_v160_active = 0;
+    g_v160_prev_idx = -1;
+    g_v160_hold_until = 0;
+    g_v160_last_danger = 0;
+    g_v47_last_write_ms = 0;
+    g_v152_issued = 0;
+    g_v172_moving = 0;
+    g_v180_hold = 0;
+    g_v174_stick_hold = 0;
+    g_v174_stick_x = 0;
+    g_v174_stick_y = 0;
+    g_v189_prev_valid = 0;
+}
+
+static void tnx_v189_respawn_event(int32_t x, int32_t y, int32_t px, int32_t py) {
+    int i = 0;
+
+    g_v189_respawns++;
+    g_v189_state = TNX_V189_STATE_RESPAWN;
+    g_v189_respawn_tick = (int)g_v48_ticks;
+
+    /* the pair is zeroed only when it still holds what this build wrote, which is the v188 rule: a
+       held stick belongs to the player and has to survive a respawn untouched */
+    {
+        uintptr_t ctrl = tnx_v150_controller();
+        int32_t pairX = 0;
+        int32_t pairY = 0;
+
+        if (ctrl && g_v174_stick_hold &&
+            tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_X_OFF, &pairX) &&
+            tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &pairY) &&
+            pairX == g_v174_stick_x && pairY == g_v174_stick_y) {
+            int32_t zero = 0;
+
+            tnx_write_bytes(ctrl + TNX_V128_CTRL_RAW_X_OFF, &zero, sizeof(zero));
+            tnx_write_bytes(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &zero, sizeof(zero));
+        }
+    }
+
+    tnx_v189_clear_life();
+
+    g_v189_pending = 1;
+    g_v189_pending_tick = (int)g_v48_ticks;
+
+    for (i = 0; i < TNX_V189_CAND; i++) {
+        g_v189_pre[i] = g_v189_cand_frame[i];
+        g_v189_cand_changes[i] = 0;
+    }
+
+    if (g_v189_life_logs < TNX_V189_LIFE_MAX_LOGS) {
+        g_v189_life_logs++;
+
+        tnx_logf("v189 RESPAWN #%d own=(%d,%d) from=(%d,%d) jump=%d cand=(%d,%d,%d) learned=%s=%d - "
+                 "the character was teleported, which a walk cannot do, so this is the one life "
+                 "event established without trusting a flag; the per life state is cleared here and "
+                 "the candidates are held for %d frames to see which changed across the event",
+                 g_v189_respawns, x, y, px, py,
+                 (int)sqrtf((float)((x - px) * (x - px) + (y - py) * (y - py))),
+                 g_v189_pre[0], g_v189_pre[1], g_v189_pre[2],
+                 tnx_v189_cand_name(g_v189_dead_slot), g_v189_dead_value, TNX_V189_HOLD_FRAMES);
+    }
+}
+
+static int tnx_v189_life(uintptr_t ownElem, int32_t ownX, int32_t ownY) {
+    int i = 0;
+    int changed = 0;
+    int deadNow = 0;
+
+    tnx_v189_candidates(ownElem, g_v189_cand_now);
+
+    if (g_v189_cand_seen) {
+        for (i = 0; i < TNX_V189_CAND; i++) {
+            if (g_v189_cand_now[i] != g_v189_cand_frame[i]) {
+                changed = 1;
+
+                if (g_v189_cand_changes[i] < 1000000) g_v189_cand_changes[i]++;
+            }
+        }
+
+        if (changed && g_v189_signal_logs < TNX_V189_LIFE_MAX_LOGS) {
+            g_v189_signal_logs++;
+
+            tnx_logf("v189 signals own=(%d,%d) own+d4=%d own+140=%d ctrl+f80=%d learned=%s=%d - "
+                     "printed on every change of any candidate, so a run that carries a death names "
+                     "the flag even if the respawn learning never fires", ownX, ownY,
+                     g_v189_cand_now[0], g_v189_cand_now[1], g_v189_cand_now[2],
+                     tnx_v189_cand_name(g_v189_dead_slot), g_v189_dead_value);
+        }
+    }
+
+    for (i = 0; i < TNX_V189_CAND; i++) g_v189_cand_frame[i] = g_v189_cand_now[i];
+    g_v189_cand_seen = 1;
+
+    /* the learning window opened by the last respawn */
+    if (g_v189_pending && ((int)g_v48_ticks - g_v189_pending_tick) >= TNX_V189_HOLD_FRAMES) {
+        int bestSlot = -1;
+        int bestChanges = 0;
+
+        g_v189_pending = 0;
+
+        /* More than one candidate can change across a respawn, and a control run of this very test
+           says so: the naive rule "the last one that changed" picked the control widget's field
+           instead of the flag. The tie break is the number of changes in this life, because a death
+           flag moves twice a life while a clock or a widget field moves constantly - a candidate
+           that toggles every frame is rejected by it and the flag, which changed twice, wins. */
+        for (i = 0; i < TNX_V189_CAND; i++) {
+            if (g_v189_pre[i] < 0 || g_v189_cand_now[i] < 0) continue;
+            if (g_v189_cand_now[i] == g_v189_pre[i]) continue;
+            if (bestSlot < 0 || g_v189_cand_changes[i] < bestChanges) {
+                bestSlot = i;
+                bestChanges = g_v189_cand_changes[i];
+            }
+        }
+
+        if (bestSlot >= 0) {
+            g_v189_dead_slot = bestSlot;
+            g_v189_dead_value = g_v189_pre[bestSlot];
+
+            if (g_v189_learn_logs < TNX_V189_LEARN_LOGS) {
+                g_v189_learn_logs++;
+
+                tnx_logf("v189 death flag learned slot=%d %s dead=%d alive=%d changes=%d from the "
+                         "respawn at tick=%d - this candidate changed across the teleport, held its "
+                         "new value for %d frames, and moved %d times in this life, fewer than any "
+                         "rival, so it is the flag a guard may use; until this line exists no guard "
+                         "runs at all and nothing is held on a guess", bestSlot,
+                         tnx_v189_cand_name(bestSlot), g_v189_pre[bestSlot],
+                         g_v189_cand_now[bestSlot], bestChanges, g_v189_pending_tick,
+                         TNX_V189_HOLD_FRAMES, bestChanges);
+            }
+        }
+    }
+
+    /* the teleport: a walk covers about thirteen units a frame, a respawn thousands */
+    if (g_v189_prev_valid) {
+        int64_t jx = (int64_t)ownX - (int64_t)g_v189_prev_x;
+        int64_t jy = (int64_t)ownY - (int64_t)g_v189_prev_y;
+
+        if (jx * jx + jy * jy >= (int64_t)TNX_V189_RESPAWN_JUMP * TNX_V189_RESPAWN_JUMP) {
+            tnx_v189_respawn_event(ownX, ownY, g_v189_prev_x, g_v189_prev_y);
+        }
+    }
+
+    g_v189_prev_x = ownX;
+    g_v189_prev_y = ownY;
+    g_v189_prev_valid = 1;
+
+    if (g_v189_state == TNX_V189_STATE_INIT) g_v189_state = TNX_V189_STATE_ALIVE;
+
+    if (g_v189_dead_slot >= 0 &&
+        g_v189_cand_now[g_v189_dead_slot] == g_v189_dead_value) deadNow = 1;
+
+    if (deadNow) {
+        if (g_v189_state != TNX_V189_STATE_DEAD) {
+            g_v189_state = TNX_V189_STATE_DEAD;
+
+            if (g_v189_life_logs < TNX_V189_LIFE_MAX_LOGS) {
+                g_v189_life_logs++;
+
+                tnx_logf("v189 own is DEAD own=(%d,%d) %s=%d - the learned flag says so, so the "
+                         "dodge is held and nothing is written until it clears; the label carries "
+                         "the same state on screen", ownX, ownY, tnx_v189_cand_name(g_v189_dead_slot),
+                         g_v189_dead_value);
+            }
+        }
+
+        return 1;
+    }
+
+    if (g_v189_state == TNX_V189_STATE_DEAD) {
+        tnx_v189_clear_life();
+
+        g_v189_state = TNX_V189_STATE_ALIVE;
+
+        if (g_v189_life_logs < TNX_V189_LIFE_MAX_LOGS) {
+            g_v189_life_logs++;
+
+            tnx_logf("v189 own is alive again own=(%d,%d) %s=%d - the learned candidate left its "
+                     "dead value, so the dodge resumes on a cleared life and cleared heading", ownX,
+                     ownY, tnx_v189_cand_name(g_v189_dead_slot),
+                     g_v189_cand_now[g_v189_dead_slot]);
+        }
+
+        return 0;
+    }
+
+    if (g_v189_state == TNX_V189_STATE_RESPAWN &&
+        ((int)g_v48_ticks - g_v189_respawn_tick) < TNX_V189_RESPAWN_VISIBLE) {
+        return 0;
+    }
+
+    g_v189_state = TNX_V189_STATE_ALIVE;
+
+    return 0;
+}
+
+/* v189: what the character does AFTER the dodge stops deciding - the number the slide report is
+   about. A decision is the frame the ring picked a heading; one second later own is read again and
+   the distance it travelled since that decision is printed, so a run says whether the body stops
+   with the writes or keeps going on the last target. */
+static void tnx_v189_drift(void) {
+    int32_t ownX = 0;
+    int32_t ownY = 0;
+
+    if (!g_v189_last_decision) return;
+    if ((g_v48_ticks % 60) != 0) return;
+    if ((g_v48_ticks - g_v189_last_decision) < 45) return;
+    if ((g_v48_ticks - g_v189_last_decision) > 90) return;
+    if (!tnx_v178_own(&ownX, &ownY)) return;
+    if (g_v189_drift_logs >= TNX_V189_DRIVE_LOGS) return;
+
+    g_v189_drift_logs++;
+
+    tnx_logf("v189 drift after the last decision: frames=%d traveled=%d from=(%d,%d) own=(%d,%d) "
+             "lastSent=(%d,%d) sentStep=%.0f holdTicks=%d - this is the distance covered in the "
+             "second after the dodge stopped choosing, so a traveled distance near the walk speed of "
+             "780 means the body is still riding the last target, and one near zero means the writes "
+             "and not the engine were pacing it",
+             (int)(g_v48_ticks - g_v189_last_decision),
+             (int)sqrtf((float)((ownX - g_v189_decide_x) * (ownX - g_v189_decide_x) +
+                                (ownY - g_v189_decide_y) * (ownY - g_v189_decide_y))),
+             (int)g_v189_decide_x, (int)g_v189_decide_y, ownX, ownY, g_v189_last_tx,
+             g_v189_last_ty, (double)TNX_V189_STEP, TNX_V189_HOLD_TICKS);
 }
 
 static void tnx_v174_route(int engaged) {
@@ -12293,6 +12865,18 @@ static int tnx_v172_valid_point(float x, float y) {
 
     if (cx != (int32_t)x || cy != (int32_t)y) return 0;
 
+    /* v189: a teammate's body is not a path. The ring scored a heading against threat segments
+       only, so a heading that ran through a teammate scored exactly like open ground; the
+       character walked into him and the engine's collision held it there while the shot went
+       through. The test lives here because this is the one gate both the threat branch and the
+       no-threat walk-into-it branch pass through, and a heading that is refused everywhere leaves
+       the character standing instead of pushed against a body. */
+    if (tnx_v189_mate_blocked(x, y)) {
+        g_v189_block_hits++;
+
+        return 0;
+    }
+
     return 1;
 }
 
@@ -12538,6 +13122,8 @@ static void tnx_autododge_v48(void) {
     tnx_v174_stick(0, 0.0f, 0.0f);
 
     tnx_v174_route(g_v160_active);
+
+    tnx_v189_drift();
 
     tnx_v177_paircal();
 
@@ -13121,6 +13707,13 @@ static void tnx_autododge_v48(void) {
 
         if (ownIndex >= 0 && ownTeam >= 0 && ownTeam <= TNX_V75_TEAM_MAX) g_v167_own_team_seen = 1;
 
+        tnx_v189_roster(ownIndex, (int)ownTeam, objects, usable);
+
+        /* the life test runs before anything is scanned or written, and a dead character returns
+           here: the dodge holds, the pair is not written and the shot list is not even rebuilt,
+           so a corpse cannot be steered and the next life starts from a cleared state */
+        if (tnx_v189_life(objects[ownIndex].object, ownX, ownY)) return;
+
         tnx_v140_proj_scan(g_v48_manager, projCount);
 
         g_v160_active = 0;
@@ -13141,7 +13734,7 @@ static void tnx_autododge_v48(void) {
             g_v165_dir_y = g_v172_ty - (float)ownY;
         }
 
-        tnx_v180_drive();
+        tnx_v189_drive();
 
         if (g_v160_active && g_v151_logs < TNX_V151_LOGS) {
             g_v151_logs++;
@@ -15013,7 +15606,7 @@ static void setup(void) {
              "heading and the target are held for %d more ticks after the last decision so the walk "
              "does not stop between two shots. The gate still stops the writes when the dodge has no "
              "heading at all, so a character that has nothing to dodge still stands still",
-             TNX_V180_HOLD_TICKS);
+             30);
 
     tnx_logf("plan v181, from the 18:10 run and the engine's own handler, disassembled. (1) The walk "
              "cycle has no separate field to write: the handler at 0x7A64F0 writes the pair at "
@@ -15176,7 +15769,60 @@ static void setup(void) {
              "v187 drive stands down with the pair at (-593,97) and nothing else happens. The dodge "
              "drives again while the joystick is held, and the release is the only thing that changed: "
              "it zeroes the pair only when the pair still holds the value this build wrote, so a held "
-             "stick is never stopped or overwritten");
+              "stick is never stopped or overwritten");
+
+    tnx_logf("plan v189, three reports and no device in the loop. (1) 3v3, and the report is that the "
+             "character goes through its teammates instead of dodging. The cause is not the team "
+             "offset, which reads +%#x with a stable value: it is that nothing in this file ever "
+             "used the players of own's own side. The ring scored a heading against threat segments "
+             "only, so a heading through a teammate's body scored exactly like open ground, the "
+             "engine's own collision stopped the character there and the shot it was dodging went "
+             "through; and a teammate's shot, whose own team byte can be unreadable, survived every "
+             "filter and became the most threatening segment on the board, because a segment that "
+             "starts on own's own body has its closest approach at time zero and distance zero. "
+             "There is now one roster pass a tick: it publishes own, own's side and the players of "
+             "that side, the ring refuses any candidate point within %.0f units of a teammate, and a "
+             "shot whose team byte is unreadable has its side taken from its spawn point - a "
+             "projectile leaves its owner's body, so the nearest player wins, and an ambiguous or "
+             "distant spawn stays unknown and stays a threat rather than being called ours. Both "
+             "counts are printed, so a 3v3 log says whether the roster found the two teammates it "
+             "must find. (2) Own death and respawn. v167 held the dodge on the byte at own+%#llx and "
+             "that byte reads 0, 1 and 63 on live objects, so the guard held while the player was "
+             "alive and the run was read as a wrong offset; v169 turned the guard off and this file "
+             "has not known its own life state since, while the attached log carries no death at "
+             "all. What is provable from the client side is the respawn: the character is teleported "
+             "by a jump of thousands of units between two frames where a walk covers about thirteen, "
+             "and that event is now the positive control for the flag - the three candidates are "
+             "sampled every frame, and the one that changed across a respawn and then held its new "
+             "value for %d frames is the flag, with the value it held before the event as the dead "
+             "value. Only a learned candidate may hold the dodge, so a wrong guess can never leave "
+             "the character standing, which is exactly how v167 failed. A respawn also clears the "
+             "per life state - the ladder, the heading, the write clock, the issued flag, the held "
+             "target - and zeroes the pair only when the pair still holds what this build wrote, so a "
+             "held stick survives it. The state is on screen, not only in the log: the watermark "
+             "label now reads the build tag and the state, and the status text carries life, own's "
+             "position, own's side and the teammate count. (3) The slide. v180 sent the ring's own "
+             "pick as the destination of the type %d client input, and that pick is a point up to "
+             "%.0f units away; the input is a POSITION, and this file's own note from v170 names the "
+             "consequence - a step larger than a walk cycle can express is not a walk but a lerp of "
+             "the body. The cap that says so is %.0f and it was only ever applied in the legacy "
+             "write path, which the v180 drive bypasses. The drive sends one frame of travel now and "
+             "reissues it every frame while it is engaged, which is what a held stick does, and it "
+             "holds the heading for %d ticks instead of %d: at the measured 780 units a second the "
+             "old hold kept walking the character for half a second after the last decision, which is "
+             "the other half of the same report. TNX_V189_PAIR_ONLY=%d writes only the pair - exactly "
+             "what the engine's own touch handler writes - and is the one switch still needing a "
+             "device, because the animation question is the one thing this side cannot settle: v179 "
+             "measured the pair alone as moving nothing, v180 measured the pair plus the message as "
+             "full speed, and neither run wrote the pair on frames without a threat. A log with the "
+             "pair only, and a log with the capped step, answer it between them. The distance the "
+             "character covers in the second after the last decision is printed as v189 drift, "
+             "against the 780 units a second a real walk covers, so the next run measures the slide "
+             "instead of describing it",
+             (unsigned)TNX_OBJ_TEAM_OFF, (double)TNX_V189_MATE_CLEAR,
+             (unsigned long long)TNX_V91_DEAD_OFF, TNX_V189_HOLD_FRAMES, TNX_V126_TYPE_MOVE,
+             (double)TNX_V172_MAX_DIST, (double)TNX_V189_STEP, TNX_V189_HOLD_TICKS, 30,
+             TNX_V189_PAIR_ONLY);
 
     tnx_start_timer();
 

@@ -348,7 +348,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_207"
+#define TNX_BUILD_TAG "titanox_208"
 
 #define TNX_V165_JOY_MAG 600.0f
 #define TNX_V167_TEAM_FILTER 1
@@ -11502,6 +11502,8 @@ static int32_t g_v189_sent_dy = 0;
 static int32_t g_v189_last_tx = 0;
 static int tnx_v205_walk(float dirX, float dirY);
 static void tnx_v207_precision(int32_t ownX, int32_t ownY, float dirX, float dirY, int escape);
+static int tnx_v172_threatened(float x, float y);
+static int tnx_v196_freest(float px, float py, float *tx, float *ty);
 
 static int32_t g_v189_last_ty = 0;
 static uint64_t g_v189_last_decision = 0;

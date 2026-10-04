@@ -14,7 +14,6 @@
 #import <stdlib.h>
 #import <string.h>
 #import <unistd.h>
- 
 
 #import <signal.h>
 #import "offsets.h"
@@ -29,9 +28,7 @@
 #define LOG_MAX_BYTES (4 * 1024 * 1024)
 #define TNX_V190_LOG_ROLL 1
 #define TNX_V190_LOG_FILTER 1
-/* The 20:46 run settles this: the character walked at 1157 units a second on frames where the applied
-   pair still read the engine's no touch sentinel, so that field is not the one the movement reads and
-   writing it changes nothing. The pair and the message are the working channel. */
+
 #define TNX_V190_APPLIED 0
 #define TNX_V190_DRIVE_LOGS 24
 
@@ -43,13 +40,13 @@
 #define TNX_V191_TRUST_LOGS 8
 #define TNX_V191_ROSTER_LOGS 10
 
-/* v192, from the reference script that walks properly instead of sliding. Its movement is three
-   calls per frame, all of them the engine's own: the client prediction for the local character, the
-   input manager add for the input itself, and the joystick pair read back. This build had the ctor,
-   the target and the add, and never called the prediction at all - the one step whose absence leaves
-   the body to be carried by the input instead of predicted and walked. */
 #define TNX_V192_PREDICT 1
 #define TNX_V192_BODY_CLEAR 180.0f
+#define TNX_V193_TOUCH_FLAG 1
+#define TNX_V193_TOUCH_GATE_OFF 0xf7fULL
+#define TNX_V193_TOUCH_ID_OFF 0xf84ULL
+#define TNX_V193_TOUCH_STATE_OFF 0xf80ULL
+#define TNX_V193_FLAG_LOGS 8
 #define TNX_V192_PREDICT_LOGS 8
 #define TNX_V192_BODY_LOGS 8
 #define OBJC_HOOK_MAX 32
@@ -92,7 +89,6 @@ static const char *g_image_names[] = {
     "NB.app",
     NULL
 };
-
 
 static const tnx_rva_entry_t g_rvas[] = {
     { "RVA_BATTLEMODE_GETINSTANCE", RVA_BATTLEMODE_GETINSTANCE },
@@ -174,14 +170,11 @@ static __thread BOOL g_inside_hook = NO;
 #define TNX_DC_RVA_LO 0xf74000ULL
 #define TNX_DC_RVA_SIZE 0xd4000ULL
 
-
-
 #define TNX_OWNER_VOTE_MIN 3
 
 #define TNX_OWNER_VOTE_TEAMS_MIN 2
 
 #define TNX_OWNER_VOTE_CONFIRM 1
-
 
 #define TNX_OBJ_HIT_DUMP_MAX 64
 #define TNX_OBJ_HIT_PRINT_MAX 24
@@ -326,7 +319,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_192"
+#define TNX_BUILD_TAG "titanox_195"
 
 #define TNX_V165_JOY_MAG 600.0f
 #define TNX_V167_TEAM_FILTER 1
@@ -400,15 +393,12 @@ static int g_v123_defer_logs = 0;
 #define TNX_V171_INPUT_MAG 500
 #define TNX_V171_INPUT_CHANGE_GATE 1
 
-
 #define TNX_V163_MAP_DUMPS 3
-
 
 #define TNX_V162_BOUNDS_RVA 0x00991440ULL
 #define TNX_V162_BOUNDS_X_OFF 0xccULL
 #define TNX_V162_BOUNDS_Y_OFF 0xd0ULL
 #define TNX_V162_LOGS 12
-
 
 #define TNX_V160_DIRS 48
 #define TNX_V160_REACH 600.0f
@@ -418,120 +408,24 @@ static int g_v123_defer_logs = 0;
 #define TNX_V160_RELEASE_MS 0
 #define TNX_V160_SPEED 720.0f
 
-
-
-
 #define TNX_V156_PUSH_LOGS 12
 
-
-
 #define TNX_V154_INFLATE 350.0f
-
 
 #define TNX_V151_THREAT_MIN_MS 0
 #define TNX_V151_LOGS 24
 
-
-
 #define TNX_V147_ACT_WRITE 0
 #define TNX_V148_PROBE_LOGS 6
 
- 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 #define TNX_V145_PUB_LOGS 10
 
- 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 #define TNX_V144_MIN_OBJ_BYTES 0x118ULL
-
- 
-
-
-
-
-
-
-
-
-
-
- 
-
-
-
-
-
-
-
-
-
-
-
 
 #define TNX_V142_WALK_ABORT_FULL 5
 #define TNX_V142_WALK_ABORT_EVERY 64
 
- 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 #define TNX_V141_ARRAY_VOTE_LOGS 8
-
- 
-
-
-
-
-
-
 
 #define TNX_V140_MODEPAIR_RVA 0x00ac3a58ULL
 #define TNX_V140_CTRL_MODE_OFF 0x918ULL
@@ -610,7 +504,6 @@ static int g_v103_attempt = 0;
 static int g_v103_prev_state = -1;
 static int g_v103_other_logs = 0;
 static int g_v103_other_detail = 0;
-
 
 static uintptr_t g_v102_own_ptr = 0;
 static int g_v102_own_index = -1;
@@ -693,14 +586,11 @@ static const char *g_v101_own_from = "none";
 #define TNX_V98_GRID 8
 #define TNX_V85_FIELD_SCANS 1
 
-
-
 #define TNX_V59_SLOT_WIDE 100
 #define TNX_V59_DROP_TICKS 60
 #define TNX_V59_TAG_MAX 24
 
 #define TNX_V60_IMAGE_SPAN 0x1164000ULL
-
 
 #define TNX_V63_HB_TICKS 5
 #define TNX_V63_BUCKET_TICKS 10
@@ -743,7 +633,6 @@ static const char *g_v101_own_from = "none";
 #define TNX_V75_GID_FLOOR 1000000
 #define TNX_V75_COORD_MAX 100000
 
-
 #define TNX_V134_HIST_MAX 8
 #define TNX_V134_V70_OFF 0x70ULL
 #define TNX_V134_OWN_LOGS 6
@@ -759,11 +648,7 @@ static const char *g_v101_own_from = "none";
 
 #define TNX_V73_STATE_DROPPED (-2)
 
-
-
-
 #define TNX_AG_OBJECT_MAX 16
-
 
 #define TNX_VOTESCAN_GLOBAL_EVERY 10
 
@@ -785,7 +670,6 @@ static const char *g_v101_own_from = "none";
 #define TNX_VTABLE_SEGMENT_ALT "__DATA"
 
 static const uintptr_t g_mode_vtables_verified[] = { 0x1002548, 0xff5720, 0 };
-
 
 static int tnx_verified_vtable(uintptr_t vtable) {
     if (!g_base || vtable <= g_base) return -1;
@@ -872,7 +756,6 @@ typedef struct {
 static tnx_vtcensus_t g_vtcensus[TNX_VTCENSUS_MAX];
 static int g_vtcensus_used = 0;
 static unsigned long long g_vtcensus_total = 0;
-
 
 static int g_heap_big_skip = 0;
 static int g_heap_region_capped = 0;
@@ -965,17 +848,6 @@ static FILE *tnx_log_handle(void) {
     return g_log;
 }
 
-/* v190: what is allowed to reach the file.
-
-   The 20:19 run was 644349 bytes and 32 seconds long, and 119812 of those bytes were the hook
-   library's per slot dry run on top of a 512 KiB budget spent mostly on lines whose questions were
-   answered many versions ago. The run that was sent in therefore ends twelve milliseconds after the
-   dodge first engages, which is the worst possible place to lose a log.
-
-   A line is written unless its start matches the drop list below; anything not listed is kept, so a
-   one off line and every line added later survive by default and nothing goes missing quietly. The
-   counts are printed once a second by the heartbeat, so the list can be corrected from a log instead
-   of guessed at again. */
 static const char *g_v190_log_drop[] = {
     "v100 players", "v100 walk", "v100 hopdump", "v100 teamdump", "v100 container",
     "v100 membership", "v100 man ", "v100 gid", "v100 coords", "v100 coord", "v100 off",
@@ -987,12 +859,14 @@ static const char *g_v190_log_drop[] = {
     "v173 ", "v115 ", "v140 ", "v142 ", "v102 ", "v138 ", "v106 ", "v135 ", "v116 ", "v162 ",
     "v145 ", "v101 ", "v129 ", "v141 ", "v128 ", "v144 ", "v148 ", "v105 ", "v112 ", "v92 ",
     "v160 ", "v127 ", "v152 ",
+    "v174 ", "v117 ", "v119 ", "v134 ", "v169 ", "v126 ", "v129 ",
     NULL
 };
 
 static const char *g_v190_log_keep[] = {
     "=== ", "plan v", "slot ", "v47 ", "v100 hook", "v100 live", "v100 census", "v126 ",
-    "v142 publish", "v146 ", "v172 ", "v174 ", "v179 ", "v181 ", "v189 ", "v190 ",
+    "v142 publish", "v146 ", "v172 ", "v179 ", "v181 ", "v189 ", "v190 ", "v191 ", "v192 ",
+    "v193 ",
     NULL
 };
 
@@ -1052,10 +926,6 @@ static void tnx_v190_log_census(void) {
              (unsigned long long)worstN);
 }
 
-/* v190: the log rolls instead of stopping. The counter of the previous build returned the moment the
-   budget ran out, so the file ended at a fixed size in the middle of whatever was happening; the
-   window from here on is the newest one, and the drop is written into the file so a reader knows the
-   earlier part is gone and not merely missing. */
 static void tnx_v190_log_roll(void) {
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     NSDateFormatter *df = NULL;
@@ -1118,8 +988,6 @@ static void tnx_write_line(const char *text) {
     }
 }
 
-
-
 static void tlog(NSString *msg) {
     if (!msg) return;
 
@@ -1138,17 +1006,6 @@ static void tnx_logf(const char *format, ...) {
 
     tnx_write_line(buffer);
 }
-
- 
-
-
-
-
-
-
-
-
-
 
 static char g_v146_phase[48] = "boot";
 static char g_v146_hist[8][48];
@@ -1272,7 +1129,6 @@ static uint64_t g_v50_ticks = 0;
 static uintptr_t g_slot_adopted = 0;
 static int g_ag_adopted = 0;
 
-
 static int g_v57_coord_off = -1;
 static int g_v59_chain_hits = 0;
 static int g_v59_mode_from_chain = 0;
@@ -1312,16 +1168,6 @@ static uintptr_t g_players_array = 0;
 
 static int g_players_count = 0;
 static int g_players_cap = 0;
-
- 
-
-
-
-
-
-
-
-
 
 static volatile uint32_t g_v142_seq = 0;
 static uintptr_t g_v142_pub_object = 0;
@@ -1973,7 +1819,6 @@ static void tnx_slot_fired_report(void) {
         }
     }
 
-
     tnx_logf("v100 hooks total fired=%llu armed=%d of %d slots at tick=%llu", (unsigned long long)total,
              armedCount, TNX_SLOT_COUNT, (unsigned long long)g_v50_ticks);
 
@@ -1988,10 +1833,6 @@ static uint64_t g_ag_hits = 0;
 static uintptr_t g_ag_manager = 0;
 static uintptr_t g_ag_objects[TNX_AG_OBJECT_MAX] = { 0 };
 static int g_ag_objectCount = 0;
-
-
-
-
 
 static void tnx_slot_install_one(int index) {
     uintptr_t target = 0;
@@ -2197,13 +2038,6 @@ static BOOL tnx_write_bytes(uintptr_t address, const void *src, size_t length) {
     if (!src || !length) return NO;
     if (!address) return NO;
 
-     
-
-
-
-
-
-
     memcpy((void *)address, src, length);
 
     return YES;
@@ -2309,9 +2143,6 @@ static uintptr_t tnx_pick(uintptr_t rvaA, uintptr_t rvaB) {
 
     return tnx_callable(rvaB);
 }
-
-
-
 
 static BOOL tnx_copy(uintptr_t source, void *destination, size_t length) {
     if (!source || !destination || !length) return NO;
@@ -2715,8 +2546,6 @@ static BOOL tnx_objc_targets(id self, tnx_objc_hook_t *hook) {
     return NO;
 }
 
-
-
 static void tnx_run_autododge(void) {
     tnx_autododge_v48();
 }
@@ -2820,16 +2649,8 @@ static UILabel *g_overlay = NULL;
 static double g_overlay_last = 0.0;
 static int g_scan_ticks = 0;
 
-/* v189: what this build believes about its own life. The value is declared up here because the
-   on-screen label is written from the render path far below and has to show it: the state of the
-   character is a thing the user has to be able to read off the screen, not something to infer from
-   a missing dodge line. */
 static int g_v189_state = TNX_V189_STATE_INIT;
 
-/* The players of this match, published once per tick by the same pass that resolves own: own's
-   position, the side own is on, and the players that side carries besides own. The team report
-   used to be a single number, so nothing downstream could tell a teammate from an enemy; the
-   roster and the mate list are what the ring and the shot attribution read. */
 static int g_v189_pl_n = 0;
 static int32_t g_v189_pl_x[TNX_V189_PLAYER_MAX];
 static int32_t g_v189_pl_y[TNX_V189_PLAYER_MAX];
@@ -2847,7 +2668,6 @@ static int g_v189_attrib_logs = 0;
 static int g_v189_block_hits = 0;
 static int g_v189_label_builds = 0;
 
-/* v191: whether the side read can be believed, and the enemies it names */
 static int g_v191_team_trust = 1;
 static int32_t g_v191_own_team = -1;
 static int32_t g_v191_enemy_x[TNX_V189_PLAYER_MAX];
@@ -2859,6 +2679,9 @@ static int g_v191_enemy_blocks = 0;
 static int g_v191_oneshot_segs = 0;
 static int g_v192_body_blocks = 0;
 static int g_v192_body_logs = 0;
+static int g_v193_flag_logs = 0;
+static uint64_t g_v193_gate_writes = 0;
+static uint64_t g_v193_dead_picks = 0;
 static uint64_t g_v192_human_live = 0;
 
 static const char *tnx_v189_state_name(void) {
@@ -2952,7 +2775,6 @@ static void tnx_overlay_update(void) {
 
 static int g_alert_shown = 0;
 static uint64_t g_alert_cleared_ms = 0;
-
 
 static void tnx_v62_alert_menu(NSString *info) {
     NSString *text = [info copy];
@@ -3099,17 +2921,10 @@ static void tnx_v64_modesig_tick(void) {
                  "src=SIG", (void *)found, (unsigned long long)(uintptr_t)vt, ec, (unsigned)m124,
                  mgr, count, g_v65_sig_ticks);
 
-
         if (count >= 2 && cap >= count && cap <= TNX_MGR_CAP_MAX) {
             void *mgrArray = NULL;
 
             g_manager_count = count;
-
-             
-
-
-
-
 
             if (tnx_read_ptr((uintptr_t)mgr + TNX_MGR_ARRAY_OFF, &mgrArray) && mgrArray) {
                 tnx_v142_publish((uintptr_t)mgr, (uintptr_t)mgrArray, count, cap, "modesig");
@@ -3140,8 +2955,6 @@ static void tnx_v63_flush_buckets(void) {
     g_v63_chain_stable_logged = 0;
 }
 
-
-
 static void tnx_v81_players_dump(uintptr_t players, uintptr_t array, int32_t count,
                                  int32_t capacity) {
     if (!players) return;
@@ -3167,15 +2980,10 @@ static void tnx_v81_players_dump(uintptr_t players, uintptr_t array, int32_t cou
              (unsigned long long)TNX_V81_NEXT_MEMBER_OFF, (unsigned long long)TNX_MGR_ARRAY_OFF);
 }
 
-
-
-
 static int32_t g_v132_gid_lo = 0;
 static int32_t g_v132_gid_hi = 0;
 static uintptr_t g_v132_alert_scene = 0;
 static uint64_t g_v132_alert_ms = 0;
-
-
 
 static void tnx_v132_battle_alert(uintptr_t scene, uintptr_t scenePrev) {
     uint64_t now = 0;
@@ -3243,7 +3051,6 @@ static int tnx_v86_element_type(uintptr_t vt, uintptr_t *wordOut) {
         default: return -1;
     }
 }
-
 
 static void tnx_v81_container_census(uintptr_t array, int32_t count, uintptr_t container) {
     int accepted = 0;
@@ -3462,7 +3269,6 @@ static void tnx_v81_container_census(uintptr_t array, int32_t count, uintptr_t c
                      (void *)element, vt, typeText, (unsigned)(TNX_V86_ELEM_QWORDS * 8),
                      (unsigned long long)TNX_V82_ELEM_DEF_OFF);
 
-
             if (type == TNX_V88_TYPE3_CODE) {
                 float h10 = 0.0f;
                 float h1c = 0.0f;
@@ -3536,8 +3342,6 @@ static void tnx_v81_container_census(uintptr_t array, int32_t count, uintptr_t c
              (unsigned long long)TNX_OBJ_GLOBALID_OFF,
              (unsigned long long)TNX_V88_ELEM_BACK_OFF);
 }
-
-
 
 static uintptr_t g_v82_hop_scene = 0;
 
@@ -3632,11 +3436,6 @@ static int g_v109_done = 0;
 static uintptr_t g_v110_owner = 0;
 static int g_v110_wired = 0;
 
-
-
-
-
-
 static int g_v106_gid_logs = 0;
 static int g_v106_coord_logs = 0;
 static int g_v106_dump_done = 0;
@@ -3722,7 +3521,6 @@ static void tnx_v106_own_dump(uintptr_t element) {
 
 }
 
-
 static int g_v105_score_logs = 0;
 static int g_v105_last_choice = -2;
 static int g_v105_hop_logs = 0;
@@ -3755,11 +3553,6 @@ static int tnx_v105_container_score(uintptr_t container) {
     if (!tnx_read_ptr(container + TNX_MGR_ARRAY_OFF, &array) || !array) return -1;
     if (!tnx_read_i32(container + TNX_MGR_COUNT_OFF, &count)) return -1;
     if (count <= 0 || count > TNX_V56_COUNT_MAX) return -1;
-
-     
-
-
-
 
     if (own < 0 || own >= count) soft = 1;
 
@@ -4015,7 +3808,6 @@ static int tnx_v80_state_tick(void) {
                  "and a null here is a not-yet-filled field, not a wrong scene",
                  (unsigned long long)TNX_MODE_MANAGER_OFF, state);
 
-
         return 1;
     }
 
@@ -4026,7 +3818,6 @@ static int tnx_v80_state_tick(void) {
                  "findOwningTeam 0xac3ddc dereferences before it walks anything, so the second "
                  "hop is retried next tick rather than filled in from the client's own fields",
                  (void *)client, (unsigned long long)TNX_V82_CLIENT_HOP_OFF);
-
 
         return 1;
     }
@@ -4082,7 +3873,6 @@ static int tnx_v80_state_tick(void) {
         if (g_v85_field_scans < TNX_V85_FIELD_SCANS) {
             g_v85_field_scans++;
 
-
         }
     }
 
@@ -4118,7 +3908,6 @@ static int tnx_v80_state_tick(void) {
                  "passed the choice stays on it instead of falling back to the client, so the "
                  "last good container is what the walk keeps reading", hopWhy[0], hopWhy[1],
                  g_v82_hop_sticky);
-
 
         return 1;
     }
@@ -4196,7 +3985,6 @@ static int tnx_v80_state_tick(void) {
         }
     }
 
-
     return 1;
 }
 
@@ -4245,7 +4033,6 @@ static uint64_t tnx_v79_object_dispatches(void) {
 
     return total;
 }
-
 
 static int tnx_v78_scan_allowed(uint64_t fired, uint64_t total) {
     if (fired > 0) {
@@ -4390,8 +4177,6 @@ typedef struct {
     uintptr_t vt0;
 } tnx_v50_facts_t;
 
-
-
 static int g_v50_alert_streak = 0;
 static uintptr_t g_v50_alert_streak_ptr = 0;
 static uint64_t g_v50_alert_calls = 0;
@@ -4531,10 +4316,6 @@ static void tnx_render_watermark(void) {
         char want[64];
         int n = snprintf(want, sizeof(want), "%s [%s]", TNX_BUILD_TAG, tnx_v189_state_name());
 
-        /* v189: the label carries the life state. It was the fixed constant TNX_LABEL, so the
-           screen said nothing about whether the character is alive, dead or just respawned, and
-           that is the one thing a player cannot read off the log while playing. The interned
-           string is rebuilt only when the text really changes, because building it allocates. */
         if (n > 0 && (size_t)n < sizeof(want) && strcmp(g_label_text, want) != 0) {
             void *sc = tnx_sc_string(want);
 
@@ -4579,7 +4360,6 @@ static void tnx_start_timer(void) {
         int ready = tnx_v76_scan_ready(battle || fallback);
         int needScan = !scene && !g_players_object;
 
-
         if (needScan != g_v80_scan_armed) {
             g_v80_scan_armed = needScan;
 
@@ -4618,17 +4398,12 @@ static void tnx_start_timer(void) {
 }
 
 static void tnx_run_workload(void) {
-     
-
-
 
     tnx_v142_tick_begin("pre-locate");
 
     tnx_v146_phase("locate");
 
     tnx_locate_battle_mode();
-
-     
 
     tnx_v142_tick_begin("post-locate");
 
@@ -4791,15 +4566,8 @@ static int tnx_objc_arm(const char *clsName, const char *selName) {
         g_objc_hooks[i].signature = types;
         g_objc_hooks[i].hits = 0;
 
-         
-
-
-
-
-
         g_objc_hooks[i].wanted[0] = owner;
         g_objc_hooks[i].wantedCount = 1;
-
 
         g_objc_armed++;
 
@@ -4835,7 +4603,14 @@ static void tnx_resolve_addresses(void) {
     g_addr_getteam = tnx_callable(RVA_LOGICBATTLEMODECLIENT_GETOWNPLAYERTEAM);
     g_addr_getx = tnx_callable(RVA_LOGICGAMEOBJECTCLIENT_GETX);
     g_addr_gety = tnx_callable(RVA_LOGICGAMEOBJECTCLIENT_GETY);
-    g_addr_setprediction = tnx_callable(RVA_LOGICBATTLEMODECLIENT_SETCLIENTPREDICTIONMOVETO);
+
+    g_addr_setprediction = tnx_callable(TNX_RVA_SETPREDICTION);
+
+    if (!g_addr_setprediction) {
+        tnx_logf("v193 prediction NOT resolvable rva=%#llx - without it the body is carried by the "
+                 "input queue instead of walked by the engine's own movement, which is the slide",
+                 (unsigned long long)TNX_RVA_SETPREDICTION);
+    }
     g_addr_sendmovement = tnx_callable(RVA_CLIENTINPUTMESSAGE_SENDMOVEMENT);
     g_addr_getclip = tnx_callable(RVA_STRINGTABLE_GETMOVIECLIP);
     g_addr_addchild = tnx_callable(RVA_STAGE_ADDCHILD);
@@ -4855,11 +4630,6 @@ static void tnx_resolve_addresses(void) {
           (g_addr_getclip && g_addr_gettf && g_addr_settext && g_addr_setxy && g_addr_addchild) ? 1 : 0,
           g_addr_battlescreen ? 1 : 0]);
 }
-
-
-
-
-
 
 static BOOL tnx_segment_range(const char *name, uintptr_t *lo, uintptr_t *hi) {
     if (!g_base || !name) return NO;
@@ -5193,7 +4963,6 @@ static BOOL tnx_instance_shaped(uintptr_t object) {
     return YES;
 }
 
-
 static BOOL tnx_manager_shape(uintptr_t manager) {
     void *array = NULL;
     void *probe = NULL;
@@ -5383,11 +5152,6 @@ static void tnx_report_mode_hit(const char *tag, uintptr_t slot, uintptr_t objec
         }
     }
 }
-
-
-
-
-
 
 static int tnx_manager_live_count(uintptr_t manager) {
     void *array = NULL;
@@ -5586,17 +5350,6 @@ static void tnx_v75_measure(uintptr_t manager, int32_t count, tnx_v75_measure_t 
     out->posDistinct = posCount;
 }
 
-
-
-
-
-
-
-
-
-
-
-
 static int tnx_vtcensus_top(int byShaped) {
     int best = -1;
 
@@ -5618,17 +5371,6 @@ static int tnx_vtcensus_top(int byShaped) {
 
     return best;
 }
-
-
-
-
-
-
-
-
-
-
-
 
 static void tnx_slot_diag(const char *why) {
     char buf[1024];
@@ -5761,7 +5503,6 @@ static void tnx_diag_report(const char *why) {
 
     tnx_trail_dump();
 
-
     tnx_logf("v100 chain gates: vtBad=%d vtNotDC=%d mgrBad=%d mgrNotPlausible=%d mgrNotHeap=%d "
              "varBad=%d pxBad=%d pyBad=%d inputBad=%d shapeBad=%d arrayRead=%d countRead=%d "
              "arrayNull=%d countRange=%d live=%d own=%d gid=%d tested=%d logged=%d",
@@ -5799,8 +5540,6 @@ static void tnx_diag_report(const char *why) {
     tnx_slot_diag(why);
 }
 
-
-
 static void tnx_locate_battle_mode(void) {
     if (g_mode_strong) return;
 
@@ -5835,9 +5574,7 @@ static void tnx_locate_battle_mode(void) {
 
         tnx_heap_regions_refresh();
 
-
     }
-
 
     if (g_mode_strong) {
         tnx_logf("votescan SUCCESS attempt=%d object=%p global=%p",
@@ -5858,9 +5595,6 @@ static uintptr_t tnx_vtable_rva(void *object) {
 
     return (uintptr_t)vtable - g_base;
 }
-
-
-
 
 static void tnx_report_manager(const char *tag, uintptr_t manager) {
     void *array = NULL;
@@ -6188,15 +5922,11 @@ static void tnx_slot_table_dump(void) {
     }
 }
 
-
 typedef struct {
     const char *label;
     const char *value;
     const char *provenance;
 } tnx_fact_t;
-
-
-
 
 static int tnx_object_detail(uintptr_t manager, int limit) {
     void *array = NULL;
@@ -6244,7 +5974,6 @@ static int tnx_object_detail(uintptr_t manager, int limit) {
         uintptr_t s88 = 0;
         uintptr_t s90 = 0;
 
-
         tnx_logf("obj[%02d] %p vt=%#llx gid=%d team=%d own=%d dead=%d s88=%#llx s90=%#llx "
                  "s18=%#llx s28=%#llx s48=%#llx shape=%d",
                  i, element, (unsigned long long)tnx_vtable_rva(element), globalId, team, owner,
@@ -6257,8 +5986,6 @@ static int tnx_object_detail(uintptr_t manager, int limit) {
 
     return shown;
 }
-
-
 
 typedef void (*tnx_v47_setpred_t)(void *self, int x, int y);
 
@@ -6467,14 +6194,6 @@ static uintptr_t tnx_v135_list_gid_off(uintptr_t array, int32_t count) {
     return off;
 }
 
- 
-
-
-
-
-
-
-
 static int g_v167_stage = 0;
 static int g_v167_stuck = 0;
 static int32_t g_v167_last_x = 0;
@@ -6515,12 +6234,6 @@ static int g_v151_logs = 0;
 static int32_t g_v152_last_tx = 0;
 static int32_t g_v152_last_ty = 0;
 static int g_v152_issued = 0;
-
-
-
-
- 
-
 
 static int g_v142_walk_aborted = 0;
 static int g_v142_walk_abort_i = -1;
@@ -6625,10 +6338,6 @@ static int tnx_v48_collect(uintptr_t manager, tnx_v47_obj_t *out, int capacity, 
 
     gidOff = tnx_v135_list_gid_off((uintptr_t)data, count);
 
-     
-
-
-
     walkSeq = g_v142_seq;
 
     g_v142_walk_aborted = 0;
@@ -6645,8 +6354,6 @@ static int tnx_v48_collect(uintptr_t manager, tnx_v47_obj_t *out, int capacity, 
         memset(&entry, 0, sizeof(entry));
 
         g_v50_reject.elementsRead++;
-
-         
 
         if (g_v142_seq != walkSeq) {
             g_v142_walk_aborted = 1;
@@ -7076,9 +6783,6 @@ static void tnx_v48_discriminate(uintptr_t manager) {
     }
 }
 
-
-
-
 static void tnx_v92_team_dump(const tnx_v47_obj_t *objects, int usable) {
     int limit = usable < TNX_V92_TEAM_DUMPS ? usable : TNX_V92_TEAM_DUMPS;
 
@@ -7257,7 +6961,6 @@ static void tnx_v48_probe(uintptr_t manager, uintptr_t mode, int verbose) {
              (unsigned long long)tnx_v57_coord_x_off(), (unsigned long long)tnx_v57_coord_y_off(),
              usable, distinct, inRange);
 
-
     if (!TNX_V113_DEAD_ONCE || !g_v113_dead_probe_done) {
         g_v113_dead_probe_done = 1;
     }
@@ -7339,7 +7042,6 @@ static void tnx_v48_probe(uintptr_t manager, uintptr_t mode, int verbose) {
 }
 
 static int g_v50_setpred_blocked_logs = 0;
-
 
 static int tnx_v90_slot_probe(void) {
     static const uintptr_t slots[TNX_V90_SLOTS] = { TNX_MODE_SLOT_A, TNX_MODE_SLOT_B,
@@ -7434,8 +7136,6 @@ static int tnx_v95_finite(float v) {
     return 1;
 }
 
-
-
 static int tnx_v98_clip_walk(int32_t ax, int32_t ay, int32_t bx, int32_t by, int32_t cell,
                              const uint8_t *solid, int gw, int gh, int32_t *outX, int32_t *outY) {
     int32_t cx = 0;
@@ -7451,9 +7151,6 @@ static int tnx_v98_clip_walk(int32_t ax, int32_t ay, int32_t bx, int32_t by, int
 
     if (outX) *outX = bx;
     if (outY) *outY = by;
-
-     
-
 
     if (!solid || cell <= 0) return 0;
 
@@ -7569,9 +7266,6 @@ static void tnx_v98_clip_selftest(void) {
              g_v98_clip_fail);
 }
 
-
-
-
 static void tnx_v99_inputmgr_probe(void) {
     void *inputMgr = NULL;
     float wasX = 0.0f;
@@ -7623,8 +7317,6 @@ static void tnx_v99_inputmgr_probe(void) {
     }
 }
 
-
-
 static int tnx_v101_word(uintptr_t address, uint32_t *out) {
     if (!out) return 0;
     if (address & 3ULL) return 0;
@@ -7664,8 +7356,6 @@ static uintptr_t tnx_v101_entry(uintptr_t rva) {
 
     return 0;
 }
-
-
 
 static void tnx_v101_actuator(uintptr_t mode, int x, int y);
 
@@ -7738,13 +7428,11 @@ static void tnx_v101_own_index_probe(void) {
         g_v101_own_from = "index-miss";
     }
 
-
     if (TNX_V101_ACTUATOR && taken) {
         tnx_v101_actuator(chosen == 0 ? (uintptr_t)g_players_object : (uintptr_t)g_scene_object,
                           0, 0);
     }
 }
-
 
 static void tnx_v101_actuator(uintptr_t mode, int x, int y) {
     if (!TNX_V101_ACTUATOR) return;
@@ -7753,13 +7441,11 @@ static void tnx_v101_actuator(uintptr_t mode, int x, int y) {
     ((void (*)(void *, int, int, int))g_v101_setpred)((void *)mode, x, y, 1);
 }
 
-
 static int tnx_write_i32(uintptr_t address, int32_t value) {
     if (address & 3) return 0;
 
     return tnx_write_bytes(address, &value, sizeof(value)) ? 1 : 0;
 }
-
 
 static void tnx_v102_own_probe(void) {
     uintptr_t cand[2];
@@ -8091,9 +7777,6 @@ static void tnx_v102_audit_all(void) {
              (unsigned long long)TNX_V102_SUBGETTER_RVA);
 }
 
-
-
-
 static int tnx_v112_read_flag(void) {
     uint8_t b = 0;
 
@@ -8102,9 +7785,6 @@ static int tnx_v112_read_flag(void) {
 
     return (int)b;
 }
-
-
-
 
 static int g_v113_test_state = 0;
 static uint64_t g_v113_test_tick = 0;
@@ -8196,14 +7876,6 @@ static int32_t g_v127_own_before_y = 0;
 static int g_v127_setter_called = 0;
 static int g_v127_elem_called = 0;
 static int g_v127_rb_logs = 0;
-
- 
-
-
-
-
-
-
 
 static uintptr_t g_v144_own_elem = 0;
 static uint64_t g_v144_own_stamp = 0;
@@ -8341,11 +8013,6 @@ static uintptr_t tnx_v127_own_obj(void) {
     uintptr_t vt = 0;
     const char *why = "?";
 
-     
-
-
-
-
     if (g_v144_own_elem) {
         if (tnx_v144_cand_ok(g_v144_own_elem, &why, &vt)) {
             g_v145_own_from = (g_v144_own_stamp == g_v142_tick_stamp) ? "published" : "published-old";
@@ -8366,9 +8033,6 @@ static uintptr_t tnx_v127_own_obj(void) {
 
     {
         uintptr_t cand = tnx_v144_hop((uintptr_t)g_scene_object, NULL);
-
-         
-
 
         if (cand && tnx_v144_cand_ok(cand, NULL, &vt)) {
             g_v145_own_from = "engine-chain";
@@ -8483,14 +8147,6 @@ static int tnx_v113_queue_count(uintptr_t *mgrOut) {
 
 static uint64_t g_v156_push_logs = 0;
 
-/* v192: the client prediction, which the reference calls on every frame it moves.
-
-   The script that walks properly does three things per frame and all three are the game's own: it
-   builds the input, it stores the target into the client prediction, and it hands the input to the
-   input manager. This build had two of the three; the prediction was fingerprinted at boot and never
-   called, and the mode's pair at +0x1d4 was only ever read back as a probe. The prediction is the
-   engine's own local movement, so leaving it out is what leaves the body to be carried by the input
-   queue - the slide - instead of being walked under the game's own movement code. */
 static uintptr_t g_v192_pred_last = 0;
 static int g_v192_predict_logs = 0;
 static uint64_t g_v192_pred_calls = 0;
@@ -8669,7 +8325,6 @@ static uintptr_t tnx_v115_client(void) {
     return (uintptr_t)client;
 }
 
-
 static uint32_t g_v116_mode_hist[TNX_V116_HIST_MODES];
 static int64_t g_v116_last_mode = -1;
 static int32_t g_v116_interp_prev_x = 0;
@@ -8696,7 +8351,6 @@ static int tnx_v116_interp(int32_t *x, int32_t *y) {
 
     return 1;
 }
-
 
 static uintptr_t g_v128_wit_elem = 0;
 static int32_t g_v128_wit_x0 = 0;
@@ -8796,10 +8450,6 @@ static int tnx_v129_own_from_slot(uintptr_t *objectOut, int32_t *gidOut) {
         if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)idx * 8ULL, &element) || !element) continue;
 
         gid = tnx_v106_gid((uintptr_t)element, NULL);
-
-         
-
-
 
         if (gid < TNX_V75_GID_FLOOR || gid >= TNX_V138_PLAYER_GID_MAX) {
             if (g_v129_own_slot_logs < TNX_V129_CHAIN_LOGS) {
@@ -9269,10 +8919,6 @@ static void tnx_v128_actuate(void) {
         g_v128_have_wit = 1;
     }
 
-     
-
-
-
     if (TNX_V147_ACT_WRITE && doWrite && ctrl &&
         tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_X_OFF, &raw_keep_x) &&
         tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &raw_keep_y)) {
@@ -9437,7 +9083,6 @@ static void tnx_v128_witness_line(int plus) {
     g_v128_wit_y1 = ey;
 }
 
-
 static int g_v117_gate2_seen = 0;
 static int g_v117_gate3_seen = 0;
 
@@ -9465,7 +9110,6 @@ static int tnx_v117_src(uintptr_t off, int32_t *x, int32_t *y, int *flag) {
     return tnx_v117_pair((uintptr_t)o, x, y);
 }
 
-
 static int32_t g_v118_src30_prev_x = 0;
 static int32_t g_v118_src30_prev_y = 0;
 static int32_t g_v118_src38_prev_x = 0;
@@ -9492,17 +9136,7 @@ static uintptr_t tnx_v118_mode_ptr(uintptr_t off) {
     return (uintptr_t)o;
 }
 
-
-
-
-
-
-
 static uint64_t g_v120_reloads = 0;
-
-
-
-
 
 static uint64_t g_v122_pre_reloads = 0;
 static uint64_t g_v122_pre_frames = 0;
@@ -9510,28 +9144,6 @@ static uint64_t g_v122_pre_frames = 0;
 static uint64_t g_v121_push_frame = 0;
 static uint64_t g_v121_win_reloads = 0;
 static int g_v121_win_stage = 0;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 static void tnx_v116_frame(void) {
     int mode = tnx_v115_mode();
@@ -9582,7 +9194,6 @@ static void tnx_v116_interp_line(void) {
 
     if (g_v116_interp_have) moved = (x != g_v116_interp_prev_x || y != g_v116_interp_prev_y) ? 1 : 0;
     if (moved) g_v116_interp_moves++;
-
 
     {
         int32_t s30x = 0;
@@ -9650,7 +9261,6 @@ static void tnx_v116_interp_line(void) {
     g_v116_interp_prev_y = y;
     g_v116_interp_have = 1;
 }
-
 
 static int tnx_v113_fields_pair(uintptr_t *srcOut, int32_t *xOut, int32_t *yOut) {
     uintptr_t own = tnx_v127_own_obj();
@@ -9966,7 +9576,6 @@ static void tnx_v113_test(const tnx_v47_obj_t *objects, int usable, int ownIndex
         g_v122_pre_reloads = g_v120_reloads;
         g_v122_pre_frames = g_v48_ticks;
 
-
         g_v121_push_frame = g_v48_ticks;
         g_v121_win_stage = 0;
         g_v121_win_reloads = g_v120_reloads;
@@ -10194,11 +9803,6 @@ static void tnx_v113_hop2(void) {
 
 }
 
-
-
-
-
-
 static void tnx_v103_state_note(int state) {
     if (g_v103_prev_state == 5 && state != 5) {
         g_v103_ok = 0;
@@ -10285,7 +9889,6 @@ static int tnx_v91_own_scan(void) {
                  (unsigned long long)TNX_V101_MODEPAIRSET_RVA);
     }
 
-
     for (int b = 0; b < TNX_V99_SCAN_BASES; b++) {
         if (!bases[b]) continue;
 
@@ -10334,8 +9937,6 @@ static int tnx_v91_own_scan(void) {
                  (unsigned)(TNX_V99_SCAN_QWORDS * 8), (void *)array, count,
                  (unsigned)(TNX_V99_SCAN_QWORDS * 8));
     }
-
-
 
     if (!g_v95_find_joy_done) {
         g_v95_find_joy_done = 1;
@@ -10490,9 +10091,6 @@ static void tnx_v90_gate_report(int slotHit) {
 
             if (!ownFound) ownFound = tnx_v102_take_own(objects, usable, &ownIndex, &ownFrom);
 
-             
-
-
             if (ownFound && ownIndex >= 0 && ownIndex < usable) {
                 tnx_v146_phase("own");
 
@@ -10631,28 +10229,6 @@ static void tnx_v90_gate_report(int slotHit) {
              (unsigned long long)g_v93_test_writes, (unsigned long long)g_v47_writes);
 }
 
- 
-
-
-
-
-
-
-
-
-
-
-/* v189: the players of this match, and which of them are on this side.
-
-   Nothing in this file used them. The ring scored a heading only against threat segments, so a
-   heading that ran through a teammate's body was scored exactly like open ground: the character
-   walked into him, the engine's own collision stopped it there and the shot it was supposed to
-   dodge went through - which is the 3v3 report. The same missing report is why a teammate's shot
-   could be scored as a threat: a shot carries a side, but the side of own was one number with no
-   roster behind it, and a shot whose team byte is unreadable reads -1 and survives every filter.
-   The attached log has exactly that case, gid=4000000 team=-1, so the side is now also taken from
-   the spawn point: a shot starts on its owner's body, so the nearest player to the spawn names
-   the side, and an ambiguous spawn stays unknown and stays a threat. */
 static int tnx_v189_team_at(const tnx_v47_obj_t *objects, int index) {
     if (!objects || index < 0) return -1;
 
@@ -10660,12 +10236,6 @@ static int tnx_v189_team_at(const tnx_v47_obj_t *objects, int index) {
                                                      : objects[index].teamNew;
 }
 
-/* v191: own is found by ELEMENT, not by index, and the side is only believed when it divides the
-   container. The 20:46 run reported players=6 mates=5 ownTeam=0 own=(0,0) in a 3v3: own was not
-   matched at all, own's side was taken from the wrong element, and five of the six players were
-   adopted as teammates. A ring that refuses every point within 240 units of five phantom teammates
-   has exactly one direction left, which is the enemy, and a shot filter that calls every enemy
-   bullet own-side leaves nothing to dodge - both reports in one defect. */
 static void tnx_v189_roster(uintptr_t ownElem, int ownIndex, int ownTeam,
                             const tnx_v47_obj_t *objects, int usable) {
     int i = 0;
@@ -10725,9 +10295,6 @@ static void tnx_v189_roster(uintptr_t ownElem, int ownIndex, int ownTeam,
         g_v189_mate_n++;
     }
 
-    /* a side is a minority in a team match: 3v3 carries at most two players besides own, 2v2 at most
-       one, and a container where own's side holds more than half of the players means the field is
-       not the team. The same report comes from a single team value across four or more players. */
     ownSide++;
 
     if (g_v189_pl_n >= 4 && (ownSide > (g_v189_pl_n / 2) || hn < 2)) {
@@ -10735,7 +10302,6 @@ static void tnx_v189_roster(uintptr_t ownElem, int ownIndex, int ownTeam,
         g_v189_mate_n = 0;
     }
 
-    /* the enemies are the other side, and only when the side is believed */
     if (g_v191_team_trust) {
         for (i = 0; i < g_v189_pl_n && g_v191_enemy_n < TNX_V189_PLAYER_MAX; i++) {
             if (g_v189_pl_mine[i]) continue;
@@ -10777,17 +10343,6 @@ static void tnx_v189_roster(uintptr_t ownElem, int ownIndex, int ownTeam,
     }
 }
 
-/* v191: no candidate point that walks the character towards an enemy.
-
-   The report is "it runs straight at the opponents". The ring scored a heading against threat
-   segments only, and a point next to an enemy scored exactly like open ground, so the nearest
-   segment-free point was often the one on the enemy's side of own. The test is a comparison with
-   own's own distance rather than a fixed radius, so it never empties the ring when own is already
-   in someone's face: a point within 150 units of an enemy is always refused, and beyond that a
-   point is refused when it is 60 units closer to an enemy than own is. */
-/* v191: own's own reading is checked before it is used. The 20:46 run printed own=(0,0) in one line
-   and own=(142428352,1) in another, and the first of those produced a respawn event with a jump of
-   2554 units from the origin, so a garbage reading is not a corner case here - it is in the log. */
 static int tnx_v191_own_ok(int32_t x, int32_t y) {
     if (x == 0 && y == 0) return 0;
     if (x < -100000 || x > 100000) return 0;
@@ -10807,10 +10362,6 @@ static int tnx_v191_enemy_blocked(float x, float y, float ownX, float ownY) {
         float dc = sqrtf((x - ex) * (x - ex) + (y - ey) * (y - ey));
         float dOwn = sqrtf((ownX - ex) * (ownX - ex) + (ownY - ey) * (ownY - ey));
 
-        /* the two tests are done in DISTANCES and not in their squares. A squared margin against a
-           squared distance is not the same comparison - at a thousand units out it fires on a point
-           that is two units closer, not sixty, which the control run for this rule found: it refused
-           a candidate that was thirty units closer while the margin said sixty. */
         if (dc < TNX_V191_ENEMY_HARD) return 1;
         if (dOwn > TNX_V191_ENEMY_FAR && dc < dOwn - TNX_V191_ENEMY_MARGIN) return 1;
     }
@@ -10818,13 +10369,6 @@ static int tnx_v191_enemy_blocked(float x, float y, float ownX, float ownY) {
     return 0;
 }
 
-/* v192: distance from a point to the segment own -> candidate, and the test that uses it.
-
-   The v189 mate test only looked at the END of the path, so a candidate beyond a teammate was
-   accepted and the character walked straight through him - which is the report. This test walks the
-   whole segment, and it uses every other player rather than the side read, so a broken team byte
-   cannot hide a body: mates and enemies are both bodies, and the only thing that changes with the
-   side is the destination test for enemies. */
 static float tnx_v192_seg_dist(float ax, float ay, float bx, float by, float px, float py) {
     float vx = bx - ax;
     float vy = by - ay;
@@ -10961,12 +10505,6 @@ static int tnx_v140_proj_scan(uintptr_t manager, int32_t count) {
 
         if (gid < TNX_V138_PLAYER_GID_MAX) continue;
 
-         
-
-
-
-
-
         {
             static uintptr_t seenCls[4] = { 0, 0, 0, 0 };
             static int seenClsN = 0;
@@ -10994,10 +10532,6 @@ static int tnx_v140_proj_scan(uintptr_t manager, int32_t count) {
 
         if (!tnx_read_i32((uintptr_t)element + TNX_OBJ_X_OFF, &px)) continue;
         if (!tnx_read_i32((uintptr_t)element + TNX_OBJ_Y_OFF, &py)) continue;
-
-         
-
-
 
         for (k = 0; k < TNX_V140_PROJ_MAX; k++) {
             if (g_v140_projs[k].elem != (uintptr_t)element) continue;
@@ -11113,8 +10647,6 @@ static int tnx_v140_proj_scan(uintptr_t manager, int32_t count) {
     return found;
 }
 
-
-
 static int g_v148_probe_logs = 0;
 
 static uintptr_t tnx_v148_cls(uintptr_t obj) {
@@ -11190,7 +10722,6 @@ static void tnx_v148_receiver_probe(void) {
     tnx_v148_receiver_line("battle-global", battle);
 }
 
-
 static uintptr_t tnx_v150_controller(void) {
     void *raw = NULL;
 
@@ -11202,18 +10733,6 @@ static uintptr_t tnx_v150_controller(void) {
     return (uintptr_t)raw;
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
 static int g_v160_prev_idx = -1;
 static uint64_t g_v160_hold_until = 0;
 static uint64_t g_v160_last_danger = 0;
@@ -11222,8 +10741,6 @@ static int32_t g_v160_ty = 0;
 static int g_v160_active = 0;
 static float g_v165_dir_x = 0.0f;
 static float g_v165_dir_y = 0.0f;
-
-
 
 static void tnx_v167_watch(int32_t ownX, int32_t ownY) {
     if (ownX != g_v167_last_x || ownY != g_v167_last_y) {
@@ -11255,7 +10772,6 @@ static void tnx_v167_watch(int32_t ownX, int32_t ownY) {
                  TNX_V167_STUCK_FRAMES, TNX_V171_STAGE_STICK, TNX_V171_STAGE_POSITION);
     }
 }
-
 
 static int g_v169_signal_logs = 0;
 
@@ -11418,7 +10934,6 @@ static void tnx_v171_input_release(void) {
     }
 }
 
-
 static void tnx_v167_alive(int32_t ownX, int32_t ownY) {
     if (!g_v167_dead) return;
 
@@ -11433,7 +10948,6 @@ static void tnx_v167_alive(int32_t ownX, int32_t ownY) {
                  "otherwise keep frozen", ownX, ownY, g_v167_stage);
     }
 }
-
 
 static int g_v162_logs = 0;
 
@@ -11455,8 +10969,6 @@ static uintptr_t tnx_v162_bounds_obj(uintptr_t receiver) {
 }
 
 static int g_v163_map_dumps = 0;
-
-
 
 static void tnx_v163_map_dump(uintptr_t bounds) {
     int32_t v[12];
@@ -11775,20 +11287,6 @@ static int32_t g_v180_tx = 0;
 static int32_t g_v180_ty = 0;
 static uint64_t g_v180_hold = 0;
 
-/* --- v189 drive ------------------------------------------------------------------------------
-   v180 sent the ring's own pick as the destination of the type 2 client input, and that pick is a
-   point up to TNX_V172_MAX_DIST units away. The input is a POSITION, and this file's own note from
-   v170 names the consequence: a step larger than a walk cycle can express is not a walk, it is a
-   lerp of the body, which is the slide. The cap that says so is TNX_V170_STEP, and it was only ever
-   applied in the legacy write path far below, which the v180 drive bypasses. It is applied here
-   now: the pair carries the heading, the message carries one frame of travel towards it, and both
-   are reissued every frame the dodge is engaged, which is what a held stick does. The heading is
-   also held for TNX_V189_HOLD_TICKS instead of TNX_V180_HOLD_TICKS - at the measured 780 units a
-   second the old 30 tick hold kept walking the character for half a second after the last
-   decision, which is the other half of the same report. TNX_V189_PAIR_ONLY is the one switch that
-   still needs a device: at 1 only the pair is written, which is exactly what the engine's own touch
-   handler writes, so a log from such a run says whether the walk cycle follows the pair alone. */
-
 static int g_v189_drive_ticks = 0;
 static int g_v189_drive_logs = 0;
 static uint64_t g_v189_queue_calls = 0;
@@ -11803,27 +11301,6 @@ static int64_t g_v189_decide_y = 0;
 static int g_v189_drift_logs = 0;
 static uint64_t g_v189_drift_done = 0;
 
-/* --- v190 the delay and the slide, as numbers ---------------------------------------------------
-   The report is "the dodge works but it is late" and "the slide is still there", and neither can be
-   settled from a code read: the 20:19 log ends twelve milliseconds after the drive first engaged,
-   which is one drive frame and no after picture at all.
-
-   latency: an engagement is a run of writes; the first write of a run is the decision, and the tick
-   own's position first moves is the reaction. The gap between them is the delay, printed with the
-   frames the engagement lasted and the frames it wrote.
-
-   channels: three fields matter. The joystick pair at ctrl+TNX_V128_CTRL_RAW_X_OFF is where our
-   heading goes; the applied world target at ctrl+TNX_V128_CTRL_APPLIED_X_OFF is what the engine's own
-   touch handler writes for a real walk, and its tracked branch stores the touch into exactly that
-   pair; own's position is the outcome. A real walk leaves the applied target a few hundred units
-   ahead of own, which is why TNX_V190_APPLIED writes our own step there as well as sending it: the
-   handler writes both, so writing both reproduces a drag of the stick rather than a position push.
-   The line says whether the applied pair holds what was sent - if it holds the player's rival value
-   instead, the send is not reaching the movement code.
-
-   drift: the distance own covers in the second after the last decision, against the 780 units a
-   second a walk covers. That is the slide, as a number, and the previous build's version of it never
-   printed at all because it waited for a frame counter inside a forty five frame window. */
 static uint64_t g_v190_engage_start = 0;
 static uint64_t g_v190_engage_last = 0;
 static uint64_t g_v190_engage_writes = 0;
@@ -11925,12 +11402,6 @@ static void tnx_v190_drive_note(int32_t ownX, int32_t ownY, int32_t tx, int32_t 
 
         g_v191_traveled += (uint64_t)sqrtf((float)d2);
 
-        /* v191: the pair is the channel that works - the 20:46 run walked the character at 1157
-           units a second with the applied target still at the engine's no touch sentinel - so the
-           question worth printing is whether the body moves the way the pair points. +1.00 means
-           the frame's displacement is along the written stick, which is a walk; a value near zero
-           or negative on a frame that moved means something else carried the body, which is the
-           slide. */
         if (pairX || pairY) {
             float dot = 0.0f;
             float plen = sqrtf((float)(pairX * pairX + pairY * pairY));
@@ -11952,10 +11423,6 @@ static void tnx_v190_drive_note(int32_t ownX, int32_t ownY, int32_t tx, int32_t 
     if (appX == tx && appY == ty) g_v190_applied_match++;
     else g_v190_applied_miss++;
 
-    /* v192: is the player's own finger driving while this build drives? The pair field holds this
-       build's last value after a write here, so a pair that is neither zero nor ours is the human's
-       touch, and the report needs that split: the complaint is that the dodge does nothing while
-       the stick is held and works while standing. */
     if ((pairX || pairY) && !(pairX == g_v174_stick_x && pairY == g_v174_stick_y)) {
         g_v192_human_live++;
     }
@@ -12018,6 +11485,7 @@ static int tnx_v189_drive(void) {
     len = sqrtf(dx * dx + dy * dy);
 
     if (len < 0.0001f) {
+        g_v193_dead_picks++;
         tnx_v174_stick(0, 0.0f, 0.0f);
 
         return 0;
@@ -12035,14 +11503,35 @@ static int tnx_v189_drive(void) {
         g_v189_queue_skips++;
     }
 
-    /* v190: the applied world target is read BEFORE it is written, because the engine's own value is
-       the measurement: its idle sentinel is the pair -300,-300 (the tracked branch of its touch
-       handler overwrites that pair from the touch and its idle branch stores the sentinel), so an
-       applied pair that still reads the sentinel while this build is writing every frame means the
-       send is not reaching the movement code. Reading after the write would only ever read back what
-       was just stored, which is why the order matters here. */
-    /* the reference's middle step, called with the same one frame step that goes into the input */
     tnx_v192_predict(tx, ty);
+
+    if (TNX_V193_TOUCH_FLAG && ctrl) {
+        uint8_t gateNow = 0;
+        int32_t stateNow = 0;
+        int32_t idNow = 0;
+        uint8_t one = 1;
+
+        tnx_read_bytes(ctrl + TNX_V193_TOUCH_GATE_OFF, &gateNow, sizeof(gateNow));
+        tnx_read_i32(ctrl + TNX_V193_TOUCH_STATE_OFF, &stateNow);
+        tnx_read_i32(ctrl + TNX_V193_TOUCH_ID_OFF, &idNow);
+
+        if (gateNow != 1) {
+            tnx_write_bytes(ctrl + TNX_V193_TOUCH_GATE_OFF, &one, sizeof(one));
+            g_v193_gate_writes++;
+        }
+
+        if (g_v193_flag_logs < TNX_V193_FLAG_LOGS) {
+            g_v193_flag_logs++;
+
+            tnx_logf("v193 touch gate=%d state=%d id=%d writes=%llu own=(%d,%d) applied=(%d,%d) - "
+                     "gate is the byte the engine's own touch handler tests before it applies the "
+                     "stick, state and id are the rest of its touch bookkeeping, and applied is the "
+                     "no touch sentinel it writes when it believes nothing is held; setting the gate "
+                     "is this build claiming the drag the game then animates",
+                     gateNow, stateNow, idNow, (unsigned long long)g_v193_gate_writes, ownX, ownY,
+                     appX, appY);
+        }
+    }
 
     if (ctrl) {
         tnx_read_i32(ctrl + TNX_V128_CTRL_APPLIED_X_OFF, &appX);
@@ -12089,22 +11578,6 @@ static int tnx_v189_drive(void) {
 
     return 1;
 }
-
-/* --- v189 own death and respawn -----------------------------------------------------------------
-   v167 held the whole dodge on the byte at own+TNX_V91_DEAD_OFF, and that byte reads 0, 1 and 63
-   on live objects, so the guard held while the player was alive and the run was read as a wrong
-   offset; v169 turned the guard off and printed three candidates instead. Since then nothing knows
-   whether own is dead, and the attached log carries no death at all.
-
-   What IS provable from this side is the respawn: the character is teleported, so own's position
-   jumps by thousands of units between two frames where a walk covers about thirteen. That event is
-   the positive control for the flag, and it is used as one: the three candidates are sampled every
-   frame, and if one of them changed across a respawn and then held its new value for
-   TNX_V189_HOLD_FRAMES frames, that candidate is the flag and the value it held before the event is
-   the dead value. Only a candidate learned that way may hold the dodge, so a wrong guess can never
-   leave the character standing - which is exactly how v167 failed. Until the first respawn the
-   three values are printed on every change, so a run that carries a death also names the flag by
-   hand. */
 
 static int g_v189_cand_now[TNX_V189_CAND];
 static int g_v189_cand_frame[TNX_V189_CAND];
@@ -12175,8 +11648,6 @@ static void tnx_v189_respawn_event(int32_t x, int32_t y, int32_t px, int32_t py)
     g_v189_state = TNX_V189_STATE_RESPAWN;
     g_v189_respawn_tick = (int)g_v48_ticks;
 
-    /* the pair is zeroed only when it still holds what this build wrote, which is the v188 rule: a
-       held stick belongs to the player and has to survive a respawn untouched */
     {
         uintptr_t ctrl = tnx_v150_controller();
         int32_t pairX = 0;
@@ -12247,18 +11718,12 @@ static int tnx_v189_life(uintptr_t ownElem, int32_t ownX, int32_t ownY) {
     for (i = 0; i < TNX_V189_CAND; i++) g_v189_cand_frame[i] = g_v189_cand_now[i];
     g_v189_cand_seen = 1;
 
-    /* the learning window opened by the last respawn */
     if (g_v189_pending && ((int)g_v48_ticks - g_v189_pending_tick) >= TNX_V189_HOLD_FRAMES) {
         int bestSlot = -1;
         int bestChanges = 0;
 
         g_v189_pending = 0;
 
-        /* More than one candidate can change across a respawn, and a control run of this very test
-           says so: the naive rule "the last one that changed" picked the control widget's field
-           instead of the flag. The tie break is the number of changes in this life, because a death
-           flag moves twice a life while a clock or a widget field moves constantly - a candidate
-           that toggles every frame is rejected by it and the flag, which changed twice, wins. */
         for (i = 0; i < TNX_V189_CAND; i++) {
             if (g_v189_pre[i] < 0 || g_v189_cand_now[i] < 0) continue;
             if (g_v189_cand_now[i] == g_v189_pre[i]) continue;
@@ -12287,7 +11752,6 @@ static int tnx_v189_life(uintptr_t ownElem, int32_t ownX, int32_t ownY) {
         }
     }
 
-    /* the teleport: a walk covers about thirteen units a frame, a respawn thousands */
     if (g_v189_prev_valid && tnx_v191_own_ok(ownX, ownY) &&
         tnx_v191_own_ok(g_v189_prev_x, g_v189_prev_y)) {
         int64_t jx = (int64_t)ownX - (int64_t)g_v189_prev_x;
@@ -12351,10 +11815,6 @@ static int tnx_v189_life(uintptr_t ownElem, int32_t ownX, int32_t ownY) {
     return 0;
 }
 
-/* v189: what the character does AFTER the dodge stops deciding - the number the slide report is
-   about. A decision is the frame the ring picked a heading; one second later own is read again and
-   the distance it travelled since that decision is printed, so a run says whether the body stops
-   with the writes or keeps going on the last target. */
 static void tnx_v189_drift(void) {
     int32_t ownX = 0;
     int32_t ownY = 0;
@@ -12379,6 +11839,22 @@ static void tnx_v189_drift(void) {
                                 (ownY - g_v189_decide_y) * (ownY - g_v189_decide_y))),
              (int)g_v189_decide_x, (int)g_v189_decide_y, ownX, ownY, g_v189_last_tx,
              g_v189_last_ty, (double)TNX_V189_STEP, TNX_V189_HOLD_TICKS);
+}
+
+static void tnx_v193_core(void) {
+    if ((g_v48_ticks % 60) != 0) return;
+
+    tnx_logf("v193 core tick=%llu own=(%d,%d) ownOk=%d team=%d mates=%d enemies=%d trust=%d "
+             "players=%d segs=%d trackedOwn=%d trackedOther=%d oneshot=%d body=%d enemyBlock=%d "
+             "mateBlock=%d gate=%llu pred=%llu/%llu deadPick=%llu human=%llu driveWrites=%llu",
+             (unsigned long long)g_v48_ticks, g_v189_own_x, g_v189_own_y,
+             tnx_v191_own_ok(g_v189_own_x, g_v189_own_y), g_v191_own_team, g_v189_mate_n,
+             g_v191_enemy_n, g_v191_team_trust, g_v189_pl_n, g_v172_seg_count, g_v167_proj_own,
+             g_v167_proj_other, g_v191_oneshot_segs, g_v192_body_blocks, g_v191_enemy_blocks,
+             g_v189_block_hits, (unsigned long long)g_v193_gate_writes,
+             (unsigned long long)g_v192_pred_calls, (unsigned long long)g_v192_pred_fails,
+             (unsigned long long)g_v193_dead_picks, (unsigned long long)g_v192_human_live,
+             (unsigned long long)g_v190_engage_writes);
 }
 
 static void tnx_v174_route(int engaged) {
@@ -12797,19 +12273,11 @@ static void tnx_v172_build(void) {
         if (!p->hasPrev && !TNX_V191_ONESHOT) continue;
         if (g_v172_seg_count >= TNX_V172_SEG_MAX) break;
 
-        /* v191: the side is only used when the roster believes it. The 20:46 run had every player
-           read as own's side, so this one test turned every enemy bullet into "ours" and the ring
-           had nothing left to dodge - the report is a dodge that does not react. */
         if (TNX_V167_TEAM_FILTER && g_v191_team_trust && g_v167_own_team_seen &&
             p->team == g_v167_own_team) continue;
 
         if (!p->hasPrev) {
-            /* v191: a projectile seen once already has a bearing. It left its owner's body, so the
-               chord from where it was first seen to where it is now is the direction it is flying,
-               divided by the ticks it took to travel it. Waiting for a second sample is a tick of
-               the reaction the report is about, and a shot that leaves the scanned range before the
-               second sample was never a threat at all - 655 one-sample lines against 341 threats in
-               that run, so two thirds of what flew was invisible to the ring. */
+
             uint64_t age = (p->qtick > p->ptick) ? (p->qtick - p->ptick) : 1;
 
             vx = (float)(p->x - p->spawnX) / (float)age;
@@ -12936,25 +12404,16 @@ static int tnx_v172_valid_point(float x, float y) {
 
     if (cx != (int32_t)x || cy != (int32_t)y) return 0;
 
-    /* v189: a teammate's body is not a path. The ring scored a heading against threat segments
-       only, so a heading that ran through a teammate scored exactly like open ground; the
-       character walked into him and the engine's collision held it there while the shot went
-       through. The test lives here because this is the one gate both the threat branch and the
-       no-threat walk-into-it branch pass through, and a heading that is refused everywhere leaves
-       the character standing instead of pushed against a body. */
     if (tnx_v189_mate_blocked(x, y)) {
         g_v189_block_hits++;
 
         return 0;
     }
 
-    /* v192: and no heading whose path runs through any other player's body, mate or enemy, so a
-       teammate cannot be walked into whether the side read works or not */
     if (tnx_v192_body_blocked(x, y, (float)g_v189_own_x, (float)g_v189_own_y)) {
         return 0;
     }
 
-    /* v191: an enemy's body is not a destination either */
     if (tnx_v191_enemy_blocked(x, y, (float)g_v189_own_x, (float)g_v189_own_y)) {
         g_v191_enemy_blocks++;
 
@@ -13208,6 +12667,8 @@ static void tnx_autododge_v48(void) {
     tnx_v174_route(g_v160_active);
 
     tnx_v189_drift();
+
+    tnx_v193_core();
 
     tnx_v177_paircal();
 
@@ -13474,9 +12935,6 @@ static void tnx_autododge_v48(void) {
         int managerChanged = 0;
         int periodic = 0;
 
-         
-
-
         if (sourceIsMode && g_v82_hop_chosen == 1 && g_v142_tick_object) {
             resolved = (void *)g_v142_tick_object;
         } else if (sourceIsMode) {
@@ -13631,13 +13089,6 @@ static void tnx_autododge_v48(void) {
             return;
         }
 
-         
-
-
-         
-
-
-
         tnx_v145_publish_own(objects[ownIndex].object, ownFrom);
 
         if (g_v144_own_logs < 8) {
@@ -13740,9 +13191,6 @@ static void tnx_autododge_v48(void) {
         threats++;
     }
 
-     
-
-
     tnx_v169_death_signals((ownIndex >= 0 && ownIndex < usable) ? objects[ownIndex].object : 0, ownX,
                            ownY);
 
@@ -13767,7 +13215,6 @@ static void tnx_autododge_v48(void) {
         g_v152_issued = 0;
     }
 
-
     tnx_v167_alive(ownX, ownY);
 
     tnx_v146_phase("sidestep");
@@ -13781,16 +13228,12 @@ static void tnx_autododge_v48(void) {
 
         if (g_v48_manager) tnx_read_i32(g_v48_manager + TNX_MGR_COUNT_OFF, &projCount);
 
-
         g_v167_own_team = (int)ownTeam;
 
         if (ownIndex >= 0 && ownTeam >= 0 && ownTeam <= TNX_V75_TEAM_MAX) g_v167_own_team_seen = 1;
 
         tnx_v189_roster(g_v182_own_elem, ownIndex, (int)ownTeam, objects, usable);
 
-        /* the life test runs before anything is scanned or written, and a dead character returns
-           here: the dodge holds, the pair is not written and the shot list is not even rebuilt,
-           so a corpse cannot be steered and the next life starts from a cleared state */
         if (tnx_v189_life(objects[ownIndex].object, ownX, ownY)) return;
 
         tnx_v140_proj_scan(g_v48_manager, projCount);
@@ -13979,7 +13422,6 @@ static void tnx_autododge_v48(void) {
 
         tnx_v146_phase("mode-write");
 
-
         tnx_v148_receiver_probe();
 
         if (!g_v160_active) {
@@ -13987,15 +13429,11 @@ static void tnx_autododge_v48(void) {
             g_v165_dir_y = escapeY;
         }
 
-
         tnx_v167_watch(ownX, ownY);
-
 
         g_v171_engaged_frame = 1;
 
         tnx_v171_write_input(g_v165_dir_x, g_v165_dir_y);
-
-
 
         if (g_v167_logs < 1) {
             g_v167_logs++;
@@ -14010,7 +13448,6 @@ static void tnx_autododge_v48(void) {
                      (unsigned long long)TNX_V128_CTRL_RAW_X_OFF, TNX_V171_STAGE_STICK,
                      TNX_V171_STAGE_POSITION, ownX, ownY, targetX, targetY, g_v171_input_skips);
         }
-
 
         g_v47_writes++;
 
@@ -14056,7 +13493,6 @@ static void tnx_dodge_plan(uintptr_t manager, int32_t team) {
         if (!tnx_read_i32((uintptr_t)element + TNX_OBJ_GLOBALID_OFF, &gid)) continue;
         if (!tnx_read_i32((uintptr_t)element + TNX_OBJ_TEAM_OFF, &t)) continue;
         if (!tnx_read_u8((uintptr_t)element + TNX_OBJ_DEADFLAG_OFF, &dead)) continue;
-
 
         live++;
 
@@ -14126,9 +13562,6 @@ static BOOL tnx_v56_vtable_in_image(uintptr_t vtable) {
     return NO;
 }
 
-
-
-
 static int tnx_v59_container_at(uintptr_t object, int32_t *countOut, int32_t *capOut, char *why,
                                 size_t whyLen) {
     void *array = NULL;
@@ -14189,7 +13622,6 @@ static uint64_t tnx_v68_word(uintptr_t address) {
     return value;
 }
 
-
 static int tnx_v71_array_probe(uintptr_t array, int32_t count, char *why, size_t whyLen) {
     int probe = 0;
     int valid = 0;
@@ -14231,9 +13663,6 @@ static int tnx_v71_array_probe(uintptr_t array, int32_t count, char *why, size_t
 
     return valid;
 }
-
-
-
 
 static int tnx_v68_container_gate(uintptr_t manager, uintptr_t *containerOut, int32_t *countOut,
                                   int32_t *capOut, char *why, size_t whyLen) {
@@ -14294,7 +13723,6 @@ static int tnx_v68_container_gate(uintptr_t manager, uintptr_t *containerOut, in
 
     return 1;
 }
-
 
 static void tnx_v68_multiteam_dump(uintptr_t owner, uint32_t teamMask, int teamCount) {
     void *array = NULL;
@@ -14373,7 +13801,6 @@ static void tnx_v68_multiteam_dump(uintptr_t owner, uint32_t teamMask, int teamC
     tnx_logf("v100 teamHist owner=%p n=%d t0=%d t1=%d t2=%d t3=%d other=%d src=B", (void *)owner,
              seen, t0, t1, t2, t3, other);
 }
-
 
 static int tnx_v60_container_resolve(uintptr_t manager, uintptr_t *containerOut, int32_t *countOut,
                                      int32_t *capOut, char *why, size_t whyLen) {
@@ -14492,7 +13919,6 @@ static int tnx_v60_container_resolve(uintptr_t manager, uintptr_t *containerOut,
     return 1;
 }
 
-
 static const char *tnx_v57_header_reason(uintptr_t manager, int32_t *countOut, int32_t *capOut) {
     void *array = NULL;
     int32_t count = 0;
@@ -14517,7 +13943,6 @@ static const char *tnx_v57_header_reason(uintptr_t manager, int32_t *countOut, i
     return NULL;
 }
 
-
 static uintptr_t tnx_v60_strip_ptr(uintptr_t value) {
     uintptr_t stripped = value;
 
@@ -14536,9 +13961,6 @@ static uintptr_t tnx_v60_strip_ptr(uintptr_t value) {
     return stripped;
 }
 
-
-
-
 static uintptr_t tnx_v57_coord_x_off(void) {
     return TNX_OBJ_X_OFF;
 }
@@ -14546,11 +13968,6 @@ static uintptr_t tnx_v57_coord_x_off(void) {
 static uintptr_t tnx_v57_coord_y_off(void) {
     return TNX_OBJ_Y_OFF;
 }
-
-
-
-
-
 
 static void tnx_slot_pump(void) {
     int first = -1;
@@ -14608,7 +14025,6 @@ static void tnx_slot_pump(void) {
 
         if (strcmp(reason, "vtable-garbage") == 0) return;
     }
-
 
     void *bridge = NULL;
 
@@ -14675,7 +14091,6 @@ static void tnx_slot_pump(void) {
         if (plan && tnx_manager_live_count(plan) >= TNX_MANAGER_MIN_OBJECTS) {
             int detailed = tnx_object_detail(plan, TNX_OBJECT_DETAIL_MAX);
 
-
             if (detailed > 0) tnx_dodge_all_teams(plan);
         }
     }
@@ -14702,7 +14117,6 @@ static void tnx_slot_pump(void) {
 
 }
 
-
 static void setup(void) {
     if (g_setup_done) return;
     g_setup_done = YES;
@@ -14720,7 +14134,6 @@ static void setup(void) {
     tnx_resolve_addresses();
 
     if (TNX_V98_CLIP_SELFTEST) tnx_v98_clip_selftest();
-
 
     tnx_objc_arm("MetalView", "render");
     tnx_objc_arm("NullView", "render");
@@ -14925,7 +14338,7 @@ static void setup(void) {
              "once every 300 parked ticks, so a container that only a scan can find stays "
              "reachable, and (4) prints parked= on the heartbeat plus one line per park and "
              "resume, so the next log shows the decision instead of leaving it to be inferred");
- 
+
     tnx_logf("plan v81, from the v80 run and the binary audit of the proposed plan: (1) the scene "
              "pointer the engine itself returns from 0x8c5130 is now an EDGE - the alert fires when "
              "the pointer goes from null to non-null at state==5, so a second battle raises a "
@@ -15959,6 +15372,38 @@ static void setup(void) {
              "four-player read where own's side came back as three", (unsigned long long)TNX_MODE_PREDICTX_OFF,
              (double)TNX_V192_BODY_CLEAR, 0, 6, 2, 3, 1);
 
+    tnx_logf("plan v193, from the 21:17 run and from offsets.h being audited against the binary. (1) The "
+             "v192 prediction call never fired: g_addr_setprediction was resolved from "
+             "RVA_LOGICBATTLEMODECLIENT_SETCLIENTPREDICTIONMOVETO, which reads 0xb90b8c in offsets.h and "
+             "is the middle of another function in this image, so the callable refused it and the log "
+             "had no line about it at all. 134 of that header's 146 RVA entries are not function starts "
+             "in this image; the confirmed prediction is 0xac3f20, whose fingerprint is the three "
+             "instructions b901d401 b901d802 d65f03c0, and the header now carries only entries that "
+             "land on a start, with the rest named instead of left to look plausible. A guard that "
+             "cannot fire silently is the same trap as a probe behind an early return: the caller now "
+             "prints a line when the address does not resolve. (2) The engine's touch bookkeeping is "
+             "written while this build drives. Every v190 line showed applied=(-300,-300) - the "
+             "sentinel its own touch handler writes when it believes nothing is held - on frames where "
+             "the character walked at 1157 units a second, so the movement was coming through the "
+             "input queue and not from the stick the game animates. The byte at ctrl+%#llx is what its "
+             "handler tests before it applies the stick, and it is set here with state and id read "
+             "back beside it: the sentinel going away is the engine taking this build's stick as a real "
+             "drag, which is the difference between a body that slides and a body that walks. (3) One "
+             "line a second, v193 core, carries own, validity, side, mates, enemies, trust, the ring's "
+             "segment count, the tracker's split, the oneshot count, the body and enemy blocks, the "
+             "touch gate writes, the prediction calls and refusals, the degenerate picks and the human "
+             "stick frames. The per object probes are out of the file and out of the log: 1177 v174 "
+             "lines in the last run said the same thing five times a shot, and the question they were "
+             "meant to answer - what is the ring dodging - needs a count, not a transcript. (4) What "
+             "the last run said about the reports: the side read is right in a 3v3 (players=6 mates=2 "
+             "enemies=3 teams=1/1/1/0/0/0 trust=1) and the trust guard fired %d times on reads where "
+             "own's side came back as the majority; the write to movement delay is one frame "
+             "(movedAfter=1 in most runs) but several runs travelled two to three units over eight or "
+             "nine frames, which are the frames that look like a dodge doing nothing, and they are "
+             "counted as deadPick now; and 44 real threats against 446 own team shots and 674 one "
+             "sample lines says the ring was mostly watching objects that never move",
+             (unsigned long long)TNX_V193_TOUCH_GATE_OFF, 8);
+
     tnx_start_timer();
 
     tlog([NSString stringWithFormat:@"setup completed successfully armed=%d", g_objc_armed]);
@@ -15984,7 +15429,7 @@ static void poll_for_game(int tick) {
 
 __attribute__((constructor))
 static void start(void) {
-     
+
     tnx_v146_install();
 
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -15992,3 +15437,4 @@ static void start(void) {
         poll_for_game(0);
     });
 }
+

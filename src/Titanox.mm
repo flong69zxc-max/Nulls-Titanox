@@ -29,8 +29,19 @@
 #define LOG_MAX_BYTES (4 * 1024 * 1024)
 #define TNX_V190_LOG_ROLL 1
 #define TNX_V190_LOG_FILTER 1
-#define TNX_V190_APPLIED 1
+/* The 20:46 run settles this: the character walked at 1157 units a second on frames where the applied
+   pair still read the engine's no touch sentinel, so that field is not the one the movement reads and
+   writing it changes nothing. The pair and the message are the working channel. */
+#define TNX_V190_APPLIED 0
 #define TNX_V190_DRIVE_LOGS 24
+
+#define TNX_V191_MOVE_MIN 3
+#define TNX_V191_ONESHOT 1
+#define TNX_V191_ENEMY_HARD 150.0f
+#define TNX_V191_ENEMY_FAR 400.0f
+#define TNX_V191_ENEMY_MARGIN 60.0f
+#define TNX_V191_TRUST_LOGS 8
+#define TNX_V191_ROSTER_LOGS 10
 #define OBJC_HOOK_MAX 32
 #define WANTED_MAX 4
 #define SCAN_MAX 256
@@ -305,7 +316,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_190"
+#define TNX_BUILD_TAG "titanox_191"
 
 #define TNX_V165_JOY_MAG 600.0f
 #define TNX_V167_TEAM_FILTER 1
@@ -357,7 +368,6 @@ static int g_v123_defer_logs = 0;
 #define TNX_V189_MATE_CLEAR 240.0f
 #define TNX_V189_MATE_MAX 8
 #define TNX_V189_PLAYER_MAX 12
-#define TNX_V189_TEAM_LOGS 8
 #define TNX_V189_ATTRIB_R2 (700.0f * 700.0f)
 #define TNX_V189_ATTRIB_MARGIN 1.5f
 #define TNX_V189_ATTRIB_LOGS 8
@@ -2818,7 +2828,6 @@ static int32_t g_v189_pl_mine[TNX_V189_PLAYER_MAX];
 static int g_v189_mate_n = 0;
 static int32_t g_v189_mate_x[TNX_V189_MATE_MAX];
 static int32_t g_v189_mate_y[TNX_V189_MATE_MAX];
-static int g_v189_mate_logs = 0;
 static int g_v189_own_x = 0;
 static int g_v189_own_y = 0;
 static int g_v189_own_team = -1;
@@ -2827,6 +2836,17 @@ static int g_v189_attrib_miss = 0;
 static int g_v189_attrib_logs = 0;
 static int g_v189_block_hits = 0;
 static int g_v189_label_builds = 0;
+
+/* v191: whether the side read can be believed, and the enemies it names */
+static int g_v191_team_trust = 1;
+static int32_t g_v191_own_team = -1;
+static int32_t g_v191_enemy_x[TNX_V189_PLAYER_MAX];
+static int32_t g_v191_enemy_y[TNX_V189_PLAYER_MAX];
+static int g_v191_enemy_n = 0;
+static int g_v191_trust_logs = 0;
+static int g_v191_roster_logs = 0;
+static int g_v191_enemy_blocks = 0;
+static int g_v191_oneshot_segs = 0;
 
 static const char *tnx_v189_state_name(void) {
     if (g_v189_state == TNX_V189_STATE_DEAD) return "DEAD";
@@ -10578,36 +10598,64 @@ static int tnx_v189_team_at(const tnx_v47_obj_t *objects, int index) {
                                                      : objects[index].teamNew;
 }
 
-static void tnx_v189_roster(int ownIndex, int ownTeam, const tnx_v47_obj_t *objects, int usable) {
+/* v191: own is found by ELEMENT, not by index, and the side is only believed when it divides the
+   container. The 20:46 run reported players=6 mates=5 ownTeam=0 own=(0,0) in a 3v3: own was not
+   matched at all, own's side was taken from the wrong element, and five of the six players were
+   adopted as teammates. A ring that refuses every point within 240 units of five phantom teammates
+   has exactly one direction left, which is the enemy, and a shot filter that calls every enemy
+   bullet own-side leaves nothing to dodge - both reports in one defect. */
+static void tnx_v189_roster(uintptr_t ownElem, int ownIndex, int ownTeam,
+                            const tnx_v47_obj_t *objects, int usable) {
     int i = 0;
     int matesBefore = g_v189_mate_n;
+    int ownSide = 0;
+    int hist[TNX_V189_PLAYER_MAX];
+    int hn = 0;
 
     g_v189_pl_n = 0;
     g_v189_mate_n = 0;
+    g_v191_enemy_n = 0;
     g_v189_own_team = ownTeam;
+    g_v191_own_team = ownTeam;
+    g_v191_team_trust = 1;
 
     for (i = 0; i < usable && g_v189_pl_n < TNX_V189_PLAYER_MAX; i++) {
         int32_t team = 0;
+        int isOwn = 0;
+        int h = 0;
 
         if (objects[i].gid < TNX_V179_PLAYER_GID) continue;
         if (objects[i].gid >= TNX_V179_SHOT_GID) continue;
 
         team = tnx_v189_team_at(objects, i);
+        isOwn = (ownElem && objects[i].object == ownElem) ? 1
+                                                          : ((!ownElem && i == ownIndex) ? 1 : 0);
 
         g_v189_pl_x[g_v189_pl_n] = objects[i].x;
         g_v189_pl_y[g_v189_pl_n] = objects[i].y;
         g_v189_pl_team[g_v189_pl_n] = team;
-        g_v189_pl_mine[g_v189_pl_n] = (i == ownIndex) ? 1 : 0;
+        g_v189_pl_mine[g_v189_pl_n] = isOwn;
         g_v189_pl_n++;
 
-        if (i == ownIndex) {
+        if (isOwn) {
             g_v189_own_x = objects[i].x;
             g_v189_own_y = objects[i].y;
 
             continue;
         }
 
+        for (h = 0; h < hn; h++) {
+            if (hist[h] == team) break;
+        }
+
+        if (h == hn && hn < TNX_V189_PLAYER_MAX) {
+            hist[hn++] = team;
+        }
+
         if (team != ownTeam) continue;
+
+        ownSide++;
+
         if (g_v189_mate_n >= TNX_V189_MATE_MAX) continue;
 
         g_v189_mate_x[g_v189_mate_n] = objects[i].x;
@@ -10615,23 +10663,104 @@ static void tnx_v189_roster(int ownIndex, int ownTeam, const tnx_v47_obj_t *obje
         g_v189_mate_n++;
     }
 
-    if (g_v189_mate_n != matesBefore || g_v189_mate_logs < TNX_V189_TEAM_LOGS) {
-        g_v189_mate_logs++;
+    /* a side is a minority in a team match: 3v3 carries at most two players besides own, 2v2 at most
+       one, and a container where own's side holds more than half of the players means the field is
+       not the team. The same report comes from a single team value across four or more players. */
+    ownSide++;
 
-        tnx_logf("v189 roster players=%d mates=%d ownTeam=%d own=(%d,%d) blocked=%d - the players "
-                 "of this side are read in this one pass, so the ring has a body to refuse a "
-                 "heading for and the shot attribution below has a body to attribute a spawn point "
-                 "to; a mates count that stays at zero in a team match means the team byte is still "
-                 "read four bytes off, because 3v3 carries two teammates besides own",
-                 g_v189_pl_n, g_v189_mate_n, ownTeam, g_v189_own_x, g_v189_own_y,
-                 g_v189_block_hits);
+    if (g_v189_pl_n >= 4 && (ownSide > (g_v189_pl_n / 2) || hn < 2)) {
+        g_v191_team_trust = 0;
+        g_v189_mate_n = 0;
     }
+
+    /* the enemies are the other side, and only when the side is believed */
+    if (g_v191_team_trust) {
+        for (i = 0; i < g_v189_pl_n && g_v191_enemy_n < TNX_V189_PLAYER_MAX; i++) {
+            if (g_v189_pl_mine[i]) continue;
+            if (g_v189_pl_team[i] == ownTeam) continue;
+
+            g_v191_enemy_x[g_v191_enemy_n] = g_v189_pl_x[i];
+            g_v191_enemy_y[g_v191_enemy_n] = g_v189_pl_y[i];
+            g_v191_enemy_n++;
+        }
+    }
+
+    if (g_v189_mate_n != matesBefore || g_v191_roster_logs < TNX_V191_ROSTER_LOGS) {
+        g_v191_roster_logs++;
+
+        tnx_logf("v191 roster players=%d mates=%d enemies=%d teams=%d/%d/%d/%d/%d/%d own=(%d,%d) "
+                 "ownMatched=%d ownTeam=%d trust=%d blocked=%d - the raw table is printed because "
+                 "the previous line printed only the counts and a 3v3 came back as five teammates "
+                 "with own at the origin: players=6 mates=5 ownTeam=0 own=(0,0). own is matched by "
+                 "element now, and the side is only believed when it is a minority of the container, "
+                 "because a team is a minority in a team match; when it is not, trust goes to zero "
+                 "and both the mate block and the own shot filter stand down, so a broken team byte "
+                 "can no longer leave the ring with only the enemy to run into",
+                 g_v189_pl_n, g_v189_mate_n, g_v191_enemy_n,
+                 g_v189_pl_team[0], g_v189_pl_team[1], g_v189_pl_team[2], g_v189_pl_team[3],
+                 g_v189_pl_team[4], g_v189_pl_team[5], g_v189_own_x, g_v189_own_y,
+                 g_v189_pl_mine[0] | g_v189_pl_mine[1] | g_v189_pl_mine[2] | g_v189_pl_mine[3] |
+                     g_v189_pl_mine[4] | g_v189_pl_mine[5],
+                 g_v191_own_team, g_v191_team_trust, g_v189_block_hits);
+    }
+
+    if (g_v191_trust_logs < TNX_V191_TRUST_LOGS && !g_v191_team_trust) {
+        g_v191_trust_logs++;
+
+        tnx_logf("v191 side read distrusted players=%d ownSide=%d distinctTeams=%d - more than half "
+                 "of the players came back on own's side, or every player came back on one team, "
+                 "which no real match produces; the mate block is off and the own shot filter is off "
+                 "until the next roster, so the dodge reacts to every moving shot and refuses no "
+                 "ground, instead of refusing all of it", g_v189_pl_n, ownSide, hn);
+    }
+}
+
+/* v191: no candidate point that walks the character towards an enemy.
+
+   The report is "it runs straight at the opponents". The ring scored a heading against threat
+   segments only, and a point next to an enemy scored exactly like open ground, so the nearest
+   segment-free point was often the one on the enemy's side of own. The test is a comparison with
+   own's own distance rather than a fixed radius, so it never empties the ring when own is already
+   in someone's face: a point within 150 units of an enemy is always refused, and beyond that a
+   point is refused when it is 60 units closer to an enemy than own is. */
+/* v191: own's own reading is checked before it is used. The 20:46 run printed own=(0,0) in one line
+   and own=(142428352,1) in another, and the first of those produced a respawn event with a jump of
+   2554 units from the origin, so a garbage reading is not a corner case here - it is in the log. */
+static int tnx_v191_own_ok(int32_t x, int32_t y) {
+    if (x == 0 && y == 0) return 0;
+    if (x < -100000 || x > 100000) return 0;
+    if (y < -100000 || y > 100000) return 0;
+
+    return 1;
+}
+
+static int tnx_v191_enemy_blocked(float x, float y, float ownX, float ownY) {
+    int i = 0;
+
+    if (!g_v191_team_trust || g_v191_enemy_n <= 0) return 0;
+
+    for (i = 0; i < g_v191_enemy_n; i++) {
+        float ex = (float)g_v191_enemy_x[i];
+        float ey = (float)g_v191_enemy_y[i];
+        float dc = sqrtf((x - ex) * (x - ex) + (y - ey) * (y - ey));
+        float dOwn = sqrtf((ownX - ex) * (ownX - ex) + (ownY - ey) * (ownY - ey));
+
+        /* the two tests are done in DISTANCES and not in their squares. A squared margin against a
+           squared distance is not the same comparison - at a thousand units out it fires on a point
+           that is two units closer, not sixty, which the control run for this rule found: it refused
+           a candidate that was thirty units closer while the margin said sixty. */
+        if (dc < TNX_V191_ENEMY_HARD) return 1;
+        if (dOwn > TNX_V191_ENEMY_FAR && dc < dOwn - TNX_V191_ENEMY_MARGIN) return 1;
+    }
+
+    return 0;
 }
 
 static int tnx_v189_mate_blocked(float x, float y) {
     int i = 0;
     float r2 = TNX_V189_MATE_CLEAR * TNX_V189_MATE_CLEAR;
 
+    if (!g_v191_team_trust) return 0;
     if (g_v189_mate_n <= 0) return 0;
 
     for (i = 0; i < g_v189_mate_n; i++) {
@@ -11624,20 +11753,10 @@ static int g_v190_logs = 0;
 static uint64_t g_v190_lifetime = 0;
 static uint64_t g_v190_applied_writes = 0;
 static uint64_t g_v190_applied_idle = 0;
-
-static float tnx_v190_align(int32_t ownX, int32_t ownY, int32_t refX, int32_t refY, int32_t tx,
-                            int32_t ty) {
-    float adx = (float)(refX - ownX);
-    float ady = (float)(refY - ownY);
-    float sdx = (float)(tx - ownX);
-    float sdy = (float)(ty - ownY);
-    float alen = sqrtf(adx * adx + ady * ady);
-    float slen = sqrtf(sdx * sdx + sdy * sdy);
-
-    if (alen < 1.0f || slen < 1.0f) return 0.0f;
-
-    return (adx * sdx + ady * sdy) / (alen * slen);
-}
+static uint64_t g_v191_max_frame = 0;
+static uint64_t g_v191_traveled = 0;
+static float g_v191_pair_dot_sum = 0.0f;
+static uint64_t g_v191_pair_dot_n = 0;
 
 static void tnx_v190_engage_report(const char *why) {
     if (g_v190_logs >= TNX_V190_DRIVE_LOGS) return;
@@ -11645,18 +11764,19 @@ static void tnx_v190_engage_report(const char *why) {
 
     g_v190_logs++;
 
-    tnx_logf("v190 %s first=%llu last=%llu frames=%llu writes=%llu movedAfter=%llu appliedMatch=%llu "
-             "appliedMiss=%llu own=(%d,%d) pick=(%d,%d) - movedAfter is the delay: the frames from the "
-             "first write of this run to the frame own's position actually moved, so a run that writes "
-             "for sixty frames with movedAfter at zero is a dodge the engine is not following, and "
-             "appliedMatch against appliedMiss says whether the applied world target holds what this "
-             "build sent or the value the player's own finger put there", why,
-             (unsigned long long)g_v190_engage_start, (unsigned long long)g_v190_engage_last,
+    tnx_logf("v191 %s first=%llu last=%llu frames=%llu writes=%llu movedAfter=%llu maxFrame=%llu "
+             "traveled=%llu own=(%d,%d) pick=(%d,%d) - movedAfter is the delay: the frames from the "
+             "first write of this run to the first frame own's position moved by at least %d units, "
+             "which is a walk of 180 units a second and no longer the twenty a frame that only a "
+             "teleport reaches; traveled is the whole path own covered during the run against 780 "
+             "units a second for a walk, which is the number that says whether the body follows the "
+             "writes at all", why, (unsigned long long)g_v190_engage_start,
+             (unsigned long long)g_v190_engage_last,
              (unsigned long long)(g_v190_engage_last - g_v190_engage_start),
              (unsigned long long)g_v190_engage_writes,
              (unsigned long long)(g_v190_move_tick ? g_v190_move_tick - g_v190_engage_start : 0),
-             (unsigned long long)g_v190_applied_match, (unsigned long long)g_v190_applied_miss,
-             g_v190_own_x, g_v190_own_y, g_v190_pick_x, g_v190_pick_y);
+             (unsigned long long)g_v191_max_frame, (unsigned long long)g_v191_traveled,
+             g_v190_own_x, g_v190_own_y, g_v190_pick_x, g_v190_pick_y, TNX_V191_MOVE_MIN);
 }
 
 static void tnx_v190_drive_note(int32_t ownX, int32_t ownY, int32_t tx, int32_t ty, int32_t appX,
@@ -11679,6 +11799,10 @@ static void tnx_v190_drive_note(int32_t ownX, int32_t ownY, int32_t tx, int32_t 
         g_v190_applied_miss = 0;
         g_v190_prev_valid = 0;
         g_v190_lifetime = 0;
+        g_v191_max_frame = 0;
+        g_v191_traveled = 0;
+        g_v191_pair_dot_sum = 0.0f;
+        g_v191_pair_dot_n = 0;
     }
 
     g_v190_engage_last = g_v48_ticks;
@@ -11690,11 +11814,37 @@ static void tnx_v190_drive_note(int32_t ownX, int32_t ownY, int32_t tx, int32_t 
     g_v190_pick_y = ty;
 
     if (g_v190_prev_valid) {
+        int64_t d2 = 0;
+
         dx = (int64_t)ownX - (int64_t)g_v190_prev_x;
         dy = (int64_t)ownY - (int64_t)g_v190_prev_y;
+        d2 = dx * dx + dy * dy;
 
-        if (!g_v190_move_tick && (dx * dx + dy * dy) >= (int64_t)(20 * 20)) {
+        if (!g_v190_move_tick && d2 >= (int64_t)(TNX_V191_MOVE_MIN * TNX_V191_MOVE_MIN)) {
             g_v190_move_tick = g_v48_ticks;
+        }
+
+        if ((uint64_t)d2 > g_v191_max_frame) g_v191_max_frame = (uint64_t)d2;
+
+        g_v191_traveled += (uint64_t)sqrtf((float)d2);
+
+        /* v191: the pair is the channel that works - the 20:46 run walked the character at 1157
+           units a second with the applied target still at the engine's no touch sentinel - so the
+           question worth printing is whether the body moves the way the pair points. +1.00 means
+           the frame's displacement is along the written stick, which is a walk; a value near zero
+           or negative on a frame that moved means something else carried the body, which is the
+           slide. */
+        if (pairX || pairY) {
+            float dot = 0.0f;
+            float plen = sqrtf((float)(pairX * pairX + pairY * pairY));
+            float mlen = sqrtf((float)d2);
+
+            if (plen > 1.0f && mlen > 0.5f) {
+                dot = (float)(pairX * dx + pairY * dy) / (plen * mlen);
+            }
+
+            g_v191_pair_dot_sum += dot;
+            g_v191_pair_dot_n++;
         }
     }
 
@@ -11708,20 +11858,20 @@ static void tnx_v190_drive_note(int32_t ownX, int32_t ownY, int32_t tx, int32_t 
     if (appX == TNX_V128_APPLIED_IDLE && appY == TNX_V128_APPLIED_IDLE) g_v190_applied_idle++;
 
     if ((g_v190_lifetime % 30) == 0) {
-        tnx_logf("v190 engage running frames=%llu writes=%llu movedAfter=%llu applied=(%d,%d) "
-                 "idle=%llu sent=(%d,%d) pair=(%d,%d) own=(%d,%d) dot=%+.2f match=%llu miss=%llu "
-                 "appliedWrite=%d - the applied target, our send and the pair are read together "
-                 "because the report says the body still slides. idle counts the frames the engine's "
-                 "own value is still its no touch sentinel, which means the send never reached the "
-                 "movement code; dot is the angle between the applied target and what this build "
-                 "sent, measured from own, so +1.00 is the engine walking the way this build asked",
+        tnx_logf("v191 engage running frames=%llu writes=%llu movedAfter=%llu traveled=%llu pairDot=%+.2f "
+                 "sent=(%d,%d) pair=(%d,%d) own=(%d,%d) applied=(%d,%d) appliedIdle=%llu appliedWrite=%d - "
+                 "pairDot is the angle between the frame's own displacement and the stick this build "
+                 "wrote, so +1.00 is the body walking the way it was told and a value near zero on a "
+                 "frame that moved is the slide; applied is printed beside it because the 20:46 run "
+                 "walked at 1157 units a second on frames where applied was still the engine's no "
+                 "touch sentinel, which is what retired that field as a lead",
                  (unsigned long long)(g_v48_ticks - g_v190_engage_start),
                  (unsigned long long)g_v190_engage_writes,
                  (unsigned long long)(g_v190_move_tick ? g_v190_move_tick - g_v190_engage_start : 0),
-                 appX, appY, (unsigned long long)g_v190_applied_idle, tx, ty, pairX, pairY, ownX,
-                 ownY, (double)tnx_v190_align(ownX, ownY, appX, appY, tx, ty),
-                 (unsigned long long)g_v190_applied_match, (unsigned long long)g_v190_applied_miss,
-                 TNX_V190_APPLIED);
+                 (unsigned long long)g_v191_traveled,
+                 (double)(g_v191_pair_dot_n ? g_v191_pair_dot_sum / (float)g_v191_pair_dot_n : 0.0f),
+                 tx, ty, pairX, pairY, ownX, ownY, appX, appY,
+                 (unsigned long long)g_v190_applied_idle, TNX_V190_APPLIED);
     }
 }
 
@@ -11756,6 +11906,7 @@ static int tnx_v189_drive(void) {
     }
 
     if (!tnx_v178_own(&ownX, &ownY)) return 0;
+    if (!tnx_v191_own_ok(ownX, ownY)) return 0;
 
     dx = (float)(g_v180_tx - ownX);
     dy = (float)(g_v180_ty - ownY);
@@ -12029,7 +12180,8 @@ static int tnx_v189_life(uintptr_t ownElem, int32_t ownX, int32_t ownY) {
     }
 
     /* the teleport: a walk covers about thirteen units a frame, a respawn thousands */
-    if (g_v189_prev_valid) {
+    if (g_v189_prev_valid && tnx_v191_own_ok(ownX, ownY) &&
+        tnx_v191_own_ok(g_v189_prev_x, g_v189_prev_y)) {
         int64_t jx = (int64_t)ownX - (int64_t)g_v189_prev_x;
         int64_t jy = (int64_t)ownY - (int64_t)g_v189_prev_y;
 
@@ -12533,10 +12685,32 @@ static void tnx_v172_build(void) {
         float rem = 0.0f;
         tnx_v172_seg_t *s = NULL;
 
-        if (!p->elem || !p->hasPrev) continue;
+        if (!p->elem) continue;
+        if (!p->hasPrev && !TNX_V191_ONESHOT) continue;
         if (g_v172_seg_count >= TNX_V172_SEG_MAX) break;
-        if (TNX_V167_TEAM_FILTER && g_v167_own_team_seen && p->team == g_v167_own_team) continue;
-        if (!tnx_v174_proj_vel(p, &vx, &vy)) continue;
+
+        /* v191: the side is only used when the roster believes it. The 20:46 run had every player
+           read as own's side, so this one test turned every enemy bullet into "ours" and the ring
+           had nothing left to dodge - the report is a dodge that does not react. */
+        if (TNX_V167_TEAM_FILTER && g_v191_team_trust && g_v167_own_team_seen &&
+            p->team == g_v167_own_team) continue;
+
+        if (!p->hasPrev) {
+            /* v191: a projectile seen once already has a bearing. It left its owner's body, so the
+               chord from where it was first seen to where it is now is the direction it is flying,
+               divided by the ticks it took to travel it. Waiting for a second sample is a tick of
+               the reaction the report is about, and a shot that leaves the scanned range before the
+               second sample was never a threat at all - 655 one-sample lines against 341 threats in
+               that run, so two thirds of what flew was invisible to the ring. */
+            uint64_t age = (p->qtick > p->ptick) ? (p->qtick - p->ptick) : 1;
+
+            vx = (float)(p->x - p->spawnX) / (float)age;
+            vy = (float)(p->y - p->spawnY) / (float)age;
+
+            if (fabsf(vx) < 0.5f && fabsf(vy) < 0.5f) continue;
+
+            g_v191_oneshot_segs++;
+        } else if (!tnx_v174_proj_vel(p, &vx, &vy)) continue;
 
         len = sqrtf(vx * vx + vy * vy);
 
@@ -12626,6 +12800,13 @@ static int tnx_v172_valid_point(float x, float y) {
        the character standing instead of pushed against a body. */
     if (tnx_v189_mate_blocked(x, y)) {
         g_v189_block_hits++;
+
+        return 0;
+    }
+
+    /* v191: and an enemy's body is not a destination either */
+    if (tnx_v191_enemy_blocked(x, y, (float)g_v189_own_x, (float)g_v189_own_y)) {
+        g_v191_enemy_blocks++;
 
         return 0;
     }
@@ -13455,7 +13636,7 @@ static void tnx_autododge_v48(void) {
 
         if (ownIndex >= 0 && ownTeam >= 0 && ownTeam <= TNX_V75_TEAM_MAX) g_v167_own_team_seen = 1;
 
-        tnx_v189_roster(ownIndex, (int)ownTeam, objects, usable);
+        tnx_v189_roster(g_v182_own_elem, ownIndex, (int)ownTeam, objects, usable);
 
         /* the life test runs before anything is scanned or written, and a dead character returns
            here: the dodge holds, the pair is not written and the shot list is not even rebuilt,
@@ -15564,8 +15745,42 @@ static void setup(void) {
              "the stick does, and an applied pair still reading the sentinel while this build writes "
              "every frame means the send is not reaching the movement code at all",
              644349, 522880, 118401, 512 * 1024, 4 * 1024 * 1024, 1343, 8, 59, 599, 13, 36, 31,
-             (unsigned long long)TNX_V128_CTRL_APPLIED_X_OFF, TNX_V128_APPLIED_IDLE,
-             TNX_V128_APPLIED_IDLE);
+              (unsigned long long)TNX_V128_CTRL_APPLIED_X_OFF, TNX_V128_APPLIED_IDLE,
+              TNX_V128_APPLIED_IDLE);
+
+    tnx_logf("plan v191, and the 20:46 run answers both reports in one line: v189 roster players=%d "
+             "mates=%d ownTeam=%d own=(0,0) in a 3v3. Own was not matched by index at all, own's side "
+             "was then taken from the wrong element, and five of the six players were adopted as "
+             "teammates. A ring that refuses every point within %.0f units of five phantom teammates "
+             "has one direction left, which is the enemy - that is 'it runs straight at the "
+             "opponents' - and a shot filter that calls every enemy bullet own-side leaves the ring "
+             "nothing to dodge - that is 'it does not react'. One defect, both reports. (1) Own is "
+             "matched by element now, and the side is only believed when it divides the container, "
+             "because a side is a minority in a team match: more than half the players on own's side, "
+             "or one team value across four or more players, means the field is not the team, and "
+             "then the mate block and the own shot filter stand down together and say so in the log. "
+             "The roster line prints the raw table - six team values and whether own was matched - "
+             "because the previous line printed only counts and that is how this survived a whole "
+             "build. (2) No candidate point that walks own towards an enemy: %d units of hard radius, "
+             "or %d units closer to an enemy than own already is, once own is %d units out. The ring "
+             "scored against threat segments only, so the point on the enemy's side of own scored "
+             "like open ground. (3) A projectile seen ONCE is a threat now. Its bearing is the chord "
+             "from where it was first seen to where it is, divided by the ticks that took, and it "
+             "needs no second sample: that run had %d one-sample lines against %d verdicts of threat, "
+             "so two thirds of everything that flew was invisible to the ring, and the one tick a "
+             "second sample costs is one tick of the reaction the report is about. (4) The applied "
+             "world target is retired as a lead: that run walked the character at %d units a second "
+             "on frames where the applied pair still read the engine's no touch sentinel, so it is "
+             "not the field the movement reads and writing it changes nothing. (5) The delay "
+             "measurement was wrong: it counted a frame as movement only past twenty units, which "
+             "only a teleport reaches, so runs that read movedAfter=0 were walking at %d to %d units "
+             "a second. The threshold is %d units a frame now, and the report carries the whole path "
+             "covered and the angle between that path and the stick this build wrote - %+.2f is the "
+             "body walking the way it was told, near zero is the slide. Own's own reading is checked "
+             "before it is used, because that log holds own=(0,0) and own=(142428352,1), and the "
+             "first of those produced a respawn event with a jump of %d units from the origin",
+             6, 5, 0, (double)TNX_V189_MATE_CLEAR, TNX_V191_ENEMY_HARD, TNX_V191_ENEMY_MARGIN,
+             TNX_V191_ENEMY_FAR, 655, 341, 1157, 441, 1157, TNX_V191_MOVE_MIN, 1.0, 2554);
 
     tnx_start_timer();
 

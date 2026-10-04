@@ -99,7 +99,10 @@
 #define TNX_V231_WALK_MIN 1.0f
 #define TNX_V231_WALK_MAX 60.0f
 #define TNX_V231_WALK_EMA 0.12f
-#define TNX_V231_STEP_FROM_WALK 1
+#define TNX_V231_STEP_FROM_WALK 0
+#define TNX_V233_ENGAGE 40.0f
+#define TNX_V233_MOMENTUM 120.0f
+#define TNX_V233_KEEP_BAND 60.0f
 #define TNX_V216_FLEE 1
 #define TNX_V216_FLEE_STEP 150.0f
 #define TNX_V216_LOGS 14
@@ -385,7 +388,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_231"
+#define TNX_BUILD_TAG "titanox_233"
 
 #define TNX_V165_JOY_MAG 600.0f
 #define TNX_V167_TEAM_FILTER 1
@@ -432,7 +435,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_V186_MIN_USABLE 1
 
 #define TNX_V189_HOLD_TICKS 3
-#define TNX_V189_STEP 3.0f
+#define TNX_V189_STEP 120.0f
 #define TNX_V189_PAIR_ONLY 0
 #define TNX_V189_MATE_CLEAR 240.0f
 #define TNX_V189_MATE_MAX 8
@@ -11911,9 +11914,16 @@ static int32_t g_v231_prev_x = 0;
 static int32_t g_v231_prev_y = 0;
 static int g_v231_prev_ok = 0;
 static uint64_t g_v231_measured = 0;
+static float g_v233_last_x = 0.0f;
+static float g_v233_last_y = 0.0f;
+static int g_v233_last_ok = 0;
+static uint64_t g_v233_keeps = 0;
+static uint64_t g_v233_engage = 0;
 
 static float tnx_v231_step(void) {
-    return g_v231_walk_step;
+    if (TNX_V231_STEP_FROM_WALK) return g_v231_walk_step;
+
+    return TNX_V189_STEP;
 }
 
 static void tnx_v231_measure(void) {
@@ -11921,7 +11931,6 @@ static void tnx_v231_measure(void) {
     int32_t y = 0;
     float d = 0.0f;
 
-    if (!TNX_V231_STEP_FROM_WALK) return;
     if (!tnx_v178_own(&x, &y)) return;
 
     if (g_v231_prev_ok && !g_v180_hold) {
@@ -13481,6 +13490,11 @@ static void tnx_v218_unblock(float px, float py, float len, float *dirX, float *
     bestX = base;
     bestY = baseY;
 
+    if (g_v233_last_ok) {
+        bestScore += TNX_V233_MOMENTUM * (base * g_v233_last_x + baseY * g_v233_last_y);
+        baseScore = bestScore;
+    }
+
     for (i = 0; i < 12; i++) {
         float a = rot[i] * rad;
         float c = cosf(a);
@@ -13489,6 +13503,8 @@ static void tnx_v218_unblock(float px, float py, float len, float *dirX, float *
         float ry = base * sn + baseY * c;
         float score = tnx_v228_body_score(px, py, rx, ry, len);
 
+        if (g_v233_last_ok) score += TNX_V233_MOMENTUM * (rx * g_v233_last_x + ry * g_v233_last_y);
+
         if (score > bestScore) {
             bestScore = score;
             bestX = rx;
@@ -13496,8 +13512,27 @@ static void tnx_v218_unblock(float px, float py, float len, float *dirX, float *
         }
     }
 
+    if (g_v233_last_ok && bestX != base &&
+        (bestScore - (tnx_v228_body_score(px, py, base, baseY, len) +
+                      TNX_V233_MOMENTUM * (base * g_v233_last_x + baseY * g_v233_last_y))) <
+            TNX_V233_KEEP_BAND) {
+        bestX = base;
+        bestY = baseY;
+        g_v233_keeps++;
+    }
+
     *dirX = bestX;
     *dirY = bestY;
+
+    if (bestX != 0.0f || bestY != 0.0f) {
+        float n = sqrtf(bestX * bestX + bestY * bestY);
+
+        if (n > 0.0001f) {
+            g_v233_last_x = bestX / n;
+            g_v233_last_y = bestY / n;
+            g_v233_last_ok = 1;
+        }
+    }
 
     if (bestScore > baseScore) {
         g_v214_mate_turns++;
@@ -13887,7 +13922,7 @@ static int tnx_v205_walk(float dirX, float dirY) {
 
 static void tnx_v198_state(void) {
     tnx_logf("v211 state joystick=%p writes=%llu took=%llu escapes=%llu lookahead=%llu appliedW=%llu "
-             "appliedLive=%llu appliedStale=%llu rage=%llu flees=%llu deadRep=%llu clamped=%llu qDrain=%llu qMax=%llu qNow=%llu qStuck=%llu qMask=%#llx dragW=%llu dragLive=%llu mateTurn=%llu mateStuck=%llu decUs=%llu maxUs=%llu slow=%llu diagMax=%llu g70w=%llu g70h=%llu dropS=%llu dropF=%llu dropB=%llu spd=(%.0f..%.0f) "
+             "appliedLive=%llu appliedStale=%llu rage=%llu flees=%llu deadRep=%llu clamped=%llu qDrain=%llu qMax=%llu qNow=%llu qStuck=%llu qMask=%#llx dragW=%llu dragLive=%llu mateTurn=%llu mateStuck=%llu keep=%llu engage=%llu decUs=%llu maxUs=%llu slow=%llu diagMax=%llu g70w=%llu g70h=%llu dropS=%llu dropF=%llu dropB=%llu spd=(%.0f..%.0f) "
              "dead=%llu denied=%llu "
              "predTook=%llu predMiss=%llu objects scene=%p character=%p battle=%p - writes counts the "
              "frames the drag block was written, took counts the frames the engine still held it with "
@@ -13904,13 +13939,15 @@ static void tnx_v198_state(void) {
              "a qMax that climbs while qDrain stays zero means the input is never consumed, dragW counts the drag "
              "writes in screen space and dragLive how many still showed a non zero drag when read "
              "back, mateTurn and mateStuck count the steps rotated "
-             "off a player body, own side or enemy, and the ones no rotation could free, and decUs is the microseconds from the "
+             "off a player body, own side or enemy and the ones no rotation could free, keep counts the frames the "
+             "previous heading was kept because no turn beat it by the keep band, engage the frames the threat "
+             "was close enough to act on, and decUs is the microseconds from the "
              "hook entry to the stick write with maxUs the worst of them, slow the frames above %d us and "
              "diagMax the worst time the throttled diagnostic block took, g70w the frames the state byte "
              "at %#llx was forced to 1 and g70h how many of them the engine kept it, dropS dropF dropB the "
              "shots thrown away as too slow, too fast and too short lived and spd the speed range seen, "
              "dead counts the frames the control object failed the alive check so every store into it was "
-             "skipped, and denied counts the stores the region guard dropped, walkStep is the per push step measured from the player own walking %d",
+             "skipped, and denied counts the stores the region guard dropped, walkMeas is the per push own displacement measured while the player walked %.0f",
              (void *)g_v205_joystick, (unsigned long long)g_v205_joystick_writes,
              (unsigned long long)g_v205_joystick_took, (unsigned long long)g_v206_escapes,
              (unsigned long long)g_v209_lookahead, (unsigned long long)g_v211_applied_writes,
@@ -13921,7 +13958,8 @@ static void tnx_v198_state(void) {
              (unsigned long long)g_v219_q_max, (unsigned long long)g_v126_q_before,
              (unsigned long long)g_v221_stuck, (unsigned long long)g_v221_mask_before, (unsigned long long)g_v217_drag_writes,
              (unsigned long long)g_v217_drag_back, (unsigned long long)g_v214_mate_turns,
-             (unsigned long long)g_v214_mate_stuck, (unsigned long long)g_v213_dec_us,
+             (unsigned long long)g_v214_mate_stuck, (unsigned long long)g_v233_keeps,
+             (unsigned long long)g_v233_engage, (unsigned long long)g_v213_dec_us,
              (unsigned long long)g_v213_dec_us_max, (unsigned long long)g_v224_slow,
              (unsigned long long)g_v225_diag_max_us, (unsigned long long)g_v226_gate_writes,
              (unsigned long long)g_v226_gate_held, (unsigned long long)g_v227_drop_slow,
@@ -13931,7 +13969,7 @@ static void tnx_v198_state(void) {
              (unsigned long long)g_v198_pred_took, (unsigned long long)g_v198_pred_miss,
              (void *)(uintptr_t)g_scene_object, (void *)g_v182_own_elem, (void *)g_v192_pred_last,
              (int)TNX_V220_STEP, (int)TNX_V126_TYPE_MOVE, (int)TNX_V224_SLOW_US,
-             (unsigned long long)TNX_V222_GATE_OFF, (int)tnx_v231_step());
+             (unsigned long long)TNX_V222_GATE_OFF, (double)g_v231_walk_step);
 
     {
         uint16_t charState = 0;
@@ -14060,6 +14098,11 @@ static int tnx_v172_decide(int32_t ownX, int32_t ownY) {
     }
 
     threatened = tnx_v172_threatened(px, py);
+
+    if (g_v172_seg_count > 0 && tnx_v172_clearance(px, py) < TNX_V233_ENGAGE) {
+        threatened = 1;
+        g_v233_engage++;
+    }
 
     if (TNX_V212_RAGE && g_v172_seg_count > 0) {
         if (!TNX_V226_HIT_ONLY || tnx_v209_imminent(px, py)) {

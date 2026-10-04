@@ -11670,10 +11670,19 @@ static void tnx_v174_stick(int engaged, float dirX, float dirY) {
     }
 
     if (!want) {
+        uintptr_t relCtrl = tnx_v150_controller();
+        int32_t relX = 0;
+        int32_t relY = 0;
+
         if (!g_v174_stick_hold) return;
         if (g_v174_stick_tick + TNX_V174_STICK_TTL > g_v48_ticks) return;
 
         g_v174_stick_hold = 0;
+
+        if (relCtrl && tnx_read_i32(relCtrl + TNX_V128_CTRL_RAW_X_OFF, &relX) &&
+            tnx_read_i32(relCtrl + TNX_V128_CTRL_RAW_Y_OFF, &relY)) {
+            if (relX != g_v174_stick_x || relY != g_v174_stick_y) return;
+        }
     }
 
     g_v174_stick_x = wx;
@@ -11778,27 +11787,6 @@ static void tnx_v180_drive(void) {
     }
 
     if (!tnx_v178_own(&ownX, &ownY)) return;
-
-    {
-        uintptr_t ctrl = tnx_v150_controller();
-        int32_t px = 0;
-        int32_t py = 0;
-
-        if (ctrl && tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_X_OFF, &px) &&
-            tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &py)) {
-            if ((px || py) && (px != g_v174_stick_x || py != g_v174_stick_y)) {
-                if ((g_v48_ticks % 60) == 0) {
-                    tnx_logf("v187 drive stands down: the pair holds (%d,%d) and this build last wrote "
-                             "(%d,%d), so the engine or the player put a different stick there and the "
-                             "dodge does not overwrite it - writing a heading or a zero over a held "
-                             "stick is what stalls the character while the joystick is held", px, py,
-                             g_v174_stick_x, g_v174_stick_y);
-                }
-
-                return;
-            }
-        }
-    }
 
     dx = (float)(g_v180_tx - ownX);
     dy = (float)(g_v180_ty - ownY);
@@ -15181,6 +15169,14 @@ static void setup(void) {
              "movedLastSecond=0 and at 19:30:07 jumps to (2301,9324) with the window going to "
              "changed=61. It was never a bogus fixed point",
              (unsigned)0x4e8, (unsigned)0x520, (unsigned)0x524);
+
+    tnx_logf("plan v188: v187's stand down killed the dodge. It skipped the write whenever the pair held "
+             "anything this build did not write, and the pair keeps the player's last touch value "
+             "indefinitely, so the condition was true on every tick - the log has one line of "
+             "v187 drive stands down with the pair at (-593,97) and nothing else happens. The dodge "
+             "drives again while the joystick is held, and the release is the only thing that changed: "
+             "it zeroes the pair only when the pair still holds the value this build wrote, so a held "
+             "stick is never stopped or overwritten");
 
     tnx_start_timer();
 

@@ -68,6 +68,9 @@
 #define TNX_V206_ESCAPE 1
 #define TNX_V207_PRECISION 1
 #define TNX_V207_EVERY 60
+#define TNX_V209_LOOKAHEAD_MS 260.0f
+#define TNX_V209_PAIR_RAW 1
+#define TNX_V209_PAIR_MAX 2400.0f
 #define TNX_V198_LOGS 10
 #define TNX_V198_PRED_LOGS 6
 #define TNX_V196_CLUSTER 700.0f
@@ -348,7 +351,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_208"
+#define TNX_BUILD_TAG "titanox_209"
 
 #define TNX_V165_JOY_MAG 600.0f
 #define TNX_V167_TEAM_FILTER 1
@@ -11298,6 +11301,7 @@ static uint64_t g_v205_joystick_writes = 0;
 static uint64_t g_v205_joystick_took = 0;
 static uint64_t g_v206_escapes = 0;
 static uint64_t g_v207_logs = 0;
+static uint64_t g_v209_lookahead = 0;
 static int g_v172_logs = 0;
 static int g_v172_probe_logs = 0;
 static int g_v172_own_logs = 0;
@@ -11388,8 +11392,21 @@ static void tnx_v174_stick(int engaged, float dirX, float dirY) {
 
         if (len >= 0.0001f) {
             want = 1;
-            wx = (int32_t)((double)dirX / (double)len * (double)TNX_V165_JOY_MAG);
-            wy = (int32_t)((double)dirY / (double)len * (double)TNX_V165_JOY_MAG);
+
+            if (TNX_V209_PAIR_RAW) {
+                double scale = 1.0;
+
+                if ((double)len > (double)TNX_V209_PAIR_MAX) {
+                    scale = (double)TNX_V209_PAIR_MAX / (double)len;
+                }
+
+                wx = (int32_t)((double)dirX * scale);
+                wy = (int32_t)((double)dirY * scale);
+            } else {
+                wx = (int32_t)((double)dirX / (double)len * (double)TNX_V165_JOY_MAG);
+                wy = (int32_t)((double)dirY / (double)len * (double)TNX_V165_JOY_MAG);
+            }
+
             g_v174_stick_hold = 1;
             g_v174_stick_tick = g_v48_ticks;
             g_v174_engaged_ticks++;
@@ -12817,6 +12834,13 @@ static float tnx_v207_eta_ms(float x, float y) {
     return best;
 }
 
+static int tnx_v209_imminent(float x, float y) {
+    if (TNX_V209_LOOKAHEAD_MS <= 0.0f) return 0;
+    if (g_v172_seg_count <= 0) return 0;
+
+    return (tnx_v207_eta_ms(x, y) <= TNX_V209_LOOKAHEAD_MS) ? 1 : 0;
+}
+
 static void tnx_v207_precision(int32_t ownX, int32_t ownY, float dirX, float dirY, int escape) {
     uintptr_t ctrl = 0;
     int32_t ax = 0;
@@ -13233,16 +13257,17 @@ static int tnx_v205_walk(float dirX, float dirY) {
 }
 
 static void tnx_v198_state(void) {
-    tnx_logf("v205 state joystick=%p writes=%llu took=%llu escapes=%llu denied=%llu predTook=%llu "
-             "predMiss=%llu objects scene=%p character=%p battle=%p - writes counts the frames the "
-             "drag block was written, took counts the frames the engine still held it with mode 2, "
-             "escapes counts the frames the dodge moved on the clearance pick instead of standing "
-             "still, and denied counts the stores the region guard dropped",
+    tnx_logf("v209 state joystick=%p writes=%llu took=%llu escapes=%llu lookahead=%llu denied=%llu "
+             "predTook=%llu predMiss=%llu objects scene=%p character=%p battle=%p - writes counts the "
+             "frames the drag block was written, took counts the frames the engine still held it with "
+             "mode 2, escapes counts the frames the dodge moved on the clearance pick instead of "
+             "standing still, lookahead counts the frames the dodge engaged on time to impact instead "
+             "of waiting for contact, and denied counts the stores the region guard dropped",
              (void *)g_v205_joystick, (unsigned long long)g_v205_joystick_writes,
              (unsigned long long)g_v205_joystick_took, (unsigned long long)g_v206_escapes,
-             (unsigned long long)g_v201_write_denied, (unsigned long long)g_v198_pred_took,
-             (unsigned long long)g_v198_pred_miss, (void *)(uintptr_t)g_scene_object,
-             (void *)g_v182_own_elem, (void *)g_v192_pred_last);
+             (unsigned long long)g_v209_lookahead, (unsigned long long)g_v201_write_denied,
+             (unsigned long long)g_v198_pred_took, (unsigned long long)g_v198_pred_miss,
+             (void *)(uintptr_t)g_scene_object, (void *)g_v182_own_elem, (void *)g_v192_pred_last);
 }
 
 static int tnx_v172_write(float dirX, float dirY) {
@@ -13336,6 +13361,11 @@ static int tnx_v172_decide(int32_t ownX, int32_t ownY) {
     tnx_v172_build();
 
     threatened = tnx_v172_threatened(px, py);
+
+    if (tnx_v209_imminent(px, py)) {
+        threatened = 1;
+        g_v209_lookahead++;
+    }
 
     g_v172_have_angle = 0;
 

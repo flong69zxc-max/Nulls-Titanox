@@ -47,6 +47,13 @@
 #define TNX_V193_TOUCH_ID_OFF 0xf84ULL
 #define TNX_V193_TOUCH_STATE_OFF 0xf80ULL
 #define TNX_V193_FLAG_LOGS 8
+#define TNX_V196_TOUCH_ID 1
+#define TNX_V196_CLUSTER 700.0f
+#define TNX_V196_FREEST_ANGLES 24
+#define TNX_V196_FREEST_MIN 120.0f
+#define TNX_V196_DUMP 1
+#define TNX_V196_DUMP_LOGS 40
+#define TNX_V196_DUMP_EVERY 120
 #define TNX_V192_PREDICT_LOGS 8
 #define TNX_V192_BODY_LOGS 8
 #define OBJC_HOOK_MAX 32
@@ -319,7 +326,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_195"
+#define TNX_BUILD_TAG "titanox_196"
 
 #define TNX_V165_JOY_MAG 600.0f
 #define TNX_V167_TEAM_FILTER 1
@@ -2678,9 +2685,22 @@ static int g_v191_roster_logs = 0;
 static int g_v191_enemy_blocks = 0;
 static int g_v191_oneshot_segs = 0;
 static int g_v192_body_blocks = 0;
+static int g_v192_body_mine = 0;
+static int g_v192_body_enemy = 0;
+static int32_t g_v196_pl_gid[TNX_V189_PLAYER_MAX];
+static int32_t g_v196_pl_sx[TNX_V189_PLAYER_MAX];
+static int32_t g_v196_pl_sy[TNX_V189_PLAYER_MAX];
+static int g_v196_pl_spawned[TNX_V189_PLAYER_MAX];
+static int g_v196_mates = 0;
+static int g_v196_enemies = 0;
+static int g_v196_agree = -1;
+static int g_v196_cluster_logs = 0;
+static uint64_t g_v196_freest_used = 0;
+static int g_v196_dump_logs = 0;
+static uint64_t g_v196_touchid_writes = 0;
+static uint64_t g_v193_gate_writes = 0;
 static int g_v192_body_logs = 0;
 static int g_v193_flag_logs = 0;
-static uint64_t g_v193_gate_writes = 0;
 static uint64_t g_v193_dead_picks = 0;
 static uint64_t g_v192_human_live = 0;
 
@@ -10267,6 +10287,10 @@ static void tnx_v189_roster(uintptr_t ownElem, int ownIndex, int ownTeam,
         g_v189_pl_y[g_v189_pl_n] = objects[i].y;
         g_v189_pl_team[g_v189_pl_n] = team;
         g_v189_pl_mine[g_v189_pl_n] = isOwn;
+        g_v196_pl_gid[g_v189_pl_n] = objects[i].gid;
+        g_v196_pl_sx[g_v189_pl_n] = objects[i].x;
+        g_v196_pl_sy[g_v189_pl_n] = objects[i].y;
+        g_v196_pl_spawned[g_v189_pl_n] = 0;
         g_v189_pl_n++;
 
         if (isOwn) {
@@ -10302,6 +10326,86 @@ static void tnx_v189_roster(uintptr_t ownElem, int ownIndex, int ownTeam,
         g_v189_mate_n = 0;
     }
 
+    {
+        int ownSpawn = -1;
+        int k = 0;
+
+        for (k = 0; k < g_v189_pl_n; k++) {
+            if (g_v189_pl_mine[k]) { ownSpawn = k; break; }
+        }
+
+        g_v196_mates = 0;
+        g_v196_enemies = 0;
+
+        if (ownSpawn >= 0) {
+            for (k = 0; k < g_v189_pl_n; k++) {
+                float dx = 0.0f;
+                float dy = 0.0f;
+
+                if (g_v189_pl_mine[k]) continue;
+
+                dx = (float)(g_v189_pl_x[k] - g_v189_pl_x[ownSpawn]);
+                dy = (float)(g_v189_pl_y[k] - g_v189_pl_y[ownSpawn]);
+
+                if (sqrtf(dx * dx + dy * dy) <= TNX_V196_CLUSTER) g_v196_mates++;
+                else g_v196_enemies++;
+            }
+        }
+
+
+        if (!g_v191_team_trust) {
+            int m = 0;
+            int e = 0;
+
+            g_v189_mate_n = 0;
+            g_v191_enemy_n = 0;
+
+            for (k = 0; k < g_v189_pl_n; k++) {
+                float dx = 0.0f;
+                float dy = 0.0f;
+
+                if (g_v189_pl_mine[k]) continue;
+
+                dx = (float)(g_v189_pl_x[k] - g_v189_pl_x[ownSpawn]);
+                dy = (float)(g_v189_pl_y[k] - g_v189_pl_y[ownSpawn]);
+
+                if (sqrtf(dx * dx + dy * dy) <= TNX_V196_CLUSTER) {
+                    if (m < TNX_V189_MATE_MAX) {
+                        g_v189_mate_x[m] = g_v189_pl_x[k];
+                        g_v189_mate_y[m] = g_v189_pl_y[k];
+                        m++;
+                    }
+                } else if (e < TNX_V189_PLAYER_MAX) {
+                    g_v191_enemy_x[e] = g_v189_pl_x[k];
+                    g_v191_enemy_y[e] = g_v189_pl_y[k];
+                    e++;
+                }
+            }
+
+            g_v189_mate_n = m;
+            g_v191_enemy_n = e;
+
+            if (g_v196_cluster_logs < TNX_V191_TRUST_LOGS) {
+                g_v196_cluster_logs++;
+
+                tnx_logf("v196 side by cluster players=%d ownSpawn=(%d,%d) mates=%d enemies=%d "
+                         "byteMates=%d byteEnemies=%d radius=%.0f - the team byte is not believed, so "
+                         "the side comes from where the players came from: a team spawns together and "
+                         "the two spawn areas are far apart, which is a signal that does not depend on "
+                         "a field the engine may not even set in this mode",
+                         g_v189_pl_n, g_v189_pl_x[ownSpawn], g_v189_pl_y[ownSpawn], m, e,
+                         ownSide - 1, g_v189_pl_n - ownSide, (double)TNX_V196_CLUSTER);
+            }
+        } else if (g_v196_cluster_logs < TNX_V191_TRUST_LOGS) {
+            g_v196_cluster_logs++;
+
+            tnx_logf("v196 side agreement byte=%d/%d cluster=%d/%d agree=%d players=%d - both answers "
+                     "are printed every time the roster changes, so a byte that drifts and a cluster "
+                     "that misreads are told apart instead of guessed at", g_v189_mate_n,
+                     g_v191_enemy_n, g_v196_mates, g_v196_enemies, g_v196_agree, g_v189_pl_n);
+        }
+    }
+
     if (g_v191_team_trust) {
         for (i = 0; i < g_v189_pl_n && g_v191_enemy_n < TNX_V189_PLAYER_MAX; i++) {
             if (g_v189_pl_mine[i]) continue;
@@ -10312,6 +10416,8 @@ static void tnx_v189_roster(uintptr_t ownElem, int ownIndex, int ownTeam,
             g_v191_enemy_n++;
         }
     }
+
+    g_v196_agree = (g_v196_mates == g_v189_mate_n && g_v196_enemies == g_v191_enemy_n) ? 1 : 0;
 
     if (g_v189_mate_n != matesBefore || g_v191_roster_logs < TNX_V191_ROSTER_LOGS) {
         g_v191_roster_logs++;
@@ -11520,16 +11626,23 @@ static int tnx_v189_drive(void) {
             g_v193_gate_writes++;
         }
 
+        if (TNX_V196_TOUCH_ID && idNow < 0) {
+            int32_t zeroId = 0;
+
+            tnx_write_bytes(ctrl + TNX_V193_TOUCH_ID_OFF, &zeroId, sizeof(zeroId));
+            g_v196_touchid_writes++;
+        }
+
         if (g_v193_flag_logs < TNX_V193_FLAG_LOGS) {
             g_v193_flag_logs++;
 
-            tnx_logf("v193 touch gate=%d state=%d id=%d writes=%llu own=(%d,%d) applied=(%d,%d) - "
+            tnx_logf("v196 touch gate=%d state=%d id=%d writes=%llu idWrites=%llu own=(%d,%d) applied=(%d,%d) - "
                      "gate is the byte the engine's own touch handler tests before it applies the "
                      "stick, state and id are the rest of its touch bookkeeping, and applied is the "
                      "no touch sentinel it writes when it believes nothing is held; setting the gate "
                      "is this build claiming the drag the game then animates",
-                     gateNow, stateNow, idNow, (unsigned long long)g_v193_gate_writes, ownX, ownY,
-                     appX, appY);
+                     gateNow, stateNow, idNow, (unsigned long long)g_v193_gate_writes,
+                     (unsigned long long)g_v196_touchid_writes, ownX, ownY, appX, appY);
         }
     }
 
@@ -11839,6 +11952,45 @@ static void tnx_v189_drift(void) {
                                 (ownY - g_v189_decide_y) * (ownY - g_v189_decide_y))),
              (int)g_v189_decide_x, (int)g_v189_decide_y, ownX, ownY, g_v189_last_tx,
              g_v189_last_ty, (double)TNX_V189_STEP, TNX_V189_HOLD_TICKS);
+}
+
+static void tnx_v196_dump(void) {
+    int i = 0;
+
+    if (!TNX_V196_DUMP) return;
+    if ((g_v48_ticks % TNX_V196_DUMP_EVERY) != 0) return;
+    if (g_v196_dump_logs >= TNX_V196_DUMP_LOGS) return;
+
+    g_v196_dump_logs++;
+
+    tnx_logf("v196 dump own pos=(%d,%d) ok=%d team=%d trust=%d mates=%d enemies=%d cluster=%d/%d "
+             "agree=%d players=%d segs=%d engaged=%d pick=(%d,%d) bodyMine=%d bodyEnemy=%d freest=%llu "
+             "gate=%llu pred=%llu/%llu",
+             g_v189_own_x, g_v189_own_y, tnx_v191_own_ok(g_v189_own_x, g_v189_own_y),
+             g_v191_own_team, g_v191_team_trust, g_v189_mate_n, g_v191_enemy_n, g_v196_mates,
+             g_v196_enemies, g_v196_agree, g_v189_pl_n, g_v172_seg_count, g_v160_active,
+             g_v160_tx, g_v160_ty, g_v192_body_mine, g_v192_body_enemy,
+             (unsigned long long)g_v196_freest_used, (unsigned long long)g_v193_gate_writes,
+             (unsigned long long)g_v192_pred_calls, (unsigned long long)g_v192_pred_fails);
+
+    for (i = 0; i < g_v189_pl_n && i < 6; i++) {
+        tnx_logf("v196 dump p%d gid=%d pos=(%d,%d) spawn=(%d,%d) team=%d mine=%d",
+                 i, g_v196_pl_gid[i], g_v189_pl_x[i], g_v189_pl_y[i], g_v196_pl_sx[i],
+                 g_v196_pl_sy[i], g_v189_pl_team[i], g_v189_pl_mine[i]);
+    }
+
+    for (i = 0; i < TNX_V140_PROJ_MAX; i++) {
+        tnx_v140_proj_t *p = &g_v140_projs[i];
+        uint64_t age = 0;
+
+        if (p->classRva == (uintptr_t)-1) continue;
+        if (!p->hasPrev) age = 0;
+        else age = (p->qtick > p->ptick) ? (p->qtick - p->ptick) : 0;
+
+        tnx_logf("v196 dump j%d gid=%d pos=(%d,%d) prev=(%d,%d) spawn=(%d,%d) team=%d dt=%llu",
+                 i, p->gid, p->x, p->y, p->px, p->py, p->spawnX, p->spawnY, p->team,
+                 (unsigned long long)age);
+    }
 }
 
 static void tnx_v193_core(void) {
@@ -12377,6 +12529,9 @@ static int tnx_v192_body_blocked(float x, float y, float ownX, float ownY) {
         if (tnx_v192_seg_dist(ownX, ownY, x, y, px, py) < TNX_V192_BODY_CLEAR) {
             g_v192_body_blocks++;
 
+            if (g_v189_pl_mine[i]) g_v192_body_mine++;
+            else g_v192_body_enemy++;
+
             if (g_v192_body_logs < TNX_V192_BODY_LOGS) {
                 g_v192_body_logs++;
 
@@ -12584,6 +12739,60 @@ static int tnx_v172_write(float dirX, float dirY) {
     return 1;
 }
 
+static int tnx_v196_freest(float px, float py, float *tx, float *ty) {
+    int pass = 0;
+    int i = 0;
+    int bestOk = 0;
+    float bestRoom = -1.0f;
+    float bestX = 0.0f;
+    float bestY = 0.0f;
+
+    for (pass = 0; pass < 2; pass++) {
+        for (i = 0; i < TNX_V196_FREEST_ANGLES; i++) {
+            float rad = (2.0f * 3.14159265358979f * (float)i) / (float)TNX_V196_FREEST_ANGLES;
+            float ex = px + cosf(rad) * TNX_V172_STEP;
+            float ey = py + sinf(rad) * TNX_V172_STEP;
+            float room = 1000000.0f;
+            int32_t cxi = (int32_t)ex;
+            int32_t cyi = (int32_t)ey;
+            int k = 0;
+
+            tnx_v162_clamp(&cxi, &cyi);
+
+            if (cxi != (int32_t)ex || cyi != (int32_t)ey) continue;
+            if (pass == 0 && tnx_v172_threatened(ex, ey)) continue;
+
+            for (k = 0; k < g_v189_pl_n; k++) {
+                float d = 0.0f;
+
+                if (g_v189_pl_mine[k]) continue;
+
+                d = tnx_v192_seg_dist(px, py, ex, ey, (float)g_v189_pl_x[k], (float)g_v189_pl_y[k]);
+
+                if (d < room) room = d;
+            }
+
+            if (room > bestRoom) {
+                bestRoom = room;
+                bestX = ex;
+                bestY = ey;
+                bestOk = 1;
+            }
+        }
+
+        if (bestOk) break;
+    }
+
+    if (!bestOk) return 0;
+    if (bestRoom < TNX_V196_FREEST_MIN) return 0;
+
+    *tx = bestX;
+    *ty = bestY;
+    g_v196_freest_used++;
+
+    return 1;
+}
+
 static int tnx_v172_decide(int32_t ownX, int32_t ownY) {
     float px = (float)ownX;
     float py = (float)ownY;
@@ -12610,6 +12819,8 @@ static int tnx_v172_decide(int32_t ownX, int32_t ownY) {
 
     if (threatened) {
         picked = tnx_v172_best(px, py, &tx, &ty);
+
+        if (!picked) picked = tnx_v196_freest(px, py, &tx, &ty);
 
         if (picked) {
             g_v172_tx = tx;
@@ -12669,6 +12880,8 @@ static void tnx_autododge_v48(void) {
     tnx_v189_drift();
 
     tnx_v193_core();
+
+    tnx_v196_dump();
 
     tnx_v177_paircal();
 

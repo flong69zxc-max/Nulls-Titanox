@@ -313,7 +313,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_163"
+#define TNX_BUILD_TAG "titanox_164"
 
 #define TNX_V163_MAP_DUMPS 3
 
@@ -327,10 +327,10 @@ static int g_v123_defer_logs = 0;
 #define TNX_V160_DIRS 48
 #define TNX_V160_REACH 600.0f
 #define TNX_V160_HORIZON 1.0f
-#define TNX_V160_ENGAGE 40.0f
+#define TNX_V160_ENGAGE 200.0f
 #define TNX_V160_KEEP_BAND 120.0f
 #define TNX_V160_MOMENTUM 100.0f
-#define TNX_V160_LOCK_MS 130
+#define TNX_V160_LOCK_MS 100
 #define TNX_V160_RELEASE_MS 120
 #define TNX_V160_SPEED 720.0f
 
@@ -10889,6 +10889,7 @@ static int tnx_v160_dodge(int32_t ownX, int32_t ownY, int32_t *txOut, int32_t *t
 }
 
 static int g_v162_logs = 0;
+static int g_v164_logs = 0;
 static int32_t g_v162_max_x = 0;
 static int32_t g_v162_max_y = 0;
 
@@ -10907,6 +10908,38 @@ static uintptr_t tnx_v162_bounds_obj(uintptr_t receiver) {
 }
 
 static int g_v163_map_dumps = 0;
+
+static void tnx_v164_mark_applied(int32_t x, int32_t y) {
+    uintptr_t ctrl = tnx_v150_controller();
+    int32_t beforeX = 0;
+    int32_t beforeY = 0;
+    int32_t beforeDirty = 0;
+    int written = 0;
+
+    if (!ctrl) return;
+
+    if (tnx_read_i32(ctrl + TNX_V128_CTRL_APPLIED_X_OFF, &beforeX) &&
+        tnx_read_i32(ctrl + TNX_V128_CTRL_APPLIED_Y_OFF, &beforeY) &&
+        tnx_read_i32(ctrl + TNX_V128_CTRL_DIRTY_OFF, &beforeDirty)) {
+        if (tnx_write_bytes(ctrl + TNX_V128_CTRL_APPLIED_X_OFF, &x, sizeof(x)) &&
+            tnx_write_bytes(ctrl + TNX_V128_CTRL_APPLIED_Y_OFF, &y, sizeof(y))) {
+            int32_t zero = 0;
+
+            tnx_write_bytes(ctrl + TNX_V128_CTRL_DIRTY_OFF, &zero, sizeof(zero));
+            written = 1;
+        }
+    }
+
+    if (g_v164_logs < 12) {
+        g_v164_logs++;
+
+        tnx_logf("v164 applied ctrl=%p want=(%d,%d) before=(%d,%d) dirtyBefore=%d written=%d - the "
+                 "engine writes the same three fields on the controller right after it queues the "
+                 "move and before it sets the pair, so the client treats the move as player input "
+                 "and plays the walk instead of carrying the body without the run cycle",
+                 (void *)ctrl, x, y, beforeX, beforeY, beforeDirty, written);
+    }
+}
 
 static void tnx_v163_map_dump(uintptr_t bounds) {
     int32_t v[12];
@@ -11662,6 +11695,8 @@ static void tnx_autododge_v48(void) {
         }
 
         tnx_v148_receiver_probe();
+
+        tnx_v164_mark_applied(targetX, targetY);
 
         if (!TNX_V150_ACT_WRITE) {
             if (g_v147_dry_logs < 8) {

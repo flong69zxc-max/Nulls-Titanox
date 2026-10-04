@@ -227,7 +227,7 @@ static const uintptr_t g_vtprobe_rva[TNX_VTPROBE_COUNT] = {
 #define TNX_V123_HOP2_DEFER 0
 
 #define TNX_V126_ALLOC_GOT_RVA 0x00f78180ULL
-#define TNX_V126_TYPE_MOVE 0xa
+#define TNX_V126_TYPE_MOVE 0x2
 #define TNX_V126_OWN_OFF 0x918ULL
 #define TNX_V126_OWN_INNER_OFF 0x28ULL
 #define TNX_V126_BOX_PTR_OFF 0xf8ULL
@@ -313,7 +313,10 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_156"
+#define TNX_BUILD_TAG "titanox_158"
+
+#define TNX_V157_MIN_COMMIT 300.0f
+
 
 #define TNX_V156_INPUT_WRITE 1
 #define TNX_V156_LOGS 24
@@ -8237,6 +8240,8 @@ static int tnx_v113_queue_count(uintptr_t *mgrOut) {
 
 static int g_v156_logs = 0;
 static uint64_t g_v156_push_logs = 0;
+static float g_v157_dir = 0.0f;
+static int g_v157_dir_set = 0;
 
 static int tnx_v113_enqueue(int x, int y) {
     uintptr_t ctorFn = tnx_v113_entry(TNX_V113_MSGCTOR_RVA);
@@ -11012,6 +11017,30 @@ static void tnx_v155_block(float ang) {
     }
 }
 
+static int tnx_v157_dir_eval(int32_t px, int32_t py, float ang, float *distOut, float *clearOut) {
+    float ux = cosf(ang);
+    float uy = sinf(ang);
+    float lastSafe = 0.0f;
+    float lastClear = 0.0f;
+    float d;
+
+    for (d = TNX_V154_STEP; d <= TNX_V155_MAX_DIST; d += TNX_V154_STEP) {
+        float cx = (float)px + ux * d;
+        float cy = (float)py + uy * d;
+        float clear = tnx_v154_clearance(cx, cy);
+
+        if (clear < 0.0f) break;
+
+        lastSafe = d;
+        lastClear = clear;
+    }
+
+    if (distOut) *distOut = lastSafe;
+    if (clearOut) *clearOut = lastClear;
+
+    return lastSafe > 0.0f;
+}
+
 static int tnx_v154_best(int32_t px, int32_t py, float desX, float desY, int32_t *txOut,
                          int32_t *tyOut) {
     float base = 0.0f;
@@ -11023,6 +11052,18 @@ static int tnx_v154_best(int32_t px, int32_t py, float desX, float desY, int32_t
     int i;
 
     g_v154_searches++;
+
+    if (g_v157_dir_set) {
+        float heldDist = 0.0f;
+
+        if (tnx_v157_dir_eval(px, py, g_v157_dir, &heldDist, NULL) &&
+            heldDist >= TNX_V157_MIN_COMMIT) {
+            if (txOut) *txOut = px + (int32_t)(cosf(g_v157_dir) * heldDist);
+            if (tyOut) *tyOut = py + (int32_t)(sinf(g_v157_dir) * heldDist);
+
+            return 1;
+        }
+    }
 
     if (desX != 0.0f || desY != 0.0f) {
         base = atan2f(desY, desX);
@@ -11065,6 +11106,9 @@ static int tnx_v154_best(int32_t px, int32_t py, float desX, float desY, int32_t
     }
 
     if (!found) return 0;
+
+    g_v157_dir = atan2f((float)(bestY - py), (float)(bestX - px));
+    g_v157_dir_set = 1;
 
     if (txOut) *txOut = bestX;
     if (tyOut) *tyOut = bestY;
@@ -11647,7 +11691,9 @@ static void tnx_autododge_v48(void) {
                 }
             }
 
-            if (g_v154_have && !tnx_v154_threatened((float)g_v154_tx, (float)g_v154_ty)) {
+            if (g_v154_have && !tnx_v154_threatened((float)g_v154_tx, (float)g_v154_ty) &&
+                !tnx_v154_threatened((float)ownX + ((float)g_v154_tx - (float)ownX) * 0.5f,
+                                     (float)ownY + ((float)g_v154_ty - (float)ownY) * 0.5f)) {
                 float ddx = (float)(g_v154_tx - ownX);
                 float ddy = (float)(g_v154_ty - ownY);
                 float dist = sqrtf(ddx * ddx + ddy * ddy);
@@ -11791,11 +11837,12 @@ static void tnx_autododge_v48(void) {
             if (g_v156_logs < TNX_V156_LOGS || !pushed) {
                 g_v156_logs++;
 
-                tnx_logf("v156 input push x=%d y=%d ok=%d own=(%d,%d) - the destination goes out as a "
+                tnx_logf("v158 input push type=%d x=%d y=%d ok=%d own=(%d,%d) - the destination goes out as a "
                          "client input through the battle input manager, which is the route the "
                          "server actually consumes, so the move stops being a local prediction that "
                          "a replay cannot show; the local setter below still runs so the prediction "
-                         "and the server stay in step", targetX, targetY, pushed, ownX, ownY);
+                         "and the server stay in step", TNX_V126_TYPE_MOVE, targetX, targetY,
+                         pushed, ownX, ownY);
             }
         }
 

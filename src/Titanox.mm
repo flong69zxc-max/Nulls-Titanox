@@ -61,7 +61,7 @@
 #define TNX_V204_PROJ_OWNER 1
 #define TNX_V204_SPAWN_R 520.0f
 #define TNX_V204_OWNER_LOGS 6
-#define TNX_V205_JOYSTICK 1
+#define TNX_V205_JOYSTICK 0
 #define TNX_V205_JOY_STATE_OFF 0xed7ULL
 #define TNX_V205_JOY_AA_OFF 0x8f4ULL
 #define TNX_V205_JOY_AB_OFF 0x8f8ULL
@@ -80,11 +80,13 @@
 #define TNX_V213_JOYSTATE_OFF 0xed7ULL
 #define TNX_V214_MATE_AVOID 1
 #define TNX_V214_MATE_CLEAR 420.0f
+#define TNX_V218_BODY_ALL 1
+#define TNX_V219_QUEUE 1
 #define TNX_V216_FLEE 1
 #define TNX_V216_FLEE_STEP 1500.0f
 #define TNX_V216_LOGS 14
 #define TNX_V216_EVERY 30
-#define TNX_V217_DRAG_SPACE 1
+#define TNX_V217_DRAG_SPACE 0
 #define TNX_V198_LOGS 10
 #define TNX_V198_PRED_LOGS 6
 #define TNX_V196_CLUSTER 700.0f
@@ -365,7 +367,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_217"
+#define TNX_BUILD_TAG "titanox_219"
 
 #define TNX_V165_JOY_MAG 600.0f
 #define TNX_V167_TEAM_FILTER 1
@@ -2767,6 +2769,8 @@ static int g_v191_trust_logs = 0;
 static int g_v191_roster_logs = 0;
 static int g_v191_enemy_blocks = 0;
 static int g_v191_oneshot_segs = 0;
+static uint64_t g_v219_drain = 0;
+static uint64_t g_v219_q_max = 0;
 static uint64_t g_v217_drag_writes = 0;
 static uint64_t g_v217_drag_back = 0;
 static uint64_t g_v216_flees = 0;
@@ -8381,6 +8385,13 @@ static int tnx_v113_enqueue(int x, int y) {
     g_v126_q_last = tnx_v126_q_last();
     g_v126_msg = msg;
     g_v126_enq_ok = 1;
+
+    if (TNX_V219_QUEUE) {
+        if (g_v126_q_after <= 0) g_v219_drain++;
+        if ((uint64_t)(g_v126_q_after > 0 ? g_v126_q_after : 0) > g_v219_q_max) {
+            g_v219_q_max = (uint64_t)g_v126_q_after;
+        }
+    }
     g_v113_enqueues++;
     g_v113_push_frame = g_v48_ticks;
 
@@ -11571,8 +11582,8 @@ static int tnx_v205_walk(float dirX, float dirY);
 static void tnx_v207_precision(int32_t ownX, int32_t ownY, float dirX, float dirY, int escape);
 static int tnx_v172_threatened(float x, float y);
 static int tnx_v196_freest(float px, float py, float *tx, float *ty);
-static void tnx_v214_unblock(float px, float py, float len, float *dirX, float *dirY);
-static int tnx_v214_mate_blocked(float px, float py, float dirX, float dirY, float len);
+static void tnx_v218_unblock(float px, float py, float len, float *dirX, float *dirY);
+static int tnx_v218_body_blocked(float px, float py, float dirX, float dirY, float len);
 
 static int32_t g_v189_last_ty = 0;
 static uint64_t g_v189_last_decision = 0;
@@ -11846,7 +11857,7 @@ static int tnx_v189_drive(void) {
     if (len >= 0.0001f) {
         dx /= len;
         dy /= len;
-        tnx_v214_unblock((float)ownX, (float)ownY, TNX_V189_STEP, &dx, &dy);
+        tnx_v218_unblock((float)ownX, (float)ownY, TNX_V189_STEP, &dx, &dy);
         dx *= len;
         dy *= len;
     }
@@ -13172,7 +13183,7 @@ static int tnx_v192_body_blocked(float x, float y, float ownX, float ownY) {
     return 0;
 }
 
-static int tnx_v214_mate_blocked(float px, float py, float dirX, float dirY, float len) {
+static int tnx_v218_body_blocked(float px, float py, float dirX, float dirY, float len) {
     float ex = 0.0f;
     float ey = 0.0f;
     int i = 0;
@@ -13185,7 +13196,6 @@ static int tnx_v214_mate_blocked(float px, float py, float dirX, float dirY, flo
     ey = py + dirY * len;
 
     for (i = 0; i < g_v189_pl_n; i++) {
-        if (!g_v189_pl_mine[i]) continue;
         if (tnx_v192_seg_dist(px, py, ex, ey, (float)g_v189_pl_x[i], (float)g_v189_pl_y[i]) <
             TNX_V214_MATE_CLEAR) {
             return 1;
@@ -13195,7 +13205,7 @@ static int tnx_v214_mate_blocked(float px, float py, float dirX, float dirY, flo
     return 0;
 }
 
-static void tnx_v214_unblock(float px, float py, float len, float *dirX, float *dirY) {
+static void tnx_v218_unblock(float px, float py, float len, float *dirX, float *dirY) {
     static const float rot[8] = { 30.0f, -30.0f, 60.0f, -60.0f, 90.0f, -90.0f, 135.0f, -135.0f };
     const float rad = 3.14159265358979f / 180.0f;
     float dx = *dirX;
@@ -13204,7 +13214,7 @@ static void tnx_v214_unblock(float px, float py, float len, float *dirX, float *
 
     if (!TNX_V214_MATE_AVOID) return;
     if (len < 1.0f) return;
-    if (!tnx_v214_mate_blocked(px, py, dx, dy, len)) return;
+    if (!tnx_v218_body_blocked(px, py, dx, dy, len)) return;
 
     for (i = 0; i < 8; i++) {
         float a = rot[i] * rad;
@@ -13213,7 +13223,7 @@ static void tnx_v214_unblock(float px, float py, float len, float *dirX, float *
         float rx = dx * c - dy * sn;
         float ry = dx * sn + dy * c;
 
-        if (!tnx_v214_mate_blocked(px, py, rx, ry, len)) {
+        if (!tnx_v218_body_blocked(px, py, rx, ry, len)) {
             *dirX = rx;
             *dirY = ry;
             g_v214_mate_turns++;
@@ -13299,7 +13309,7 @@ static float tnx_v172_safe_angle(float px, float py, float desiredDeg, int *ok) 
     *ok = 1;
 
     if (!tnx_v172_walk_into_bullet(px, py, cosf(desiredDeg * deg), sinf(desiredDeg * deg), scan) &&
-        !tnx_v214_mate_blocked(px, py, cosf(desiredDeg * deg), sinf(desiredDeg * deg), scan)) {
+        !tnx_v218_body_blocked(px, py, cosf(desiredDeg * deg), sinf(desiredDeg * deg), scan)) {
         return desiredDeg;
     }
 
@@ -13308,10 +13318,10 @@ static float tnx_v172_safe_angle(float px, float py, float desiredDeg, int *ok) 
         float b = desiredDeg - offsets[i];
 
         if (!tnx_v172_walk_into_bullet(px, py, cosf(a * deg), sinf(a * deg), scan) &&
-            !tnx_v214_mate_blocked(px, py, cosf(a * deg), sinf(a * deg), scan)) return a;
+            !tnx_v218_body_blocked(px, py, cosf(a * deg), sinf(a * deg), scan)) return a;
 
         if (!tnx_v172_walk_into_bullet(px, py, cosf(b * deg), sinf(b * deg), scan) &&
-            !tnx_v214_mate_blocked(px, py, cosf(b * deg), sinf(b * deg), scan)) return b;
+            !tnx_v218_body_blocked(px, py, cosf(b * deg), sinf(b * deg), scan)) return b;
     }
 
     *ok = 0;
@@ -13607,7 +13617,7 @@ static int tnx_v205_walk(float dirX, float dirY) {
 
 static void tnx_v198_state(void) {
     tnx_logf("v211 state joystick=%p writes=%llu took=%llu escapes=%llu lookahead=%llu appliedW=%llu "
-             "appliedLive=%llu appliedStale=%llu rage=%llu flees=%llu deadRep=%llu dragW=%llu dragLive=%llu mateTurn=%llu mateStuck=%llu decUs=%llu maxUs=%llu "
+             "appliedLive=%llu appliedStale=%llu rage=%llu flees=%llu deadRep=%llu qDrain=%llu qMax=%llu dragW=%llu dragLive=%llu mateTurn=%llu mateStuck=%llu decUs=%llu maxUs=%llu "
              "denied=%llu "
              "predTook=%llu predMiss=%llu objects scene=%p character=%p battle=%p - writes counts the "
              "frames the drag block was written, took counts the frames the engine still held it with "
@@ -13616,10 +13626,12 @@ static void tnx_v198_state(void) {
              "of waiting for contact, appliedW counts the frames the push tail of the engine was replayed, "
              "appliedLive how many the movement code kept and appliedStale how many it overwrote, rage "
              "counts the frames rage mode forced the pick, flees and deadRep count the picks taken by the "
-             "flee fallback and the ones it had to replace because the pick sat on own, dragW counts the drag "
+             "flee fallback and the ones it had to replace because the pick sat on own, qDrain counts the "
+             "pushes the engine emptied within the same frame and qMax the deepest the queue ever got, so "
+             "a qMax that climbs while qDrain stays zero means the input is never consumed, dragW counts the drag "
              "writes in screen space and dragLive how many still showed a non zero drag when read "
              "back, mateTurn and mateStuck count the steps rotated "
-             "off an own side body and the ones no rotation could free, and decUs is the microseconds from the "
+             "off a player body, own side or enemy, and the ones no rotation could free, and decUs is the microseconds from the "
              "start of the drive to the stick write with maxUs the worst of them, "
              "and denied counts the stores the region guard dropped",
              (void *)g_v205_joystick, (unsigned long long)g_v205_joystick_writes,
@@ -13627,8 +13639,9 @@ static void tnx_v198_state(void) {
              (unsigned long long)g_v209_lookahead, (unsigned long long)g_v211_applied_writes,
              (unsigned long long)g_v211_applied_live, (unsigned long long)g_v211_applied_stale,
              (unsigned long long)g_v212_rage_frames, (unsigned long long)g_v216_flees,
-             (unsigned long long)g_v217_drag_writes, (unsigned long long)g_v217_drag_back,
-             (unsigned long long)g_v216_dead_replaced, (unsigned long long)g_v214_mate_turns,
+             (unsigned long long)g_v216_dead_replaced, (unsigned long long)g_v219_drain,
+             (unsigned long long)g_v219_q_max, (unsigned long long)g_v217_drag_writes,
+             (unsigned long long)g_v217_drag_back, (unsigned long long)g_v214_mate_turns,
              (unsigned long long)g_v214_mate_stuck, (unsigned long long)g_v213_dec_us,
              (unsigned long long)g_v213_dec_us_max,
              (unsigned long long)g_v201_write_denied,

@@ -389,7 +389,11 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_244"
+#define TNX_BUILD_TAG "titanox_245"
+
+#define TNX_V245_JOURNAL 24
+#define TNX_V245_JOURNAL_LINES 8
+#define TNX_V245_STALE_SIGHT 1
 
 #define TNX_V244_QUIET 1
 #define TNX_V244_HUMAN 1
@@ -1167,6 +1171,37 @@ static void tnx_v146_crash(int sig, siginfo_t *info, void *ctx) {
         ssize_t ignored = write((int)g_v146_fd, buf, (size_t)n);
 
         (void)ignored;
+    }
+
+    {
+        int i = 0;
+
+        n = snprintf(buf, sizeof(buf),
+                     "\n[JOURNAL] writes=%llu stale=%llu of %d slots, newest first:\n",
+                     (unsigned long long)g_v245_writes, (unsigned long long)g_v245_stale,
+                     (int)TNX_V245_JOURNAL);
+
+        if (n > 0 && g_v146_fd >= 0) {
+            ssize_t ignored = write((int)g_v146_fd, buf, (size_t)n);
+
+            (void)ignored;
+        }
+
+        for (i = 0; i < TNX_V245_JOURNAL_LINES; i++) {
+            int slot = (g_v245_at - 1 - i + TNX_V245_JOURNAL * 2) % TNX_V245_JOURNAL;
+
+            n = snprintf(buf, sizeof(buf),
+                         "[JOURNAL] #%d addr=%p value=%#x len=%u denied=%u tick=%llu phase=%s\n",
+                         i, (void *)g_v245_addr[slot], g_v245_value[slot], (unsigned)g_v245_size[slot],
+                         (unsigned)g_v245_denied[slot], (unsigned long long)g_v245_tick[slot],
+                         g_v245_phase[slot] ? g_v245_phase[slot] : "?");
+
+            if (n > 0 && g_v146_fd >= 0) {
+                ssize_t ignored = write((int)g_v146_fd, buf, (size_t)n);
+
+                (void)ignored;
+            }
+        }
     }
 
     signal(sig, SIG_DFL);
@@ -2219,12 +2254,46 @@ static BOOL tnx_v201_writable(uintptr_t address, size_t length) {
     return cursor >= end;
 }
 
+static uintptr_t g_v245_addr[TNX_V245_JOURNAL];
+static uint32_t g_v245_value[TNX_V245_JOURNAL];
+static uint64_t g_v245_tick[TNX_V245_JOURNAL];
+static const char *g_v245_phase[TNX_V245_JOURNAL];
+static uint8_t g_v245_size[TNX_V245_JOURNAL];
+static uint8_t g_v245_denied[TNX_V245_JOURNAL];
+static volatile int g_v245_at = 0;
+static volatile uint64_t g_v245_writes = 0;
+static uint64_t g_v245_stale = 0;
+
+static void tnx_v245_note(uintptr_t address, const void *src, size_t length, int denied) {
+    int n = g_v245_at;
+    uint32_t value = 0;
+
+    if (n < 0) n = 0;
+    if (n >= TNX_V245_JOURNAL) n = 0;
+
+    if (src && length) {
+        size_t take = length < sizeof(value) ? length : sizeof(value);
+
+        memcpy(&value, src, take);
+    }
+
+    g_v245_addr[n] = address;
+    g_v245_value[n] = value;
+    g_v245_tick[n] = g_v146_stage_ticks;
+    g_v245_phase[n] = g_v146_phase;
+    g_v245_size[n] = (uint8_t)(length > 255 ? 255 : length);
+    g_v245_denied[n] = (uint8_t)(denied ? 1 : 0);
+    g_v245_writes++;
+    g_v245_at = (n + 1) % TNX_V245_JOURNAL;
+}
+
 static BOOL tnx_write_bytes(uintptr_t address, const void *src, size_t length) {
     if (!src || !length) return NO;
     if (!address) return NO;
 
     if (TNX_V201_WRITE_GUARD && !tnx_v201_writable(address, length)) {
         g_v201_write_denied++;
+        tnx_v245_note(address, src, length, 1);
 
         if (g_v201_deny_logs < TNX_V201_DENY_LOGS) {
             g_v201_deny_logs++;
@@ -2237,6 +2306,8 @@ static BOOL tnx_write_bytes(uintptr_t address, const void *src, size_t length) {
 
         return NO;
     }
+
+    tnx_v245_note(address, src, length, 0);
 
     memcpy((void *)address, src, length);
 
@@ -2933,6 +3004,7 @@ static int tnx_v220_ctrl_ok(uintptr_t ctrl) {
     int32_t rawY = 0;
     int32_t appX = 0;
     int32_t appY = 0;
+    void *vt = NULL;
 
     if (!ctrl) return 0;
     if (!tnx_v201_writable(ctrl + TNX_V211_FLAG_OFF, TNX_V128_CTRL_APPLIED_Y_OFF -
@@ -2940,6 +3012,15 @@ static int tnx_v220_ctrl_ok(uintptr_t ctrl) {
         g_v220_ctrl_dead++;
 
         return 0;
+    }
+    if (!tnx_v201_writable(ctrl + TNX_V243_CUR_X_OFF, TNX_V243_ORG_Y_OFF -
+                           TNX_V243_CUR_X_OFF + sizeof(float))) {
+        g_v220_ctrl_dead++;
+
+        return 0;
+    }
+    if (TNX_V245_STALE_SIGHT && tnx_read_ptr(ctrl, &vt) && vt) {
+        if ((uintptr_t)vt < g_base || (uintptr_t)vt >= g_base + TNX_V60_IMAGE_SPAN) g_v245_stale++;
     }
     if (!tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_X_OFF, &rawX)) return 0;
     if (!tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &rawY)) return 0;

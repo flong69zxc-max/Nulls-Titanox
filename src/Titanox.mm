@@ -313,14 +313,19 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_159"
+#define TNX_BUILD_TAG "titanox_160"
 
-#define TNX_V159_MIN_PROJ_DIST 200.0f
-#define TNX_V159_DIR_BAD_TICKS 2
-#define TNX_V159_LOGS 24
+#define TNX_V160_DIRS 48
+#define TNX_V160_REACH 600.0f
+#define TNX_V160_HORIZON 1.0f
+#define TNX_V160_ENGAGE 40.0f
+#define TNX_V160_KEEP_BAND 120.0f
+#define TNX_V160_MOMENTUM 100.0f
+#define TNX_V160_LOCK_MS 130
+#define TNX_V160_RELEASE_MS 120
+#define TNX_V160_SPEED 720.0f
 
 
-#define TNX_V157_MIN_COMMIT 300.0f
 
 
 #define TNX_V156_INPUT_WRITE 1
@@ -328,25 +333,8 @@ static int g_v123_defer_logs = 0;
 #define TNX_V156_PUSH_LOGS 12
 
 
-#define TNX_V155_PROGRESS 20.0f
-#define TNX_V155_STALL_TICKS 10
-#define TNX_V155_BLOCK_TICKS 90
-#define TNX_V155_BLOCK_WIDTH 0.16f
-#define TNX_V155_MAX_DIST 900.0f
-#define TNX_V155_LOGS 24
 
-
-#define TNX_V154_STEP 150.0f
-#define TNX_V154_MAX_DIST 1500.0f
-#define TNX_V154_ANGLES 24
 #define TNX_V154_INFLATE 300.0f
-#define TNX_V154_ARRIVE 40.0f
-#define TNX_V154_LOGS 24
-
-
-#define TNX_V153_THREAT_TICKS 40
-#define TNX_V153_EXIT_DIST 520.0f
-#define TNX_V153_LOGS 24
 
 
 #define TNX_V151_THREAT_MIN_MS 0
@@ -464,10 +452,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_V140_DUMPS 3
 #define TNX_V140_DIFF_BYTES 0x100
 #define TNX_V140_DIFF_LOGS 48
-#define TNX_V140_SIDE_WEIGHT 3.0f
 #define TNX_V140_THREAT_RADIUS 260.0f
-#define TNX_V140_THREAT_TICKS 12.0f
-#define TNX_V140_SIDE_LOGS 24
 #define TNX_V140_WRITE_LOGS 24
 
 #define TNX_RVA_SETPREDICTION 0x00ac3f20ULL
@@ -6299,20 +6284,12 @@ static int g_v151_logs = 0;
 static int g_v153_best_k = -1;
 static float g_v153_best_t = 0.0f;
 static int g_v153_side = 0;
-static int g_v153_logs = 0;
 static int32_t g_v152_last_tx = 0;
 static int32_t g_v152_last_ty = 0;
 static int g_v152_issued = 0;
 static float g_v151_best_x = 0.0f;
 static float g_v151_best_y = 0.0f;
 static float g_v151_best_dist = -1.0f;
-static int g_v151_best_hit = 0;
-static int32_t g_v154_tx = 0;
-static int32_t g_v154_ty = 0;
-static int g_v154_have = 0;
-static uint64_t g_v154_reuse = 0;
-static uint64_t g_v154_searches = 0;
-static int g_v154_logs = 0;
 
 
  
@@ -8245,13 +8222,6 @@ static int tnx_v113_queue_count(uintptr_t *mgrOut) {
 
 static int g_v156_logs = 0;
 static uint64_t g_v156_push_logs = 0;
-static float g_v157_dir = 0.0f;
-static int g_v157_dir_set = 0;
-static float g_v159_own_x = 0.0f;
-static float g_v159_own_y = 0.0f;
-static int g_v159_dir_bad = 0;
-static uint64_t g_v159_filtered = 0;
-static int g_v159_logs = 0;
 
 static int tnx_v113_enqueue(int x, int y) {
     uintptr_t ctorFn = tnx_v113_entry(TNX_V113_MSGCTOR_RVA);
@@ -10374,7 +10344,6 @@ typedef struct {
 static tnx_v140_proj_t g_v140_projs[TNX_V140_PROJ_MAX];
 static int g_v140_side_hits = 0;
 static int g_v140_side_projs = 0;
-static int g_v140_side_logs = 0;
 static int g_v140_write_logs = 0;
 
 static int tnx_v140_proj_scan(uintptr_t manager, int32_t count) {
@@ -10496,186 +10465,7 @@ static int tnx_v140_proj_scan(uintptr_t manager, int32_t count) {
     return found;
 }
 
-static float tnx_v153_clearance(float px, float py, int skipK) {
-    float best = 100000.0f;
-    int k;
 
-    for (k = 0; k < TNX_V140_PROJ_MAX; k++) {
-        const tnx_v140_proj_t *p = &g_v140_projs[k];
-        float dx;
-        float dy;
-        float dd;
-        float rx;
-        float ry;
-        float t;
-        float hx;
-        float hy;
-        float ax;
-        float ay;
-        float d;
-
-        if (k == skipK) continue;
-        if (!p->elem || !p->hasPrev) continue;
-
-        dx = (float)(p->x - p->px);
-        dy = (float)(p->y - p->py);
-        dd = dx * dx + dy * dy;
-
-        if (dd < 1.0f) continue;
-
-        {
-            float pdx = (float)p->x - g_v159_own_x;
-            float pdy = (float)p->y - g_v159_own_y;
-            float pd2 = pdx * pdx + pdy * pdy;
-
-            if (pd2 < TNX_V159_MIN_PROJ_DIST * TNX_V159_MIN_PROJ_DIST) continue;
-            if (pdx * dx + pdy * dy >= 0.0f) continue;
-        }
-
-        rx = px - (float)p->x;
-        ry = py - (float)p->y;
-
-        t = (rx * dx + ry * dy) / dd;
-
-        if (t < 0.0f || t > TNX_V153_THREAT_TICKS) continue;
-
-        hx = (float)p->x + dx * t;
-        hy = (float)p->y + dy * t;
-        ax = px - hx;
-        ay = py - hy;
-        d = sqrtf(ax * ax + ay * ay);
-
-        if (d < best) best = d;
-    }
-
-    return best;
-}
-
-static int tnx_v140_sidestep(int32_t ox, int32_t oy, float *sumX, float *sumY, int *hitsOut,
-                             int *seenOut) {
-    float sx = 0.0f;
-    float sy = 0.0f;
-    int hits = 0;
-    int seen = 0;
-    int k;
-
-    if (sumX) *sumX = 0.0f;
-    if (sumY) *sumY = 0.0f;
-    if (hitsOut) *hitsOut = 0;
-    if (seenOut) *seenOut = 0;
-
-    for (k = 0; k < TNX_V140_PROJ_MAX; k++) {
-        const tnx_v140_proj_t *p = &g_v140_projs[k];
-        float dx;
-        float dy;
-        float dd;
-        float vx;
-        float vy;
-        float t;
-        float hx;
-        float hy;
-        float ex;
-        float ey;
-        float dist;
-        float len;
-        float ux;
-        float uy;
-        float side;
-        float w;
-
-        if (!p->elem || !p->hasPrev) continue;
-
-        seen++;
-
-        dx = (float)(p->x - p->px);
-        dy = (float)(p->y - p->py);
-        dd = dx * dx + dy * dy;
-
-        if (dd < 1.0f) continue;
-
-        vx = (float)(ox - p->x);
-        vy = (float)(oy - p->y);
-
-        t = (vx * dx + vy * dy) / dd;
-
-        if (t < 0.0f) continue;
-        if (t > TNX_V153_THREAT_TICKS) continue;
-
-        hx = (float)p->x + dx * t;
-        hy = (float)p->y + dy * t;
-
-        ex = (float)ox - hx;
-        ey = (float)oy - hy;
-        dist = sqrtf(ex * ex + ey * ey);
-
-        if (dist > TNX_V140_THREAT_RADIUS) continue;
-
-        len = sqrtf(dd);
-        ux = -dy / len;
-        uy = dx / len;
-
-        side = ((vx * ux + vy * uy) > 0.0f) ? 1.0f : -1.0f;
-        w = (TNX_V140_THREAT_RADIUS - dist) / TNX_V140_THREAT_RADIUS;
-
-        sx += ux * side * w;
-        sy += uy * side * w;
-        hits++;
-
-        if (g_v151_best_dist < 0.0f || t < g_v153_best_t) {
-            g_v151_best_dist = dist;
-            g_v153_best_t = t;
-            g_v151_best_x = ux * side;
-            g_v151_best_y = uy * side;
-            g_v153_best_k = k;
-        }
-    }
-
-    if (g_v151_best_dist >= 0.0f && g_v153_best_k >= 0) {
-        const tnx_v140_proj_t *b = &g_v140_projs[g_v153_best_k];
-        float bdx = (float)(b->x - b->px);
-        float bdy = (float)(b->y - b->py);
-        float blen = sqrtf(bdx * bdx + bdy * bdy);
-
-        if (blen >= 1.0f) {
-            float bux = -bdy / blen;
-            float buy = bdx / blen;
-            float exit = TNX_V153_EXIT_DIST;
-            float cPlus = tnx_v153_clearance((float)b->x + bux * exit, (float)b->y + buy * exit,
-                                             g_v153_best_k);
-            float cMinus = tnx_v153_clearance((float)b->x - bux * exit, (float)b->y - buy * exit,
-                                              g_v153_best_k);
-            float chosen = (cPlus >= cMinus) ? 1.0f : -1.0f;
-
-            if (cPlus == cMinus) {
-                chosen = (((float)(ox - b->x) * bux + (float)(oy - b->y) * buy) > 0.0f) ? 1.0f : -1.0f;
-            }
-
-            g_v151_best_x = bux * chosen;
-            g_v151_best_y = buy * chosen;
-            g_v153_side = (chosen > 0.0f) ? 1 : -1;
-
-            if (g_v153_logs < TNX_V153_LOGS) {
-                g_v153_logs++;
-
-                tnx_logf("v153 side pick bestDist=%.0f bestT=%.1f plus=%.0f minus=%.0f chosen=%d "
-                         "tmax=%d - both exit points are tested against every other projectile on "
-                         "a ray and the side with the larger clearance wins, because the old rule "
-                         "took the side the character already stood on and could step straight "
-                         "into a second shot", (double)g_v151_best_dist, (double)g_v153_best_t,
-                         (double)cPlus, (double)cMinus, g_v153_side, TNX_V153_THREAT_TICKS);
-            }
-        }
-    }
-
-    if (sumX) *sumX = sx;
-    if (sumY) *sumY = sy;
-    if (hitsOut) *hitsOut = hits;
-    if (seenOut) *seenOut = seen;
-
-    g_v151_best_hit = hits;
-
-    return hits;
-}
 
 static int g_v148_probe_logs = 0;
 
@@ -10942,54 +10732,84 @@ static int tnx_v144_mode_write(int x, int y, int flag) {
     return kept;
 }
 
-static float tnx_v154_clearance(float px, float py) {
+
+
+
+
+
+
+
+static float g_v160_ring_x[TNX_V160_DIRS];
+static float g_v160_ring_y[TNX_V160_DIRS];
+static float g_v160_score[TNX_V160_DIRS];
+static int g_v160_ring_built = 0;
+static int g_v160_prev_idx = -1;
+static uint64_t g_v160_hold_until = 0;
+static uint64_t g_v160_last_danger = 0;
+static int32_t g_v160_tx = 0;
+static int32_t g_v160_ty = 0;
+static int g_v160_active = 0;
+static int g_v151_logs = 0;
+
+static void tnx_v160_build_ring(void) {
+    int i;
+
+    for (i = 0; i < TNX_V160_DIRS; i++) {
+        float a = 2.0f * (float)M_PI * (float)i / (float)TNX_V160_DIRS;
+
+        g_v160_ring_x[i] = cosf(a);
+        g_v160_ring_y[i] = sinf(a);
+        g_v160_score[i] = 0.0f;
+    }
+
+    g_v160_ring_built = 1;
+}
+
+static float tnx_v160_clearance(float mx, float my, float mvx, float mvy) {
     float best = 1000000.0f;
     int k;
 
     for (k = 0; k < TNX_V140_PROJ_MAX; k++) {
         const tnx_v140_proj_t *p = &g_v140_projs[k];
-        float dx;
-        float dy;
-        float dd;
-        float rx;
-        float ry;
-        float t;
-        float hx;
-        float hy;
-        float ax;
-        float ay;
+        float vx;
+        float vy;
+        float relx;
+        float rely;
+        float vrx;
+        float vry;
+        float vv;
+        float ts;
+        float cx;
+        float cy;
         float d;
 
         if (!p->elem || !p->hasPrev) continue;
 
-        dx = (float)(p->x - p->px);
-        dy = (float)(p->y - p->py);
-        dd = dx * dx + dy * dy;
+        vx = (float)(p->x - p->px);
+        vy = (float)(p->y - p->py);
 
-        if (dd < 1.0f) continue;
+        if (sqrtf(vx * vx + vy * vy) < 1.0f) continue;
 
-        {
-            float pdx = (float)p->x - g_v159_own_x;
-            float pdy = (float)p->y - g_v159_own_y;
-            float pd2 = pdx * pdx + pdy * pdy;
+        relx = (float)p->x - mx;
+        rely = (float)p->y - my;
+        vrx = vx - mvx;
+        vry = vy - mvy;
+        vv = vrx * vrx + vry * vry;
 
-            if (pd2 < TNX_V159_MIN_PROJ_DIST * TNX_V159_MIN_PROJ_DIST) continue;
-            if (pdx * dx + pdy * dy >= 0.0f) continue;
+        if (vv < 1.0f) {
+            cx = relx;
+            cy = rely;
+        } else {
+            ts = -(relx * vrx + rely * vry) / vv;
+
+            if (ts < 0.0f) ts = 0.0f;
+            else if (ts > TNX_V160_HORIZON) ts = TNX_V160_HORIZON;
+
+            cx = relx + vrx * ts;
+            cy = rely + vry * ts;
         }
 
-        rx = px - (float)p->x;
-        ry = py - (float)p->y;
-
-        t = (rx * dx + ry * dy) / dd;
-
-        if (t < 0.0f) t = 0.0f;
-        if (t > (float)TNX_V153_THREAT_TICKS) t = (float)TNX_V153_THREAT_TICKS;
-
-        hx = (float)p->x + dx * t;
-        hy = (float)p->y + dy * t;
-        ax = px - hx;
-        ay = py - hy;
-        d = sqrtf(ax * ax + ay * ay) - TNX_V154_INFLATE;
+        d = sqrtf(cx * cx + cy * cy) - TNX_V154_INFLATE;
 
         if (d < best) best = d;
     }
@@ -10997,166 +10817,68 @@ static float tnx_v154_clearance(float px, float py) {
     return best;
 }
 
-static int tnx_v154_threatened(float px, float py) {
-    return tnx_v154_clearance(px, py) < 0.0f;
-}
-
-static float g_v155_block_ang[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-static uint64_t g_v155_block_until[4] = { 0, 0, 0, 0 };
-static int g_v155_block_next = 0;
-static float g_v155_prev_dist = 0.0f;
-static int g_v155_stall = 0;
-static uint64_t g_v155_stalls = 0;
-static int g_v155_logs = 0;
-
-static int tnx_v155_is_blocked(float ang) {
+static int tnx_v160_dodge(int32_t ownX, int32_t ownY, int32_t *txOut, int32_t *tyOut) {
+    float mx = (float)ownX;
+    float my = (float)ownY;
+    float stay;
+    float best = -1000000.0f;
+    int bestIdx = 0;
+    int chosen;
     int i;
+    uint64_t now;
 
-    for (i = 0; i < 4; i++) {
-        float d;
+    if (!g_v160_ring_built) tnx_v160_build_ring();
 
-        if (g_v155_block_until[i] <= g_v47_ticks) continue;
+    now = (uint64_t)(CFAbsoluteTimeGetCurrent() * 1000.0);
+    stay = tnx_v160_clearance(mx, my, 0.0f, 0.0f);
 
-        d = ang - g_v155_block_ang[i];
+    if (stay < TNX_V160_ENGAGE) g_v160_last_danger = now;
 
-        while (d > (float)M_PI) d -= 2.0f * (float)M_PI;
-        while (d < -(float)M_PI) d += 2.0f * (float)M_PI;
+    if (stay >= TNX_V160_ENGAGE && now - g_v160_last_danger > TNX_V160_RELEASE_MS) {
+        g_v160_prev_idx = -1;
 
-        if (d > -TNX_V155_BLOCK_WIDTH && d < TNX_V155_BLOCK_WIDTH) return 1;
+        return 0;
     }
 
-    return 0;
-}
+    for (i = 0; i < TNX_V160_DIRS; i++) {
+        float sc = tnx_v160_clearance(mx, my, TNX_V160_SPEED * g_v160_ring_x[i],
+                                      TNX_V160_SPEED * g_v160_ring_y[i]);
 
-static void tnx_v155_block(float ang) {
-    g_v155_block_ang[g_v155_block_next] = ang;
-    g_v155_block_until[g_v155_block_next] = g_v47_ticks + TNX_V155_BLOCK_TICKS;
-    g_v155_block_next = (g_v155_block_next + 1) & 3;
-    g_v155_stalls++;
-
-    if (g_v155_logs < TNX_V155_LOGS) {
-        g_v155_logs++;
-
-        tnx_logf("v155 direction blocked ang=%.2f for %d ticks stalls=%llu - a held target that "
-                 "the character stops getting closer to is not reachable, the destination was "
-                 "accepted by the engine and the walk did not happen, so the bearing to it is "
-                 "remembered and the next search skips it instead of reissuing the same pointless "
-                 "destination", (double)ang, TNX_V155_BLOCK_TICKS, (unsigned long long)g_v155_stalls);
-    }
-}
-
-static int tnx_v157_dir_eval(int32_t px, int32_t py, float ang, float *distOut, float *clearOut) {
-    float ux = cosf(ang);
-    float uy = sinf(ang);
-    float lastSafe = 0.0f;
-    float lastClear = 0.0f;
-    float d;
-
-    for (d = TNX_V154_STEP; d <= TNX_V155_MAX_DIST; d += TNX_V154_STEP) {
-        float cx = (float)px + ux * d;
-        float cy = (float)py + uy * d;
-        float clear = tnx_v154_clearance(cx, cy);
-
-        if (clear < 0.0f) break;
-
-        lastSafe = d;
-        lastClear = clear;
-    }
-
-    if (distOut) *distOut = lastSafe;
-    if (clearOut) *clearOut = lastClear;
-
-    return lastSafe > 0.0f;
-}
-
-static int tnx_v154_best(int32_t px, int32_t py, float desX, float desY, int32_t *txOut,
-                         int32_t *tyOut) {
-    float base = 0.0f;
-    float bestClear = -1000000.0f;
-    float bestDist = 1000000.0f;
-    int32_t bestX = 0;
-    int32_t bestY = 0;
-    int found = 0;
-    int i;
-
-    g_v154_searches++;
-
-    if (g_v157_dir_set) {
-        float heldDist = 0.0f;
-
-        if (tnx_v157_dir_eval(px, py, g_v157_dir, &heldDist, NULL) &&
-            heldDist >= TNX_V157_MIN_COMMIT) {
-            g_v159_dir_bad = 0;
-
-            if (txOut) *txOut = px + (int32_t)(cosf(g_v157_dir) * heldDist);
-            if (tyOut) *tyOut = py + (int32_t)(sinf(g_v157_dir) * heldDist);
-
-            return 1;
+        if (g_v160_prev_idx >= 0) {
+            sc += TNX_V160_MOMENTUM * (g_v160_ring_x[i] * g_v160_ring_x[g_v160_prev_idx] +
+                                       g_v160_ring_y[i] * g_v160_ring_y[g_v160_prev_idx]);
         }
 
-        g_v159_dir_bad++;
+        g_v160_score[i] = sc;
 
-        if (g_v159_dir_bad < TNX_V159_DIR_BAD_TICKS) {
-            float shortDist = 0.0f;
-
-            if (tnx_v157_dir_eval(px, py, g_v157_dir, &shortDist, NULL) && shortDist > 0.0f) {
-                if (txOut) *txOut = px + (int32_t)(cosf(g_v157_dir) * shortDist);
-                if (tyOut) *tyOut = py + (int32_t)(sinf(g_v157_dir) * shortDist);
-
-                return 1;
-            }
-        }
-
-        g_v157_dir_set = 0;
-    }
-
-    if (desX != 0.0f || desY != 0.0f) {
-        base = atan2f(desY, desX);
-    } else if (g_v151_best_x != 0.0f || g_v151_best_y != 0.0f) {
-        base = atan2f(g_v151_best_y, g_v151_best_x);
-    }
-
-    for (i = 0; i < TNX_V154_ANGLES; i++) {
-        int order = (i + 1) / 2;
-        float sign = (i % 2 == 0) ? 1.0f : -1.0f;
-        float ang = base + sign * (float)order * (2.0f * (float)M_PI / (float)TNX_V154_ANGLES);
-        float ux = cosf(ang);
-        float uy = sinf(ang);
-        float lastSafe = 0.0f;
-        float lastClear = 0.0f;
-        float d;
-
-        if (tnx_v155_is_blocked(ang)) continue;
-
-        for (d = TNX_V154_STEP; d <= TNX_V155_MAX_DIST; d += TNX_V154_STEP) {
-            float cx = (float)px + ux * d;
-            float cy = (float)py + uy * d;
-            float clear = tnx_v154_clearance(cx, cy);
-
-            if (clear < 0.0f) break;
-
-            lastSafe = d;
-            lastClear = clear;
-        }
-
-        if (lastSafe <= 0.0f) continue;
-
-        if (!found || lastClear > bestClear || (lastClear == bestClear && lastSafe > bestDist)) {
-            bestClear = lastClear;
-            bestDist = lastSafe;
-            bestX = (int32_t)((float)px + ux * lastSafe);
-            bestY = (int32_t)((float)py + uy * lastSafe);
-            found = 1;
+        if (sc > best) {
+            best = sc;
+            bestIdx = i;
         }
     }
 
-    if (!found) return 0;
+    chosen = bestIdx;
 
-    g_v157_dir = atan2f((float)(bestY - py), (float)(bestX - px));
-    g_v157_dir_set = 1;
+    if (g_v160_prev_idx >= 0 && now < g_v160_hold_until && chosen != g_v160_prev_idx) {
+        if (g_v160_score[g_v160_prev_idx] + TNX_V160_KEEP_BAND >= g_v160_score[chosen]) {
+            chosen = g_v160_prev_idx;
+        } else {
+            g_v160_hold_until = now + TNX_V160_LOCK_MS;
+        }
+    } else if (now >= g_v160_hold_until) {
+        g_v160_hold_until = now + TNX_V160_LOCK_MS;
+    }
 
-    if (txOut) *txOut = bestX;
-    if (tyOut) *tyOut = bestY;
+    if (g_v160_score[chosen] <= stay) {
+        g_v160_prev_idx = -1;
+
+        return 0;
+    }
+
+    g_v160_prev_idx = chosen;
+
+    if (txOut) *txOut = ownX + (int32_t)(g_v160_ring_x[chosen] * TNX_V160_REACH);
+    if (tyOut) *tyOut = ownY + (int32_t)(g_v160_ring_y[chosen] * TNX_V160_REACH);
 
     return 1;
 }
@@ -11640,43 +11362,37 @@ static void tnx_autododge_v48(void) {
 
     {
         int32_t projCount = 0;
-        float sideX = 0.0f;
-        float sideY = 0.0f;
+        int i = 0;
 
         if (g_v48_manager) tnx_read_i32(g_v48_manager + TNX_MGR_COUNT_OFF, &projCount);
 
-        g_v159_own_x = (float)ownX;
-        g_v159_own_y = (float)ownY;
-        g_v151_best_dist = -1.0f;
-        g_v151_best_x = 0.0f;
-        g_v151_best_y = 0.0f;
-        g_v153_best_t = 1.0e9f;
-        g_v153_best_k = -1;
-        g_v153_side = 0;
 
         tnx_v140_proj_scan(g_v48_manager, projCount);
-        tnx_v140_sidestep(ownX, ownY, &sideX, &sideY, &g_v140_side_hits, &g_v140_side_projs);
 
-        if (g_v140_side_hits > 0 && (g_v151_best_x != 0.0f || g_v151_best_y != 0.0f)) {
-            escapeX = g_v151_best_x * TNX_V140_SIDE_WEIGHT;
-            escapeY = g_v151_best_y * TNX_V140_SIDE_WEIGHT;
+        g_v160_active = 0;
+        g_v140_side_hits = 0;
+
+        for (i = 0; i < TNX_V140_PROJ_MAX; i++) {
+            if (g_v140_projs[i].elem) g_v140_side_projs++;
         }
 
-        if (g_v140_side_hits > 0) {
-            escapeX += sideX * TNX_V140_SIDE_WEIGHT;
-            escapeY += sideY * TNX_V140_SIDE_WEIGHT;
+        if (tnx_v160_dodge(ownX, ownY, &g_v160_tx, &g_v160_ty)) {
+            g_v160_active = 1;
+            g_v140_side_hits = 1;
+        }
 
-            if (g_v140_side_logs < TNX_V140_SIDE_LOGS) {
-                g_v140_side_logs++;
+        if (g_v160_active && g_v151_logs < TNX_V151_LOGS) {
+            g_v151_logs++;
 
-                tnx_logf("v140 threat detected own=(%d,%d) projectiles=%d onRay=%d side=(%.2f,%.2f) "
-                         "hostilesInRange=%d - the slope is the per tick delta of the pair at "
-                         "+%#llx/+%#llx, so a projectile only counts once two ticks were seen; the "
-                         "weight %g lets this dominate a repulsion sum whose terms are all below 1",
-                         ownX, ownY, g_v140_side_projs, g_v140_side_hits, (double)sideX,
-                         (double)sideY, threats, (unsigned long long)TNX_OBJ_X_OFF,
-                         (unsigned long long)TNX_OBJ_Y_OFF, (double)TNX_V140_SIDE_WEIGHT);
-            }
+            tnx_logf("v160 dodge own=(%d,%d) target=(%d,%d) projectiles=%d dirIdx=%d reach=%.0f "
+                     "engage=%.0f - %d directions are scored by the closest approach of the threat "
+                     "against a point moving at the character speed along that direction, the score "
+                     "carries a momentum term toward the previous direction, and the chosen heading "
+                     "is locked for %d ms inside a band of %.0f, which is what stops the character "
+                     "sliding between two nearly equal directions",
+                     ownX, ownY, g_v160_tx, g_v160_ty, g_v140_side_projs, g_v160_prev_idx,
+                     (double)TNX_V160_REACH, (double)TNX_V160_ENGAGE, TNX_V160_DIRS,
+                     TNX_V160_LOCK_MS, (double)TNX_V160_KEEP_BAND);
         }
     }
 
@@ -11722,77 +11438,9 @@ static void tnx_autododge_v48(void) {
         targetX = ownX + (int)(escapeX * step);
         targetY = ownY + (int)(escapeY * step);
 
-        if (g_v140_side_hits > 0) {
-            float desX = 0.0f;
-            float desY = 0.0f;
-            uintptr_t ctl = tnx_v150_controller();
-
-            if (ctl) {
-                int32_t rx = 0;
-                int32_t ry = 0;
-
-                if (tnx_read_i32(ctl + TNX_V128_CTRL_RAW_X_OFF, &rx) &&
-                    tnx_read_i32(ctl + TNX_V128_CTRL_RAW_Y_OFF, &ry)) {
-                    desX = (float)rx;
-                    desY = (float)ry;
-                }
-            }
-
-            if (g_v154_have && !tnx_v154_threatened((float)g_v154_tx, (float)g_v154_ty) &&
-                !tnx_v154_threatened((float)ownX + ((float)g_v154_tx - (float)ownX) * 0.5f,
-                                     (float)ownY + ((float)g_v154_ty - (float)ownY) * 0.5f)) {
-                float ddx = (float)(g_v154_tx - ownX);
-                float ddy = (float)(g_v154_ty - ownY);
-                float dist = sqrtf(ddx * ddx + ddy * ddy);
-
-                if (dist <= TNX_V154_ARRIVE) {
-                    g_v154_have = 0;
-                    g_v155_prev_dist = 0.0f;
-                    g_v155_stall = 0;
-                } else if (g_v155_prev_dist > 0.0f && dist > g_v155_prev_dist - TNX_V155_PROGRESS) {
-                    g_v155_stall++;
-
-                    if (g_v155_stall > TNX_V155_STALL_TICKS) {
-                        tnx_v155_block(atan2f(ddy, ddx));
-
-                        g_v155_stall = 0;
-                        g_v155_prev_dist = 0.0f;
-                        g_v154_have = 0;
-                    } else {
-                        targetX = g_v154_tx;
-                        targetY = g_v154_ty;
-                        g_v154_reuse++;
-                    }
-                } else {
-                    g_v155_stall = 0;
-                    g_v155_prev_dist = dist;
-                    targetX = g_v154_tx;
-                    targetY = g_v154_ty;
-                    g_v154_reuse++;
-                }
-            } else {
-                int32_t vtx = 0;
-                int32_t vty = 0;
-
-                g_v154_have = 0;
-
-                if (tnx_v154_best(ownX, ownY, desX, desY, &vtx, &vty)) {
-                    float ddx = (float)(vtx - ownX);
-                    float ddy = (float)(vty - ownY);
-
-                    targetX = vtx;
-                    targetY = vty;
-                    g_v154_tx = vtx;
-                    g_v154_ty = vty;
-                    g_v154_have = 1;
-                    g_v155_prev_dist = sqrtf(ddx * ddx + ddy * ddy);
-                    g_v155_stall = 0;
-                }
-            }
-        } else {
-            g_v154_have = 0;
-            g_v155_prev_dist = 0.0f;
-            g_v155_stall = 0;
+        if (g_v160_active) {
+            targetX = g_v160_tx;
+            targetY = g_v160_ty;
         }
 
         if (g_v140_side_hits > 0 && g_v152_issued && targetX == g_v152_last_tx &&
@@ -11825,17 +11473,11 @@ static void tnx_autododge_v48(void) {
                      (double)g_v151_best_dist, (double)g_v151_best_x, (double)g_v151_best_y,
                      (double)step, TNX_V151_THREAT_MIN_MS);
 
-            tnx_logf("v154 search target=(%d,%d) own=(%d,%d) held=%d reuse=%llu searches=%llu "
-                     "arrive=%.0f step=%.0f inflate=%.0f - the target is chosen by walking %d "
-                     "directions outward in %.0f unit steps from the joystick direction and taking "
-                     "the first point whose clearance to every projectile line is positive, then "
-                     "keeping the point with the largest clearance, and the previous target is held "
-                     "while it stays clear so the character walks one line instead of wiggling "
-                     "between two",
-                     targetX, targetY, ownX, ownY, g_v154_have, (unsigned long long)g_v154_reuse,
-                     (unsigned long long)g_v154_searches, (double)TNX_V154_ARRIVE,
-                     (double)TNX_V154_STEP, (double)TNX_V154_INFLATE, TNX_V154_ANGLES,
-                     (double)TNX_V154_STEP);
+            tnx_logf("v160 write target=(%d,%d) own=(%d,%d) held=%d dirIdx=%d - the heading and "
+                     "the target are one decision, the target is only reissued when the locked "
+                     "heading changes, so the input stream carries one direction instead of a "
+                     "per frame corrected position", targetX, targetY, ownX, ownY, g_v160_active,
+                     g_v160_prev_idx);
         }
 
         if (targetX > TNX_V47_COORD_ABS_MAX) targetX = TNX_V47_COORD_ABS_MAX;

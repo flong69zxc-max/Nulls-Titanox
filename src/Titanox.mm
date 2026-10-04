@@ -392,7 +392,22 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_242"
+#define TNX_BUILD_TAG "titanox_243"
+
+#define TNX_V243_DRAG 1
+#define TNX_V243_RETIRE 1
+#define TNX_V243_CUR_X_OFF 0xa40ULL
+#define TNX_V243_CUR_Y_OFF 0xa44ULL
+#define TNX_V243_ORG_X_OFF 0xa48ULL
+#define TNX_V243_ORG_Y_OFF 0xa4cULL
+#define TNX_V243_PRECOND_OFF 0xf78ULL
+#define TNX_V243_GATE_OFF 0xf9eULL
+#define TNX_V243_MARK_OFF 0xf74ULL
+#define TNX_V243_SIGN_RVA 0x1123798ULL
+#define TNX_V243_DRAG_MAG 600.0f
+#define TNX_V243_ALIGN 0.5f
+#define TNX_V243_PROOF 3
+#define TNX_V243_LOGS 10
 
 #define TNX_V242_WALL_CLIP 1
 #define TNX_V242_TILE_SIZE 300.0f
@@ -11653,12 +11668,178 @@ static int g_v174_route_seeded = 0;
 static int32_t g_v174_last_own_x = 0;
 static int32_t g_v174_last_own_y = 0;
 
+static int tnx_v178_own(int32_t *xOut, int32_t *yOut);
+
+static uint64_t g_v243_drag_writes = 0;
+static uint64_t g_v243_drag_stops = 0;
+static uint64_t g_v243_back_ok = 0;
+static uint64_t g_v243_back_bad = 0;
+static int g_v243_precond = -1;
+static int g_v243_gate = -1;
+static int g_v243_accepted = 0;
+static int g_v243_proofs = 0;
+static int g_v243_logs = 0;
+static int g_v243_engaged = 0;
+static float g_v243_mark = 0.0f;
+static float g_v243_dot = 0.0f;
+static float g_v243_last_dx = 0.0f;
+static float g_v243_last_dy = 0.0f;
+static int32_t g_v243_raw_x = 0;
+static int32_t g_v243_raw_y = 0;
+static int32_t g_v243_app_x = 0;
+static int32_t g_v243_app_y = 0;
+
+static int tnx_v243_sign(void) {
+    uint8_t b = 0;
+
+    if (!g_base) return 1;
+    if (!tnx_read_bytes(g_base + TNX_V243_SIGN_RVA, &b, 1)) return 1;
+
+    return b ? 1 : -1;
+}
+
+static void tnx_v243_snapshot(void) {
+    uintptr_t ctrl = tnx_v150_controller();
+    int32_t rawX = 0;
+    int32_t rawY = 0;
+    int32_t appX = 0;
+    int32_t appY = 0;
+    uint8_t precond = 0;
+    uint8_t gate = 0;
+    float mark = 0.0f;
+    float len = 0.0f;
+    float dot = 0.0f;
+
+    if (!TNX_V243_DRAG) return;
+    if (!ctrl) return;
+    if (!tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_X_OFF, &rawX)) return;
+    if (!tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &rawY)) return;
+    if (!tnx_read_i32(ctrl + TNX_V128_CTRL_APPLIED_X_OFF, &appX)) return;
+    if (!tnx_read_i32(ctrl + TNX_V128_CTRL_APPLIED_Y_OFF, &appY)) return;
+    if (!tnx_read_bytes(ctrl + TNX_V243_PRECOND_OFF, &precond, sizeof(precond))) return;
+    if (!tnx_read_bytes(ctrl + TNX_V243_GATE_OFF, &gate, sizeof(gate))) return;
+
+    tnx_read_f32(ctrl + TNX_V243_MARK_OFF, &mark);
+
+    g_v243_raw_x = rawX;
+    g_v243_raw_y = rawY;
+    g_v243_app_x = appX;
+    g_v243_app_y = appY;
+    g_v243_precond = (int)precond;
+    g_v243_gate = (int)(gate & 1);
+    g_v243_mark = mark;
+
+    if (!g_v243_engaged) return;
+    if (g_v243_last_dx == 0.0f && g_v243_last_dy == 0.0f) return;
+
+    len = sqrtf((float)(rawX * rawX + rawY * rawY));
+
+    if (len < 1.0f) return;
+
+    dot = ((float)rawX * g_v243_last_dx + (float)rawY * g_v243_last_dy) / len;
+    g_v243_dot = dot;
+
+    if (fabsf(dot) < TNX_V243_ALIGN) {
+        g_v243_proofs = 0;
+
+        return;
+    }
+
+    if (g_v243_proofs < TNX_V243_PROOF) g_v243_proofs++;
+
+    if (g_v243_proofs >= TNX_V243_PROOF) g_v243_accepted = 1;
+}
+
+static void tnx_v243_drag(int engaged, int haveOwn, int32_t ownX, int32_t ownY, float dirX, float dirY) {
+    uintptr_t ctrl = tnx_v150_controller();
+    float len = 0.0f;
+    float ox = 0.0f;
+    float oy = 0.0f;
+    float cx = 0.0f;
+    float cy = 0.0f;
+    float bx = 0.0f;
+    float by = 0.0f;
+    int sign = 0;
+
+    g_v243_engaged = (engaged && haveOwn) ? 1 : 0;
+
+    if (!TNX_V243_DRAG) return;
+    if (!tnx_v220_ctrl_ok(ctrl)) return;
+
+    sign = tnx_v243_sign();
+    len = sqrtf(dirX * dirX + dirY * dirY);
+
+    if (engaged && haveOwn && len >= 0.0001f) {
+        ox = (float)ownX;
+        oy = (float)ownY;
+        cx = ox + dirX / len * TNX_V243_DRAG_MAG * (float)sign;
+        cy = oy + dirY / len * TNX_V243_DRAG_MAG * (float)sign;
+        g_v243_last_dx = dirX / len * (float)sign;
+        g_v243_last_dy = dirY / len * (float)sign;
+        g_v243_drag_writes++;
+
+        tnx_write_f32(ctrl + TNX_V243_ORG_X_OFF, ox);
+        tnx_write_f32(ctrl + TNX_V243_ORG_Y_OFF, oy);
+    } else if (tnx_read_f32(ctrl + TNX_V243_ORG_X_OFF, &ox) &&
+               tnx_read_f32(ctrl + TNX_V243_ORG_Y_OFF, &oy)) {
+        cx = ox;
+        cy = oy;
+        g_v243_last_dx = 0.0f;
+        g_v243_last_dy = 0.0f;
+        g_v243_drag_stops++;
+    } else {
+        return;
+    }
+
+    tnx_write_f32(ctrl + TNX_V243_CUR_X_OFF, cx);
+    tnx_write_f32(ctrl + TNX_V243_CUR_Y_OFF, cy);
+
+    if (tnx_read_f32(ctrl + TNX_V243_CUR_X_OFF, &bx) && tnx_read_f32(ctrl + TNX_V243_CUR_Y_OFF, &by) &&
+        fabsf(bx - cx) < 1.0f && fabsf(by - cy) < 1.0f) {
+        g_v243_back_ok++;
+    } else {
+        g_v243_back_bad++;
+    }
+
+    if (g_v243_logs < TNX_V243_LOGS) {
+        g_v243_logs++;
+
+        tnx_logf("v243 drag ctrl=%p engaged=%d haveOwn=%d own=(%d,%d) wrote cur=(%.0f,%.0f) org=(%.0f,%.0f) "
+                 "back=(%.0f,%.0f) ok=%llu bad=%llu writes=%llu stops=%llu sign=%d mark=%.3f "
+                 "precond=%d gate=%d raw=(%d,%d) applied=(%d,%d) dot=%+.2f proofs=%d accepted=%d - the "
+                 "engine builds its move vector as the pair at +%#llx/+%#llx minus the drag origin at "
+                 "+%#llx/+%#llx, so the drag pair is the input, while the pair at +%#llx that every "
+                 "earlier build wrote is the target the engine computes back from the drag and rewrites "
+                 "every frame; sign is the byte at %#llx the mover flips the delta with, mark at +%#llx "
+                 "is written by the engine's own apply path and is the cheapest proof that path ran, "
+                 "and dot is the alignment between the pair the engine wrote and the drag this build "
+                 "wrote, so a dot near one is the engine following this build and a dot near zero says "
+                 "something else owns the drag",
+                 (void *)ctrl, engaged, haveOwn, ownX, ownY, (double)cx, (double)cy, (double)ox, (double)oy,
+                 (double)bx, (double)by, (unsigned long long)g_v243_back_ok,
+                 (unsigned long long)g_v243_back_bad, (unsigned long long)g_v243_drag_writes,
+                 (unsigned long long)g_v243_drag_stops, sign, (double)g_v243_mark,
+                 g_v243_precond, g_v243_gate, g_v243_raw_x, g_v243_raw_y, g_v243_app_x, g_v243_app_y,
+                 (double)g_v243_dot, g_v243_proofs, g_v243_accepted,
+                 (unsigned long long)TNX_V243_CUR_X_OFF, (unsigned long long)TNX_V243_CUR_Y_OFF,
+                 (unsigned long long)TNX_V243_ORG_X_OFF, (unsigned long long)TNX_V243_ORG_Y_OFF,
+                 (unsigned long long)TNX_V128_CTRL_RAW_X_OFF,
+                 (unsigned long long)TNX_V243_SIGN_RVA, (unsigned long long)TNX_V243_MARK_OFF);
+    }
+}
+
 static void tnx_v174_stick(int engaged, float dirX, float dirY) {
     uintptr_t ctrl = tnx_v150_controller();
     int32_t wx = 0;
     int32_t wy = 0;
+    int32_t ownX = 0;
+    int32_t ownY = 0;
     int want = 0;
+    int haveOwn = 0;
     float len = 0.0f;
+
+    haveOwn = tnx_v178_own(&ownX, &ownY);
+    tnx_v243_drag(engaged, haveOwn, ownX, ownY, dirX, dirY);
 
     if (!TNX_V174_RAW_STICK) return;
     if (!tnx_v220_ctrl_ok(ctrl)) return;
@@ -11710,9 +11891,11 @@ static void tnx_v174_stick(int engaged, float dirX, float dirY) {
     g_v174_stick_x = wx;
     g_v174_stick_y = wy;
 
-    if (!tnx_write_bytes(ctrl + TNX_V128_CTRL_RAW_X_OFF, &wx, sizeof(wx))) return;
+    if (!(TNX_V243_RETIRE && g_v243_accepted)) {
+        if (!tnx_write_bytes(ctrl + TNX_V128_CTRL_RAW_X_OFF, &wx, sizeof(wx))) return;
 
-    tnx_write_bytes(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &wy, sizeof(wy));
+        tnx_write_bytes(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &wy, sizeof(wy));
+    }
 
     {
         static int stickLogs = 0;
@@ -12078,6 +12261,7 @@ static int tnx_v189_drive(void) {
     uintptr_t ctrl = tnx_v150_controller();
 
     tnx_v231_measure();
+    tnx_v243_snapshot();
     int32_t ownX = 0;
     int32_t ownY = 0;
     float dx = 0.0f;

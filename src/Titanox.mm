@@ -87,6 +87,7 @@
 #define TNX_V220_LOGS 6
 #define TNX_V221_LIST_OFF 0x20ULL
 #define TNX_V221_COUNT_OFF 0x0cULL
+#define TNX_V222_GATE_OFF 0x70ULL
 #define TNX_V216_FLEE 1
 #define TNX_V216_FLEE_STEP 150.0f
 #define TNX_V216_LOGS 14
@@ -372,7 +373,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_221"
+#define TNX_BUILD_TAG "titanox_222"
 
 #define TNX_V165_JOY_MAG 600.0f
 #define TNX_V167_TEAM_FILTER 1
@@ -3760,7 +3761,7 @@ static int tnx_v105_container_score(uintptr_t container) {
                      "the soft own slot added in v128 would let it take the hop off a real list",
                      (void *)container, array, count, own, asciiCount, samples,
                      (asciiCount * 100) / samples, posOk, posDistinct,
-                     (unsigned long long)TNX_V75_ASCII_RATIO, (unsigned long long)TNX_OBJ_X_OFF,
+                     (int)TNX_V75_ASCII_RATIO, (unsigned long long)TNX_OBJ_X_OFF,
                      (unsigned long long)TNX_OBJ_Y_OFF);
         }
 
@@ -13712,7 +13713,7 @@ static void tnx_v198_state(void) {
              (unsigned long long)g_v211_applied_live, (unsigned long long)g_v211_applied_stale,
              (unsigned long long)g_v212_rage_frames, (unsigned long long)g_v216_flees,
              (unsigned long long)g_v216_dead_replaced, (unsigned long long)g_v220_clamped,
-             TNX_V126_TYPE_MOVE, (int)TNX_V220_STEP, (unsigned long long)g_v219_drain,
+             (unsigned long long)g_v219_drain,
              (unsigned long long)g_v219_q_max, (unsigned long long)g_v126_q_before,
              (unsigned long long)g_v221_stuck, (unsigned long long)g_v221_mask_before, (unsigned long long)g_v217_drag_writes,
              (unsigned long long)g_v217_drag_back, (unsigned long long)g_v214_mate_turns,
@@ -13720,7 +13721,8 @@ static void tnx_v198_state(void) {
              (unsigned long long)g_v213_dec_us_max,
              (unsigned long long)g_v220_ctrl_dead, (unsigned long long)g_v201_write_denied,
              (unsigned long long)g_v198_pred_took, (unsigned long long)g_v198_pred_miss,
-             (void *)(uintptr_t)g_scene_object, (void *)g_v182_own_elem, (void *)g_v192_pred_last);
+             (void *)(uintptr_t)g_scene_object, (void *)g_v182_own_elem, (void *)g_v192_pred_last,
+             TNX_V126_TYPE_MOVE, (int)TNX_V220_STEP);
 
     {
         uint16_t charState = 0;
@@ -13737,12 +13739,19 @@ static void tnx_v198_state(void) {
                            sizeof(sceneState));
         }
 
-        tnx_logf("v213 joy char=%p state=%u mode=%d scene=%p state=%u ctrl=%p - the joystick on "
+        int32_t gate70 = 0;
+
+        if (g_v192_pred_last) {
+            tnx_read_i32(g_v192_pred_last + TNX_V222_GATE_OFF, &gate70);
+        }
+
+        tnx_logf("v213 joy char=%p state=%u mode=%d scene=%p state=%u ctrl=%p gate=%d - the joystick on "
                  "bitfield the reference reads to decide the walk cycle is at %#llx, so the object "
                  "whose state goes non zero while the body walks is the one that owns the cycle",
                  (void *)g_v182_own_elem, (unsigned)charState, charMode,
                  (void *)(uintptr_t)g_scene_object, (unsigned)sceneState,
-                 (void *)(uintptr_t)g_v205_joystick, (unsigned long long)TNX_V213_JOYSTATE_OFF);
+                 (void *)(uintptr_t)g_v205_joystick, gate70,
+                 (unsigned long long)TNX_V213_JOYSTATE_OFF);
     }
 }
 
@@ -16642,7 +16651,7 @@ static void setup(void) {
              "21:04 log also shows the roster reading the truth once the guard is in: players=%d "
              "mates=%d enemies=%d teams=0/1/0/1/0/1 trust=%d, and trust going to zero on the "
              "four-player read where own's side came back as three", (unsigned long long)TNX_MODE_PREDICTX_OFF,
-             (double)TNX_V192_BODY_CLEAR, 0, 6, 2, 3, 1);
+             (int)TNX_V192_BODY_CLEAR, 0, 6, 2, 3, 1);
 
     tnx_logf("plan v193, from the 21:17 run and from offsets.h being audited against the binary. (1) The "
              "v192 prediction call never fired: g_addr_setprediction was resolved from "

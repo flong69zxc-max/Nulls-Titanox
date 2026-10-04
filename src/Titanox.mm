@@ -313,7 +313,13 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_160"
+#define TNX_BUILD_TAG "titanox_162"
+
+#define TNX_V162_BOUNDS_RVA 0x00991440ULL
+#define TNX_V162_BOUNDS_X_OFF 0xccULL
+#define TNX_V162_BOUNDS_Y_OFF 0xd0ULL
+#define TNX_V162_LOGS 12
+
 
 #define TNX_V160_DIRS 48
 #define TNX_V160_REACH 600.0f
@@ -10749,7 +10755,6 @@ static uint64_t g_v160_last_danger = 0;
 static int32_t g_v160_tx = 0;
 static int32_t g_v160_ty = 0;
 static int g_v160_active = 0;
-static int g_v151_logs = 0;
 
 static void tnx_v160_build_ring(void) {
     int i;
@@ -10879,6 +10884,62 @@ static int tnx_v160_dodge(int32_t ownX, int32_t ownY, int32_t *txOut, int32_t *t
 
     if (txOut) *txOut = ownX + (int32_t)(g_v160_ring_x[chosen] * TNX_V160_REACH);
     if (tyOut) *tyOut = ownY + (int32_t)(g_v160_ring_y[chosen] * TNX_V160_REACH);
+
+    return 1;
+}
+
+static int g_v162_logs = 0;
+static int32_t g_v162_max_x = 0;
+static int32_t g_v162_max_y = 0;
+
+static uintptr_t tnx_v162_bounds_obj(uintptr_t receiver) {
+    uintptr_t out = 0;
+
+    if (!receiver) return 0;
+    if (!tnx_callable(TNX_V162_BOUNDS_RVA)) return 0;
+
+    out = ((uintptr_t (*)(uintptr_t))(g_base + TNX_V162_BOUNDS_RVA))(receiver);
+
+    if (!out || (out & 7)) return 0;
+    if (!tnx_addr_readable(out, 0x100)) return 0;
+
+    return out;
+}
+
+static int tnx_v162_clamp(int32_t *x, int32_t *y) {
+    uintptr_t receiver = tnx_v144_hop(tnx_v150_controller(), NULL);
+    uintptr_t bounds = tnx_v162_bounds_obj(receiver);
+    int32_t maxX = 0;
+    int32_t maxY = 0;
+    int32_t ox = *x;
+    int32_t oy = *y;
+
+    if (!bounds) return 0;
+    if (!tnx_read_i32(bounds + TNX_V162_BOUNDS_X_OFF, &maxX)) return 0;
+    if (!tnx_read_i32(bounds + TNX_V162_BOUNDS_Y_OFF, &maxY)) return 0;
+
+    if (maxX <= 3 || maxY <= 3 || maxX > 200000 || maxY > 200000) return 0;
+
+    g_v162_max_x = maxX;
+    g_v162_max_y = maxY;
+
+    if (*x > maxX - 2) *x = maxX - 2;
+    if (*y > maxY - 2) *y = maxY - 2;
+    if (*x <= 1) *x = 0;
+    if (*y <= 1) *y = 0;
+
+    if (g_v162_logs < TNX_V162_LOGS) {
+        g_v162_logs++;
+
+        tnx_logf("v162 clamp max=(%d,%d) target=(%d,%d)->(%d,%d) receiver=%p bounds=%p - the bounds "
+                 "come from the engine accessor at %#llx on the actuator receiver read at +%#llx and "
+                 "+%#llx, and the clamp applies the same rule the input path applies before it queues "
+                 "the move, so a destination outside the arena is never sent",
+                 maxX, maxY, ox, oy, *x, *y, (void *)receiver, (void *)bounds,
+                 (unsigned long long)TNX_V162_BOUNDS_RVA,
+                 (unsigned long long)TNX_V162_BOUNDS_X_OFF,
+                 (unsigned long long)TNX_V162_BOUNDS_Y_OFF);
+    }
 
     return 1;
 }
@@ -11442,6 +11503,8 @@ static void tnx_autododge_v48(void) {
             targetX = g_v160_tx;
             targetY = g_v160_ty;
         }
+
+        tnx_v162_clamp(&targetX, &targetY);
 
         if (g_v140_side_hits > 0 && g_v152_issued && targetX == g_v152_last_tx &&
             targetY == g_v152_last_ty) {

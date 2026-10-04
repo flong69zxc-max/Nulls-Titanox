@@ -52,8 +52,12 @@
 #define TNX_V197_PREDICT_FLAG 1
 #define TNX_V197_STUCK_LOG 8
 #define TNX_V198_MOVESTATE 1
-#define TNX_V199_STICK_SIGN -1
+#define TNX_V199_STICK_SIGN 1
 #define TNX_V199_STICK_ON_THREAT 1
+#define TNX_V201_WRITE_GUARD 1
+#define TNX_V201_DENY_LOGS 8
+#define TNX_V202_TEAM_STRICT 1
+#define TNX_V203_HOLDER_ONLY 1
 #define TNX_V198_LOGS 10
 #define TNX_V198_PRED_LOGS 6
 #define TNX_V196_CLUSTER 700.0f
@@ -334,7 +338,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_199"
+#define TNX_BUILD_TAG "titanox_203"
 
 #define TNX_V165_JOY_MAG 600.0f
 #define TNX_V167_TEAM_FILTER 1
@@ -2049,9 +2053,53 @@ static BOOL tnx_read_f32(uintptr_t address, float *out) {
     return tnx_read_bytes(address, out, 4);
 }
 
+static uint64_t g_v201_write_denied = 0;
+static int g_v201_deny_logs = 0;
+
+static BOOL tnx_v201_writable(uintptr_t address, size_t length) {
+    uintptr_t end = address + length;
+    uintptr_t cursor = address;
+
+    if (!address || !length) return NO;
+    if (end < address) return NO;
+
+    for (int guard = 0; cursor < end && guard < 64; guard++) {
+        vm_prot_t protection = 0;
+        mach_vm_size_t size = 0;
+        uintptr_t start = 0;
+        uintptr_t next = 0;
+
+        if (!tnx_query_region(cursor, &protection, NULL, &size, &start)) return NO;
+        if ((protection & VM_PROT_WRITE) == 0) return NO;
+        if (size == 0) return NO;
+
+        next = start + (uintptr_t)size;
+        if (next <= cursor) return NO;
+
+        cursor = next;
+    }
+
+    return cursor >= end;
+}
+
 static BOOL tnx_write_bytes(uintptr_t address, const void *src, size_t length) {
     if (!src || !length) return NO;
     if (!address) return NO;
+
+    if (TNX_V201_WRITE_GUARD && !tnx_v201_writable(address, length)) {
+        g_v201_write_denied++;
+
+        if (g_v201_deny_logs < TNX_V201_DENY_LOGS) {
+            g_v201_deny_logs++;
+
+            tnx_logf("v201 write denied at %p len=%zu total=%llu - the target is not inside a "
+                     "writable region of this process, so the store is dropped instead of taking "
+                     "the process down with it",
+                     (void *)address, length, (unsigned long long)g_v201_write_denied);
+        }
+
+        return NO;
+    }
 
     memcpy((void *)address, src, length);
 
@@ -12537,6 +12585,8 @@ static void tnx_v172_build(void) {
         if (TNX_V167_TEAM_FILTER && g_v191_team_trust && g_v167_own_team_seen &&
             p->team == g_v167_own_team) continue;
 
+        if (TNX_V202_TEAM_STRICT && g_v189_own_team >= 0 && p->team == g_v189_own_team) continue;
+
         if (!p->hasPrev) {
 
             uint64_t age = (p->qtick > p->ptick) ? (p->qtick - p->ptick) : 1;
@@ -12827,10 +12877,10 @@ static int tnx_v172_best(float px, float py, float *tx, float *ty) {
 
 static int g_v198_logs = 0;
 static uint64_t g_v198_stage_writes = 0;
-static uint64_t g_v198_char_writes = 0;
 static uint64_t g_v198_stage_took = 0;
-static uint64_t g_v198_char_took = 0;
 static int g_v198_probe_done = 0;
+static uintptr_t g_v203_holder = 0;
+static int g_v203_holder_logs = 0;
 
 static void tnx_v198_probe(uintptr_t target, const char *name) {
     float ax = 0.0f;
@@ -12879,9 +12929,43 @@ static void tnx_v198_settle(uintptr_t target, const char *name, float nx, float 
     }
 }
 
-static int tnx_v198_movestate(float dirX, float dirY) {
-    uintptr_t stage = (uintptr_t)g_scene_object;
+static int tnx_v203_holds(uintptr_t target) {
+    int32_t mode = 0;
+
+    if (!target) return 0;
+    if (!tnx_read_i32(target + TNX_V172_BS_MODE, &mode)) return 0;
+
+    return (mode == 2 || mode == 3) ? 1 : 0;
+}
+
+static void tnx_v203_select(void) {
+    uintptr_t scene = (uintptr_t)g_scene_object;
     uintptr_t chr = g_v182_own_elem;
+    uintptr_t battle = (uintptr_t)g_v192_pred_last;
+
+    if (g_v203_holder &&
+        !tnx_v201_writable(g_v203_holder + TNX_V172_BS_MODE, sizeof(int32_t))) {
+        g_v203_holder = 0;
+    }
+
+    if (g_v203_holder) return;
+
+    if (tnx_v203_holds(chr)) g_v203_holder = chr;
+    else if (tnx_v203_holds(scene)) g_v203_holder = scene;
+    else if (tnx_v203_holds(battle)) g_v203_holder = battle;
+
+    if (g_v203_holder_logs < TNX_V198_LOGS) {
+        g_v203_holder_logs++;
+
+        tnx_logf("v203 holder=%p scene=%p character=%p battle=%p - the move state is written only to "
+                 "the object whose mode already reads 2 or 3, so a blind store into a struct that "
+                 "cannot hold it is no longer possible",
+                 (void *)g_v203_holder, (void *)scene, (void *)chr, (void *)battle);
+    }
+}
+
+static int tnx_v198_movestate(float dirX, float dirY) {
+    uintptr_t target = 0;
     int32_t two = 2;
     float len = sqrtf(dirX * dirX + dirY * dirY);
     float nx = 0.0f;
@@ -12896,44 +12980,42 @@ static int tnx_v198_movestate(float dirX, float dirY) {
     if (!g_v198_probe_done) {
         g_v198_probe_done = 1;
 
-        tnx_v198_probe(stage, "scene");
-        tnx_v198_probe(chr, "character");
+        tnx_v198_probe((uintptr_t)g_scene_object, "scene");
+        tnx_v198_probe(g_v182_own_elem, "character");
 
         tnx_logf("v198 objects scene=%p character=%p battle=%p - the candidates for the object that "
                  "carries the move state, printed once so a log says which one holds it",
-                 (void *)stage, (void *)chr, (void *)g_v192_pred_last);
+                 (void *)(uintptr_t)g_scene_object, (void *)g_v182_own_elem,
+                 (void *)g_v192_pred_last);
     }
 
-    if (stage) {
-        tnx_write_f32(stage + TNX_V172_BS_AX, nx);
-        tnx_write_f32(stage + TNX_V172_BS_AY, ny);
-        tnx_write_f32(stage + TNX_V172_BS_BX, nx);
-        tnx_write_f32(stage + TNX_V172_BS_BY, ny);
-        tnx_write_bytes(stage + TNX_V172_BS_MODE, &two, sizeof(two));
-        g_v198_stage_writes++;
-        tnx_v198_settle(stage, "scene", nx, ny, &g_v198_stage_took);
+    if (TNX_V203_HOLDER_ONLY) {
+        tnx_v203_select();
+        target = g_v203_holder;
+    } else {
+        target = (uintptr_t)g_scene_object;
     }
 
-    if (chr && chr != stage) {
-        tnx_write_f32(chr + TNX_V172_BS_AX, nx);
-        tnx_write_f32(chr + TNX_V172_BS_AY, ny);
-        tnx_write_f32(chr + TNX_V172_BS_BX, nx);
-        tnx_write_f32(chr + TNX_V172_BS_BY, ny);
-        tnx_write_bytes(chr + TNX_V172_BS_MODE, &two, sizeof(two));
-        g_v198_char_writes++;
-        tnx_v198_settle(chr, "character", nx, ny, &g_v198_char_took);
-    }
+    if (!target) return 0;
+
+    tnx_write_f32(target + TNX_V172_BS_AX, nx);
+    tnx_write_f32(target + TNX_V172_BS_AY, ny);
+    tnx_write_f32(target + TNX_V172_BS_BX, nx);
+    tnx_write_f32(target + TNX_V172_BS_BY, ny);
+    tnx_write_bytes(target + TNX_V172_BS_MODE, &two, sizeof(two));
+    g_v198_stage_writes++;
+    tnx_v198_settle(target, "holder", nx, ny, &g_v198_stage_took);
 
     return 1;
 }
 
 static void tnx_v198_state(void) {
-    tnx_logf("v198 state stageW=%llu stook=%llu charW=%llu ctook=%llu predTook=%llu predMiss=%llu "
-             "objects scene=%p character=%p battle=%p - stook and ctook count the frames the engine "
-             "still held the stick this build wrote after the write, which is the positive test for "
-             "the move state; predTook counts the prediction landing on the object it was sent to",
-             (unsigned long long)g_v198_stage_writes, (unsigned long long)g_v198_stage_took,
-             (unsigned long long)g_v198_char_writes, (unsigned long long)g_v198_char_took,
+    tnx_logf("v203 state holder=%p stageW=%llu stook=%llu denied=%llu predTook=%llu predMiss=%llu "
+             "objects scene=%p character=%p battle=%p - holder is the only object the move state is "
+             "written to, stook counts the frames the engine still held the stick this build wrote "
+             "after the write, and denied counts the stores the region guard dropped",
+             (void *)g_v203_holder, (unsigned long long)g_v198_stage_writes,
+             (unsigned long long)g_v198_stage_took, (unsigned long long)g_v201_write_denied,
              (unsigned long long)g_v198_pred_took, (unsigned long long)g_v198_pred_miss,
              (void *)(uintptr_t)g_scene_object, (void *)g_v182_own_elem, (void *)g_v192_pred_last);
 }

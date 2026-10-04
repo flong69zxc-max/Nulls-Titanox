@@ -11779,6 +11779,27 @@ static void tnx_v180_drive(void) {
 
     if (!tnx_v178_own(&ownX, &ownY)) return;
 
+    {
+        uintptr_t ctrl = tnx_v150_controller();
+        int32_t px = 0;
+        int32_t py = 0;
+
+        if (ctrl && tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_X_OFF, &px) &&
+            tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &py)) {
+            if ((px || py) && (px != g_v174_stick_x || py != g_v174_stick_y)) {
+                if ((g_v48_ticks % 60) == 0) {
+                    tnx_logf("v187 drive stands down: the pair holds (%d,%d) and this build last wrote "
+                             "(%d,%d), so the engine or the player put a different stick there and the "
+                             "dodge does not overwrite it - writing a heading or a zero over a held "
+                             "stick is what stalls the character while the joystick is held", px, py,
+                             g_v174_stick_x, g_v174_stick_y);
+                }
+
+                return;
+            }
+        }
+    }
+
     dx = (float)(g_v180_tx - ownX);
     dy = (float)(g_v180_ty - ownY);
 
@@ -12201,6 +12222,7 @@ static void tnx_v172_build(void) {
 
         if (!p->elem || !p->hasPrev) continue;
         if (g_v172_seg_count >= TNX_V172_SEG_MAX) break;
+        if (TNX_V167_TEAM_FILTER && g_v167_own_team_seen && p->team == g_v167_own_team) continue;
         if (!tnx_v174_proj_vel(p, &vx, &vy)) continue;
 
         len = sqrtf(vx * vx + vy * vy);
@@ -15133,6 +15155,32 @@ static void setup(void) {
              "whether the engine consumed the pair",
              TNX_V186_MIN_USABLE, (int)24.0f, TNX_V172_NUM_ANGLES,
              (unsigned long long)TNX_V128_CTRL_APPLIED_X_OFF);
+
+    tnx_logf("plan v187, from the 19:29 run. (1) Reports 2 and 4 are one missing test: the segment "
+             "builder never filtered by team. The verdict line does label own's shots - it prints "
+             "gid=2000000 team=0 verdict=own-team armed=1 - but tnx_v172_build took every tracked shot "
+             "with a velocity and made it a segment, so the dodge's own input was a bullet of the "
+             "player's own, which leaves the player's own body and therefore has its closest approach "
+             "at time zero and distance zero. The ring then walks along that bullet's path, which is "
+             "straight at the enemy and through him. The builder now carries the same test "
+             "tnx_v160_clearance already had, so the filter is applied where the decision is made and "
+             "not only where it is printed. (2) Report 1: the drive reads the pair before it writes and "
+             "stands down for the tick when the pair holds a value this build did not write, so a held "
+             "stick is never overwritten by a heading or by a zero. (3) Report 3, and the character "
+             "window has finally named the animation: a triplet at +%#x / +%#x / +%#x runs 0.60 -> "
+             "7.1358 and wraps to zero once a second WHILE THE CHARACTER STANDS STILL, so it is the "
+             "animation clock and not the walk; +0x600 reads down 40.25 -> 39.75 and a small state int "
+             "at +0xa8 walks 4 -> 0 -> 1. Only +0x28 and +0x2c move while moving and never while "
+             "standing (203 -> 220 -> 238 -> 258 and 218 -> 232 -> 250 -> 271), a small integer pair "
+             "sitting just under the coordinate pair, so it is the previous position and not a walk "
+             "flag. There is no separate walk state in the first 0x1000 bytes of the character. The "
+             "dodge drove for zero ticks in this run - engaged=0 in all 14 route lines - so the "
+             "dodge-driven sample is still missing, and with the two fixes above it will drive on real "
+             "enemy shots and the next log carries it. (4) Correction to my own earlier note: "
+             "own=(2550,9750) is the spawn point and a real position - the character stands there with "
+             "movedLastSecond=0 and at 19:30:07 jumps to (2301,9324) with the window going to "
+             "changed=61. It was never a bogus fixed point",
+             (unsigned)0x4e8, (unsigned)0x520, (unsigned)0x524);
 
     tnx_start_timer();
 

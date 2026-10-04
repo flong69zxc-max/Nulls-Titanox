@@ -71,6 +71,10 @@
 #define TNX_V209_LOOKAHEAD_MS 260.0f
 #define TNX_V209_PAIR_RAW 1
 #define TNX_V209_PAIR_MAX 2400.0f
+#define TNX_V210_TOUCH_SYNTH 1
+#define TNX_V210_TOUCH_GATE 1
+#define TNX_V210_TOUCH_ID 1
+#define TNX_V210_LOGS 6
 #define TNX_V198_LOGS 10
 #define TNX_V198_PRED_LOGS 6
 #define TNX_V196_CLUSTER 700.0f
@@ -351,7 +355,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_209"
+#define TNX_BUILD_TAG "titanox_210"
 
 #define TNX_V165_JOY_MAG 600.0f
 #define TNX_V167_TEAM_FILTER 1
@@ -11302,6 +11306,10 @@ static uint64_t g_v205_joystick_took = 0;
 static uint64_t g_v206_escapes = 0;
 static uint64_t g_v207_logs = 0;
 static uint64_t g_v209_lookahead = 0;
+static uint64_t g_v210_gate_writes = 0;
+static uint64_t g_v210_applied_live = 0;
+static uint64_t g_v210_applied_idle = 0;
+static int g_v210_logs = 0;
 static int g_v172_logs = 0;
 static int g_v172_probe_logs = 0;
 static int g_v172_own_logs = 0;
@@ -11425,6 +11433,14 @@ static void tnx_v174_stick(int engaged, float dirX, float dirY) {
 
         g_v174_stick_hold = 0;
 
+        if (relCtrl && TNX_V210_TOUCH_SYNTH) {
+            uint8_t off = 0;
+            int32_t noId = -1;
+
+            tnx_write_bytes(relCtrl + TNX_V193_TOUCH_GATE_OFF, &off, sizeof(off));
+            tnx_write_bytes(relCtrl + TNX_V193_TOUCH_ID_OFF, &noId, sizeof(noId));
+        }
+
         if (relCtrl && tnx_read_i32(relCtrl + TNX_V128_CTRL_RAW_X_OFF, &relX) &&
             tnx_read_i32(relCtrl + TNX_V128_CTRL_RAW_Y_OFF, &relY)) {
             if (relX != g_v174_stick_x || relY != g_v174_stick_y) return;
@@ -11437,6 +11453,38 @@ static void tnx_v174_stick(int engaged, float dirX, float dirY) {
     if (!tnx_write_bytes(ctrl + TNX_V128_CTRL_RAW_X_OFF, &wx, sizeof(wx))) return;
 
     tnx_write_bytes(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &wy, sizeof(wy));
+
+    if (TNX_V210_TOUCH_SYNTH) {
+        uint8_t gate = (uint8_t)TNX_V210_TOUCH_GATE;
+        uint8_t gateBack = 0;
+        int32_t id = TNX_V210_TOUCH_ID;
+        int32_t idBack = -1;
+        int32_t appBack = 0;
+
+        tnx_write_bytes(ctrl + TNX_V193_TOUCH_GATE_OFF, &gate, sizeof(gate));
+        tnx_write_bytes(ctrl + TNX_V193_TOUCH_ID_OFF, &id, sizeof(id));
+        g_v210_gate_writes++;
+
+        tnx_read_bytes(ctrl + TNX_V193_TOUCH_GATE_OFF, &gateBack, sizeof(gateBack));
+        tnx_read_i32(ctrl + TNX_V193_TOUCH_ID_OFF, &idBack);
+        tnx_read_i32(ctrl + TNX_V128_CTRL_APPLIED_X_OFF, &appBack);
+
+        if (appBack == TNX_V128_APPLIED_IDLE) g_v210_applied_idle++;
+        else g_v210_applied_live++;
+
+        if (g_v210_logs < TNX_V210_LOGS) {
+            g_v210_logs++;
+
+            tnx_logf("v210 touch ctrl=%p gate=%d/%d id=%d/%d applied=%d live=%llu idle=%llu pair=(%d,%d) "
+                     "- the engine records the touch it processed in the applied pair, so an applied "
+                     "that stays on the no touch sentinel %d while this build writes the pair means the "
+                     "movement code never took the input, which is the slide; a gate the store does not "
+                     "hold back names a different writer",
+                     (void *)ctrl, (int)gateBack, (int)gate, idBack, id, appBack,
+                     (unsigned long long)g_v210_applied_live,
+                     (unsigned long long)g_v210_applied_idle, wx, wy, TNX_V128_APPLIED_IDLE);
+        }
+    }
 
     {
         static int stickLogs = 0;
@@ -13257,7 +13305,8 @@ static int tnx_v205_walk(float dirX, float dirY) {
 }
 
 static void tnx_v198_state(void) {
-    tnx_logf("v209 state joystick=%p writes=%llu took=%llu escapes=%llu lookahead=%llu denied=%llu "
+    tnx_logf("v209 state joystick=%p writes=%llu took=%llu escapes=%llu lookahead=%llu gate=%llu "
+             "appliedLive=%llu denied=%llu "
              "predTook=%llu predMiss=%llu objects scene=%p character=%p battle=%p - writes counts the "
              "frames the drag block was written, took counts the frames the engine still held it with "
              "mode 2, escapes counts the frames the dodge moved on the clearance pick instead of "
@@ -13265,7 +13314,8 @@ static void tnx_v198_state(void) {
              "of waiting for contact, and denied counts the stores the region guard dropped",
              (void *)g_v205_joystick, (unsigned long long)g_v205_joystick_writes,
              (unsigned long long)g_v205_joystick_took, (unsigned long long)g_v206_escapes,
-             (unsigned long long)g_v209_lookahead, (unsigned long long)g_v201_write_denied,
+             (unsigned long long)g_v209_lookahead, (unsigned long long)g_v210_gate_writes,
+             (unsigned long long)g_v210_applied_live, (unsigned long long)g_v201_write_denied,
              (unsigned long long)g_v198_pred_took, (unsigned long long)g_v198_pred_miss,
              (void *)(uintptr_t)g_scene_object, (void *)g_v182_own_elem, (void *)g_v192_pred_last);
 }

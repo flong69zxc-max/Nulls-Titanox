@@ -316,7 +316,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_BUILD_TAG "titanox_165"
 
 #define TNX_V165_RAW_INPUT 1
-#define TNX_V165_JOY_MAG 500.0f
+#define TNX_V165_JOY_MAG 600.0f
 #define TNX_V166_INPUT_ONLY 1
 #define TNX_V167_TEAM_FILTER 1
 #define TNX_V167_STUCK_FRAMES 30
@@ -361,8 +361,11 @@ static int g_v123_defer_logs = 0;
 #define TNX_V173_BASES 3
 #define TNX_V173_MAX_LINES 4
 #define TNX_V173_BUCKET_TICKS 60
-#define TNX_V174_RAW_STICK 0
+#define TNX_V174_RAW_STICK 1
 #define TNX_V177_LOGS 12
+#define TNX_V179_PLAYER_GID 1000000
+#define TNX_V179_SHOT_GID 2000000
+#define TNX_V179_SHOT_GID_MAX 3000000
 #define TNX_V177_CLEAR_STICK 0
 #define TNX_V174_DT_MAX 12
 #define TNX_V174_STICK_TTL 3
@@ -11661,6 +11664,41 @@ static void tnx_v174_stick(int engaged, float dirX, float dirY) {
     }
 }
 
+static void tnx_v179_census(void) {
+    void *array = NULL;
+    int32_t count = 0;
+    int32_t i = 0;
+    int players = 0;
+    int shots = 0;
+    int other = 0;
+
+    if ((g_v48_ticks % 60) != 0) return;
+    if (!g_v48_manager) return;
+    if (!tnx_read_i32(g_v48_manager + TNX_MGR_COUNT_OFF, &count)) return;
+    if (count <= 0 || count > TNX_V56_COUNT_MAX) return;
+    if (!tnx_read_ptr(g_v48_manager + TNX_MGR_ARRAY_OFF, &array) || !array) return;
+
+    for (i = 0; i < count; i++) {
+        void *element = NULL;
+        int32_t gid = 0;
+
+        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * 8, &element) || !element) continue;
+
+        gid = tnx_v106_gid((uintptr_t)element, NULL);
+
+        if (gid >= TNX_V179_SHOT_GID && gid < TNX_V179_SHOT_GID_MAX) shots++;
+        else if (gid >= TNX_V179_PLAYER_GID && gid < TNX_V179_SHOT_GID) players++;
+        else other++;
+    }
+
+    tnx_logf("v179 census count=%d players=%d shots=%d other=%d manager=%p - one line a second with "
+             "the container split by gid band, so a dodge that reports segs=0 says whether there was "
+             "anything to dodge at all: the 17:53 run held only players and two objects in the four "
+             "million band, one of them standing still and one moving at two units a frame, while the "
+             "projectiles that were recognised in the 17:12 and 17:45 runs carry gids in the %d band",
+             count, players, shots, other, (void *)g_v48_manager, TNX_V179_SHOT_GID);
+}
+
 static int tnx_v178_own(int32_t *xOut, int32_t *yOut) {
     uintptr_t own = (uintptr_t)g_v144_own_elem;
 
@@ -11794,6 +11832,7 @@ static void tnx_v177_paircal(void) {
 
     if ((g_v48_ticks % 60) != 0) return;
     if (g_v177_logs >= TNX_V177_LOGS) return;
+    if (g_v174_stick_hold) return;
     if (!ctrl) return;
     if (!tnx_v178_own(&ownX, &ownY)) return;
     if (!tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_X_OFF, &px)) return;
@@ -12403,6 +12442,8 @@ static void tnx_autododge_v48(void) {
     tnx_v174_route(g_v160_active);
 
     tnx_v177_paircal();
+
+    tnx_v179_census();
 
     tnx_v172_probe();
 
@@ -14795,6 +14836,24 @@ static void setup(void) {
              "run either shows the rotation between the pair and the world heading or shows that the "
              "engine never writes the pair at all",
              (int)20.0f, (double)TNX_V170_STEP, (double)(13.0f * 60.0f), (double)TNX_V170_STEP);
+
+    tnx_logf("plan v179, from the 17:53 run, which finally carries the calibration. (1) The pair at "
+             "ctrl+0xfa4 points the SAME way as the world movement: five samples taken while the player "
+             "dragged the stick read dot +1.00, +0.99, +0.97, +0.94 and +1.00, with angDelta +2.2, +6.5, "
+             "+14.7, -20.0 and -0.9 degrees, so there is no rotation between the pair's space and the "
+             "world, and the screen space the disassembly shows - touch minus the control centre - is "
+             "axis aligned with the world at this camera angle. The magnitude the engine itself writes "
+             "is 601, 600, 600, 599 and 601, so it pushes the stick out to its own radius of about %.0f; "
+             "TNX_V165_JOY_MAG is %.0f instead of 500 and the pair is written again. (2) Both halves are "
+             "needed in the same frame: with the message alone the character covered 152 units a second "
+             "against the player's %d, and with the pair alone it covered exactly 0, while the engine's "
+             "own handler writes both in one block - so v179 turns both on, the pair from the same "
+             "heading the message carries. (3) The 17:53 run also shows what the dodge had to work with: "
+             "the container held only players and two objects in the four million gid band, one standing "
+             "still and one moving at two units a frame, so segs=0 is the correct answer for that run "
+             "and not a gate - the single gate line reads open. The new census line splits the container "
+             "by gid band every second, so a silent dodge always names its own emptiness",
+             (double)TNX_V165_JOY_MAG, (double)TNX_V165_JOY_MAG, 780);
 
     tnx_start_timer();
 

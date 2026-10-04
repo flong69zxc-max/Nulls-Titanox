@@ -47,7 +47,10 @@
 #define TNX_V193_TOUCH_ID_OFF 0xf84ULL
 #define TNX_V193_TOUCH_STATE_OFF 0xf80ULL
 #define TNX_V193_FLAG_LOGS 8
-#define TNX_V196_TOUCH_ID 1
+#define TNX_V196_TOUCH_ID 0
+#define TNX_V197_STICK_WHEN_FREE 1
+#define TNX_V197_PREDICT_FLAG 1
+#define TNX_V197_STUCK_LOG 8
 #define TNX_V196_CLUSTER 700.0f
 #define TNX_V196_FREEST_ANGLES 24
 #define TNX_V196_FREEST_MIN 120.0f
@@ -326,7 +329,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_196"
+#define TNX_BUILD_TAG "titanox_197"
 
 #define TNX_V165_JOY_MAG 600.0f
 #define TNX_V167_TEAM_FILTER 1
@@ -2698,6 +2701,10 @@ static int g_v196_cluster_logs = 0;
 static uint64_t g_v196_freest_used = 0;
 static int g_v196_dump_logs = 0;
 static uint64_t g_v196_touchid_writes = 0;
+static uint64_t g_v197_human = 0;
+static uint64_t g_v197_stick_skips = 0;
+static uint64_t g_v197_stuck = 0;
+static int g_v197_stuck_logs = 0;
 static uint64_t g_v193_gate_writes = 0;
 static int g_v192_body_logs = 0;
 static int g_v193_flag_logs = 0;
@@ -8188,7 +8195,7 @@ static int tnx_v192_predict(int32_t x, int32_t y) {
         return 0;
     }
 
-    ((void (*)(void *, int, int))g_addr_setprediction)(battle, x, y);
+    ((void (*)(void *, int, int, int))g_addr_setprediction)(battle, x, y, TNX_V197_PREDICT_FLAG);
 
     g_v192_pred_last = (uintptr_t)battle;
     g_v192_pred_calls++;
@@ -11597,7 +11604,27 @@ static int tnx_v189_drive(void) {
         return 0;
     }
 
-    tnx_v174_stick(1, dx, dy);
+    {
+        uintptr_t hctrl = tnx_v150_controller();
+        uint8_t hgate = 0;
+        int32_t hid = -1;
+        int human = 0;
+
+        if (hctrl) {
+            tnx_read_bytes(hctrl + TNX_V193_TOUCH_GATE_OFF, &hgate, sizeof(hgate));
+            tnx_read_i32(hctrl + TNX_V193_TOUCH_ID_OFF, &hid);
+        }
+
+        human = (hgate == 1 || hid >= 0) ? 1 : 0;
+
+        if (human) g_v197_human++;
+
+        if (!human || !TNX_V197_STICK_WHEN_FREE) {
+            tnx_v174_stick(1, dx, dy);
+        } else {
+            g_v197_stick_skips++;
+        }
+    }
 
     tx = ownX + (int32_t)((double)dx / (double)len * (double)TNX_V189_STEP);
     ty = ownY + (int32_t)((double)dy / (double)len * (double)TNX_V189_STEP);
@@ -11657,6 +11684,52 @@ static int tnx_v189_drive(void) {
             tnx_write_bytes(ctrl + TNX_V128_CTRL_APPLIED_Y_OFF, &ty, sizeof(ty));
             g_v190_applied_writes++;
         }
+    }
+
+    if (g_v197_stuck_logs < TNX_V197_STUCK_LOG && g_v190_engage_writes > 20 && !g_v190_move_tick) {
+        int i = 0;
+        int near = -1;
+        int within = 0;
+        float nd = 1000000.0f;
+        float slen = sqrtf(dx * dx + dy * dy);
+        float dot = 0.0f;
+
+        for (i = 0; i < g_v189_pl_n; i++) {
+            float bx = 0.0f;
+            float by = 0.0f;
+            float d = 0.0f;
+
+            if (g_v189_pl_mine[i]) continue;
+
+            bx = (float)g_v189_pl_x[i] - (float)ownX;
+            by = (float)g_v189_pl_y[i] - (float)ownY;
+            d = sqrtf(bx * bx + by * by);
+
+            if (d < nd) {
+                nd = d;
+                near = i;
+            }
+
+            if (d < slen) within++;
+        }
+
+        if (near >= 0 && slen > 1.0f) {
+            float bx = (float)g_v189_pl_x[near] - (float)ownX;
+            float by = (float)g_v189_pl_y[near] - (float)ownY;
+
+            dot = (bx * dx + by * dy) / (sqrtf(bx * bx + by * by) * slen);
+        }
+
+        g_v197_stuck++;
+        g_v197_stuck_logs++;
+
+        tnx_logf("v197 stuck writes=%llu own=(%d,%d) step=%.0f nearestBody=%.0f dot=%+.2f mine=%d "
+                 "withinStep=%d pick=(%d,%d) - the body does not move although this build keeps "
+                 "writing, which is what a character pressed against another player looks like: dot "
+                 "near +1 means the step points at that body, withinStep counts the bodies closer "
+                 "than the step", (unsigned long long)g_v190_engage_writes, ownX, ownY, (double)slen,
+                 (double)nd, (double)dot, (near >= 0) ? g_v189_pl_mine[near] : -1, within, g_v180_tx,
+                 g_v180_ty);
     }
 
     g_v189_sent_dx = tx - ownX;
@@ -11998,7 +12071,8 @@ static void tnx_v193_core(void) {
 
     tnx_logf("v193 core tick=%llu own=(%d,%d) ownOk=%d team=%d mates=%d enemies=%d trust=%d "
              "players=%d segs=%d trackedOwn=%d trackedOther=%d oneshot=%d body=%d enemyBlock=%d "
-             "mateBlock=%d gate=%llu pred=%llu/%llu deadPick=%llu human=%llu driveWrites=%llu",
+             "mateBlock=%d gate=%llu pred=%llu/%llu deadPick=%llu human=%llu driveWrites=%llu "
+             "stickSkips=%llu stuck=%llu",
              (unsigned long long)g_v48_ticks, g_v189_own_x, g_v189_own_y,
              tnx_v191_own_ok(g_v189_own_x, g_v189_own_y), g_v191_own_team, g_v189_mate_n,
              g_v191_enemy_n, g_v191_team_trust, g_v189_pl_n, g_v172_seg_count, g_v167_proj_own,
@@ -12006,7 +12080,8 @@ static void tnx_v193_core(void) {
              g_v189_block_hits, (unsigned long long)g_v193_gate_writes,
              (unsigned long long)g_v192_pred_calls, (unsigned long long)g_v192_pred_fails,
              (unsigned long long)g_v193_dead_picks, (unsigned long long)g_v192_human_live,
-             (unsigned long long)g_v190_engage_writes);
+             (unsigned long long)g_v190_engage_writes, (unsigned long long)g_v197_stick_skips,
+             (unsigned long long)g_v197_stuck);
 }
 
 static void tnx_v174_route(int engaged) {

@@ -335,7 +335,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_V171_STAGE_MAX 2
 #define TNX_V171_INPUT_MGR 0
 #define TNX_V172_JOY_WRITE 0
-#define TNX_V172_QUEUE_MOVE 0
+#define TNX_V172_QUEUE_MOVE 1
 #define TNX_V172_POSITION_WRITE 0
 #define TNX_V172_NUM_ANGLES 24
 #define TNX_V172_STEP 150.0f
@@ -356,6 +356,11 @@ static int g_v123_defer_logs = 0;
 #define TNX_V172_BS_MODE 0x8ac
 #define TNX_V172_BS_COS 0x8f4
 #define TNX_V172_BS_SIN 0x8f8
+#define TNX_V173_WIN 0x1000
+#define TNX_V173_WORDS (TNX_V173_WIN / 4)
+#define TNX_V173_BASES 3
+#define TNX_V173_MAX_LINES 12
+#define TNX_V173_BUCKET_TICKS 60
 #define TNX_V171_INPUT_TYPE 1
 #define TNX_V171_INPUT_MAG 500
 #define TNX_V171_INPUT_CHANGE_GATE 1
@@ -11551,6 +11556,176 @@ static int tnx_v172_joy_angle(float *outAngle) {
     return 1;
 }
 
+static const char *const g_v173_names[TNX_V173_BASES] = { "scene", "mode", "ctrl" };
+
+typedef struct {
+    uintptr_t base;
+    int have;
+    uint32_t prev[TNX_V173_WORDS];
+    uint16_t hot[TNX_V173_WORDS];
+} tnx_v173_win_t;
+
+static tnx_v173_win_t g_v173_win[TNX_V173_BASES];
+
+static uintptr_t tnx_v173_hop(uintptr_t base, uintptr_t off) {
+    void *raw = NULL;
+
+    if (!base) return 0;
+    if (!tnx_read_ptr(base + off, &raw) || !raw) return 0;
+    if (((uintptr_t)raw & 7) != 0) return 0;
+    if (!tnx_addr_readable((uintptr_t)raw, 8)) return 0;
+
+    return (uintptr_t)raw;
+}
+
+static int tnx_v173_snapshot(uintptr_t base, uint32_t *out) {
+    int i = 0;
+
+    for (i = 0; i < TNX_V173_WORDS; i++) {
+        int32_t word = 0;
+
+        if (!tnx_read_i32(base + (uintptr_t)i * 4, &word)) return 0;
+
+        out[i] = (uint32_t)word;
+    }
+
+    return 1;
+}
+
+static void tnx_v173_slot_line(const char *name, const tnx_v173_win_t *w, int slot,
+                               uint32_t before, uint32_t after) {
+    float was = 0.0f;
+    float now = 0.0f;
+
+    memcpy(&was, &before, sizeof(was));
+    memcpy(&now, &after, sizeof(now));
+
+    tnx_logf("v173 %s +%#x float %+.4f -> %+.4f int %d -> %d hot=%u - one slot of the %#x byte "
+             "window that differs from the previous second; hot is how many snapshots this slot has "
+             "moved in while the base stayed the same, so a field that follows a dragged stick "
+             "outranks scenery and is printed first",
+             name, (unsigned)(slot * 4), (double)was, (double)now, (int32_t)before, (int32_t)after,
+             (unsigned)w->hot[slot], (unsigned)TNX_V173_WIN);
+}
+
+static void tnx_v173_scan(void) {
+    int b = 0;
+
+    if ((g_v48_ticks % TNX_V173_BUCKET_TICKS) != 0) return;
+
+    for (b = 0; b < TNX_V173_BASES; b++) {
+        tnx_v173_win_t *w = &g_v173_win[b];
+        const char *name = g_v173_names[b];
+        uint32_t cur[TNX_V173_WORDS];
+        int picked[TNX_V173_MAX_LINES];
+        uintptr_t base = 0;
+        int changed = 0;
+        int shown = 0;
+        int hotMax = 0;
+        int i = 0;
+        int p = 0;
+
+        if (b == 0) base = (uintptr_t)g_scene_object;
+        else if (b == 1) base = tnx_v173_hop((uintptr_t)g_scene_object, TNX_MODE_MANAGER_OFF);
+        else base = tnx_v150_controller();
+
+        if (!base) {
+            if (w->have) {
+                tnx_logf("v173 %s gone: the base was %p and is not there now, so the window and its "
+                         "hot counts are dropped and reseeded when it returns", name, (void *)w->base);
+            }
+
+            w->base = 0;
+            w->have = 0;
+
+            continue;
+        }
+
+        if (w->base != base) {
+            w->base = base;
+            w->have = 0;
+
+            for (i = 0; i < TNX_V173_WORDS; i++) w->hot[i] = 0;
+        }
+
+        if (!tnx_v173_snapshot(base, cur)) {
+            if (w->have) {
+                tnx_logf("v173 %s window unreadable at %p - the snapshot is dropped instead of being "
+                         "compared against a stale one", name, (void *)base);
+            }
+
+            w->have = 0;
+
+            continue;
+        }
+
+        if (!w->have) {
+            memcpy(w->prev, cur, sizeof(cur));
+
+            w->have = 1;
+
+            continue;
+        }
+
+        for (i = 0; i < TNX_V173_WORDS; i++) {
+            if (cur[i] == w->prev[i]) continue;
+
+            changed++;
+
+            if (w->hot[i] < 65000) w->hot[i]++;
+            if ((int)w->hot[i] > hotMax) hotMax = (int)w->hot[i];
+        }
+
+        for (p = 0; p < TNX_V173_MAX_LINES; p++) {
+            int best = -1;
+            int pickHot = -1;
+            int k = 0;
+            int seen = 0;
+
+            for (i = 0; i < TNX_V173_WORDS; i++) {
+                seen = 0;
+
+                if (cur[i] == w->prev[i]) continue;
+
+                for (k = 0; k < p; k++) {
+                    if (picked[k] == i) {
+                        seen = 1;
+
+                        break;
+                    }
+                }
+
+                if (seen) continue;
+
+                if ((int)w->hot[i] > pickHot) {
+                    pickHot = (int)w->hot[i];
+                    best = i;
+                }
+            }
+
+            if (best < 0) break;
+
+            picked[p] = best;
+            shown++;
+        }
+
+        if (changed > 0) {
+            tnx_logf("v173 %s base=%p changed=%d shown=%d hotMax=%d - the window is %#x bytes of the "
+                     "base, the slots below are the changed ones with the highest hot count, capped at "
+                     "%d, and hotMax is the best any slot in the window has ever reached, so a window "
+                     "whose whole hot column is still zero is reported as such",
+                     name, (void *)base, changed, shown, hotMax, (unsigned)TNX_V173_WIN,
+                     TNX_V173_MAX_LINES);
+        }
+
+        for (p = 0; p < shown; p++) {
+            tnx_v173_slot_line(name, w, picked[p], w->prev[picked[p]], cur[picked[p]]);
+        }
+
+        memcpy(w->prev, cur, sizeof(cur));
+    }
+}
+
 static void tnx_v172_probe(void) {
     uintptr_t bs = tnx_v172_bs();
     void *vt = NULL;
@@ -11563,22 +11738,27 @@ static void tnx_v172_probe(void) {
     uint32_t mode = 0;
     unsigned long long vtRva = 0;
 
+    tnx_v173_scan();
+
+    if (!bs) return;
+
     if (g_v172_probe_logs < 1) {
         g_v172_probe_logs++;
 
-        if (bs && tnx_read_ptr(bs, &vt) && (uintptr_t)vt > g_base) {
+        if (tnx_read_ptr(bs, &vt) && (uintptr_t)vt > g_base) {
             vtRva = (unsigned long long)((uintptr_t)vt - g_base);
         }
 
-        tnx_logf("v172 bs check scene=%p bs=%p same=%d classRva=%#llx - updateMovement cannot be "
-                 "hooked on this target: a scan of every eight-byte word of __DATA_CONST and __DATA "
-                 "found no slot pointing at it and inline patching is not supported, so the "
-                 "BattleScreen object is the scene this file already resolves. The class word is "
-                 "printed so the identity can be checked against the earlier note that names 0xfe9d00",
-                 (void *)g_scene_object, (void *)bs, (bs == (uintptr_t)g_scene_object) ? 1 : 0, vtRva);
+        tnx_logf("v173 bs live scene=%p bs=%p ctrl=%p classRva=%#llx - the one-shot waits for a live "
+                 "scene now, so the class word is read from the object the dodge really uses and not "
+                 "from a null pointer, which is what the previous run printed as scene=0x0 and "
+                 "classRva=0; updateMovement cannot be hooked on this target - a scan of every "
+                 "eight-byte word of __DATA_CONST and __DATA found no slot pointing at it and inline "
+                 "patching is not supported - so the BattleScreen object is the scene this file "
+                 "already resolves and the joystick is searched in its window by the v173 scanner. "
+                 "The class word 0xfe9d00 is the identity the earlier note names",
+                 (void *)g_scene_object, (void *)bs, (void *)tnx_v150_controller(), vtRva);
     }
-
-    if (!bs) return;
 
     if (g_v172_own_logs < 20 && (g_v48_ticks % 60) == 0) {
         g_v172_own_logs++;
@@ -14189,6 +14369,27 @@ static void setup(void) {
              (double)TNX_V172_STEP, (double)TNX_V172_MAX_DIST, (double)90.0f, TNX_V172_BS_AX,
              TNX_V172_BS_AY, TNX_V172_BS_BX, TNX_V172_BS_BY, TNX_V172_BS_MODE, TNX_V172_BS_COS,
              TNX_V172_BS_SIN);
+
+    tnx_logf("plan v173, from the 16:42 run: (1) the way back to movement is the engine's own client "
+             "input queue at battle+%#llx. Nothing in that build writes - every flag is off - so the "
+             "only movement in the log is the player's own hand, and the queue count printed every "
+             "five ticks is 0 up to tick 480 and 1 from tick 485 on, which is exactly the shape of a "
+             "live move request; the 15:30 run had already shown our own push landing there as qBefore "
+             "0 qAfter 1. TNX_V172_QUEUE_MOVE is back on and the dodge's own target is what goes into "
+             "the record. (2) The joystick pair stays off: all 21 probes of that run read ax=ay=bx=by=0 "
+             "mode=0 cos=sin=0, so +%#x, +%#x, +%#x, +%#x, +%#x, +%#x and +%#x are not the stick in "
+             "this build, and writing a field that reads zero for everyone is writing into nothing. "
+             "(3) The stick is searched instead of guessed: once a second a %#x byte window is "
+             "snapshotted on the scene, on the mode object at scene+%#llx and on the controller, and "
+             "every slot that differs from the previous second is printed with its float and int "
+             "reading and with a hot count - how many snapshots it has moved in while its base stayed "
+             "the same - and the hottest slots are printed first, so a stick that snaps back to "
+             "neutral between two samples still ranks above scenery. (4) The bs check one-shot now "
+             "waits for a live scene instead of firing on a null pointer, which is what it printed as "
+             "scene=0x0 classRva=0 in that run",
+             (unsigned long long)TNX_V113_MGR_OFF, TNX_V172_BS_AX, TNX_V172_BS_AY, TNX_V172_BS_BX,
+             TNX_V172_BS_BY, TNX_V172_BS_MODE, TNX_V172_BS_COS, TNX_V172_BS_SIN,
+             (unsigned)TNX_V173_WIN, (unsigned long long)TNX_MODE_MANAGER_OFF);
 
     tnx_start_timer();
 

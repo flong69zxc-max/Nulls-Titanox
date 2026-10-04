@@ -52,6 +52,8 @@
 #define TNX_V197_PREDICT_FLAG 1
 #define TNX_V197_STUCK_LOG 8
 #define TNX_V198_MOVESTATE 1
+#define TNX_V199_STICK_SIGN -1
+#define TNX_V199_STICK_ON_THREAT 1
 #define TNX_V198_LOGS 10
 #define TNX_V198_PRED_LOGS 6
 #define TNX_V196_CLUSTER 700.0f
@@ -332,7 +334,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_198"
+#define TNX_BUILD_TAG "titanox_199"
 
 #define TNX_V165_JOY_MAG 600.0f
 #define TNX_V167_TEAM_FILTER 1
@@ -11637,6 +11639,7 @@ static int tnx_v189_drive(void) {
         uint8_t hgate = 0;
         int32_t hid = -1;
         int human = 0;
+        int threat = 0;
 
         if (hctrl) {
             tnx_read_bytes(hctrl + TNX_V193_TOUCH_GATE_OFF, &hgate, sizeof(hgate));
@@ -11644,11 +11647,12 @@ static int tnx_v189_drive(void) {
         }
 
         human = (hgate == 1 || hid >= 0) ? 1 : 0;
+        threat = g_v160_active ? 1 : 0;
 
         if (human) g_v197_human++;
 
-        if (!human || !TNX_V197_STICK_WHEN_FREE) {
-            tnx_v174_stick(1, dx, dy);
+        if (threat || !human || !TNX_V197_STICK_WHEN_FREE) {
+            tnx_v174_stick(1, (float)TNX_V199_STICK_SIGN * dx, (float)TNX_V199_STICK_SIGN * dy);
         } else {
             g_v197_stick_skips++;
         }

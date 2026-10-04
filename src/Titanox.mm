@@ -319,6 +319,11 @@ static int g_v123_defer_logs = 0;
 #define TNX_V165_JOY_MAG 500.0f
 #define TNX_V166_INPUT_ONLY 1
 #define TNX_V166_STICK_STUCK_FRAMES 30
+#define TNX_V167_TEAM_FILTER 1
+#define TNX_V167_DEATH_GUARD 1
+#define TNX_V167_STAGE_APPLIED 1
+#define TNX_V167_STAGE_STICK 2
+#define TNX_V167_STAGE_MAX 2
 #define TNX_V165_LOGS 12
 
 
@@ -358,7 +363,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_V151_LOGS 24
 
 
-#define TNX_V150_ACT_WRITE 0
+#define TNX_V150_ACT_WRITE 1
 
 #define TNX_V147_ACT_WRITE 0
 #define TNX_V148_PROBE_LOGS 6
@@ -6288,6 +6293,22 @@ static uintptr_t tnx_v135_list_gid_off(uintptr_t array, int32_t count) {
 
 
 
+static int g_v167_stage = 0;
+static int g_v167_stuck = 0;
+static int32_t g_v167_last_x = 0;
+static int32_t g_v167_last_y = 0;
+static int g_v167_logs = 0;
+static int g_v167_moves_logs = 0;
+static int g_v167_dead = 0;
+static int g_v167_dead_logs = 0;
+static int g_v167_revive_logs = 0;
+static int g_v167_own_team = -1;
+static int g_v167_proj_own = 0;
+static int g_v167_proj_other = 0;
+static int g_v167_own_team_seen = 0;
+static int g_v167_filter_logs = 0;
+static int g_v167_stick_cleared = 0;
+
 static uintptr_t g_v140_proj_addr = 0;
 static uint8_t g_v140_proj_bytes[TNX_V140_DIFF_BYTES];
 static int g_v140_proj_have = 0;
@@ -10351,6 +10372,7 @@ typedef struct {
     int32_t y;
     int32_t px;
     int32_t py;
+    int32_t team;
     int hasPrev;
 } tnx_v140_proj_t;
 
@@ -10372,6 +10394,9 @@ static int tnx_v140_proj_scan(uintptr_t manager, int32_t count) {
     for (k = 0; k < TNX_V140_PROJ_MAX; k++) {
         g_v140_projs[k].classRva = (uintptr_t)-1;
     }
+
+    g_v167_proj_own = 0;
+    g_v167_proj_other = 0;
 
     for (i = 0; i < count && found < TNX_V140_PROJ_MAX; i++) {
         void *element = NULL;
@@ -10460,6 +10485,22 @@ static int tnx_v140_proj_scan(uintptr_t manager, int32_t count) {
             g_v140_projs[slot].hasPrev = 0;
         }
 
+        {
+            uintptr_t teamOff = (g_v47_team_off == (int)TNX_OBJ_TEAM_OFF) ? TNX_OBJ_TEAM_OFF
+                                                                         : TNX_V91_TEAM_OFF;
+            int32_t pteam = -1;
+
+            if (tnx_read_i32((uintptr_t)element + teamOff, &pteam) && pteam >= 0 &&
+                pteam <= TNX_OBJ_TEAM_MAX) {
+                g_v140_projs[slot].team = pteam;
+
+                if (pteam == g_v167_own_team) g_v167_proj_own++;
+                else g_v167_proj_other++;
+            } else {
+                g_v140_projs[slot].team = -1;
+            }
+        }
+
         g_v140_projs[slot].classRva = vtRva;
         g_v140_projs[slot].x = px;
         g_v140_projs[slot].y = py;
@@ -10474,6 +10515,17 @@ static int tnx_v140_proj_scan(uintptr_t manager, int32_t count) {
         g_v140_projs[k].hasPrev = 0;
     }
 
+    g_v167_own_team_seen = (g_v167_proj_own > 0 && g_v167_proj_other > 0) ? 1 : 0;
+
+    if (g_v167_filter_logs < 6 && g_v167_own_team_seen) {
+        g_v167_filter_logs++;
+
+        tnx_logf("v167 threat filter: %d tracked shots carry own team %d and %d carry another team, so "
+                 "the team field splits them and own-team shots are dropped from the threat list; when "
+                 "only one side is nonzero nothing is filtered, because a field that never differs "
+                 "cannot tell a teammate's shot from an enemy's", g_v167_proj_own, g_v167_own_team,
+                 g_v167_proj_other);
+    }
 
     return found;
 }
@@ -10805,6 +10857,7 @@ static float tnx_v160_clearance(float mx, float my, float mvx, float mvy) {
         float d;
 
         if (!p->elem || !p->hasPrev) continue;
+        if (TNX_V167_TEAM_FILTER && g_v167_own_team_seen && p->team == g_v167_own_team) continue;
 
         vx = (float)(p->x - p->px);
         vy = (float)(p->y - p->py);
@@ -10838,26 +10891,104 @@ static float tnx_v160_clearance(float mx, float my, float mvx, float mvy) {
     return best;
 }
 
-static void tnx_v166_watch(int32_t ownX, int32_t ownY) {
-    if (!TNX_V166_INPUT_ONLY || g_v166_fallback) return;
+static void tnx_v167_watch(int32_t ownX, int32_t ownY) {
+    if (ownX != g_v167_last_x || ownY != g_v167_last_y) {
+        if (g_v167_stuck >= TNX_V167_STUCK_FRAMES && g_v167_moves_logs < 4) {
+            g_v167_moves_logs++;
 
-    if (ownX != g_v166_last_x || ownY != g_v166_last_y) {
-        g_v166_stick_frames = 0;
-        g_v166_last_x = ownX;
-        g_v166_last_y = ownY;
+            tnx_logf("v167 own moves again on stage %d: own=(%d,%d) - the route that is live now is the "
+                     "one that walks, and the stages below it are the record of what did not",
+                     g_v167_stage, ownX, ownY);
+        }
+
+        g_v167_stuck = 0;
+        g_v167_last_x = ownX;
+        g_v167_last_y = ownY;
 
         return;
     }
 
-    g_v166_stick_frames++;
+    g_v167_stuck++;
 
-    if (g_v166_stick_frames >= TNX_V166_STICK_STUCK_FRAMES) {
-        g_v166_fallback = 1;
+    if (g_v167_stuck >= TNX_V167_STUCK_FRAMES && g_v167_stage < TNX_V167_STAGE_MAX) {
+        g_v167_stage++;
+        g_v167_stuck = 0;
 
-        tnx_logf("v166 stick has no effect: own=(%d,%d) stayed put for %d frames of live threat while "
-                 "the joystick pair was written on every one of them, so the direct pair is "
-                 "re-enabled for this run - a slide is better than standing still", ownX, ownY,
-                 g_v166_stick_frames);
+        tnx_logf("v167 stage %d: own=(%d,%d) did not move for %d frames of live threat, so one more "
+                 "channel is added - stage %d is the applied pair and the leaf setter, stage %d also "
+                 "writes the joystick pair", g_v167_stage, ownX, ownY, TNX_V167_STUCK_FRAMES,
+                 TNX_V167_STAGE_APPLIED, TNX_V167_STAGE_STICK);
+    }
+}
+
+static void tnx_v167_clear_stick_once(void) {
+    uintptr_t ctrl = 0;
+    int32_t rawX = 0;
+    int32_t rawY = 0;
+    int32_t zero = 0;
+
+    if (g_v167_stick_cleared) return;
+
+    g_v167_stick_cleared = 1;
+
+    ctrl = tnx_v150_controller();
+
+    if (!ctrl) return;
+    if (!tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_X_OFF, &rawX)) return;
+    if (!tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &rawY)) return;
+    if (rawX == 0 && rawY == 0) return;
+
+    tnx_write_bytes(ctrl + TNX_V128_CTRL_RAW_X_OFF, &zero, sizeof(zero));
+    tnx_write_bytes(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &zero, sizeof(zero));
+
+    tnx_logf("v167 stick neutralised once: +%#llx held (%d,%d) and this build does not write it on the "
+             "input route, so a value left behind by an earlier build would keep the character walking "
+             "on its own", (unsigned long long)TNX_V128_CTRL_RAW_X_OFF, rawX, rawY);
+}
+
+static void tnx_v167_dead(int32_t ownX, int32_t ownY) {
+    if (!g_v167_dead && TNX_V165_RAW_INPUT) {
+        uintptr_t ctrl = tnx_v150_controller();
+
+        if (ctrl) {
+            int32_t zero = 0;
+
+            tnx_write_bytes(ctrl + TNX_V128_CTRL_RAW_X_OFF, &zero, sizeof(zero));
+            tnx_write_bytes(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &zero, sizeof(zero));
+        }
+    }
+
+    if (g_v167_dead_logs < 4) {
+        g_v167_dead_logs++;
+
+        tnx_logf("v167 own is dead at (%d,%d): the dodge is held, the joystick pair is set to neutral "
+                 "once so a corpse is not carried, and the ladder returns to stage 0 - the next life "
+                 "starts on the input command instead of on whatever the last one ended with",
+                 ownX, ownY);
+    }
+
+    g_v167_dead = 1;
+    g_v167_stage = 0;
+    g_v167_stuck = 0;
+    g_v160_prev_idx = -1;
+    g_v160_hold_until = 0;
+    g_v160_last_danger = 0;
+    g_v47_last_write_ms = 0;
+    g_v152_issued = 0;
+}
+
+static void tnx_v167_alive(int32_t ownX, int32_t ownY) {
+    if (!g_v167_dead) return;
+
+    g_v167_dead = 0;
+    g_v167_stick_cleared = 0;
+
+    if (g_v167_revive_logs < 4) {
+        g_v167_revive_logs++;
+
+        tnx_logf("v167 own is alive again at (%d,%d): the dodge resumes from stage %d with a cleared "
+                 "heading and a cleared write clock, which is what the last life's state would "
+                 "otherwise keep frozen", ownX, ownY, g_v167_stage);
     }
 }
 
@@ -11596,6 +11727,14 @@ static void tnx_autododge_v48(void) {
      
 
 
+    if (TNX_V167_DEATH_GUARD && ownIndex >= 0 && ownIndex < usable && objects[ownIndex].dead) {
+        tnx_v167_dead(ownX, ownY);
+
+        return;
+    }
+
+    tnx_v167_alive(ownX, ownY);
+
     tnx_v146_phase("sidestep");
 
     g_v140_side_hits = 0;
@@ -11607,6 +11746,8 @@ static void tnx_autododge_v48(void) {
 
         if (g_v48_manager) tnx_read_i32(g_v48_manager + TNX_MGR_COUNT_OFF, &projCount);
 
+
+        g_v167_own_team = (int)ownTeam;
 
         tnx_v140_proj_scan(g_v48_manager, projCount);
 
@@ -11771,31 +11912,28 @@ static void tnx_autododge_v48(void) {
 
         tnx_v148_receiver_probe();
 
-        if (TNX_V165_RAW_INPUT) {
-            if (!g_v160_active) {
-                g_v165_dir_x = escapeX;
-                g_v165_dir_y = escapeY;
-            }
-
-            tnx_v165_write_raw();
+        if (!g_v160_active) {
+            g_v165_dir_x = escapeX;
+            g_v165_dir_y = escapeY;
         }
 
-        tnx_v166_watch(ownX, ownY);
+        tnx_v167_clear_stick_once();
 
-        if (TNX_V166_INPUT_ONLY && !g_v166_fallback) {
-            if (g_v166_logs < 1) {
-                g_v166_logs++;
+        tnx_v167_watch(ownX, ownY);
 
-                tnx_logf("v166 input only: the pair at +%#llx and the applied pair are not written "
-                         "while the joystick route answers, because a written position carries the "
-                         "body without its run cycle and that is the slide; the stick is the only "
-                         "mover, it is written on every frame, the dodge interval is %d ms, the "
-                         "heading lock %d ms and the release %d ms",
-                         (unsigned long long)TNX_V128_CTRL_RAW_X_OFF, TNX_V47_DODGE_MIN_MS,
-                         TNX_V160_LOCK_MS, TNX_V160_RELEASE_MS);
-            }
-        } else {
+        if (!TNX_V166_INPUT_ONLY || g_v167_stage >= TNX_V167_STAGE_APPLIED) {
             tnx_v164_mark_applied(targetX, targetY);
+
+            if (TNX_V165_RAW_INPUT && g_v167_stage >= TNX_V167_STAGE_STICK) tnx_v165_write_raw();
+        } else if (g_v167_logs < 1) {
+            g_v167_logs++;
+
+            tnx_logf("v167 stage %d: the move is the client input command plus the mode function %#llx "
+                     "and nothing else - no joystick pair, no applied pair and no write at +%#llx - "
+                     "because a field write carries the body while the engine's own function makes it "
+                     "walk; own=(%d,%d) target=(%d,%d)", g_v167_stage,
+                     (unsigned long long)TNX_V140_MODEPAIR_RVA,
+                     (unsigned long long)TNX_V128_CTRL_RAW_X_OFF, ownX, ownY, targetX, targetY);
         }
 
         if (!TNX_V150_ACT_WRITE && !g_v166_fallback) {
@@ -11809,11 +11947,13 @@ static void tnx_autododge_v48(void) {
                          "the SIGABRT of the 146 run", targetX, targetY, ownX, ownY,
                          g_v145_own_from);
             }
-        } else if (!tnx_v144_mode_write(targetX, targetY, TNX_V140_MODEPAIR_FLAG)) {
+        }
+
+        if (!tnx_v144_mode_write(targetX, targetY, TNX_V140_MODEPAIR_FLAG)) {
              
 
 
-            if (g_v47_setpred) {
+            if (TNX_V150_ACT_WRITE && g_v167_stage >= TNX_V167_STAGE_APPLIED && g_v47_setpred) {
                 ((tnx_v47_setpred_t)g_v47_setpred)((void *)g_scene_object, targetX, targetY);
             }
         }
@@ -13196,6 +13336,22 @@ static void setup(void) {
              "character standing still", TNX_V47_DODGE_MIN_MS, TNX_V160_LOCK_MS,
              TNX_V160_RELEASE_MS, (double)TNX_V160_ENGAGE, (double)TNX_V154_INFLATE,
              (double)TNX_V160_SPEED, TNX_V166_STICK_STUCK_FRAMES);
+
+    tnx_logf("plan v167, from the 15:30 run and the reference implementation: (1) the move is the "
+             "client input command plus the mode function %#llx, which is exactly the pair the "
+             "REvengeBS autododge sends - setClientPredictionMoveTo(logic, tx, ty, 1) and a type 2 "
+             "client input - and no joystick pair and no applied pair are written, because a field "
+             "write carries the body while the engine's own function carries the walk. The 15:30 run "
+             "proves the command lands: queuePush shows seqBefore 37 seqAfter 38 and qBefore 0 "
+             "qAfter 1, so the queue takes it. (2) The joystick pair and the applied pair are still "
+             "written, but only after own has stood still for %d frames of live threat, one channel "
+             "per step, so the log names the route that actually moves the character instead of "
+             "guessing. (3) Own-team shots no longer count as threats: the projectile now carries its "
+             "team and is dropped when the same frame shows shots on both sides, because a field that "
+             "never differs cannot tell a teammate's shot from an enemy's. (4) While own is dead the "
+             "dodge is held and the joystick pair is neutralised once, so a corpse is not steered and "
+             "the next life starts on the input route with the heading, the write clock and the "
+             "ladder cleared", (unsigned long long)TNX_V140_MODEPAIR_RVA, TNX_V167_STUCK_FRAMES);
 
     tnx_start_timer();
 

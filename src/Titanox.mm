@@ -359,10 +359,13 @@ static int g_v123_defer_logs = 0;
 #define TNX_V173_WIN 0x1000
 #define TNX_V173_WORDS (TNX_V173_WIN / 4)
 #define TNX_V173_BASES 3
-#define TNX_V173_MAX_LINES 12
+#define TNX_V173_MAX_LINES 4
 #define TNX_V173_BUCKET_TICKS 60
 #define TNX_V174_RAW_STICK 1
 #define TNX_V174_DT_MAX 12
+#define TNX_V174_STICK_TTL 3
+#define TNX_V174_MIN_PROJ_SPEED 10.0f
+#define TNX_V176_MIN_USABLE 1
 #define TNX_V171_INPUT_TYPE 1
 #define TNX_V171_INPUT_MAG 500
 #define TNX_V171_INPUT_CHANGE_GATE 1
@@ -511,7 +514,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_V140_MODEPAIR_RVA 0x00ac3a58ULL
 #define TNX_V140_MODEPAIR_FLAG 0
 #define TNX_V140_CTRL_MODE_OFF 0x918ULL
-#define TNX_V140_PROJ_MAX 8
+#define TNX_V140_PROJ_MAX 16
 #define TNX_V140_DUMPS 3
 #define TNX_V140_DIFF_BYTES 0x100
 #define TNX_V140_DIFF_LOGS 48
@@ -6146,6 +6149,8 @@ static uint64_t g_v47_probe_last_ms = 0;
 static int g_v47_coord_ok = 0;
 static int g_v47_coord_usable = 0;
 static int g_v47_coord_distinct = 0;
+static int g_v176_gate_last = -1;
+static int g_v176_gate_logs = 0;
 static int g_v47_team_off = 0x4c;
 static int g_v47_map_w = 0;
 static int g_v47_map_h = 0;
@@ -10946,7 +10951,7 @@ static float tnx_v160_clearance(float mx, float my, float mvx, float mvy) {
         if (TNX_V167_TEAM_FILTER && g_v167_own_team_seen && p->team == g_v167_own_team) continue;
         if (!tnx_v174_proj_vel(p, &vx, &vy)) continue;
 
-        if (sqrtf(vx * vx + vy * vy) < 1.0f) continue;
+        if (sqrtf(vx * vx + vy * vy) < TNX_V174_MIN_PROJ_SPEED) continue;
 
 
         relx = (float)p->x - mx;
@@ -11585,6 +11590,10 @@ static int tnx_v172_joy_angle(float *outAngle) {
 static int32_t g_v174_stick_x = 0;
 static int32_t g_v174_stick_y = 0;
 static int g_v174_stick_hold = 0;
+static uint64_t g_v174_stick_tick = 0;
+static int g_v174_engaged_ticks = 0;
+static long long g_v174_sum_x = 0;
+static long long g_v174_sum_y = 0;
 static int g_v174_route_seeded = 0;
 static int32_t g_v174_last_own_x = 0;
 static int32_t g_v174_last_own_y = 0;
@@ -11593,6 +11602,7 @@ static void tnx_v174_stick(int engaged, float dirX, float dirY) {
     uintptr_t ctrl = tnx_v150_controller();
     int32_t wx = 0;
     int32_t wy = 0;
+    int want = 0;
     float len = 0.0f;
 
     if (!TNX_V174_RAW_STICK) return;
@@ -11601,17 +11611,25 @@ static void tnx_v174_stick(int engaged, float dirX, float dirY) {
     if (engaged) {
         len = sqrtf(dirX * dirX + dirY * dirY);
 
-        if (len < 0.0001f) {
-            engaged = 0;
-        } else {
+        if (len >= 0.0001f) {
+            want = 1;
             wx = (int32_t)((double)dirX / (double)len * (double)TNX_V165_JOY_MAG);
             wy = (int32_t)((double)dirY / (double)len * (double)TNX_V165_JOY_MAG);
+            g_v174_stick_hold = 1;
+            g_v174_stick_tick = g_v48_ticks;
+            g_v174_engaged_ticks++;
+            g_v174_sum_x += wx;
+            g_v174_sum_y += wy;
         }
     }
 
-    if (!engaged && !g_v174_stick_hold) return;
+    if (!want) {
+        if (!g_v174_stick_hold) return;
+        if (g_v174_stick_tick + TNX_V174_STICK_TTL > g_v48_ticks) return;
 
-    g_v174_stick_hold = engaged;
+        g_v174_stick_hold = 0;
+    }
+
     g_v174_stick_x = wx;
     g_v174_stick_y = wy;
 
@@ -11631,12 +11649,12 @@ static void tnx_v174_stick(int engaged, float dirX, float dirY) {
             tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_X_OFF, &backX);
             tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &backY);
 
-            tnx_logf("v174 stick write #%d ctrl=%p want=(%d,%d) back=(%d,%d) kept=%d engaged=%d - the "
+            tnx_logf("v175 stick write #%d ctrl=%p want=(%d,%d) back=(%d,%d) kept=%d engaged=%d - the "
                      "pair is the one the touch handler writes and the battle update reads, and the "
                      "read back is the only proof the store landed; a kept=0 means the engine rewrote "
                      "the pair between our store and the read, which names a different writer",
                      stickLogs, (void *)ctrl, wx, wy, backX, backY,
-                     (backX == wx && backY == wy) ? 1 : 0, engaged);
+                     (backX == wx && backY == wy) ? 1 : 0, want);
         }
     }
 }
@@ -11648,8 +11666,17 @@ static void tnx_v174_route(int32_t ownX, int32_t ownY, int engaged) {
     int dx = 0;
     int dy = 0;
     int moved = 0;
+    int ours = g_v174_engaged_ticks;
+    long long sumX = 0;
+    long long sumY = 0;
+    float sLen = 0.0f;
+    float mLen = 0.0f;
+    float dot = 0.0f;
+    const char *align = "no-move";
 
     if ((g_v48_ticks % 60) != 0) return;
+
+    g_v174_engaged_ticks = 0;
 
     if (ctrl) {
         tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_X_OFF, &backX);
@@ -11663,21 +11690,41 @@ static void tnx_v174_route(int32_t ownX, int32_t ownY, int engaged) {
         moved = (int)sqrtf((float)(dx * dx + dy * dy));
     }
 
+    sumX = g_v174_sum_x;
+    sumY = g_v174_sum_y;
+    g_v174_sum_x = 0;
+    g_v174_sum_y = 0;
+
+    sLen = sqrtf((float)(sumX * sumX + sumY * sumY));
+    mLen = sqrtf((float)(dx * dx + dy * dy));
+
+    if (sLen > 0.5f && mLen > 0.5f) {
+        dot = ((float)sumX / sLen) * ((float)dx / mLen) + ((float)sumY / sLen) * ((float)dy / mLen);
+
+        if (dot > 0.7f) align = "same";
+        else if (dot < -0.7f) align = "opposite";
+        else align = "unrelated";
+    }
+
     g_v174_route_seeded = 1;
     g_v174_last_own_x = ownX;
     g_v174_last_own_y = ownY;
 
-    tnx_logf("v174 route engaged=%d stick=(%d,%d) back=(%d,%d) own=(%d,%d) movedLastSecond=%d "
-             "queue=%d ctrl=%p - the pair at ctrl+%#llx and ctrl+%#llx is the one the touch handler "
-             "writes and the battle update reads, so back equal to stick together with a movedLastSecond "
-             "well above zero is the character walking on the engine's own input instead of being "
-             "carried by a position; the queue count is printed beside it because this build no longer "
-             "pushes into it and the engine is supposed to queue the input itself from this pair, so a "
-             "count that stays at zero while the pair is written means it does not",
-             engaged, g_v174_stick_x, g_v174_stick_y, backX, backY, ownX, ownY, moved,
-             tnx_v113_queue_count(NULL), (void *)ctrl,
-             (unsigned long long)TNX_V128_CTRL_RAW_X_OFF,
-             (unsigned long long)TNX_V128_CTRL_RAW_Y_OFF);
+    tnx_logf("v175 route engaged=%d stick=(%d,%d) back=(%d,%d) own=(%d,%d) movedLastSecond=%d "
+             "stickSum=(%lld,%lld) stickDir=(%.2f,%.2f) moveDir=(%.2f,%.2f) dot=%+.2f aligned=%s "
+             "engagedTicks=%d queue=%d - the dot compares the heading this build wrote into the pair, "
+             "summed over the second, with the heading the character really travelled in that same "
+             "second: aligned=same means the pair drives the walk, aligned=opposite means the pair is "
+             "the screen vector and needs its sign flipped, and unrelated means something else is "
+             "steering, which is what a player who is touching the screen produces - so the test has "
+             "to be repeated with the screen untouched; engagedTicks says how much of that second was "
+             "ours and the queue count says whether the engine queues the input itself from this pair",
+             engaged, g_v174_stick_x, g_v174_stick_y, backX, backY, ownX, ownY, moved, sumX, sumY,
+             (double)(sLen > 0.5f ? (float)sumX / sLen : 0.0f),
+             (double)(sLen > 0.5f ? (float)sumY / sLen : 0.0f),
+             (double)(mLen > 0.5f ? (float)dx / mLen : 0.0f),
+             (double)(mLen > 0.5f ? (float)dy / mLen : 0.0f),
+             (double)dot, align, ours, tnx_v113_queue_count(NULL));
 }
 
 static void tnx_v174_threats(void) {
@@ -11697,7 +11744,7 @@ static void tnx_v174_threats(void) {
             verdict = p->hasPrev ? "vel-unreadable" : "one-sample";
         } else if (TNX_V167_TEAM_FILTER && g_v167_own_team_seen && p->team == g_v167_own_team) {
             verdict = "own-team";
-        } else if (sqrtf(vx * vx + vy * vy) < 1.0f) {
+        } else if (sqrtf(vx * vx + vy * vy) < TNX_V174_MIN_PROJ_SPEED) {
             verdict = "still";
         }
 
@@ -11958,7 +12005,7 @@ static void tnx_v172_build(void) {
 
         len = sqrtf(vx * vx + vy * vy);
 
-        if (len < 1.0f) continue;
+        if (len < TNX_V174_MIN_PROJ_SPEED) continue;
 
         speed = len * 60.0f;
 
@@ -12616,14 +12663,28 @@ static void tnx_autododge_v48(void) {
         return;
     }
 
-    if (!g_v47_coord_ok) {
-        if (g_v47_giveup_logs < 3) {
-            g_v47_giveup_logs++;
-            tnx_logf("v100 dodge idle: coordinates not confirmed (usable=%d distinct=%d) -- "
-                     "read-only until they are", g_v47_coord_usable, g_v47_coord_distinct);
+    {
+        int gateOpen = (g_v47_coord_ok || g_v47_coord_usable >= TNX_V176_MIN_USABLE) ? 1 : 0;
+
+        if (gateOpen != g_v176_gate_last) {
+            g_v176_gate_last = gateOpen;
+            g_v176_gate_logs++;
+
+            if (g_v176_gate_logs <= 16) {
+                tnx_logf("v176 gate %s: coord_ok=%d usable=%d distinct=%d minUsable=%d - the dodge runs "
+                         "on usable objects now, because a container that holds only the player still "
+                         "carries the player's own coordinates and the whole threat list, while the old "
+                         "gate was coord_ok alone: the 17:12 run shows it going false for five seconds "
+                         "in the middle of a firefight (usable=1 at 37.219, 39.020 and 40.401) with no "
+                         "dodge line in exactly those seconds, and shots do not count because they are "
+                         "rejected as non-players",
+                         gateOpen ? "open" : "shut", g_v47_coord_ok, g_v47_coord_usable,
+                         g_v47_coord_distinct, TNX_V176_MIN_USABLE);
+            }
         }
-        return;
     }
+
+    if (!g_v47_coord_ok && g_v47_coord_usable < TNX_V176_MIN_USABLE) return;
 
     if (!g_scene_object) {
         if (g_v47_giveup_logs < 9) {
@@ -14572,6 +14633,43 @@ static void setup(void) {
              "threat list names the filter that emptied it instead of being inferred",
              TNX_V126_TYPE_MOVE, (unsigned long long)TNX_V128_CTRL_RAW_X_OFF,
              (unsigned long long)TNX_V128_CTRL_RAW_Y_OFF, (double)TNX_V165_JOY_MAG);
+
+    tnx_logf("plan v175, from the 17:12 run: (1) the threat list is cured - that log reads segs=2 then "
+             "segs=7 with threatened=1 picked=1 and a target 300 units away, and its enemy shots arrive as "
+             "team=1 with verdict=threat and real velocities of (35,60) to (49,55) per frame, so shots "
+             "are recognised and the segment builder walks them. (2) The stick writer flickered: its "
+             "first six writes alternate (-433,250) and (0,0) because the release call at the top of the "
+             "dodge fired on every frame while the write block re-engaged in the same frame, so the "
+             "engine could read a zero for half of the frames it updated in; the pair is now released "
+             "only when %d ticks have passed since the last write. (3) The movement in that run "
+             "contradicts the heading we wrote - own walked (2642,6687) to (2665,6549), which is "
+             "(+0.16,-0.99), while the stick was (-433,250), which is (-0.87,+0.50) - so the pair did "
+             "not drive the walk in that window; either the engine rewrites the pair from the real touch "
+             "every frame and the player was touching, or the pair is not the mover. The route line now "
+             "prints the dot product between the heading we wrote and the heading the character actually "
+             "travelled in the same second, together with how many ticks of that second we held the "
+             "pair, so the next run settles it - and the test has to be made with the screen untouched, "
+             "or the two writers cannot be told apart. (4) one-sample was %d of 21 verdicts while the "
+             "container held 12 elements, two players and ten shots, against a table of eight slots, so "
+             "shots churned through the slots; the table is %d now. (5) A projectile moving (0.6,1.0) "
+             "per frame was accepted as a threat while real shots move about 73 per frame, so the "
+             "threshold is no longer 1 but %.0f",
+             TNX_V174_STICK_TTL, 10, TNX_V140_PROJ_MAX, (double)TNX_V174_MIN_PROJ_SPEED);
+
+    tnx_logf("plan v176, from the 17:12 run: the dodge was dead for five seconds in the middle of the "
+             "fight and the log names the gate. coords ok=0 at 17:12:37.219, 39.020 and 40.401, and "
+             "those are exactly the seconds without a v172 dodge line, which comes back at 42.453 one "
+             "second after coords ok=1 at 41.837. The flag is g_v47_coord_ok = usable >= 2 && inRange "
+             "== usable && distinct >= 2 && a team field that splits them, and usable counts PLAYERS "
+             "only - the ten shots sitting in that same container are rejected as non-players - so a "
+             "container that holds one player yields usable=1 and switches the whole dodge off, shots "
+             "in the air or not. That is the 'after a death it only works while I shoot' report: the "
+             "dodge returns when the second player is standing again, not when the shooting starts. It "
+             "now runs on %d usable object, because with only the player present it still has the "
+             "player's own coordinates and the whole threat list, and with no threat the ring picks "
+             "nothing and nothing is written. Every opening and closing of the gate is logged once, so "
+             "a silence can never again be read as the dodge being bypassed",
+             TNX_V176_MIN_USABLE);
 
     tnx_start_timer();
 

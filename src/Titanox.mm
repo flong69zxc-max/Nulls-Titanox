@@ -14,8 +14,8 @@
 #import <stdlib.h>
 #import <string.h>
 #import <unistd.h>
-/* v146: sigaction, siginfo_t, SIGSEGV/SIGBUS/SIGABRT/SIGILL/SIGFPE and raise() come from here;
- * nothing else in the import list pulls it in, so it is named explicitly rather than assumed. */
+ 
+
 #import <signal.h>
 #import "offsets.h"
 #import "lc_detect.h"
@@ -313,109 +313,109 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_148"
+#define TNX_BUILD_TAG "titanox_149"
 
 #define TNX_V147_ACT_WRITE 0
 #define TNX_V148_PROBE_LOGS 6
 
-/* v145 - one own, published once per tick.
- *
- * v144 hardened tnx_v127_own_obj and gave the actuator a validated candidate list, but own is
- * still derived twice per tick by two different resolvers: tnx_v90_gate_report resolves at its
- * own line and calls the actuate path from there, and tnx_autododge_v48 resolves again later.
- * The gate line and the actuate therefore name one element while the dodge block names another,
- * which is the split the v91 work was meant to close.
- *
- * v145 publishes own through one function, tnx_v145_publish_own, at every point that resolves
- * it, tagged with the tick stamp. tnx_v127_own_obj reads that single value and only while it
- * belongs to the current tick; the engine chain stays as the fallback for ticks before any
- * resolver has run. Every other consumer of own - the setter branch, the actuate log, the
- * candidate list - goes through that same call, so a run cannot hold two different owns.
- *
- * On the mode question: TNX_V129_MODE is 1 (WRITE), so doSetter = 0 and the setter branch of
- * tnx_v128_actuate is never entered. Mode 3 (BOTH) is the only setting that enters it, and that
- * branch takes own from tnx_v127_own_obj, so the validation above covers it too. */
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 #define TNX_V145_PUB_LOGS 10
 
-/* v144 - the segfault in the actuator call.
- *
- * "v129 actuate ... own=0xff000000ff ... called 0xac3a58(own,...)" and the earlier
- * call=1 own=0x0 are the same defect: tnx_v127_own_obj returns the VALUE at [p+0x28]
- * without ever validating it. tnx_read_ptr checks the address, not what comes back, so a
- * stale or reused slot hands 0xff000000ff straight to the callee and the first
- * "str w1,[x0,#0x10c]" writes to an unmapped page.
- *
- * Three changes, and they are independent on purpose:
- *   (1) tnx_v127_own_obj validates its result (aligned, readable, vtable inside
- *       __DATA_CONST) and returns 0 instead of garbage. This is the root.
- *   (2) the receiver is chosen from an ordered candidate list, each candidate validated
- *       by tnx_v144_cand_ok before the call, and every candidate is logged with its
- *       vtable so the log names the object instead of crashing on it.
- *   (3) the candidate list carries the v135-list own element as its last entry, which is
- *       the object the walk and the min-gid resolver already agree on.
- *
- * Note on the "called 0xac3a58(own,...)" text in the v129 actuate line: that string is
- * descriptive and sits outside the "if (doSetter && fn && own)" block, so with
- * TNX_V129_MODE 1 (doSetter=0) the setter was never called from there. The line now
- * prints setterRan= so the question cannot be asked again. */
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #define TNX_V144_MIN_OBJ_BYTES 0x118ULL
 #define TNX_V144_CAND_LOGS 12
 
-/* v143 - build fixes over v142, plus dead-code removal.
- *
- * v142 did not compile: the publish helper was inserted above the declarations of
- * g_players_count/g_players_cap (use before declaration), and the score log used
- * tnx_v142_score_logs where g_v142_score_logs was declared. Both are error classes that
- * tools/tnx_check.py now catches locally, so they cannot reach CI again.
- * Removed as dead: tnx_v56_refresh_array (zero callers) with its four write-only globals
- * g_v56_manager/g_v56_array/g_v56_count/g_v56_array_logged, g_v140_proj_seen,
- * g_v140_proj_slots, and the three projectile-class defines that the v142 class-agnostic
- * scan left unused. */
+ 
 
-/* v142 - the container desync, closed at the source.
- *
- * The v141 log answers the checklist question: "v138 dodge CALLED" exists only from v141 on,
- * because wantedCount was 0 and the gate above tnx_run_workload stayed shut until 141 filled
- * it. The two lines that are still wrong in the 141 log are the counts:
- *   v138 dodge CALLED n=1200 count=21   (03:59:13.889)
- *   v135 dodge probe tick=21  count=24  (03:59:13.890)
- *   v100 man walk             count=26  (03:59:13.906)
- * tnx_locate_battle_mode is called from two different threads: the render callback
- * (tnx_run_workload) and the 1 Hz dispatch_source scan timer at line 4041. The triple
- * g_players_object/array/count is written by whichever ran last and read by the walk and by
- * the resolver at different instants, so the walk holds one list while the resolver reads
- * another. v142 moves the triple under a seqlock and gives one snapshot per render tick. */
+
+
+
+
+
+
+
+
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
 #define TNX_V142_WALK_ABORT_FULL 5
 #define TNX_V142_WALK_ABORT_EVERY 64
 
-/* v141 - two roots, both proven by reading this file, and both upstream of everything v140 added.
- *
- * (1) tnx_objc_targets opens on hook->wantedCount > 0. That field was initialised to 0 in
- *     tnx_objc_arm and is never written anywhere else, so the gate returned NO for every hook
- *     and tnx_run_workload was never entered. "v138 render CALLED" printed because it sits
- *     before the gate; "dodge CALLED" is the first line inside tnx_autododge_v48, i.e. behind
- *     it. That is why no v140 line ever appeared either - collect, the proj tracker, the
- *     threat test and the mode write are all downstream of tnx_run_workload.
- *     inHook is not the gate: it is g_inside_hook read before it is set, so it is 0 on the
- *     outermost render call by construction.
- *
- * (2) tnx_locate_battle_mode published g_players_object from the modesig container but not
- *     g_players_array/g_players_count. The hop adoption below is guarded by
- *     (players != g_players_object), so once the container was already equal the array was
- *     never refreshed and the own resolver walked the previous battle's list. The v129 line
- *     "container=0x121313c60 array=0x1474ca580" against "v106 gid fallback
- *     element=0x131c68400" is that pair disagreeing. */
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #define TNX_V141_ARRAY_VOTE_LOGS 8
 
-/* v140 - offsets confirmed by disassembling the game binary itself.
- * TNX_V140_MODEPAIR_RVA 0xac3a58 is the only setter the engine's own input path calls:
- *   0x100ac3a58: str w1,[x0,#0x10c] ; str w2,[x0,#0x110] ; strb w3,[x0,#0x114] ; strb 1,[x0,#0xac] ; ret
- *   callers: 0x79de14 (w3=0) and 0x7a7270 (w3=1), both with x0 = *(*(ctrl+0x918)+0x28) via 0x7b9050
- *   consumer: 0xac3424  ldrb w8,[x19,#0xac] ; cmp #1 ; ldr w1,[x19,#0x10c] ; ldr w2,[x19,#0x110] ; ldrb w3,[x19,#0x114]
- * 0xac3f20 (TNX_RVA_SETPREDICTION) is NOT that path: it is a bare leaf writing +0x1d4/+0x1d8 and its
- * only caller in the whole image is 0xa26520, a message deserializer.
- * TNX_V140_CTRL_MODE_OFF 0x918 is the ctrl field the engine dereferences to reach the mode. */
+ 
+
+
+
+
+
+
+
 #define TNX_V140_MODEPAIR_RVA 0x00ac3a58ULL
 #define TNX_V140_MODEPAIR_FLAG 0
 #define TNX_V140_CTRL_MODE_OFF 0x918ULL
@@ -909,17 +909,17 @@ static void tnx_logf(const char *format, ...) {
     tnx_write_line(buffer);
 }
 
-/* ---------------------------------------------------------------------------
- * v146 crash locator.
- *
- * The v145 run died 16 ms after the actuator succeeded and the log simply stopped: no line
- * names the stage that was running, and the log cap would swallow it anyway. This keeps the
- * last stage names in a ring and writes them from a signal handler straight to the log file
- * descriptor, bypassing both the buffer and the byte cap, so the next crash names its own
- * stage, the faulting address and the eight stages that preceded it.
- * The handler is deliberately last-resort only: it re-raises with SIG_DFL so the system
- * still produces its own report.
- * ------------------------------------------------------------------------- */
+ 
+
+
+
+
+
+
+
+
+
+
 static char g_v146_phase[48] = "boot";
 static char g_v146_hist[8][48];
 static volatile int g_v146_hist_n = 0;
@@ -1091,16 +1091,16 @@ static uintptr_t g_players_array = 0;
 static int g_players_count = 0;
 static int g_players_cap = 0;
 
-/* ---------------------------------------------------------------------------
- * v142 - single source of truth for the walked container.
- *
- * tnx_locate_battle_mode runs from the render callback and from the 1 Hz scan timer, i.e.
- * from two threads. object/array/count/cap were four independent stores read by the walk,
- * the census and the resolver at different instants, so a reader could take the new array
- * with the old count - that is the 21/24/26 spread in the v141 log, and that is what walks
- * a freed list and crashes. The publish below is a seqlock: a reader sees the whole previous
- * triple or the whole new one, never a mix.
- * ------------------------------------------------------------------------- */
+ 
+
+
+
+
+
+
+
+
+
 static volatile uint32_t g_v142_seq = 0;
 static uintptr_t g_v142_pub_object = 0;
 static uintptr_t g_v142_pub_array = 0;
@@ -1982,13 +1982,13 @@ static BOOL tnx_write_bytes(uintptr_t address, const void *src, size_t length) {
     if (!src || !length) return NO;
     if (!address) return NO;
 
-    /* The write is a plain store and not a mach call. The v99 build reached for mach_vm_write,
-       which the iOS SDK declares in mach/mach_vm.h and this file does not include - vm_map.h
-       carries vm_read_overwrite but not mach_vm_write, so the CI compile stopped on it. The
-       target here is heap memory that the same run has already read back as finite floats, so it
-       is mapped and writable and a store needs no new SDK symbol; what the call would have
-       returned on failure is replaced by reading the two words back after the store, which the
-       probe does and reports. */
+     
+
+
+
+
+
+
     memcpy((void *)address, src, length);
 
     return YES;
@@ -2841,12 +2841,12 @@ static void tnx_v64_modesig_tick(void) {
 
             g_manager_count = count;
 
-            /* v142: the container is never published without its list. The v140 form wrote
-             * g_players_object alone, the hop adoption (guarded by players != g_players_object)
-             * then never fired, and the own resolver walked the previous battle's list - the
-             * pair "container=0x121313c60 array=0x1474ca580" against
-             * "v106 gid fallback element=0x131c68400". If the list cannot be read, nothing is
-             * published at all instead of a container with a stale array. */
+             
+
+
+
+
+
             if (tnx_read_ptr((uintptr_t)mgr + TNX_MGR_ARRAY_OFF, &mgrArray) && mgrArray) {
                 tnx_v142_publish((uintptr_t)mgr, (uintptr_t)mgrArray, count, cap, "modesig");
             }
@@ -3492,11 +3492,11 @@ static int tnx_v105_container_score(uintptr_t container) {
     if (!tnx_read_i32(container + TNX_MGR_COUNT_OFF, &count)) return -1;
     if (count <= 0 || count > TNX_V56_COUNT_MAX) return -1;
 
-    /* v140: the +0xe0 read is gone. It never was an own index - the container dump shows
-     * +0xe0/+0xe4 as ordinary data words, and the v138 line "v129 score ... own=192 soft=1"
-     * is exactly that pair (0xc0=192, flag=1) read back as if it were an index. own stays
-     * unresolved here and is named later on the walked list by the id window alone, which
-     * is the only source that ever matched. */
+     
+
+
+
+
     if (own < 0 || own >= count) soft = 1;
 
     for (i = 0; i < count && samples < 4; i++) {
@@ -4340,18 +4340,18 @@ static void tnx_start_timer(void) {
 }
 
 static void tnx_run_workload(void) {
-    /* v142: one snapshot of the published container per render callback, taken before
-     * tnx_locate_battle_mode can publish again and before any stage reads it. Every stage of
-     * this tick - the walk, the census and the own resolver - reads this pair, so a publish
-     * from the 1 Hz scan timer cannot split them across two lists. */
+     
+
+
+
     tnx_v142_tick_begin("pre-locate");
 
     tnx_v146_phase("locate");
 
     tnx_locate_battle_mode();
 
-    /* the locate call may have published a new battle; re-take so the rest of the tick uses
-     * what the stage that runs first decided instead of the previous tick's list */
+     
+
     tnx_v142_tick_begin("post-locate");
 
     if (g_scene_object) {
@@ -4513,12 +4513,12 @@ static int tnx_objc_arm(const char *clsName, const char *selName) {
         g_objc_hooks[i].signature = types;
         g_objc_hooks[i].hits = 0;
 
-        /* v141: this is the root of "no dodge line ever". tnx_objc_targets opens on
-         * wantedCount > 0, the field was zeroed here and filled nowhere else, so the gate
-         * returned NO on every call and tnx_run_workload was never entered. The hook is
-         * installed on owner, and the guard exists because tnx_objc_find falls back to the
-         * single hook that carries the selector even when the class does not match - so
-         * owner is exactly the class the gate must accept. */
+         
+
+
+
+
+
         g_objc_hooks[i].wanted[0] = owner;
         g_objc_hooks[i].wantedCount = 1;
 
@@ -6238,14 +6238,14 @@ static uintptr_t tnx_v135_list_gid_off(uintptr_t array, int32_t count) {
     return off;
 }
 
-/* ---------------------------------------------------------------------------
- * v140 projectile tracker.
- * The non-player branch of tnx_v48_collect already saw every projectile element
- * (gid >= 2'000'000) but only printed the first sighting of each one, so a position
- * that moves while the element lives stayed invisible. This keeps the last byte
- * image of the element that was seen on the previous tick and prints exactly the
- * bytes that changed, which is what names the position fields without any disasm.
- * ------------------------------------------------------------------------- */
+ 
+
+
+
+
+
+
+
 static uintptr_t g_v140_proj_addr = 0;
 static uint8_t g_v140_proj_bytes[TNX_V140_DIFF_BYTES];
 static int g_v140_proj_have = 0;
@@ -6253,9 +6253,9 @@ static int g_v140_proj_dumps = 0;
 static uint64_t g_v140_proj_diff_logs = 0;
 static uint64_t g_v140_proj_firsts = 0;
 
-/* v142 walk guards: the walk keeps its own copy of array and count for the whole pass and
- * stops the moment the published pair moves under it, instead of iterating a list the engine
- * has already replaced. */
+ 
+
+
 static int g_v142_walk_aborted = 0;
 static int g_v142_walk_abort_i = -1;
 static uintptr_t g_v142_walk_arr = 0;
@@ -6359,10 +6359,10 @@ static int tnx_v48_collect(uintptr_t manager, tnx_v47_obj_t *out, int capacity, 
 
     gidOff = tnx_v135_list_gid_off((uintptr_t)data, count);
 
-    /* v142: data and count are copied into locals once, above, and the loop never re-reads a
-     * global - so the pointer it dereferences cannot become the new one halfway through. The
-     * sequence below is only the tripwire that stops the pass when the published tuple moved
-     * under it, which is the case that walked a freed list. */
+     
+
+
+
     walkSeq = g_v142_seq;
 
     g_v142_walk_aborted = 0;
@@ -6380,8 +6380,8 @@ static int tnx_v48_collect(uintptr_t manager, tnx_v47_obj_t *out, int capacity, 
 
         g_v50_reject.elementsRead++;
 
-        /* v142: checked between elements, never inside one, and against the sequence rather
-         * than against a global pointer, so the loop body cannot dereference the new list. */
+         
+
         if (g_v142_seq != walkSeq) {
             g_v142_walk_aborted = 1;
             g_v142_walk_abort_i = i;
@@ -7186,9 +7186,9 @@ static int tnx_v98_clip_walk(int32_t ax, int32_t ay, int32_t bx, int32_t by, int
     if (outX) *outX = bx;
     if (outY) *outY = by;
 
-    /* cell is divided before it was ever checked in v98, and the check four lines below was dead
-       for that parameter: a caller that passes a zero cell divided by zero first. The guard now
-       runs before the divisions, which is the only order in which it guards anything. */
+     
+
+
     if (!solid || cell <= 0) return 0;
 
     cx = ax / cell;
@@ -7894,14 +7894,14 @@ static int g_v127_setter_called = 0;
 static int g_v127_elem_called = 0;
 static int g_v127_rb_logs = 0;
 
-/* ---------------------------------------------------------------------------
- * v144 candidate validation.
- *
- * Every pointer this tweak hands to a game function goes through here first. The check is
- * on the VALUE, not on the address it was read from: aligned, in a readable region, and
- * carrying a vtable in __DATA_CONST. 0xff000000ff fails the alignment and the vtable test,
- * which is exactly what the v140/v141 builds did not do before calling 0xac3a58.
- * ------------------------------------------------------------------------- */
+ 
+
+
+
+
+
+
+
 static uintptr_t g_v144_own_elem = 0;
 static uint64_t g_v144_own_stamp = 0;
 static int g_v144_own_logs = 0;
@@ -8040,11 +8040,11 @@ static uintptr_t tnx_v127_own_obj(void) {
     uintptr_t vt = 0;
     const char *why = "?";
 
-    /* v145: this is the single reader of own. The element published this tick by whichever
-     * resolver ran first wins; a valid object from an earlier tick is refused, because a stale
-     * element is a live heap object pointing at a dead character, which is the same failure
-     * class the engine chain had in v140. The chain is the fallback for the ticks before any
-     * resolver has published. */
+     
+
+
+
+
     if (g_v144_own_elem) {
         if (g_v144_own_stamp == g_v142_tick_stamp &&
             tnx_v144_cand_ok(g_v144_own_elem, &why, &vt)) {
@@ -8067,9 +8067,9 @@ static uintptr_t tnx_v127_own_obj(void) {
     {
         uintptr_t cand = tnx_v144_hop((uintptr_t)g_scene_object, NULL);
 
-        /* v144: the value that comes back is validated before it is returned. The v140 form
-         * returned whatever sat at [p+0x28] - tnx_read_ptr only proves the address was
-         * readable - so a stale slot produced a wild pointer and the actuator wrote through it. */
+         
+
+
         if (cand && tnx_v144_cand_ok(cand, NULL, &vt)) {
             g_v145_own_from = "engine-chain";
 
@@ -8442,10 +8442,10 @@ static int tnx_v129_own_from_slot(uintptr_t *objectOut, int32_t *gidOut) {
 
         gid = tnx_v106_gid((uintptr_t)element, NULL);
 
-        /* v140: the +0xe0 slot is only accepted as an own index when the element it points
-         * at carries an id inside the player window. Without this the v138 run took the
-         * index the container happened to hold (192) and returned whatever element sat
-         * there, which is how a non-player element became own. */
+         
+
+
+
         if (gid < TNX_V75_GID_FLOOR || gid >= TNX_V138_PLAYER_GID_MAX) {
             if (g_v129_own_slot_logs < TNX_V129_CHAIN_LOGS) {
                 g_v129_own_slot_logs++;
@@ -8914,10 +8914,10 @@ static void tnx_v128_actuate(void) {
         g_v128_have_wit = 1;
     }
 
-    /* v144: the pair is written only when it actually moves. The v143 log showed
-     * "wrote raw+0xfa4 (30,9) over (30,9)", i.e. the previous tick had already put it there,
-     * so a per-tick rewrite is a no-op that only adds noise and a write the battle update
-     * never sees change. */
+     
+
+
+
     if (TNX_V147_ACT_WRITE && doWrite && ctrl &&
         tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_X_OFF, &raw_keep_x) &&
         tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &raw_keep_y)) {
@@ -10133,9 +10133,9 @@ static void tnx_v90_gate_report(int slotHit) {
 
             if (!ownFound) ownFound = tnx_v102_take_own(objects, usable, &ownIndex, &ownFrom);
 
-            /* v145: this is the first resolver to run in the tick and the actuate path below is
-             * reached from here, so own is published here rather than only in the dodge block
-             * further down, which would have made the actuate read the previous tick's element. */
+             
+
+
             if (ownFound && ownIndex >= 0 && ownIndex < usable) {
                 tnx_v146_phase("own");
 
@@ -10274,17 +10274,17 @@ static void tnx_v90_gate_report(int slotHit) {
              (unsigned long long)g_v93_test_writes, (unsigned long long)g_v47_writes);
 }
 
-/* ---------------------------------------------------------------------------
- * v140 threat detection + sidestep + the real actuator.
- *
- * Threat model: a projectile is any element whose vtable rva is 0xff56d8 and whose id
- * is above the player window. Velocity is read as the difference of the int pair at
- * +0x30/+0x34 between two ticks. The projectile is a threat when the ray
- * P(t) = pos + v*t with t >= 0 passes within TNX_V140_THREAT_RADIUS of own within
- * TNX_V140_THREAT_TICKS ticks; t < 0 (flying away) and t beyond the horizon are dropped.
- * The escape direction is the ray's own perpendicular, signed by the side own already
- * sits on, so the dodge moves away from the line of fire instead of away from the shooter.
- * ------------------------------------------------------------------------- */
+ 
+
+
+
+
+
+
+
+
+
+
 typedef struct {
     uintptr_t elem;
     uintptr_t classRva;
@@ -10333,12 +10333,12 @@ static int tnx_v140_proj_scan(uintptr_t manager, int32_t count) {
 
         if (gid < TNX_V138_PLAYER_GID_MAX) continue;
 
-        /* v142: the class equality is gone. The v141 run printed v140 proj FIRST/DIFF for
-         * classRva 0xff57b0, not for 0xff56d8, so the strict test skipped every live
-         * projectile and projSeen stayed 0 while the container held gid 2000000+. The set is
-         * now the id window - the same set the tracker prints - and each class actually seen
-         * is named once so it can be pinned later; a non-moving element never passes the
-         * velocity test below anyway. */
+         
+
+
+
+
+
         {
             static uintptr_t seenCls[4] = { 0, 0, 0, 0 };
             static int seenClsN = 0;
@@ -10367,10 +10367,10 @@ static int tnx_v140_proj_scan(uintptr_t manager, int32_t count) {
         if (!tnx_read_i32((uintptr_t)element + TNX_OBJ_X_OFF, &px)) continue;
         if (!tnx_read_i32((uintptr_t)element + TNX_OBJ_Y_OFF, &py)) continue;
 
-        /* two passes: the address is looked up first so a projectile that keeps its slot
-         * keeps its previous tick, and only then a free slot is taken. A single pass would
-         * hand the first free slot to an element that already had one, and the velocity of
-         * that tick would be lost. */
+         
+
+
+
         for (k = 0; k < TNX_V140_PROJ_MAX; k++) {
             if (g_v140_projs[k].elem != (uintptr_t)element) continue;
 
@@ -10558,6 +10558,7 @@ static void tnx_v148_receiver_line(const char *name, uintptr_t holder) {
 
 static void tnx_v148_receiver_probe(void) {
     uintptr_t battle = 0;
+    void *battleRaw = NULL;
 
     if (g_v148_probe_logs >= TNX_V148_PROBE_LOGS) return;
 
@@ -10566,7 +10567,9 @@ static void tnx_v148_receiver_probe(void) {
     tnx_v148_receiver_line("scene", (uintptr_t)g_scene_object);
     tnx_v148_receiver_line("players", g_players_object);
 
-    if (g_base) tnx_read_ptr(g_base + TNX_V129_BATTLE_RVA, &battle);
+    if (g_base && tnx_read_ptr(g_base + TNX_V129_BATTLE_RVA, &battleRaw)) {
+        battle = (uintptr_t)battleRaw;
+    }
 
     tnx_v148_receiver_line("battle-global", battle);
 }
@@ -10955,9 +10958,9 @@ static void tnx_autododge_v48(void) {
         int managerChanged = 0;
         int periodic = 0;
 
-        /* v142: the container the walk runs on comes from the tick snapshot, the same one the
-         * resolver is handed below, so the two stages of this tick cannot name different lists
-         * even if the 1 Hz scan timer publishes between them. */
+         
+
+
         if (sourceIsMode && g_v82_hop_chosen == 1 && g_v142_tick_object) {
             resolved = (void *)g_v142_tick_object;
         } else if (sourceIsMode) {
@@ -11088,13 +11091,13 @@ static void tnx_autododge_v48(void) {
             return;
         }
 
-        /* v144: publish the element the walk and the min-gid resolver agree on, so the actuator
-         * has a checked fallback receiver this tick instead of re-deriving one from a slot that
-         * may hold a stale value. */
-        /* v145: published, not assigned. The gate report earlier in this tick already published
-         * its own; this call republishes the resolver's own with the current tick stamp, and both
-         * go through the same validation, so the gate line, the actuate and the candidate list
-         * cannot name different elements. */
+         
+
+
+         
+
+
+
         tnx_v145_publish_own(objects[ownIndex].object, ownFrom);
 
         if (g_v144_own_logs < 8) {
@@ -11162,9 +11165,9 @@ static void tnx_autododge_v48(void) {
         threats++;
     }
 
-    /* v140: projectiles are a second, independent threat source. The hostile loop above only
-     * sees characters, so a shot already in the air produced threats=0 and the dodge returned
-     * before it could look at it. This runs before that early return. */
+     
+
+
     tnx_v146_phase("sidestep");
 
     g_v140_side_hits = 0;
@@ -11286,9 +11289,9 @@ static void tnx_autododge_v48(void) {
                          g_v145_own_from);
             }
         } else if (!tnx_v144_mode_write(targetX, targetY, TNX_V140_MODEPAIR_FLAG)) {
-            /* v146: the fallback leaf is reached only when the primary actuator refused, and it
-             * is called through a pointer that is zero whenever the fingerprint did not pass,
-             * so it is checked here rather than trusted. */
+             
+
+
             if (g_v47_setpred) {
                 ((tnx_v47_setpred_t)g_v47_setpred)((void *)g_scene_object, targetX, targetY);
             }
@@ -12680,7 +12683,7 @@ static void poll_for_game(int tick) {
 
 __attribute__((constructor))
 static void start(void) {
-    /* v146: armed before anything else so a fault during setup is located too. */
+     
     tnx_v146_install();
 
     dispatch_async(dispatch_get_main_queue(), ^{

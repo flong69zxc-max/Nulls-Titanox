@@ -313,7 +313,12 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_150"
+#define TNX_BUILD_TAG "titanox_151"
+
+#define TNX_V151_THREAT_MIN_MS 33
+#define TNX_V151_THREAT_STEP_MULT 1.5f
+#define TNX_V151_LOGS 24
+
 
 #define TNX_V150_ACT_WRITE 1
 
@@ -10491,12 +10496,20 @@ static int tnx_v140_sidestep(int32_t ox, int32_t oy, float *sumX, float *sumY, i
         sx += ux * side * w;
         sy += uy * side * w;
         hits++;
+
+        if (g_v151_best_dist < 0.0f || dist < g_v151_best_dist) {
+            g_v151_best_dist = dist;
+            g_v151_best_x = ux * side;
+            g_v151_best_y = uy * side;
+        }
     }
 
     if (sumX) *sumX = sx;
     if (sumY) *sumY = sy;
     if (hitsOut) *hitsOut = hits;
     if (seenOut) *seenOut = seen;
+
+    g_v151_best_hit = hits;
 
     return hits;
 }
@@ -10577,6 +10590,11 @@ static void tnx_v148_receiver_probe(void) {
 }
 
 static int g_v150_logs = 0;
+static int g_v151_logs = 0;
+static float g_v151_best_x = 0.0f;
+static float g_v151_best_y = 0.0f;
+static float g_v151_best_dist = -1.0f;
+static int g_v151_best_hit = 0;
 
 static uintptr_t tnx_v150_qword(uintptr_t addr) {
     int32_t lo = 0;
@@ -11252,8 +11270,17 @@ static void tnx_autododge_v48(void) {
 
         if (g_v48_manager) tnx_read_i32(g_v48_manager + TNX_MGR_COUNT_OFF, &projCount);
 
+        g_v151_best_dist = -1.0f;
+        g_v151_best_x = 0.0f;
+        g_v151_best_y = 0.0f;
+
         tnx_v140_proj_scan(g_v48_manager, projCount);
         tnx_v140_sidestep(ownX, ownY, &sideX, &sideY, &g_v140_side_hits, &g_v140_side_projs);
+
+        if (g_v140_side_hits > 0 && (g_v151_best_x != 0.0f || g_v151_best_y != 0.0f)) {
+            escapeX = g_v151_best_x * TNX_V140_SIDE_WEIGHT;
+            escapeY = g_v151_best_y * TNX_V140_SIDE_WEIGHT;
+        }
 
         if (g_v140_side_hits > 0) {
             escapeX += sideX * TNX_V140_SIDE_WEIGHT;
@@ -11292,6 +11319,7 @@ static void tnx_autododge_v48(void) {
         uint64_t now = 0;
         int targetX = 0;
         int targetY = 0;
+        float step = DODGE_STEP;
 
         if (length <= 0.0001f) return;
 
@@ -11300,12 +11328,39 @@ static void tnx_autododge_v48(void) {
 
         now = (uint64_t)(CFAbsoluteTimeGetCurrent() * 1000.0);
 
-        if (now < g_v47_last_write_ms + (uint64_t)TNX_V47_DODGE_MIN_MS) return;
+        if (now < g_v47_last_write_ms + (uint64_t)(g_v140_side_hits > 0
+                ? TNX_V151_THREAT_MIN_MS : TNX_V47_DODGE_MIN_MS)) {
+            return;
+        }
 
         g_v47_last_write_ms = now;
 
-        targetX = ownX + (int)(escapeX * DODGE_STEP);
-        targetY = ownY + (int)(escapeY * DODGE_STEP);
+        step = DODGE_STEP;
+
+        if (g_v140_side_hits > 0 && g_v151_best_dist >= 0.0f) {
+            float urgency = (TNX_V140_THREAT_RADIUS - g_v151_best_dist) / TNX_V140_THREAT_RADIUS;
+
+            if (urgency < 0.0f) urgency = 0.0f;
+            if (urgency > 1.0f) urgency = 1.0f;
+
+            step = DODGE_STEP * (1.0f + urgency * (TNX_V151_THREAT_STEP_MULT - 1.0f));
+        }
+
+        targetX = ownX + (int)(escapeX * step);
+        targetY = ownY + (int)(escapeY * step);
+
+        if (g_v140_side_hits > 0 && g_v151_logs < TNX_V151_LOGS) {
+            g_v151_logs++;
+
+            tnx_logf("v151 threat write own=(%d,%d) target=(%d,%d) onRay=%d bestDist=%.0f "
+                     "best=(%.2f,%.2f) step=%.0f gap=%d - the escape is the perpendicular of the "
+                     "single closest projectile on the ray, not a sum over all of them, because a "
+                     "sum lets two shots from opposite sides cancel and leaves the character "
+                     "standing in both lanes",
+                     ownX, ownY, targetX, targetY, g_v140_side_hits,
+                     (double)g_v151_best_dist, (double)g_v151_best_x, (double)g_v151_best_y,
+                     (double)step, TNX_V151_THREAT_MIN_MS);
+        }
 
         if (targetX > TNX_V47_COORD_ABS_MAX) targetX = TNX_V47_COORD_ABS_MAX;
         if (targetX < -TNX_V47_COORD_ABS_MAX) targetX = -TNX_V47_COORD_ABS_MAX;

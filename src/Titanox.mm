@@ -78,6 +78,13 @@
 #define TNX_V212_RAGE 1
 #define TNX_V212_LOOKAHEAD_MS 500.0f
 #define TNX_V213_JOYSTATE_OFF 0xed7ULL
+#define TNX_V214_MATE_AVOID 1
+#define TNX_V214_MATE_CLEAR 420.0f
+#define TNX_V216_FLEE 1
+#define TNX_V216_FLEE_STEP 1500.0f
+#define TNX_V216_LOGS 14
+#define TNX_V216_EVERY 30
+#define TNX_V217_DRAG_SPACE 1
 #define TNX_V198_LOGS 10
 #define TNX_V198_PRED_LOGS 6
 #define TNX_V196_CLUSTER 700.0f
@@ -358,7 +365,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_213"
+#define TNX_BUILD_TAG "titanox_217"
 
 #define TNX_V165_JOY_MAG 600.0f
 #define TNX_V167_TEAM_FILTER 1
@@ -2760,6 +2767,15 @@ static int g_v191_trust_logs = 0;
 static int g_v191_roster_logs = 0;
 static int g_v191_enemy_blocks = 0;
 static int g_v191_oneshot_segs = 0;
+static uint64_t g_v217_drag_writes = 0;
+static uint64_t g_v217_drag_back = 0;
+static uint64_t g_v216_flees = 0;
+static uint64_t g_v216_dead_replaced = 0;
+static int g_v216_new_tick = -1;
+static int g_v216_prev_seg = -1;
+static int g_v216_logs = 0;
+static uint64_t g_v214_mate_turns = 0;
+static uint64_t g_v214_mate_stuck = 0;
 static int g_v192_body_blocks = 0;
 static uint64_t g_v198_pred_took = 0;
 static uint64_t g_v198_pred_miss = 0;
@@ -11296,6 +11312,7 @@ typedef struct {
     float dirY;
     float inflatedR;
     float remaining;
+    int32_t gid;
 } tnx_v172_seg_t;
 
 static tnx_v172_seg_t g_v172_seg[TNX_V172_SEG_MAX];
@@ -11454,7 +11471,7 @@ static void tnx_v174_stick(int engaged, float dirX, float dirY) {
         int32_t relY = 0;
 
         if (!g_v174_stick_hold) return;
-        if (g_v174_stick_tick + TNX_V174_STICK_TTL > g_v48_ticks) return;
+        if (!TNX_V212_RAGE && g_v174_stick_tick + TNX_V174_STICK_TTL > g_v48_ticks) return;
 
         g_v174_stick_hold = 0;
 
@@ -11554,6 +11571,8 @@ static int tnx_v205_walk(float dirX, float dirY);
 static void tnx_v207_precision(int32_t ownX, int32_t ownY, float dirX, float dirY, int escape);
 static int tnx_v172_threatened(float x, float y);
 static int tnx_v196_freest(float px, float py, float *tx, float *ty);
+static void tnx_v214_unblock(float px, float py, float len, float *dirX, float *dirY);
+static int tnx_v214_mate_blocked(float px, float py, float dirX, float dirY, float len);
 
 static int32_t g_v189_last_ty = 0;
 static uint64_t g_v189_last_decision = 0;
@@ -11823,6 +11842,14 @@ static int tnx_v189_drive(void) {
     dx = (float)(g_v180_tx - ownX);
     dy = (float)(g_v180_ty - ownY);
     len = sqrtf(dx * dx + dy * dy);
+
+    if (len >= 0.0001f) {
+        dx /= len;
+        dy /= len;
+        tnx_v214_unblock((float)ownX, (float)ownY, TNX_V189_STEP, &dx, &dy);
+        dx *= len;
+        dy *= len;
+    }
 
     if (len < 0.0001f) {
         g_v193_dead_picks++;
@@ -12815,6 +12842,7 @@ static void tnx_v172_build(void) {
         if (rem < 1.0f) rem = 1.0f;
 
         s = &g_v172_seg[g_v172_seg_count++];
+        s->gid = p->gid;
         s->ax = (float)p->x;
         s->ay = (float)p->y;
         s->dirX = vx / len;
@@ -12919,6 +12947,137 @@ static int tnx_v209_imminent(float x, float y) {
     return (tnx_v207_eta_ms(x, y) <= look) ? 1 : 0;
 }
 
+static int tnx_v216_flee(float px, float py, float *tx, float *ty) {
+    int i = 0;
+    int best = -1;
+    float bestMs = 1.0e9f;
+    float cx = 0.0f;
+    float cy = 0.0f;
+    float dx = 0.0f;
+    float dy = 0.0f;
+    float len = 0.0f;
+
+    if (!TNX_V216_FLEE) return 0;
+    if (g_v172_seg_count <= 0) return 0;
+
+    for (i = 0; i < g_v172_seg_count; i++) {
+        const tnx_v172_seg_t *s = &g_v172_seg[i];
+        float abx = s->bx - s->ax;
+        float aby = s->by - s->ay;
+        float den = abx * abx + aby * aby;
+        float t = 0.0f;
+        float qx = 0.0f;
+        float qy = 0.0f;
+        float d = 0.0f;
+        float ms = 0.0f;
+
+        if (den > 0.0001f) t = ((px - s->ax) * abx + (py - s->ay) * aby) / den;
+
+        if (t < 0.0f) t = 0.0f;
+        if (t > 1.0f) t = 1.0f;
+
+        qx = s->ax + abx * t;
+        qy = s->ay + aby * t;
+        d = sqrtf((qx - px) * (qx - px) + (qy - py) * (qy - py)) - s->inflatedR;
+
+        if (d < 0.0f) d = 0.0f;
+
+        ms = (s->speed > 1.0f) ? (d / s->speed * 1000.0f) : 1.0e9f;
+
+        if (ms < bestMs) {
+            bestMs = ms;
+            best = i;
+            cx = qx;
+            cy = qy;
+        }
+    }
+
+    if (best < 0) return 0;
+
+    dx = px - cx;
+    dy = py - cy;
+    len = sqrtf(dx * dx + dy * dy);
+
+    if (len < 1.0f) {
+        dx = -(g_v172_seg[best].by - g_v172_seg[best].ay);
+        dy = (g_v172_seg[best].bx - g_v172_seg[best].ax);
+        len = sqrtf(dx * dx + dy * dy);
+
+        if (len < 0.0001f) return 0;
+    }
+
+    *tx = px + dx / len * TNX_V216_FLEE_STEP;
+    *ty = py + dy / len * TNX_V216_FLEE_STEP;
+    g_v216_flees++;
+
+    return 1;
+}
+
+static void tnx_v216_predict(int32_t ownX, int32_t ownY, float tx, float ty) {
+    int i = 0;
+    int best = -1;
+    float px = (float)ownX;
+    float py = (float)ownY;
+    float bestMs = 1.0e9f;
+    float qx = 0.0f;
+    float qy = 0.0f;
+    float d = 0.0f;
+    int react = -1;
+
+    if (g_v216_logs >= TNX_V216_LOGS) return;
+    if (TNX_V216_EVERY > 0 && (g_v48_ticks % (uint64_t)TNX_V216_EVERY) != 0) return;
+
+    for (i = 0; i < g_v172_seg_count; i++) {
+        const tnx_v172_seg_t *s = &g_v172_seg[i];
+        float abx = s->bx - s->ax;
+        float aby = s->by - s->ay;
+        float den = abx * abx + aby * aby;
+        float t = 0.0f;
+        float ms = 0.0f;
+
+        if (den > 0.0001f) t = ((px - s->ax) * abx + (py - s->ay) * aby) / den;
+
+        if (t < 0.0f) t = 0.0f;
+        if (t > 1.0f) t = 1.0f;
+
+        ms = sqrtf((s->ax + abx * t - px) * (s->ax + abx * t - px) +
+                   (s->ay + aby * t - py) * (s->ay + aby * t - py)) - s->inflatedR;
+
+        if (ms < 0.0f) ms = 0.0f;
+        if (s->speed > 1.0f) ms = ms / s->speed * 1000.0f;
+
+        if (ms < bestMs) {
+            bestMs = ms;
+            best = i;
+            qx = s->ax + abx * t;
+            qy = s->ay + aby * t;
+        }
+    }
+
+    if (g_v216_new_tick >= 0) react = (int)((int64_t)g_v48_ticks - (int64_t)g_v216_new_tick);
+
+    g_v216_logs++;
+
+    if (best < 0) {
+        tnx_logf("v216 predict tick=%llu own=(%d,%d) tgt=(%.0f,%.0f) threats=0 react=%d flees=%llu - "
+                 "no segment is live, so there is nothing to lead and the pick is a plain step",
+                 (unsigned long long)g_v48_ticks, ownX, ownY, (double)tx, (double)ty, react,
+                 (unsigned long long)g_v216_flees);
+
+        return;
+    }
+
+    d = sqrtf((qx - px) * (qx - px) + (qy - py) * (qy - py));
+
+    tnx_logf("v216 predict tick=%llu own=(%d,%d) tgt=(%.0f,%.0f) threats=%d react=%d gid=%d "
+             "impact=(%.0f,%.0f) lead=(%.0f,%.0f) d=%.0f eta=%.0fms spd=%.0f ms=%.0f - impact is the "
+             "closest point of the nearest flight to own, lead is the offset own has to clear, and a "
+             "react above one tick means the pick was made a frame or more after the threat appeared",
+             (unsigned long long)g_v48_ticks, ownX, ownY, (double)tx, (double)ty, g_v172_seg_count,
+             react, g_v172_seg[best].gid, (double)qx, (double)qy, (double)(qx - px), (double)(qy - py),
+             (double)d, (double)bestMs, (double)g_v172_seg[best].speed, (double)(d / (g_v172_seg[best].speed > 1.0f ? g_v172_seg[best].speed : 1.0f) * 1000.0f));
+}
+
 static void tnx_v207_precision(int32_t ownX, int32_t ownY, float dirX, float dirY, int escape) {
     uintptr_t ctrl = 0;
     int32_t ax = 0;
@@ -13013,6 +13172,60 @@ static int tnx_v192_body_blocked(float x, float y, float ownX, float ownY) {
     return 0;
 }
 
+static int tnx_v214_mate_blocked(float px, float py, float dirX, float dirY, float len) {
+    float ex = 0.0f;
+    float ey = 0.0f;
+    int i = 0;
+
+    if (!TNX_V214_MATE_AVOID) return 0;
+    if (g_v189_pl_n <= 0) return 0;
+    if (len < 1.0f) return 0;
+
+    ex = px + dirX * len;
+    ey = py + dirY * len;
+
+    for (i = 0; i < g_v189_pl_n; i++) {
+        if (!g_v189_pl_mine[i]) continue;
+        if (tnx_v192_seg_dist(px, py, ex, ey, (float)g_v189_pl_x[i], (float)g_v189_pl_y[i]) <
+            TNX_V214_MATE_CLEAR) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static void tnx_v214_unblock(float px, float py, float len, float *dirX, float *dirY) {
+    static const float rot[8] = { 30.0f, -30.0f, 60.0f, -60.0f, 90.0f, -90.0f, 135.0f, -135.0f };
+    const float rad = 3.14159265358979f / 180.0f;
+    float dx = *dirX;
+    float dy = *dirY;
+    int i = 0;
+
+    if (!TNX_V214_MATE_AVOID) return;
+    if (len < 1.0f) return;
+    if (!tnx_v214_mate_blocked(px, py, dx, dy, len)) return;
+
+    for (i = 0; i < 8; i++) {
+        float a = rot[i] * rad;
+        float c = cosf(a);
+        float sn = sinf(a);
+        float rx = dx * c - dy * sn;
+        float ry = dx * sn + dy * c;
+
+        if (!tnx_v214_mate_blocked(px, py, rx, ry, len)) {
+            *dirX = rx;
+            *dirY = ry;
+            g_v214_mate_turns++;
+
+            return;
+        }
+    }
+
+    g_v214_mate_stuck++;
+}
+
+
 static int tnx_v172_valid_point(float x, float y) {
     int32_t cx = (int32_t)x;
     int32_t cy = (int32_t)y;
@@ -13085,7 +13298,8 @@ static float tnx_v172_safe_angle(float px, float py, float desiredDeg, int *ok) 
 
     *ok = 1;
 
-    if (!tnx_v172_walk_into_bullet(px, py, cosf(desiredDeg * deg), sinf(desiredDeg * deg), scan)) {
+    if (!tnx_v172_walk_into_bullet(px, py, cosf(desiredDeg * deg), sinf(desiredDeg * deg), scan) &&
+        !tnx_v214_mate_blocked(px, py, cosf(desiredDeg * deg), sinf(desiredDeg * deg), scan)) {
         return desiredDeg;
     }
 
@@ -13093,8 +13307,11 @@ static float tnx_v172_safe_angle(float px, float py, float desiredDeg, int *ok) 
         float a = desiredDeg + offsets[i];
         float b = desiredDeg - offsets[i];
 
-        if (!tnx_v172_walk_into_bullet(px, py, cosf(a * deg), sinf(a * deg), scan)) return a;
-        if (!tnx_v172_walk_into_bullet(px, py, cosf(b * deg), sinf(b * deg), scan)) return b;
+        if (!tnx_v172_walk_into_bullet(px, py, cosf(a * deg), sinf(a * deg), scan) &&
+            !tnx_v214_mate_blocked(px, py, cosf(a * deg), sinf(a * deg), scan)) return a;
+
+        if (!tnx_v172_walk_into_bullet(px, py, cosf(b * deg), sinf(b * deg), scan) &&
+            !tnx_v214_mate_blocked(px, py, cosf(b * deg), sinf(b * deg), scan)) return b;
     }
 
     *ok = 0;
@@ -13315,10 +13532,43 @@ static int tnx_v205_walk(float dirX, float dirY) {
 
     if (targetX == ownX && targetY == ownY) return 0;
 
-    tnx_write_f32(own + TNX_V172_BS_AX, (float)targetX);
-    tnx_write_f32(own + TNX_V172_BS_AY, (float)targetY);
-    tnx_write_f32(own + TNX_V172_BS_BX, (float)ownX);
-    tnx_write_f32(own + TNX_V172_BS_BY, (float)ownY);
+    if (TNX_V217_DRAG_SPACE) {
+        float cam = 1.0f;
+        float camS = 0.0f;
+        float ox = 0.0f;
+        float oy = 0.0f;
+        float wx = (float)(targetX - ownX);
+        float wy = (float)(targetY - ownY);
+        float dx = 0.0f;
+        float dy = 0.0f;
+
+        if (!tnx_read_f32(own + TNX_V205_JOY_AB_OFF, &cam) ||
+            !tnx_read_f32(own + TNX_V205_JOY_AA_OFF, &camS) ||
+            !(cam * cam + camS * camS > 0.25f)) {
+            cam = 1.0f;
+            camS = 0.0f;
+        }
+
+        if (!tnx_read_f32(own + TNX_V172_BS_BX, &ox) ||
+            !tnx_read_f32(own + TNX_V172_BS_BY, &oy)) {
+            ox = 0.0f;
+            oy = 0.0f;
+        }
+
+        dx = cam * wx - camS * wy;
+        dy = camS * wx + cam * wy;
+
+        tnx_write_f32(own + TNX_V172_BS_BX, ox);
+        tnx_write_f32(own + TNX_V172_BS_BY, oy);
+        tnx_write_f32(own + TNX_V172_BS_AX, ox + dx);
+        tnx_write_f32(own + TNX_V172_BS_AY, oy + dy);
+        g_v217_drag_writes++;
+    } else {
+        tnx_write_f32(own + TNX_V172_BS_AX, (float)targetX);
+        tnx_write_f32(own + TNX_V172_BS_AY, (float)targetY);
+        tnx_write_f32(own + TNX_V172_BS_BX, (float)ownX);
+        tnx_write_f32(own + TNX_V172_BS_BY, (float)ownY);
+    }
     tnx_write_bytes(own + TNX_V172_BS_MODE, &two, sizeof(two));
     tnx_write_bytes(own + TNX_V205_JOY_STATE_OFF, &on, sizeof(on));
 
@@ -13337,6 +13587,19 @@ static int tnx_v205_walk(float dirX, float dirY) {
     }
 
     g_v205_joystick_writes++;
+
+    {
+        float backAx = 0.0f;
+        float backBx = 0.0f;
+
+        tnx_read_f32(own + TNX_V172_BS_AX, &backAx);
+        tnx_read_f32(own + TNX_V172_BS_BX, &backBx);
+
+        if (tnx_v95_finite(backAx) && tnx_v95_finite(backBx)) {
+            g_v217_drag_back += (backAx - backBx) * (backAx - backBx) > 1.0f ? 1 : 0;
+        }
+    }
+
     tnx_v198_settle(own, "joystick", (float)targetX, (float)targetY, &g_v205_joystick_took);
 
     return 1;
@@ -13344,7 +13607,7 @@ static int tnx_v205_walk(float dirX, float dirY) {
 
 static void tnx_v198_state(void) {
     tnx_logf("v211 state joystick=%p writes=%llu took=%llu escapes=%llu lookahead=%llu appliedW=%llu "
-             "appliedLive=%llu appliedStale=%llu rage=%llu decUs=%llu maxUs=%llu "
+             "appliedLive=%llu appliedStale=%llu rage=%llu flees=%llu deadRep=%llu dragW=%llu dragLive=%llu mateTurn=%llu mateStuck=%llu decUs=%llu maxUs=%llu "
              "denied=%llu "
              "predTook=%llu predMiss=%llu objects scene=%p character=%p battle=%p - writes counts the "
              "frames the drag block was written, took counts the frames the engine still held it with "
@@ -13352,14 +13615,21 @@ static void tnx_v198_state(void) {
              "standing still, lookahead counts the frames the dodge engaged on time to impact instead "
              "of waiting for contact, appliedW counts the frames the push tail of the engine was replayed, "
              "appliedLive how many the movement code kept and appliedStale how many it overwrote, rage "
-             "counts the frames rage mode forced the pick, and decUs is the microseconds from the "
+             "counts the frames rage mode forced the pick, flees and deadRep count the picks taken by the "
+             "flee fallback and the ones it had to replace because the pick sat on own, dragW counts the drag "
+             "writes in screen space and dragLive how many still showed a non zero drag when read "
+             "back, mateTurn and mateStuck count the steps rotated "
+             "off an own side body and the ones no rotation could free, and decUs is the microseconds from the "
              "start of the drive to the stick write with maxUs the worst of them, "
              "and denied counts the stores the region guard dropped",
              (void *)g_v205_joystick, (unsigned long long)g_v205_joystick_writes,
              (unsigned long long)g_v205_joystick_took, (unsigned long long)g_v206_escapes,
              (unsigned long long)g_v209_lookahead, (unsigned long long)g_v211_applied_writes,
              (unsigned long long)g_v211_applied_live, (unsigned long long)g_v211_applied_stale,
-             (unsigned long long)g_v212_rage_frames, (unsigned long long)g_v213_dec_us,
+             (unsigned long long)g_v212_rage_frames, (unsigned long long)g_v216_flees,
+             (unsigned long long)g_v217_drag_writes, (unsigned long long)g_v217_drag_back,
+             (unsigned long long)g_v216_dead_replaced, (unsigned long long)g_v214_mate_turns,
+             (unsigned long long)g_v214_mate_stuck, (unsigned long long)g_v213_dec_us,
              (unsigned long long)g_v213_dec_us_max,
              (unsigned long long)g_v201_write_denied,
              (unsigned long long)g_v198_pred_took, (unsigned long long)g_v198_pred_miss,
@@ -13479,6 +13749,11 @@ static int tnx_v172_decide(int32_t ownX, int32_t ownY) {
 
     tnx_v172_build();
 
+    if (g_v172_seg_count != g_v216_prev_seg) {
+        g_v216_new_tick = (int)g_v48_ticks;
+        g_v216_prev_seg = g_v172_seg_count;
+    }
+
     threatened = tnx_v172_threatened(px, py);
 
     if (TNX_V212_RAGE && g_v172_seg_count > 0) {
@@ -13504,8 +13779,14 @@ static int tnx_v172_decide(int32_t ownX, int32_t ownY) {
         picked = tnx_v172_best(px, py, &tx, &ty);
 
         if (!picked) picked = tnx_v196_freest(px, py, &tx, &ty);
+        if (!picked && TNX_V216_FLEE) picked = tnx_v216_flee(px, py, &tx, &ty);
 
         if (picked) {
+            if ((tx - px) * (tx - px) + (ty - py) * (ty - py) < 1.0f &&
+                tnx_v216_flee(px, py, &tx, &ty)) {
+                g_v216_dead_replaced++;
+            }
+
             g_v172_tx = tx;
             g_v172_ty = ty;
             g_v172_moving = 1;
@@ -13519,6 +13800,10 @@ static int tnx_v172_decide(int32_t ownX, int32_t ownY) {
         g_v172_moving = 0;
     } else if (g_v172_moving && stick) {
         float safe = tnx_v172_safe_angle(px, py, desiredDeg, &safeOk);
+
+        if (!safeOk && TNX_V216_FLEE) {
+            if (tnx_v216_flee(px, py, &g_v172_tx, &g_v172_ty)) g_v172_moving = 1;
+        }
 
         if (safeOk) {
             float rad = safe * 3.14159265358979f / 180.0f;
@@ -13547,6 +13832,8 @@ static int tnx_v172_decide(int32_t ownX, int32_t ownY) {
                                (g_v172_ty - py) * (g_v172_ty - py)),
                  stick, (double)desiredDeg, TNX_V172_JOY_WRITE, g_v172_moving);
     }
+
+    tnx_v216_predict(ownX, ownY, g_v172_tx, g_v172_ty);
 
     return picked;
 }

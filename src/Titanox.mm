@@ -71,10 +71,9 @@
 #define TNX_V209_LOOKAHEAD_MS 260.0f
 #define TNX_V209_PAIR_RAW 1
 #define TNX_V209_PAIR_MAX 2400.0f
-#define TNX_V210_TOUCH_SYNTH 1
-#define TNX_V210_TOUCH_GATE 1
-#define TNX_V210_TOUCH_ID 1
-#define TNX_V210_LOGS 6
+#define TNX_V211_APPLY 1
+#define TNX_V211_FLAG_OFF 0xf9cULL
+#define TNX_V211_LOGS 6
 #define TNX_V198_LOGS 10
 #define TNX_V198_PRED_LOGS 6
 #define TNX_V196_CLUSTER 700.0f
@@ -355,7 +354,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_210"
+#define TNX_BUILD_TAG "titanox_211"
 
 #define TNX_V165_JOY_MAG 600.0f
 #define TNX_V167_TEAM_FILTER 1
@@ -10452,7 +10451,6 @@ static void tnx_v189_roster(uintptr_t ownElem, int ownIndex, int ownTeam,
             }
         }
 
-
         if (!g_v191_team_trust) {
             int m = 0;
             int e = 0;
@@ -11306,10 +11304,11 @@ static uint64_t g_v205_joystick_took = 0;
 static uint64_t g_v206_escapes = 0;
 static uint64_t g_v207_logs = 0;
 static uint64_t g_v209_lookahead = 0;
-static uint64_t g_v210_gate_writes = 0;
-static uint64_t g_v210_applied_live = 0;
-static uint64_t g_v210_applied_idle = 0;
-static int g_v210_logs = 0;
+static uint64_t g_v211_applied_writes = 0;
+static uint64_t g_v211_applied_live = 0;
+static uint64_t g_v211_applied_stale = 0;
+static int g_v211_logs = 0;
+
 static int g_v172_logs = 0;
 static int g_v172_probe_logs = 0;
 static int g_v172_own_logs = 0;
@@ -11433,14 +11432,6 @@ static void tnx_v174_stick(int engaged, float dirX, float dirY) {
 
         g_v174_stick_hold = 0;
 
-        if (relCtrl && TNX_V210_TOUCH_SYNTH) {
-            uint8_t off = 0;
-            int32_t noId = -1;
-
-            tnx_write_bytes(relCtrl + TNX_V193_TOUCH_GATE_OFF, &off, sizeof(off));
-            tnx_write_bytes(relCtrl + TNX_V193_TOUCH_ID_OFF, &noId, sizeof(noId));
-        }
-
         if (relCtrl && tnx_read_i32(relCtrl + TNX_V128_CTRL_RAW_X_OFF, &relX) &&
             tnx_read_i32(relCtrl + TNX_V128_CTRL_RAW_Y_OFF, &relY)) {
             if (relX != g_v174_stick_x || relY != g_v174_stick_y) return;
@@ -11453,38 +11444,6 @@ static void tnx_v174_stick(int engaged, float dirX, float dirY) {
     if (!tnx_write_bytes(ctrl + TNX_V128_CTRL_RAW_X_OFF, &wx, sizeof(wx))) return;
 
     tnx_write_bytes(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &wy, sizeof(wy));
-
-    if (TNX_V210_TOUCH_SYNTH) {
-        uint8_t gate = (uint8_t)TNX_V210_TOUCH_GATE;
-        uint8_t gateBack = 0;
-        int32_t id = TNX_V210_TOUCH_ID;
-        int32_t idBack = -1;
-        int32_t appBack = 0;
-
-        tnx_write_bytes(ctrl + TNX_V193_TOUCH_GATE_OFF, &gate, sizeof(gate));
-        tnx_write_bytes(ctrl + TNX_V193_TOUCH_ID_OFF, &id, sizeof(id));
-        g_v210_gate_writes++;
-
-        tnx_read_bytes(ctrl + TNX_V193_TOUCH_GATE_OFF, &gateBack, sizeof(gateBack));
-        tnx_read_i32(ctrl + TNX_V193_TOUCH_ID_OFF, &idBack);
-        tnx_read_i32(ctrl + TNX_V128_CTRL_APPLIED_X_OFF, &appBack);
-
-        if (appBack == TNX_V128_APPLIED_IDLE) g_v210_applied_idle++;
-        else g_v210_applied_live++;
-
-        if (g_v210_logs < TNX_V210_LOGS) {
-            g_v210_logs++;
-
-            tnx_logf("v210 touch ctrl=%p gate=%d/%d id=%d/%d applied=%d live=%llu idle=%llu pair=(%d,%d) "
-                     "- the engine records the touch it processed in the applied pair, so an applied "
-                     "that stays on the no touch sentinel %d while this build writes the pair means the "
-                     "movement code never took the input, which is the slide; a gate the store does not "
-                     "hold back names a different writer",
-                     (void *)ctrl, (int)gateBack, (int)gate, idBack, id, appBack,
-                     (unsigned long long)g_v210_applied_live,
-                     (unsigned long long)g_v210_applied_idle, wx, wy, TNX_V128_APPLIED_IDLE);
-        }
-    }
 
     {
         static int stickLogs = 0;
@@ -11723,6 +11682,46 @@ static void tnx_v190_drive_note(int32_t ownX, int32_t ownY, int32_t tx, int32_t 
     }
 }
 
+static void tnx_v211_apply(uintptr_t ctrl, int32_t worldX, int32_t worldY) {
+    int32_t backX = 0;
+    int32_t backY = 0;
+    int32_t zero = 0;
+    uint8_t flag = 1;
+    uint8_t gate = 0;
+
+    if (!TNX_V211_APPLY) return;
+    if (!ctrl) return;
+    if (!g_v180_hold) return;
+
+    tnx_write_bytes(ctrl + TNX_V128_CTRL_APPLIED_X_OFF, &worldX, sizeof(worldX));
+    tnx_write_bytes(ctrl + TNX_V128_CTRL_APPLIED_Y_OFF, &worldY, sizeof(worldY));
+    tnx_write_bytes(ctrl + TNX_V211_FLAG_OFF, &flag, sizeof(flag));
+    tnx_write_bytes(ctrl + TNX_V128_CTRL_DIRTY_OFF, &zero, sizeof(zero));
+
+    g_v211_applied_writes++;
+
+    tnx_read_i32(ctrl + TNX_V128_CTRL_APPLIED_X_OFF, &backX);
+    tnx_read_i32(ctrl + TNX_V128_CTRL_APPLIED_Y_OFF, &backY);
+    tnx_read_bytes(ctrl + TNX_V128_CTRL_GATE_OFF, &gate, sizeof(gate));
+
+    if (backX == worldX && backY == worldY) g_v211_applied_live++;
+    else g_v211_applied_stale++;
+
+    if (g_v211_logs < TNX_V211_LOGS) {
+        g_v211_logs++;
+
+        tnx_logf("v211 apply ctrl=%p applied=(%d,%d) want=(%d,%d) gate=%d flag=%#llx live=%llu "
+                 "stale=%llu - the engine's own push ends with addInput, the applied pair, the flag "
+                 "at %#llx and a cleared dirty word, and an applied the movement code does not keep "
+                 "is the slide this build never wrote any of",
+                 (void *)ctrl, backX, backY, worldX, worldY, (int)gate,
+                 (unsigned long long)TNX_V211_FLAG_OFF,
+                 (unsigned long long)g_v211_applied_live,
+                 (unsigned long long)g_v211_applied_stale,
+                 (unsigned long long)TNX_V211_FLAG_OFF);
+    }
+}
+
 static int tnx_v189_drive(void) {
     uintptr_t ctrl = tnx_v150_controller();
     int32_t ownX = 0;
@@ -11785,6 +11784,7 @@ static int tnx_v189_drive(void) {
 
         g_v206_escapes++;
         tnx_v174_stick(1, (float)TNX_V199_STICK_SIGN * dx, (float)TNX_V199_STICK_SIGN * dy);
+        tnx_v211_apply(ctrl, (int32_t)escapeX, (int32_t)escapeY);
         tnx_v207_precision(ownX, ownY, dx, dy, 1);
 
         return 1;
@@ -11842,6 +11842,7 @@ static int tnx_v189_drive(void) {
     }
 
     tnx_v192_predict(tx, ty);
+    tnx_v211_apply(ctrl, tx, ty);
 
     if (TNX_V193_TOUCH_FLAG && ctrl) {
         uint8_t gateNow = 0;
@@ -13305,17 +13306,21 @@ static int tnx_v205_walk(float dirX, float dirY) {
 }
 
 static void tnx_v198_state(void) {
-    tnx_logf("v209 state joystick=%p writes=%llu took=%llu escapes=%llu lookahead=%llu gate=%llu "
-             "appliedLive=%llu denied=%llu "
+    tnx_logf("v211 state joystick=%p writes=%llu took=%llu escapes=%llu lookahead=%llu appliedW=%llu "
+             "appliedLive=%llu appliedStale=%llu "
+             "denied=%llu "
              "predTook=%llu predMiss=%llu objects scene=%p character=%p battle=%p - writes counts the "
              "frames the drag block was written, took counts the frames the engine still held it with "
              "mode 2, escapes counts the frames the dodge moved on the clearance pick instead of "
              "standing still, lookahead counts the frames the dodge engaged on time to impact instead "
-             "of waiting for contact, and denied counts the stores the region guard dropped",
+             "of waiting for contact, appliedW counts the frames the push tail of the engine was replayed, "
+             "appliedLive how many the movement code kept and appliedStale how many it overwrote, "
+             "and denied counts the stores the region guard dropped",
              (void *)g_v205_joystick, (unsigned long long)g_v205_joystick_writes,
              (unsigned long long)g_v205_joystick_took, (unsigned long long)g_v206_escapes,
-             (unsigned long long)g_v209_lookahead, (unsigned long long)g_v210_gate_writes,
-             (unsigned long long)g_v210_applied_live, (unsigned long long)g_v201_write_denied,
+             (unsigned long long)g_v209_lookahead, (unsigned long long)g_v211_applied_writes,
+             (unsigned long long)g_v211_applied_live, (unsigned long long)g_v211_applied_stale,
+             (unsigned long long)g_v201_write_denied,
              (unsigned long long)g_v198_pred_took, (unsigned long long)g_v198_pred_miss,
              (void *)(uintptr_t)g_scene_object, (void *)g_v182_own_elem, (void *)g_v192_pred_last);
 }

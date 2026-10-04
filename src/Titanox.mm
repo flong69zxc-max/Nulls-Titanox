@@ -335,7 +335,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_V171_STAGE_MAX 2
 #define TNX_V171_INPUT_MGR 0
 #define TNX_V172_JOY_WRITE 0
-#define TNX_V172_QUEUE_MOVE 1
+#define TNX_V172_QUEUE_MOVE 0
 #define TNX_V172_POSITION_WRITE 0
 #define TNX_V172_NUM_ANGLES 24
 #define TNX_V172_STEP 150.0f
@@ -361,6 +361,8 @@ static int g_v123_defer_logs = 0;
 #define TNX_V173_BASES 3
 #define TNX_V173_MAX_LINES 12
 #define TNX_V173_BUCKET_TICKS 60
+#define TNX_V174_RAW_STICK 1
+#define TNX_V174_DT_MAX 12
 #define TNX_V171_INPUT_TYPE 1
 #define TNX_V171_INPUT_MAG 500
 #define TNX_V171_INPUT_CHANGE_GATE 1
@@ -10430,10 +10432,27 @@ typedef struct {
     int32_t team;
     int32_t spawnX;
     int32_t spawnY;
+    int32_t gid;
+    uint64_t ptick;
+    uint64_t qtick;
     int hasPrev;
 } tnx_v140_proj_t;
 
 static tnx_v140_proj_t g_v140_projs[TNX_V140_PROJ_MAX];
+
+static int tnx_v174_proj_vel(const tnx_v140_proj_t *p, float *vxOut, float *vyOut) {
+    uint64_t dt = 0;
+
+    if (!p->elem || !p->hasPrev) return 0;
+
+    dt = p->qtick - p->ptick;
+    if (dt == 0 || dt > TNX_V174_DT_MAX) dt = 1;
+
+    *vxOut = (float)(p->x - p->px) / (float)dt;
+    *vyOut = (float)(p->y - p->py) / (float)dt;
+
+    return 1;
+}
 static int g_v140_side_hits = 0;
 static int g_v140_side_projs = 0;
 static int g_v140_write_logs = 0;
@@ -10532,15 +10551,19 @@ static int tnx_v140_proj_scan(uintptr_t manager, int32_t count) {
         if (slot < 0) continue;
 
         if (g_v140_projs[slot].elem == (uintptr_t)element) {
-            g_v140_projs[slot].px = g_v140_projs[slot].x;
-            g_v140_projs[slot].py = g_v140_projs[slot].y;
-            g_v140_projs[slot].hasPrev = 1;
+            if (px != g_v140_projs[slot].x || py != g_v140_projs[slot].y) {
+                g_v140_projs[slot].px = g_v140_projs[slot].x;
+                g_v140_projs[slot].py = g_v140_projs[slot].y;
+                g_v140_projs[slot].ptick = g_v140_projs[slot].qtick;
+                g_v140_projs[slot].hasPrev = 1;
+            }
         } else {
             g_v140_projs[slot].elem = (uintptr_t)element;
             g_v140_projs[slot].px = px;
             g_v140_projs[slot].py = py;
             g_v140_projs[slot].spawnX = px;
             g_v140_projs[slot].spawnY = py;
+            g_v140_projs[slot].ptick = g_v48_ticks;
             g_v140_projs[slot].hasPrev = 0;
         }
 
@@ -10563,6 +10586,8 @@ static int tnx_v140_proj_scan(uintptr_t manager, int32_t count) {
         g_v140_projs[slot].classRva = vtRva;
         g_v140_projs[slot].x = px;
         g_v140_projs[slot].y = py;
+        g_v140_projs[slot].gid = gid;
+        g_v140_projs[slot].qtick = g_v48_ticks;
 
         found++;
     }
@@ -10574,19 +10599,22 @@ static int tnx_v140_proj_scan(uintptr_t manager, int32_t count) {
         g_v140_projs[k].hasPrev = 0;
     }
 
-    if (g_v167_proj_other > 0) g_v167_team_other_seen = 1;
+    if (g_v167_proj_other > 0 && !g_v167_team_other_seen) {
+        g_v167_team_other_seen = 1;
 
-    g_v167_own_team_seen = (g_v167_proj_own > 0 && g_v167_team_other_seen) ? 1 : 0;
+        if (g_v167_filter_logs < 6) {
+            g_v167_filter_logs++;
 
-    if (g_v167_filter_logs < 6 && g_v167_own_team_seen) {
-        g_v167_filter_logs++;
-
-        tnx_logf("v167 threat filter: %d tracked shots carry own team %d and %d carry another team, so "
-                 "the team field splits them and own-team shots are dropped from the threat list; when "
-                 "only one side is nonzero nothing is filtered, because a field that never differs "
-                 "cannot tell a teammate's shot from an enemy's", g_v167_proj_own, g_v167_own_team,
-                 g_v167_proj_other);
+            tnx_logf("v174 threat filter armed on the first shot of another team: own team %d against %d "
+                     "tracked shots that are not ours, and the latch stays closed for the rest of the "
+                     "battle - the v173 run never printed this line because the arming test asked for "
+                     "both teams inside one scan, and with the filter off the ring spends itself on our "
+                     "own bullets, which is the 'it only dodges while I shoot' the user reports",
+                     g_v167_own_team, g_v167_proj_other);
+        }
     }
+
+    if (g_v167_team_other_seen) g_v167_own_team_seen = 1;
 
     return found;
 }
@@ -10916,9 +10944,7 @@ static float tnx_v160_clearance(float mx, float my, float mvx, float mvy) {
 
         if (!p->elem || !p->hasPrev) continue;
         if (TNX_V167_TEAM_FILTER && g_v167_own_team_seen && p->team == g_v167_own_team) continue;
-
-        vx = (float)(p->x - p->px);
-        vy = (float)(p->y - p->py);
+        if (!tnx_v174_proj_vel(p, &vx, &vy)) continue;
 
         if (sqrtf(vx * vx + vy * vy) < 1.0f) continue;
 
@@ -11556,7 +11582,136 @@ static int tnx_v172_joy_angle(float *outAngle) {
     return 1;
 }
 
-static const char *const g_v173_names[TNX_V173_BASES] = { "scene", "mode", "ctrl" };
+static int32_t g_v174_stick_x = 0;
+static int32_t g_v174_stick_y = 0;
+static int g_v174_stick_hold = 0;
+static int g_v174_route_seeded = 0;
+static int32_t g_v174_last_own_x = 0;
+static int32_t g_v174_last_own_y = 0;
+
+static void tnx_v174_stick(int engaged, float dirX, float dirY) {
+    uintptr_t ctrl = tnx_v150_controller();
+    int32_t wx = 0;
+    int32_t wy = 0;
+    float len = 0.0f;
+
+    if (!TNX_V174_RAW_STICK) return;
+    if (!ctrl) return;
+
+    if (engaged) {
+        len = sqrtf(dirX * dirX + dirY * dirY);
+
+        if (len < 0.0001f) {
+            engaged = 0;
+        } else {
+            wx = (int32_t)((double)dirX / (double)len * (double)TNX_V165_JOY_MAG);
+            wy = (int32_t)((double)dirY / (double)len * (double)TNX_V165_JOY_MAG);
+        }
+    }
+
+    if (!engaged && !g_v174_stick_hold) return;
+
+    g_v174_stick_hold = engaged;
+    g_v174_stick_x = wx;
+    g_v174_stick_y = wy;
+
+    if (!tnx_write_bytes(ctrl + TNX_V128_CTRL_RAW_X_OFF, &wx, sizeof(wx))) return;
+
+    tnx_write_bytes(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &wy, sizeof(wy));
+
+    {
+        static int stickLogs = 0;
+
+        if (stickLogs < 6) {
+            int32_t backX = 0;
+            int32_t backY = 0;
+
+            stickLogs++;
+
+            tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_X_OFF, &backX);
+            tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &backY);
+
+            tnx_logf("v174 stick write #%d ctrl=%p want=(%d,%d) back=(%d,%d) kept=%d engaged=%d - the "
+                     "pair is the one the touch handler writes and the battle update reads, and the "
+                     "read back is the only proof the store landed; a kept=0 means the engine rewrote "
+                     "the pair between our store and the read, which names a different writer",
+                     stickLogs, (void *)ctrl, wx, wy, backX, backY,
+                     (backX == wx && backY == wy) ? 1 : 0, engaged);
+        }
+    }
+}
+
+static void tnx_v174_route(int32_t ownX, int32_t ownY, int engaged) {
+    uintptr_t ctrl = tnx_v150_controller();
+    int32_t backX = 0;
+    int32_t backY = 0;
+    int dx = 0;
+    int dy = 0;
+    int moved = 0;
+
+    if ((g_v48_ticks % 60) != 0) return;
+
+    if (ctrl) {
+        tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_X_OFF, &backX);
+        tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &backY);
+    }
+
+    if (g_v174_route_seeded) {
+        dx = (int)(ownX - g_v174_last_own_x);
+        dy = (int)(ownY - g_v174_last_own_y);
+
+        moved = (int)sqrtf((float)(dx * dx + dy * dy));
+    }
+
+    g_v174_route_seeded = 1;
+    g_v174_last_own_x = ownX;
+    g_v174_last_own_y = ownY;
+
+    tnx_logf("v174 route engaged=%d stick=(%d,%d) back=(%d,%d) own=(%d,%d) movedLastSecond=%d "
+             "queue=%d ctrl=%p - the pair at ctrl+%#llx and ctrl+%#llx is the one the touch handler "
+             "writes and the battle update reads, so back equal to stick together with a movedLastSecond "
+             "well above zero is the character walking on the engine's own input instead of being "
+             "carried by a position; the queue count is printed beside it because this build no longer "
+             "pushes into it and the engine is supposed to queue the input itself from this pair, so a "
+             "count that stays at zero while the pair is written means it does not",
+             engaged, g_v174_stick_x, g_v174_stick_y, backX, backY, ownX, ownY, moved,
+             tnx_v113_queue_count(NULL), (void *)ctrl,
+             (unsigned long long)TNX_V128_CTRL_RAW_X_OFF,
+             (unsigned long long)TNX_V128_CTRL_RAW_Y_OFF);
+}
+
+static void tnx_v174_threats(void) {
+    int k = 0;
+
+    if ((g_v48_ticks % 60) != 0) return;
+
+    for (k = 0; k < TNX_V140_PROJ_MAX; k++) {
+        const tnx_v140_proj_t *p = &g_v140_projs[k];
+        float vx = 0.0f;
+        float vy = 0.0f;
+        const char *verdict = "threat";
+
+        if (!p->elem) continue;
+
+        if (!tnx_v174_proj_vel(p, &vx, &vy)) {
+            verdict = p->hasPrev ? "vel-unreadable" : "one-sample";
+        } else if (TNX_V167_TEAM_FILTER && g_v167_own_team_seen && p->team == g_v167_own_team) {
+            verdict = "own-team";
+        } else if (sqrtf(vx * vx + vy * vy) < 1.0f) {
+            verdict = "still";
+        }
+
+        tnx_logf("v174 threat gid=%d elem=%p at=(%d,%d) prev=(%d,%d) dt=%llu vel=(%.1f,%.1f) team=%d "
+                 "verdict=%s ownTeam=%d armed=%d - one line per tracked projectile with the verdict the "
+                 "threat list gives it, so a list that comes out empty names the filter that emptied it "
+                 "instead of leaving 'no shot survived' to be inferred",
+                 p->gid, (void *)p->elem, p->x, p->y, p->px, p->py,
+                 (unsigned long long)(p->qtick - p->ptick), (double)vx, (double)vy, p->team, verdict,
+                 g_v167_own_team, g_v167_own_team_seen);
+    }
+}
+
+static const char *const g_v173_names[TNX_V173_BASES] = { "scene", "mgr", "ctrl" };
 
 typedef struct {
     uintptr_t base;
@@ -11799,9 +11954,7 @@ static void tnx_v172_build(void) {
 
         if (!p->elem || !p->hasPrev) continue;
         if (g_v172_seg_count >= TNX_V172_SEG_MAX) break;
-
-        vx = (float)(p->x - p->px);
-        vy = (float)(p->y - p->py);
+        if (!tnx_v174_proj_vel(p, &vx, &vy)) continue;
 
         len = sqrtf(vx * vx + vy * vy);
 
@@ -12124,6 +12277,8 @@ static void tnx_autododge_v48(void) {
     tnx_v146_phase("dodge-enter");
 
     tnx_v171_input_release();
+
+    tnx_v174_stick(0, 0.0f, 0.0f);
 
     tnx_v172_probe();
 
@@ -12651,6 +12806,8 @@ static void tnx_autododge_v48(void) {
             if (g_v140_projs[i].elem) g_v140_side_projs++;
         }
 
+        tnx_v174_threats();
+
         if (tnx_v172_decide(ownX, ownY)) {
             g_v160_active = 1;
             g_v140_side_hits = 1;
@@ -12844,6 +13001,10 @@ static void tnx_autododge_v48(void) {
         tnx_v167_clear_stick_once();
 
         tnx_v167_watch(ownX, ownY);
+
+        tnx_v174_stick(g_v160_active, g_v165_dir_x, g_v165_dir_y);
+
+        tnx_v174_route(ownX, ownY, g_v160_active);
 
         g_v171_engaged_frame = 1;
 
@@ -14390,6 +14551,27 @@ static void setup(void) {
              (unsigned long long)TNX_V113_MGR_OFF, TNX_V172_BS_AX, TNX_V172_BS_AY, TNX_V172_BS_BX,
              TNX_V172_BS_BY, TNX_V172_BS_MODE, TNX_V172_BS_COS, TNX_V172_BS_SIN,
              (unsigned)TNX_V173_WIN, (unsigned long long)TNX_MODE_MANAGER_OFF);
+
+    tnx_logf("plan v174, from the 16:56 run and the user's report: (1) the slide is the queue push. That "
+             "log has the queue carrying the body - own walks from (2297,6753) to (2601,6750) with "
+             "TNX_V172_QUEUE_MOVE 1 - and the type %d message is a POSITION, so the body is lerped there "
+             "while the engine never starts the run cycle. The pair at ctrl+%#llx and ctrl+%#llx is the "
+             "one the touch handler writes and the battle update reads, and the same log shows it "
+             "holding (390,-456) while the player steers by hand, so the walk is that pair: "
+             "TNX_V174_RAW_STICK writes the chosen heading into it as a unit vector scaled by %.0f and "
+             "zeros it once when the dodge lets go, and the queue push is off. (2) The threat list came "
+             "out empty because a projectile's velocity was one tick of difference with the previous "
+             "sample overwritten on every scan, so a projectile whose position had not changed between "
+             "two scans read as standing still and dropped out of both the ring and the segment builder; "
+             "the previous sample is kept until it really differs and the velocity is divided by the "
+             "ticks between the two differing samples. (3) The team filter never armed in that run - the "
+             "arming test asked for our team and another team inside ONE scan, and its line is absent "
+             "from the log - so the ring spent itself on our own bullets, which is the 'it only dodges "
+             "while I shoot' report; the latch now closes on the first shot of another team and stays "
+             "closed. (4) Every tracked projectile prints its own verdict once a second, so an empty "
+             "threat list names the filter that emptied it instead of being inferred",
+             TNX_V126_TYPE_MOVE, (unsigned long long)TNX_V128_CTRL_RAW_X_OFF,
+             (unsigned long long)TNX_V128_CTRL_RAW_Y_OFF, (double)TNX_V165_JOY_MAG);
 
     tnx_start_timer();
 

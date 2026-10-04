@@ -79,11 +79,16 @@
 #define TNX_V212_LOOKAHEAD_MS 500.0f
 #define TNX_V213_JOYSTATE_OFF 0xed7ULL
 #define TNX_V214_MATE_AVOID 1
-#define TNX_V214_MATE_CLEAR 420.0f
+#define TNX_V214_MATE_CLEAR 700.0f
 #define TNX_V218_BODY_ALL 1
 #define TNX_V219_QUEUE 1
+#define TNX_V220_STEP 150.0f
+#define TNX_V220_BODY_CLEAR 700.0f
+#define TNX_V220_LOGS 6
+#define TNX_V221_LIST_OFF 0x20ULL
+#define TNX_V221_COUNT_OFF 0x0cULL
 #define TNX_V216_FLEE 1
-#define TNX_V216_FLEE_STEP 1500.0f
+#define TNX_V216_FLEE_STEP 150.0f
 #define TNX_V216_LOGS 14
 #define TNX_V216_EVERY 30
 #define TNX_V217_DRAG_SPACE 0
@@ -367,7 +372,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_219"
+#define TNX_BUILD_TAG "titanox_221"
 
 #define TNX_V165_JOY_MAG 600.0f
 #define TNX_V167_TEAM_FILTER 1
@@ -2769,6 +2774,27 @@ static int g_v191_trust_logs = 0;
 static int g_v191_roster_logs = 0;
 static int g_v191_enemy_blocks = 0;
 static int g_v191_oneshot_segs = 0;
+static uint64_t g_v220_clamped = 0;
+static uint64_t g_v220_ctrl_dead = 0;
+static uint64_t g_v221_stuck = 0;
+static uint64_t g_v221_mask_before = 0;
+
+
+static int tnx_v220_ctrl_ok(uintptr_t ctrl) {
+    uint8_t alive = 0;
+
+    if (!ctrl) return 0;
+    if (!tnx_v201_writable(ctrl + TNX_V128_CTRL_RAW_X_OFF, 2 * sizeof(int32_t))) return 0;
+    if (!tnx_read_bytes(ctrl + TNX_V128_CTRL_ALIVE_OFF, &alive, sizeof(alive))) return 0;
+
+    if (alive != 1) {
+        g_v220_ctrl_dead++;
+
+        return 0;
+    }
+
+    return 1;
+}
 static uint64_t g_v219_drain = 0;
 static uint64_t g_v219_q_max = 0;
 static uint64_t g_v217_drag_writes = 0;
@@ -8331,6 +8357,37 @@ static int tnx_v192_predict(int32_t x, int32_t y) {
     return 1;
 }
 
+static int tnx_v221_pending(int want, uint64_t *mask) {
+    void *mgr = NULL;
+    void *list = NULL;
+    void *arr = NULL;
+    int32_t count = 0;
+    int found = 0;
+    int i = 0;
+
+    if (mask) *mask = 0;
+
+    mgr = tnx_v113_manager();
+
+    if (!mgr) return 0;
+    if (!tnx_read_ptr((uintptr_t)mgr + TNX_V221_LIST_OFF, &list) || !list) return 0;
+    if (!tnx_read_i32((uintptr_t)list + TNX_V221_COUNT_OFF, &count)) return 0;
+    if (count <= 0 || count > 64) return 0;
+    if (!tnx_read_ptr((uintptr_t)list, &arr) || !arr) return 0;
+
+    for (i = 0; i < count; i++) {
+        void *el = NULL;
+        int32_t t = -1;
+
+        if (!tnx_read_ptr((uintptr_t)arr + (uintptr_t)i * sizeof(void *), &el) || !el) continue;
+        if (!tnx_read_i32((uintptr_t)el + TNX_V113_TYPE_OFF, &t)) continue;
+        if (mask && t >= 0 && t < 21) *mask |= (1ULL << t);
+        if (t == want) found = 1;
+    }
+
+    return found;
+}
+
 static int tnx_v113_enqueue(int x, int y) {
     uintptr_t ctorFn = tnx_v113_entry(TNX_V113_MSGCTOR_RVA);
     uintptr_t inputFn = tnx_v113_entry(TNX_V113_ADDINPUT_RVA);
@@ -8376,6 +8433,10 @@ static int tnx_v113_enqueue(int x, int y) {
     tnx_read_i32((uintptr_t)mgr + TNX_V126_MGR_SEQ_OFF, &g_v126_seq_before);
 
     g_v126_q_before = tnx_v113_queue_count(NULL);
+
+    if (tnx_v221_pending(TNX_V126_TYPE_MOVE, &g_v221_mask_before)) {
+        g_v221_stuck++;
+    }
 
     ((void (*)(void *, void *))inputFn)(mgr, msg);
 
@@ -11446,7 +11507,7 @@ static void tnx_v174_stick(int engaged, float dirX, float dirY) {
     float len = 0.0f;
 
     if (!TNX_V174_RAW_STICK) return;
-    if (!ctrl) return;
+    if (!tnx_v220_ctrl_ok(ctrl)) return;
 
     if (engaged) {
         len = sqrtf(dirX * dirX + dirY * dirY);
@@ -11746,7 +11807,7 @@ static void tnx_v211_apply(uintptr_t ctrl, int32_t worldX, int32_t worldY) {
     uint8_t gate = 0;
 
     if (!TNX_V211_APPLY) return;
-    if (!ctrl) return;
+    if (!tnx_v220_ctrl_ok(ctrl)) return;
     if (!g_v180_hold) return;
 
     tnx_write_bytes(ctrl + TNX_V128_CTRL_APPLIED_X_OFF, &worldX, sizeof(worldX));
@@ -11857,9 +11918,16 @@ static int tnx_v189_drive(void) {
     if (len >= 0.0001f) {
         dx /= len;
         dy /= len;
-        tnx_v218_unblock((float)ownX, (float)ownY, TNX_V189_STEP, &dx, &dy);
+        tnx_v218_unblock((float)ownX, (float)ownY, TNX_V220_STEP, &dx, &dy);
         dx *= len;
         dy *= len;
+    }
+
+    if (len > TNX_V220_STEP) {
+        dx = dx / len * TNX_V220_STEP;
+        dy = dy / len * TNX_V220_STEP;
+        len = TNX_V220_STEP;
+        g_v220_clamped++;
     }
 
     if (len < 0.0001f) {
@@ -13206,7 +13274,8 @@ static int tnx_v218_body_blocked(float px, float py, float dirX, float dirY, flo
 }
 
 static void tnx_v218_unblock(float px, float py, float len, float *dirX, float *dirY) {
-    static const float rot[8] = { 30.0f, -30.0f, 60.0f, -60.0f, 90.0f, -90.0f, 135.0f, -135.0f };
+    static const float rot[12] = { 15.0f, -15.0f, 30.0f, -30.0f, 45.0f, -45.0f,
+                                   60.0f, -60.0f, 90.0f, -90.0f, 135.0f, -135.0f };
     const float rad = 3.14159265358979f / 180.0f;
     float dx = *dirX;
     float dy = *dirY;
@@ -13216,7 +13285,7 @@ static void tnx_v218_unblock(float px, float py, float len, float *dirX, float *
     if (len < 1.0f) return;
     if (!tnx_v218_body_blocked(px, py, dx, dy, len)) return;
 
-    for (i = 0; i < 8; i++) {
+    for (i = 0; i < 12; i++) {
         float a = rot[i] * rad;
         float c = cosf(a);
         float sn = sinf(a);
@@ -13234,7 +13303,6 @@ static void tnx_v218_unblock(float px, float py, float len, float *dirX, float *
 
     g_v214_mate_stuck++;
 }
-
 
 static int tnx_v172_valid_point(float x, float y) {
     int32_t cx = (int32_t)x;
@@ -13617,8 +13685,8 @@ static int tnx_v205_walk(float dirX, float dirY) {
 
 static void tnx_v198_state(void) {
     tnx_logf("v211 state joystick=%p writes=%llu took=%llu escapes=%llu lookahead=%llu appliedW=%llu "
-             "appliedLive=%llu appliedStale=%llu rage=%llu flees=%llu deadRep=%llu qDrain=%llu qMax=%llu dragW=%llu dragLive=%llu mateTurn=%llu mateStuck=%llu decUs=%llu maxUs=%llu "
-             "denied=%llu "
+             "appliedLive=%llu appliedStale=%llu rage=%llu flees=%llu deadRep=%llu clamped=%llu qDrain=%llu qMax=%llu qNow=%llu qStuck=%llu qMask=%#llx dragW=%llu dragLive=%llu mateTurn=%llu mateStuck=%llu decUs=%llu maxUs=%llu "
+             "dead=%llu denied=%llu "
              "predTook=%llu predMiss=%llu objects scene=%p character=%p battle=%p - writes counts the "
              "frames the drag block was written, took counts the frames the engine still held it with "
              "mode 2, escapes counts the frames the dodge moved on the clearance pick instead of "
@@ -13626,25 +13694,31 @@ static void tnx_v198_state(void) {
              "of waiting for contact, appliedW counts the frames the push tail of the engine was replayed, "
              "appliedLive how many the movement code kept and appliedStale how many it overwrote, rage "
              "counts the frames rage mode forced the pick, flees and deadRep count the picks taken by the "
-             "flee fallback and the ones it had to replace because the pick sat on own, qDrain counts the "
-             "pushes the engine emptied within the same frame and qMax the deepest the queue ever got, so "
+             "flee fallback and the ones it had to replace because the pick sat on own, clamped counts the "
+             "steps cut down to the reference step of %d units, qDrain counts the "
+             "pushes the engine emptied within the same frame and qMax the deepest the queue ever got, qNow "
+             "the depth seen just before the push, qStuck the pushes that found the previous input of "
+             "type %d still sitting there unconsumed, and qMask the types pending at that moment, so "
              "a qMax that climbs while qDrain stays zero means the input is never consumed, dragW counts the drag "
              "writes in screen space and dragLive how many still showed a non zero drag when read "
              "back, mateTurn and mateStuck count the steps rotated "
              "off a player body, own side or enemy, and the ones no rotation could free, and decUs is the microseconds from the "
              "start of the drive to the stick write with maxUs the worst of them, "
-             "and denied counts the stores the region guard dropped",
+             "dead counts the frames the control object failed the alive check so every store into it was "
+             "skipped, and denied counts the stores the region guard dropped",
              (void *)g_v205_joystick, (unsigned long long)g_v205_joystick_writes,
              (unsigned long long)g_v205_joystick_took, (unsigned long long)g_v206_escapes,
              (unsigned long long)g_v209_lookahead, (unsigned long long)g_v211_applied_writes,
              (unsigned long long)g_v211_applied_live, (unsigned long long)g_v211_applied_stale,
              (unsigned long long)g_v212_rage_frames, (unsigned long long)g_v216_flees,
-             (unsigned long long)g_v216_dead_replaced, (unsigned long long)g_v219_drain,
-             (unsigned long long)g_v219_q_max, (unsigned long long)g_v217_drag_writes,
+             (unsigned long long)g_v216_dead_replaced, (unsigned long long)g_v220_clamped,
+             TNX_V126_TYPE_MOVE, (int)TNX_V220_STEP, (unsigned long long)g_v219_drain,
+             (unsigned long long)g_v219_q_max, (unsigned long long)g_v126_q_before,
+             (unsigned long long)g_v221_stuck, (unsigned long long)g_v221_mask_before, (unsigned long long)g_v217_drag_writes,
              (unsigned long long)g_v217_drag_back, (unsigned long long)g_v214_mate_turns,
              (unsigned long long)g_v214_mate_stuck, (unsigned long long)g_v213_dec_us,
              (unsigned long long)g_v213_dec_us_max,
-             (unsigned long long)g_v201_write_denied,
+             (unsigned long long)g_v220_ctrl_dead, (unsigned long long)g_v201_write_denied,
              (unsigned long long)g_v198_pred_took, (unsigned long long)g_v198_pred_miss,
              (void *)(uintptr_t)g_scene_object, (void *)g_v182_own_elem, (void *)g_v192_pred_last);
 

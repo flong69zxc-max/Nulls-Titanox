@@ -325,7 +325,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_V167_THREAT_RANGE 2800.0f
 #define TNX_V167_RANGE_SLOTS 16
 #define TNX_V167_RANGE_MIN_SAMPLES 20
-#define TNX_V170_STEP 20.0f
+#define TNX_V170_STEP 120.0f
 #define TNX_V170_LIVE_GATE 1
 #define TNX_V170_ELEM_RESET 1
 #define TNX_V167_RANGE_SLACK 1.15f
@@ -11661,8 +11661,20 @@ static void tnx_v174_stick(int engaged, float dirX, float dirY) {
     }
 }
 
-static void tnx_v174_route(int32_t ownX, int32_t ownY, int engaged) {
+static int tnx_v178_own(int32_t *xOut, int32_t *yOut) {
+    uintptr_t own = (uintptr_t)g_v144_own_elem;
+
+    if (!own) return 0;
+    if (!tnx_read_i32(own + TNX_OBJ_X_OFF, xOut)) return 0;
+    if (!tnx_read_i32(own + TNX_OBJ_Y_OFF, yOut)) return 0;
+
+    return 1;
+}
+
+static void tnx_v174_route(int engaged) {
     uintptr_t ctrl = tnx_v150_controller();
+    int32_t ownX = 0;
+    int32_t ownY = 0;
     int32_t backX = 0;
     int32_t backY = 0;
     int dx = 0;
@@ -11677,6 +11689,7 @@ static void tnx_v174_route(int32_t ownX, int32_t ownY, int engaged) {
     const char *align = "no-move";
 
     if ((g_v48_ticks % 60) != 0) return;
+    if (!tnx_v178_own(&ownX, &ownY)) return;
 
     g_v174_engaged_ticks = 0;
 
@@ -11765,8 +11778,10 @@ static int g_v177_seeded = 0;
 static int32_t g_v177_last_x = 0;
 static int32_t g_v177_last_y = 0;
 
-static void tnx_v177_paircal(int32_t ownX, int32_t ownY) {
+static void tnx_v177_paircal(void) {
     uintptr_t ctrl = tnx_v150_controller();
+    int32_t ownX = 0;
+    int32_t ownY = 0;
     int32_t px = 0;
     int32_t py = 0;
     int dx = 0;
@@ -11780,6 +11795,7 @@ static void tnx_v177_paircal(int32_t ownX, int32_t ownY) {
     if ((g_v48_ticks % 60) != 0) return;
     if (g_v177_logs >= TNX_V177_LOGS) return;
     if (!ctrl) return;
+    if (!tnx_v178_own(&ownX, &ownY)) return;
     if (!tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_X_OFF, &px)) return;
     if (!tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &py)) return;
 
@@ -12383,6 +12399,10 @@ static void tnx_autododge_v48(void) {
     tnx_v171_input_release();
 
     tnx_v174_stick(0, 0.0f, 0.0f);
+
+    tnx_v174_route(g_v160_active);
+
+    tnx_v177_paircal();
 
     tnx_v172_probe();
 
@@ -13004,11 +13024,16 @@ static void tnx_autododge_v48(void) {
                 if (g_v170_step_logs < 1) {
                     g_v170_step_logs++;
 
-                    tnx_logf("v170 step cut to %.0f units: the request was %.0f units away, and asking "
-                             "for that on every frame is %.0f units per second at sixty frames, which "
-                             "no walk cycle can express, so the body slides; the reference caps its own "
-                             "step at speed/10 and reissues it every ten milliseconds",
-                             (double)TNX_V170_STEP, (double)slen, (double)(slen * 60.0f));
+                    tnx_logf("v178 step cut to %.0f units: the request was %.0f units away; a distance "
+                             "to a point is not a per frame step and the engine walks toward its target "
+                             "at its own speed, so the old cap of twenty was six times smaller than the "
+                             "request the dodge itself makes and left the engine almost nothing to walk "
+                             "toward - which is the barely moving slide the user reports - while the cap "
+                             "itself stays so that a far pick cannot turn into a glide; the 17:45 run "
+                             "shows the character covering about thirteen units in sixteen milliseconds, "
+                             "so a full walk is near %.0f units a second at sixty frames and this cap "
+                             "sits just inside that",
+                             (double)TNX_V170_STEP, (double)slen, (double)(13.0f * 60.0f));
                 }
 
                 targetX = ownX + (int)(sdx / slen * TNX_V170_STEP);
@@ -13121,10 +13146,6 @@ static void tnx_autododge_v48(void) {
         tnx_v167_watch(ownX, ownY);
 
         tnx_v174_stick(g_v160_active, g_v165_dir_x, g_v165_dir_y);
-
-        tnx_v174_route(ownX, ownY, g_v160_active);
-
-        tnx_v177_paircal(ownX, ownY);
 
         g_v171_engaged_frame = 1;
 
@@ -14755,6 +14776,25 @@ static void setup(void) {
              "chosen world heading - which is what the walk cycle needs",
              (unsigned long long)TNX_V128_CTRL_RAW_X_OFF,
              (unsigned long long)TNX_V113_MSGCTOR_RVA, 225);
+
+    tnx_logf("plan v178, from the 17:45 run: (1) the barely moving slide has a line in that log - step "
+             "cut to %d units, the request was 150 units away - and the old reasoning behind the cut was "
+             "wrong: a distance to a point is not a per frame step, the engine walks toward the target at "
+             "its own speed and reissuing the same target every frame is exactly what a held stick does. "
+             "The cap of twenty left the engine almost nothing to walk toward, and that is the slide. It "
+             "is %.0f now, which is inside the walk itself: that run shows the character covering about "
+             "thirteen units in sixteen milliseconds, so a full walk is near %.0f units a second at "
+             "sixty frames and a request of %.0f units asks for about that much per frame through the "
+             "engine's own response, while a far pick still cannot become a glide. (2) Both measuring "
+             "instruments were unreachable: the route line and the pair calibration sat inside the write "
+             "block, and that block returns early unless a threat is live, so in the 17:45 run it was "
+             "reached ten times and the calibration produced ZERO samples - the one measurement that "
+             "says whether the pair drives the walk was gated behind the success path, which is the same "
+             "mistake as the v72 dead probe. Both now read the character's own coordinates themselves "
+             "and run at the top of the dodge once a second whatever the threat list says, so the next "
+             "run either shows the rotation between the pair and the world heading or shows that the "
+             "engine never writes the pair at all",
+             (int)20.0f, (double)TNX_V170_STEP, (double)(13.0f * 60.0f), (double)TNX_V170_STEP);
 
     tnx_start_timer();
 

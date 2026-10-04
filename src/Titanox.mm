@@ -96,6 +96,12 @@
 #define TNX_V226_HIT_ONLY 1
 #define TNX_V226_ETA_SCALE 1
 #define TNX_V226_ETA_MIN 0.35f
+#define TNX_V227_REJECT 1
+#define TNX_V227_MIN_SPEED 260.0f
+#define TNX_V227_MAX_SPEED 6500.0f
+#define TNX_V227_BLINK_TICKS 2
+#define TNX_V227_BLINK_REM 320.0f
+#define TNX_V227_LOGS 8
 #define TNX_V216_FLEE 1
 #define TNX_V216_FLEE_STEP 150.0f
 #define TNX_V216_LOGS 14
@@ -381,7 +387,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_226"
+#define TNX_BUILD_TAG "titanox_227"
 
 #define TNX_V165_JOY_MAG 600.0f
 #define TNX_V167_TEAM_FILTER 1
@@ -1469,34 +1475,17 @@ static uint64_t tnx_v213_us(void);
 static uint64_t g_v224_t0 = 0;
 static uint64_t g_v224_slow = 0;
 static uint64_t g_v226_scaled = 0;
+static uint64_t g_v227_drop_slow = 0;
+static uint64_t g_v227_drop_fast = 0;
+static uint64_t g_v227_drop_blink = 0;
+static uint64_t g_v227_logs = 0;
+static float g_v227_spd_min = 0.0f;
+static float g_v227_spd_max = 0.0f;
 static uint64_t g_v226_gate_writes = 0;
 static uint64_t g_v226_gate_held = 0;
 static uint64_t g_v225_diag_us = 0;
 static uint64_t g_v225_diag_max_us = 0;
 
-static int tnx_v225_mode(void) {
-    int own = g_v189_pl_n;
-    int en = g_v191_enemy_n;
-
-    if (!TNX_V225_MODE_TUNE) return 2;
-    if (own <= 1 && en <= 1) return 0;
-    if (own <= 1) return 1;
-    if (own <= 3 && en <= 3) return 2;
-
-    return 3;
-}
-
-static float tnx_v225_step(void) {
-    static const float steps[4] = { 220.0f, 190.0f, 160.0f, 140.0f };
-
-    return steps[tnx_v225_mode()];
-}
-
-static float tnx_v225_look_ms(void) {
-    static const float looks[4] = { 420.0f, 550.0f, 650.0f, 800.0f };
-
-    return looks[tnx_v225_mode()];
-}
 
 static void tnx_slot_note(int index, void *self, uint64_t arg1) {
     uint32_t bit = 0;
@@ -2812,6 +2801,30 @@ static int32_t g_v191_own_team = -1;
 static int32_t g_v191_enemy_x[TNX_V189_PLAYER_MAX];
 static int32_t g_v191_enemy_y[TNX_V189_PLAYER_MAX];
 static int g_v191_enemy_n = 0;
+
+static int tnx_v225_mode(void) {
+    int own = g_v189_pl_n;
+    int en = g_v191_enemy_n;
+
+    if (!TNX_V225_MODE_TUNE) return 2;
+    if (own <= 1 && en <= 1) return 0;
+    if (own <= 1) return 1;
+    if (own <= 3 && en <= 3) return 2;
+
+    return 3;
+}
+
+static float tnx_v225_step(void) {
+    static const float steps[4] = { 220.0f, 190.0f, 160.0f, 140.0f };
+
+    return steps[tnx_v225_mode()];
+}
+
+static float tnx_v225_look_ms(void) {
+    static const float looks[4] = { 420.0f, 550.0f, 650.0f, 800.0f };
+
+    return looks[tnx_v225_mode()];
+}
 static int g_v191_trust_logs = 0;
 static int g_v191_roster_logs = 0;
 static int g_v191_enemy_blocks = 0;
@@ -2820,7 +2833,6 @@ static uint64_t g_v220_clamped = 0;
 static uint64_t g_v220_ctrl_dead = 0;
 static uint64_t g_v221_stuck = 0;
 static uint64_t g_v221_mask_before = 0;
-
 
 static int tnx_v220_ctrl_ok(uintptr_t ctrl) {
     int32_t rawX = 0;
@@ -13000,10 +13012,41 @@ static void tnx_v172_build(void) {
 
         if (speed < 1.0f) speed = 1.0f;
 
+        if (g_v227_spd_min < 1.0f || speed < g_v227_spd_min) g_v227_spd_min = speed;
+        if (speed > g_v227_spd_max) g_v227_spd_max = speed;
+
         rem = speed * ((float)TNX_V172_MAX_LIFETIME_MS / 1000.0f);
 
         if (rem > TNX_V172_DEFAULT_RANGE) rem = TNX_V172_DEFAULT_RANGE;
         if (rem < 1.0f) rem = 1.0f;
+
+        if (TNX_V227_REJECT) {
+            int rule = 0;
+
+            if (speed < TNX_V227_MIN_SPEED) rule = 1;
+            else if (speed > TNX_V227_MAX_SPEED) rule = 2;
+            else if ((p->qtick > p->ptick) && (p->qtick - p->ptick) <= TNX_V227_BLINK_TICKS &&
+                     rem < TNX_V227_BLINK_REM) rule = 3;
+
+            if (rule) {
+                if (rule == 1) g_v227_drop_slow++;
+                else if (rule == 2) g_v227_drop_fast++;
+                else g_v227_drop_blink++;
+
+                if (g_v227_logs < TNX_V227_LOGS) {
+                    g_v227_logs++;
+
+                    tnx_logf("v227 drop rule=%d gid=%d speed=%.0f age=%llu rem=%.0f team=%d - a shot of "
+                             "this shape cannot be walked out of, so reacting to it only spends "
+                             "movement and hides the ones that can be dodged",
+                             rule, p->gid, (double)speed,
+                             (unsigned long long)((p->qtick > p->ptick) ? (p->qtick - p->ptick) : 0),
+                             (double)rem, p->team);
+                }
+
+                continue;
+            }
+        }
 
         s = &g_v172_seg[g_v172_seg_count++];
         s->gid = p->gid;
@@ -13803,7 +13846,7 @@ static int tnx_v205_walk(float dirX, float dirY) {
 
 static void tnx_v198_state(void) {
     tnx_logf("v211 state joystick=%p writes=%llu took=%llu escapes=%llu lookahead=%llu appliedW=%llu "
-             "appliedLive=%llu appliedStale=%llu rage=%llu flees=%llu deadRep=%llu clamped=%llu qDrain=%llu qMax=%llu qNow=%llu qStuck=%llu qMask=%#llx dragW=%llu dragLive=%llu mateTurn=%llu mateStuck=%llu decUs=%llu maxUs=%llu slow=%llu diagMax=%llu g70w=%llu g70h=%llu "
+             "appliedLive=%llu appliedStale=%llu rage=%llu flees=%llu deadRep=%llu clamped=%llu qDrain=%llu qMax=%llu qNow=%llu qStuck=%llu qMask=%#llx dragW=%llu dragLive=%llu mateTurn=%llu mateStuck=%llu decUs=%llu maxUs=%llu slow=%llu diagMax=%llu g70w=%llu g70h=%llu dropS=%llu dropF=%llu dropB=%llu spd=(%.0f..%.0f) "
              "dead=%llu denied=%llu "
              "predTook=%llu predMiss=%llu objects scene=%p character=%p battle=%p - writes counts the "
              "frames the drag block was written, took counts the frames the engine still held it with "
@@ -13823,7 +13866,8 @@ static void tnx_v198_state(void) {
              "off a player body, own side or enemy, and the ones no rotation could free, and decUs is the microseconds from the "
              "hook entry to the stick write with maxUs the worst of them, slow the frames above %d us and "
              "diagMax the worst time the throttled diagnostic block took, g70w the frames the state byte "
-             "at %#llx was forced to 1 and g70h how many of them the engine kept it, "
+             "at %#llx was forced to 1 and g70h how many of them the engine kept it, dropS dropF dropB the "
+             "shots thrown away as too slow, too fast and too short lived and spd the speed range seen, "
              "dead counts the frames the control object failed the alive check so every store into it was "
              "skipped, and denied counts the stores the region guard dropped",
              (void *)g_v205_joystick, (unsigned long long)g_v205_joystick_writes,
@@ -13839,7 +13883,9 @@ static void tnx_v198_state(void) {
              (unsigned long long)g_v214_mate_stuck, (unsigned long long)g_v213_dec_us,
              (unsigned long long)g_v213_dec_us_max, (unsigned long long)g_v224_slow,
              (unsigned long long)g_v225_diag_max_us, (unsigned long long)g_v226_gate_writes,
-             (unsigned long long)g_v226_gate_held,
+             (unsigned long long)g_v226_gate_held, (unsigned long long)g_v227_drop_slow,
+             (unsigned long long)g_v227_drop_fast, (unsigned long long)g_v227_drop_blink,
+             (double)g_v227_spd_min, (double)g_v227_spd_max,
              (unsigned long long)g_v220_ctrl_dead, (unsigned long long)g_v201_write_denied,
              (unsigned long long)g_v198_pred_took, (unsigned long long)g_v198_pred_miss,
              (void *)(uintptr_t)g_scene_object, (void *)g_v182_own_elem, (void *)g_v192_pred_last,

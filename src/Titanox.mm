@@ -313,7 +313,9 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_149"
+#define TNX_BUILD_TAG "titanox_150"
+
+#define TNX_V150_ACT_WRITE 1
 
 #define TNX_V147_ACT_WRITE 0
 #define TNX_V148_PROBE_LOGS 6
@@ -10574,23 +10576,74 @@ static void tnx_v148_receiver_probe(void) {
     tnx_v148_receiver_line("battle-global", battle);
 }
 
+static int g_v150_logs = 0;
+
+static uintptr_t tnx_v150_qword(uintptr_t addr) {
+    int32_t lo = 0;
+    int32_t hi = 0;
+
+    tnx_read_i32(addr, &lo);
+    tnx_read_i32(addr + 4, &hi);
+
+    return ((uintptr_t)(uint32_t)lo) | ((uintptr_t)(uint32_t)hi << 32);
+}
+
+static uintptr_t tnx_v150_controller(void) {
+    void *raw = NULL;
+
+    if (!g_base) return 0;
+    if (!tnx_read_ptr(g_base + TNX_V129_BATTLE_RVA, &raw) || !raw) return 0;
+    if (((uintptr_t)raw & 7) != 0) return 0;
+    if (!tnx_addr_readable((uintptr_t)raw, 0x1000)) return 0;
+
+    return (uintptr_t)raw;
+}
+
+static int tnx_v150_pointer_like(uintptr_t v) {
+    return (v >= 0x100000000ULL && v < 0x200000000ULL && (v & 7) == 0);
+}
+
+static int tnx_v150_obj_ok(uintptr_t cand) {
+    if (!cand) return 0;
+    if (cand & 7) return 0;
+    if (!tnx_addr_readable(cand, 0x120)) return 0;
+
+    return 1;
+}
+
+static int tnx_v150_safe_to_write(uintptr_t obj) {
+    if (tnx_v150_pointer_like(tnx_v150_qword(obj + 0x108))) return 0;
+    if (tnx_v150_pointer_like(tnx_v150_qword(obj + 0x118))) return 0;
+
+    return 1;
+}
+
 static uintptr_t tnx_v144_mode_pick(uintptr_t *vtOut, const char **whoOut, const char **whyOut) {
-    uintptr_t cand[2];
-    const char *names[2] = { "engine-chain", "players-chain" };
+    uintptr_t cand[3];
+    const char *names[3] = { "controller-hop", "scene-hop", "players-hop" };
+    uintptr_t ctrl = tnx_v150_controller();
     int i;
 
-    cand[0] = tnx_v144_hop((uintptr_t)g_scene_object, NULL);
-    cand[1] = tnx_v144_hop((uintptr_t)g_players_object, NULL);
+    cand[0] = ctrl ? tnx_v144_hop(ctrl, NULL) : 0;
+    cand[1] = tnx_v144_hop((uintptr_t)g_scene_object, NULL);
+    cand[2] = tnx_v144_hop((uintptr_t)g_players_object, NULL);
 
     if (vtOut) *vtOut = 0;
     if (whoOut) *whoOut = "none";
     if (whyOut) *whyOut = "none-ok";
 
-    for (i = 0; i < 2; i++) {
-        const char *why = "?";
+    for (i = 0; i < 3; i++) {
+        const char *why = "not-readable";
         uintptr_t vt = 0;
+        int ok = 0;
 
-        if (tnx_v144_cand_ok(cand[i], &why, &vt)) {
+        if (i == 0) {
+            ok = tnx_v150_obj_ok(cand[i]);
+        } else {
+            ok = tnx_v144_cand_ok(cand[i], &why, &vt);
+        }
+
+        if (ok) {
             if (vtOut) *vtOut = vt;
             if (whoOut) *whoOut = names[i];
             if (whyOut) *whyOut = why;
@@ -10601,10 +10654,14 @@ static uintptr_t tnx_v144_mode_pick(uintptr_t *vtOut, const char **whoOut, const
         if (g_v144_cand_logs < TNX_V144_CAND_LOGS) {
             g_v144_cand_logs++;
 
-            tnx_logf("v144 candidate #%d %s ptr=%p vt=%p reject=%s - every candidate is validated "
-                     "before the actuator is called and every one is named, so a run either writes "
-                     "through a checked object or says which check failed instead of segfaulting",
-                     i, names[i], (void *)cand[i], (void *)vt, why);
+            tnx_logf("v150 candidate #%d %s ptr=%p vt=%p reject=%s ctrl=%p wrap=%p - the controller "
+                     "hop is tried first because the battle object at %#llx carries the live raw "
+                     "pair and its hop slot holds the wrapper whose inner slot mirrors the applied "
+                     "pair, so the inner of that hop is the object the engine passes to the "
+                     "actuator and the other candidates are named to be excluded",
+                     i, names[i], (void *)cand[i], (void *)vt, why, (void *)ctrl,
+                     ctrl ? (void *)tnx_v144_hop(ctrl, NULL) : (void *)0,
+                     (unsigned long long)TNX_V129_BATTLE_RVA);
         }
     }
 
@@ -10652,6 +10709,21 @@ static int tnx_v144_mode_write(int x, int y, int flag) {
                      why, (void *)g_scene_object, (void *)g_players_object, (void *)g_v144_own_elem,
                      (void *)tnx_v144_hop((uintptr_t)g_scene_object, NULL),
                      (void *)tnx_v144_hop((uintptr_t)g_players_object, NULL));
+        }
+
+        return 0;
+    }
+
+    if (!tnx_v150_safe_to_write(mode)) {
+        if (g_v150_logs < 8) {
+            g_v150_logs++;
+
+            tnx_logf("v150 actuate refuse obj=%p q108=%#llx q118=%#llx - a pointer shaped qword sits "
+                     "next to the pair offsets on this object, and the same layout on the container "
+                     "element is what aborted the 146 run, so nothing is written and the next tick "
+                     "is free to try again", (void *)mode,
+                     (unsigned long long)tnx_v150_qword(mode + 0x108),
+                     (unsigned long long)tnx_v150_qword(mode + 0x118));
         }
 
         return 0;
@@ -11275,9 +11347,9 @@ static void tnx_autododge_v48(void) {
 
         tnx_v146_phase("mode-write");
 
-        if (!TNX_V147_ACT_WRITE) {
-            tnx_v148_receiver_probe();
+        tnx_v148_receiver_probe();
 
+        if (!TNX_V150_ACT_WRITE) {
             if (g_v147_dry_logs < 8) {
                 g_v147_dry_logs++;
 

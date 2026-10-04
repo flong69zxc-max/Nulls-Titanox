@@ -313,7 +313,9 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_146"
+#define TNX_BUILD_TAG "titanox_147"
+
+#define TNX_V147_ACT_WRITE 0
 
 /* v145 - one own, published once per tick.
  *
@@ -7994,6 +7996,7 @@ static uintptr_t tnx_v144_hop(uintptr_t base, int *whyOut) {
 }
 
 static const char *g_v145_own_from = "none";
+static int g_v147_dry_logs = 0;
 static int g_v145_pub_logs = 0;
 static int g_v145_stale_logs = 0;
 static int g_v145_actuate_logs = 0;
@@ -8914,7 +8917,8 @@ static void tnx_v128_actuate(void) {
      * "wrote raw+0xfa4 (30,9) over (30,9)", i.e. the previous tick had already put it there,
      * so a per-tick rewrite is a no-op that only adds noise and a write the battle update
      * never sees change. */
-    if (doWrite && ctrl && tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_X_OFF, &raw_keep_x) &&
+    if (TNX_V147_ACT_WRITE && doWrite && ctrl &&
+        tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_X_OFF, &raw_keep_x) &&
         tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &raw_keep_y)) {
         if (raw_keep_x != raw_x || raw_keep_y != raw_y) {
             tnx_write_bytes(ctrl + TNX_V128_CTRL_RAW_X_OFF, &raw_x, sizeof(raw_x));
@@ -10495,19 +10499,18 @@ static int tnx_v140_sidestep(int32_t ox, int32_t oy, float *sumX, float *sumY, i
 }
 
 static uintptr_t tnx_v144_mode_pick(uintptr_t *vtOut, const char **whoOut, const char **whyOut) {
-    uintptr_t cand[3];
-    const char *names[3] = { "engine-chain", "players-chain", "v135-list-own" };
+    uintptr_t cand[2];
+    const char *names[2] = { "engine-chain", "players-chain" };
     int i;
 
     cand[0] = tnx_v144_hop((uintptr_t)g_scene_object, NULL);
     cand[1] = tnx_v144_hop((uintptr_t)g_players_object, NULL);
-    cand[2] = g_v144_own_elem;
 
     if (vtOut) *vtOut = 0;
     if (whoOut) *whoOut = "none";
     if (whyOut) *whyOut = "none-ok";
 
-    for (i = 0; i < 3; i++) {
+    for (i = 0; i < 2; i++) {
         const char *why = "?";
         uintptr_t vt = 0;
 
@@ -11196,7 +11199,18 @@ static void tnx_autododge_v48(void) {
 
         tnx_v146_phase("mode-write");
 
-        if (!tnx_v144_mode_write(targetX, targetY, TNX_V140_MODEPAIR_FLAG)) {
+        if (!TNX_V147_ACT_WRITE) {
+            if (g_v147_dry_logs < 8) {
+                g_v147_dry_logs++;
+
+                tnx_logf("v147 actuate write disabled target=(%d,%d) own=(%d,%d) ownFrom=%s - the "
+                         "candidate list no longer carries the container element: writing the pair "
+                         "at +0x10c on it clobbers the high half of the 8 byte pointer at +0x108 "
+                         "that the game frees at rva 0x9fd390, and free() rejecting that pointer is "
+                         "the SIGABRT of the 146 run", targetX, targetY, ownX, ownY,
+                         g_v145_own_from);
+            }
+        } else if (!tnx_v144_mode_write(targetX, targetY, TNX_V140_MODEPAIR_FLAG)) {
             /* v146: the fallback leaf is reached only when the primary actuator refused, and it
              * is called through a pointer that is zero whenever the fingerprint did not pass,
              * so it is checked here rather than trusted. */

@@ -313,7 +313,12 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_155"
+#define TNX_BUILD_TAG "titanox_156"
+
+#define TNX_V156_INPUT_WRITE 1
+#define TNX_V156_LOGS 24
+#define TNX_V156_PUSH_LOGS 12
+
 
 #define TNX_V155_PROGRESS 20.0f
 #define TNX_V155_STALL_TICKS 10
@@ -8230,6 +8235,9 @@ static int tnx_v113_queue_count(uintptr_t *mgrOut) {
     return (int)count;
 }
 
+static int g_v156_logs = 0;
+static uint64_t g_v156_push_logs = 0;
+
 static int tnx_v113_enqueue(int x, int y) {
     uintptr_t ctorFn = tnx_v113_entry(TNX_V113_MSGCTOR_RVA);
     uintptr_t inputFn = tnx_v113_entry(TNX_V113_ADDINPUT_RVA);
@@ -8287,23 +8295,27 @@ static int tnx_v113_enqueue(int x, int y) {
     g_v113_enqueues++;
     g_v113_push_frame = g_v48_ticks;
 
-    tnx_logf("v126 queuePush tick=%llu type=%d x=%d y=%d msg=%p mgr=%p alloc=%s seqBefore=%d "
-             "seqAfter=%d qBefore=%d qAfter=%d qLast=%p - the movement message of this build is the one "
-             "the battle update builds at %#llx: size %#x, the ctor %#llx stores the type at +%#llx with "
-             "w1 loaded with %d and not 2, the clamped pair goes to +%#llx as two int32, and the push is "
-             "addInput %#llx with the manager read as %#llx+%#llx; the allocator used here is %s because "
-             "the stub %#llx opens with adrp and the callable gate refuses it, so the GOT slot %#llx is "
-             "read and malloc is the last resort, and manager+%#llx is the sequence counter addInput "
-             "increments, so seqAfter above seqBefore is proof the call ran at all",
-             (unsigned long long)g_v103_tick, TNX_V126_TYPE_MOVE, x, y, msg, mgr, g_v126_alloc_how,
-             g_v126_seq_before, g_v126_seq_after, g_v126_q_before, g_v126_q_after, g_v126_q_last,
-             (unsigned long long)0x79de88ULL, (unsigned)TNX_V113_MSG_SIZE,
-             (unsigned long long)TNX_V113_MSGCTOR_RVA, (unsigned long long)TNX_V113_TYPE_OFF,
-             TNX_V126_TYPE_MOVE, (unsigned long long)TNX_V113_X_OFF,
-             (unsigned long long)TNX_V113_ADDINPUT_RVA, (unsigned long long)TNX_V113_GETBATTLE_RVA,
-             (unsigned long long)TNX_V113_MGR_OFF, g_v126_alloc_how,
-             (unsigned long long)TNX_V113_ALLOC_RVA, (unsigned long long)TNX_V126_ALLOC_GOT_RVA,
-             (unsigned long long)TNX_V126_MGR_SEQ_OFF);
+    if (g_v156_push_logs < TNX_V156_PUSH_LOGS || (g_v156_push_logs % 64) == 0) {
+        tnx_logf("v126 queuePush tick=%llu type=%d x=%d y=%d msg=%p mgr=%p alloc=%s seqBefore=%d "
+                 "seqAfter=%d qBefore=%d qAfter=%d qLast=%p - the movement message of this build is the one "
+                 "the battle update builds at %#llx: size %#x, the ctor %#llx stores the type at +%#llx with "
+                 "w1 loaded with %d and not 2, the clamped pair goes to +%#llx as two int32, and the push is "
+                 "addInput %#llx with the manager read as %#llx+%#llx; the allocator used here is %s because "
+                 "the stub %#llx opens with adrp and the callable gate refuses it, so the GOT slot %#llx is "
+                 "read and malloc is the last resort, and manager+%#llx is the sequence counter addInput "
+                 "increments, so seqAfter above seqBefore is proof the call ran at all",
+                 (unsigned long long)g_v103_tick, TNX_V126_TYPE_MOVE, x, y, msg, mgr, g_v126_alloc_how,
+                 g_v126_seq_before, g_v126_seq_after, g_v126_q_before, g_v126_q_after, g_v126_q_last,
+                 (unsigned long long)0x79de88ULL, (unsigned)TNX_V113_MSG_SIZE,
+                 (unsigned long long)TNX_V113_MSGCTOR_RVA, (unsigned long long)TNX_V113_TYPE_OFF,
+                 TNX_V126_TYPE_MOVE, (unsigned long long)TNX_V113_X_OFF,
+                 (unsigned long long)TNX_V113_ADDINPUT_RVA, (unsigned long long)TNX_V113_GETBATTLE_RVA,
+                 (unsigned long long)TNX_V113_MGR_OFF, g_v126_alloc_how,
+                 (unsigned long long)TNX_V113_ALLOC_RVA, (unsigned long long)TNX_V126_ALLOC_GOT_RVA,
+                 (unsigned long long)TNX_V126_MGR_SEQ_OFF);
+    }
+
+    g_v156_push_logs++;
 
     return 1;
 }
@@ -11772,6 +11784,20 @@ static void tnx_autododge_v48(void) {
         }
 
         tnx_v146_phase("mode-write");
+
+        if (TNX_V156_INPUT_WRITE) {
+            int pushed = tnx_v113_enqueue(targetX, targetY);
+
+            if (g_v156_logs < TNX_V156_LOGS || !pushed) {
+                g_v156_logs++;
+
+                tnx_logf("v156 input push x=%d y=%d ok=%d own=(%d,%d) - the destination goes out as a "
+                         "client input through the battle input manager, which is the route the "
+                         "server actually consumes, so the move stops being a local prediction that "
+                         "a replay cannot show; the local setter below still runs so the prediction "
+                         "and the server stay in step", targetX, targetY, pushed, ownX, ownY);
+            }
+        }
 
         tnx_v148_receiver_probe();
 

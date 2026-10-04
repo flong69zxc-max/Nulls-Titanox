@@ -317,6 +317,8 @@ static int g_v123_defer_logs = 0;
 
 #define TNX_V165_RAW_INPUT 1
 #define TNX_V165_JOY_MAG 500.0f
+#define TNX_V166_INPUT_ONLY 1
+#define TNX_V166_STICK_STUCK_FRAMES 30
 #define TNX_V165_LOGS 12
 
 
@@ -331,12 +333,12 @@ static int g_v123_defer_logs = 0;
 
 #define TNX_V160_DIRS 48
 #define TNX_V160_REACH 600.0f
-#define TNX_V160_HORIZON 1.5f
-#define TNX_V160_ENGAGE 200.0f
-#define TNX_V160_KEEP_BAND 60.0f
+#define TNX_V160_HORIZON 2.0f
+#define TNX_V160_ENGAGE 900.0f
+#define TNX_V160_KEEP_BAND 0.0f
 #define TNX_V160_MOMENTUM 100.0f
-#define TNX_V160_LOCK_MS 60
-#define TNX_V160_RELEASE_MS 120
+#define TNX_V160_LOCK_MS 0
+#define TNX_V160_RELEASE_MS 0
 #define TNX_V160_SPEED 720.0f
 
 
@@ -348,7 +350,7 @@ static int g_v123_defer_logs = 0;
 
 
 
-#define TNX_V154_INFLATE 300.0f
+#define TNX_V154_INFLATE 350.0f
 
 
 #define TNX_V151_THREAT_MIN_MS 0
@@ -356,7 +358,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_V151_LOGS 24
 
 
-#define TNX_V150_ACT_WRITE 1
+#define TNX_V150_ACT_WRITE 0
 
 #define TNX_V147_ACT_WRITE 0
 #define TNX_V148_PROBE_LOGS 6
@@ -482,7 +484,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_V47_MAP_MIN 4
 #define TNX_V47_MAP_MAX 512
 #define TNX_V47_OBJECT_MAX 64
-#define TNX_V47_DODGE_MIN_MS 100
+#define TNX_V47_DODGE_MIN_MS 0
 #define TNX_V47_LOG_FIRST 12
 #define TNX_V47_LOG_EVERY 64
 
@@ -10764,6 +10766,11 @@ static int g_v164_logs = 0;
 static int g_v165_logs = 0;
 static float g_v165_dir_x = 0.0f;
 static float g_v165_dir_y = 0.0f;
+static int g_v166_stick_frames = 0;
+static int32_t g_v166_last_x = 0;
+static int32_t g_v166_last_y = 0;
+static int g_v166_fallback = 0;
+static int g_v166_logs = 0;
 
 static void tnx_v160_build_ring(void) {
     int i;
@@ -10829,6 +10836,29 @@ static float tnx_v160_clearance(float mx, float my, float mvx, float mvy) {
     }
 
     return best;
+}
+
+static void tnx_v166_watch(int32_t ownX, int32_t ownY) {
+    if (!TNX_V166_INPUT_ONLY || g_v166_fallback) return;
+
+    if (ownX != g_v166_last_x || ownY != g_v166_last_y) {
+        g_v166_stick_frames = 0;
+        g_v166_last_x = ownX;
+        g_v166_last_y = ownY;
+
+        return;
+    }
+
+    g_v166_stick_frames++;
+
+    if (g_v166_stick_frames >= TNX_V166_STICK_STUCK_FRAMES) {
+        g_v166_fallback = 1;
+
+        tnx_logf("v166 stick has no effect: own=(%d,%d) stayed put for %d frames of live threat while "
+                 "the joystick pair was written on every one of them, so the direct pair is "
+                 "re-enabled for this run - a slide is better than standing still", ownX, ownY,
+                 g_v166_stick_frames);
+    }
 }
 
 static int tnx_v160_dodge(int32_t ownX, int32_t ownY, int32_t *txOut, int32_t *tyOut) {
@@ -11647,8 +11677,8 @@ static void tnx_autododge_v48(void) {
 
         tnx_v162_clamp(&targetX, &targetY);
 
-        if (g_v140_side_hits > 0 && g_v152_issued && targetX == g_v152_last_tx &&
-            targetY == g_v152_last_ty) {
+        if (g_v166_fallback && g_v140_side_hits > 0 && g_v152_issued &&
+            targetX == g_v152_last_tx && targetY == g_v152_last_ty) {
             return;
         }
 
@@ -11741,11 +11771,34 @@ static void tnx_autododge_v48(void) {
 
         tnx_v148_receiver_probe();
 
-        if (TNX_V165_RAW_INPUT && g_v160_active) tnx_v165_write_raw();
+        if (TNX_V165_RAW_INPUT) {
+            if (!g_v160_active) {
+                g_v165_dir_x = escapeX;
+                g_v165_dir_y = escapeY;
+            }
 
-        tnx_v164_mark_applied(targetX, targetY);
+            tnx_v165_write_raw();
+        }
 
-        if (!TNX_V150_ACT_WRITE) {
+        tnx_v166_watch(ownX, ownY);
+
+        if (TNX_V166_INPUT_ONLY && !g_v166_fallback) {
+            if (g_v166_logs < 1) {
+                g_v166_logs++;
+
+                tnx_logf("v166 input only: the pair at +%#llx and the applied pair are not written "
+                         "while the joystick route answers, because a written position carries the "
+                         "body without its run cycle and that is the slide; the stick is the only "
+                         "mover, it is written on every frame, the dodge interval is %d ms, the "
+                         "heading lock %d ms and the release %d ms",
+                         (unsigned long long)TNX_V128_CTRL_RAW_X_OFF, TNX_V47_DODGE_MIN_MS,
+                         TNX_V160_LOCK_MS, TNX_V160_RELEASE_MS);
+            }
+        } else {
+            tnx_v164_mark_applied(targetX, targetY);
+        }
+
+        if (!TNX_V150_ACT_WRITE && !g_v166_fallback) {
             if (g_v147_dry_logs < 8) {
                 g_v147_dry_logs++;
 
@@ -13125,6 +13178,24 @@ static void setup(void) {
              "build used - vm_read_overwrite, vm_protect, vm_region_64, mach_task_self, "
              "mach_port_deallocate - and reports any call outside it as a header question, so "
              "mach_vm_write is named as a foreign call instead of passing as clean");
+
+    tnx_logf("plan v166, from the 15:18 run: (1) the slide is the v164 write. That log has the "
+             "joystick pair written every frame and kept by the game (v165 want=(500,0) after=(500,0)) "
+             "while v164 pushes the APPLIED pair from own=(1869,6166) to (2555,5588) in one step, so "
+             "the body is carried and the run cycle never starts. The applied pair and the pair at "
+             "+0x10c are therefore not written while the stick answers, and the stick - not a "
+             "position - is what the client consumes, which is what makes the walk read as player "
+             "input. The threat path now feeds the stick as well, so both paths move through it. "
+             "(2) The delays are gone: the dodge interval 100 ms to %d, the heading lock 60 ms to %d "
+             "and the release 120 ms to %d, so a new heading is taken on the frame it is better "
+             "instead of after a hold. (3) The dodge engages far earlier: the engage radius 200 to "
+             "%.0f against a threat the scoring already inflates by %.0f, which is roughly a second "
+             "and three quarters of travel at %.0f units per second instead of the last moment. (4) A "
+             "watchdog watches own while the stick is engaged: %d frames without movement and the "
+             "direct pair is turned back on for the run, so a cosmetic stick cannot leave the "
+             "character standing still", TNX_V47_DODGE_MIN_MS, TNX_V160_LOCK_MS,
+             TNX_V160_RELEASE_MS, (double)TNX_V160_ENGAGE, (double)TNX_V154_INFLATE,
+             (double)TNX_V160_SPEED, TNX_V166_STICK_STUCK_FRAMES);
 
     tnx_start_timer();
 

@@ -326,11 +326,18 @@ static int g_v123_defer_logs = 0;
 #define TNX_V167_THREAT_RANGE 2800.0f
 #define TNX_V167_RANGE_SLOTS 16
 #define TNX_V167_RANGE_MIN_SAMPLES 20
+#define TNX_V170_STEP 20.0f
+#define TNX_V170_LIVE_GATE 1
+#define TNX_V170_ELEM_RESET 1
 #define TNX_V167_RANGE_SLACK 1.15f
 #define TNX_V167_DEATH_GUARD 0
-#define TNX_V167_STAGE_APPLIED 1
-#define TNX_V167_STAGE_STICK 2
-#define TNX_V167_STAGE_MAX 2
+#define TNX_V171_STAGE_STICK 1
+#define TNX_V171_STAGE_POSITION 2
+#define TNX_V171_STAGE_MAX 2
+#define TNX_V171_INPUT_MGR 1
+#define TNX_V171_INPUT_TYPE 1
+#define TNX_V171_INPUT_MAG 500
+#define TNX_V171_INPUT_CHANGE_GATE 1
 #define TNX_V165_LOGS 12
 
 
@@ -6317,6 +6324,22 @@ static int g_v167_filter_logs = 0;
 static int g_v167_drop_along = 0;
 static int g_v167_drop_reach = 0;
 static int g_v167_range_logs = 0;
+static int g_v167_live_threats = 0;
+static int g_v167_team_other_seen = 0;
+static int g_v170_live_logs = 0;
+static int g_v170_step_logs = 0;
+static int g_v170_elem_logs = 0;
+static uintptr_t g_v170_last_own = 0;
+static int g_v171_input_writes = 0;
+static int g_v171_input_skips = 0;
+static int g_v171_input_logs = 0;
+static int g_v171_mgr_logs = 0;
+static int g_v171_stick_skips = 0;
+static int g_v171_wrote_input = 0;
+static int g_v171_engaged_frame = 0;
+static int g_v171_neutral_logs = 0;
+static int32_t g_v171_last_stick_x = 0;
+static int32_t g_v171_last_stick_y = 0;
 static int g_v167_stick_cleared = 0;
 
 static uintptr_t g_v140_proj_addr = 0;
@@ -10527,7 +10550,9 @@ static int tnx_v140_proj_scan(uintptr_t manager, int32_t count) {
         g_v140_projs[k].hasPrev = 0;
     }
 
-    g_v167_own_team_seen = (g_v167_proj_own > 0 && g_v167_proj_other > 0) ? 1 : 0;
+    if (g_v167_proj_other > 0) g_v167_team_other_seen = 1;
+
+    g_v167_own_team_seen = (g_v167_proj_own > 0 && g_v167_team_other_seen) ? 1 : 0;
 
     if (g_v167_filter_logs < 6 && g_v167_own_team_seen) {
         g_v167_filter_logs++;
@@ -10909,6 +10934,8 @@ static float tnx_v160_clearance(float mx, float my, float mvx, float mvy) {
     float best = 1000000.0f;
     int k;
 
+    g_v167_live_threats = 0;
+
     for (k = 0; k < TNX_V140_PROJ_MAX; k++) {
         const tnx_v140_proj_t *p = &g_v140_projs[k];
         float vx;
@@ -10990,6 +11017,8 @@ static float tnx_v160_clearance(float mx, float my, float mvx, float mvy) {
 
         d = sqrtf(cx * cx + cy * cy) - TNX_V154_INFLATE;
 
+        g_v167_live_threats++;
+
         if (d < best) best = d;
     }
 
@@ -11015,14 +11044,15 @@ static void tnx_v167_watch(int32_t ownX, int32_t ownY) {
 
     g_v167_stuck++;
 
-    if (g_v167_stuck >= TNX_V167_STUCK_FRAMES && g_v167_stage < TNX_V167_STAGE_MAX) {
+    if (g_v167_stuck >= TNX_V167_STUCK_FRAMES && g_v167_stage < TNX_V171_STAGE_MAX) {
         g_v167_stage++;
         g_v167_stuck = 0;
 
         tnx_logf("v167 stage %d: own=(%d,%d) did not move for %d frames of live threat, so one more "
-                 "channel is added - stage %d is the applied pair and the leaf setter, stage %d also "
-                 "writes the joystick pair", g_v167_stage, ownX, ownY, TNX_V167_STUCK_FRAMES,
-                 TNX_V167_STAGE_APPLIED, TNX_V167_STAGE_STICK);
+                 "channel is added - stage %d writes the raw pair at +0xfa4 as well, stage %d falls "
+                 "back to the applied pair and the mode function, which are position writes and are "
+                 "where the lerp the user described comes from", g_v167_stage, ownX, ownY,
+                 TNX_V167_STUCK_FRAMES, TNX_V171_STAGE_STICK, TNX_V171_STAGE_POSITION);
     }
 }
 
@@ -11091,6 +11121,127 @@ static void tnx_v169_death_signals(uintptr_t ownElem, int32_t ownX, int32_t ownY
              (unsigned long long)TNX_V91_DEAD_OFF, dead);
 }
 
+static uintptr_t tnx_v171_input_mgr(void) {
+    void *mgr = NULL;
+
+    if (!g_scene_object) return 0;
+    if (!tnx_read_ptr(g_scene_object + TNX_MODE_INPUTMGR_OFF, &mgr) || !mgr) return 0;
+    if (!tnx_heap_contains((uintptr_t)mgr)) return 0;
+
+    return (uintptr_t)mgr;
+}
+
+static void tnx_v171_write_input(float dirX, float dirY) {
+    uintptr_t mgr = 0;
+    int32_t want[3] = { 0, 0, 0 };
+    int32_t before[3] = { 0, 0, 0 };
+    int32_t after[3] = { 0, 0, 0 };
+    int kept = 0;
+
+    if (!TNX_V171_INPUT_MGR) return;
+
+    want[0] = TNX_V171_INPUT_TYPE;
+    want[1] = (int32_t)((double)dirX * (double)TNX_V171_INPUT_MAG);
+    want[2] = (int32_t)((double)dirY * (double)TNX_V171_INPUT_MAG);
+
+    mgr = tnx_v171_input_mgr();
+
+    if (!mgr) {
+        if (g_v171_mgr_logs < 4) {
+            g_v171_mgr_logs++;
+
+            tnx_logf("v171 no input manager yet: scene=%p +%#llx reads nothing, so the sidestep has no "
+                     "engine input to write and only the position channels are left",
+                     (void *)g_scene_object, (unsigned long long)TNX_MODE_INPUTMGR_OFF);
+        }
+
+        return;
+    }
+
+    tnx_read_i32(mgr + 0x4, &before[0]);
+    tnx_read_i32(mgr + 0x8, &before[1]);
+    tnx_read_i32(mgr + 0xc, &before[2]);
+
+    if (TNX_V171_INPUT_CHANGE_GATE && before[0] == want[0] && before[1] == want[1] &&
+        before[2] == want[2]) {
+        g_v171_input_skips++;
+
+        return;
+    }
+
+    tnx_write_bytes(mgr + 0x4, &want[0], sizeof(want[0]));
+    tnx_write_bytes(mgr + 0x8, &want[1], sizeof(want[1]));
+    tnx_write_bytes(mgr + 0xc, &want[2], sizeof(want[2]));
+
+    g_v171_input_writes++;
+
+    g_v171_wrote_input = 1;
+
+    tnx_read_i32(mgr + 0x4, &after[0]);
+    tnx_read_i32(mgr + 0x8, &after[1]);
+    tnx_read_i32(mgr + 0xc, &after[2]);
+
+    kept = (after[0] == want[0] && after[1] == want[1] && after[2] == want[2]) ? 1 : 0;
+
+    if (g_v171_input_logs < 12) {
+        g_v171_input_logs++;
+
+        tnx_logf("v171 input write #%d inputMgr=%p want=(%d,%d,%d) before=(%d,%d,%d) after=(%d,%d,%d) "
+                 "kept=%d skips=%d - the engine's own movement input, the record the user named: type "
+                 "at +%#x, x at +%#x, y at +%#x, all int32, movement type %d. The before triple is what "
+                 "the game itself leaves in the record, so a before of zeros while the player runs and "
+                 "a before that tracks a real stick are both readable from this one line. The raw pair "
+                 "at +%#llx is now stage %d and identical writes there are skipped",
+                 g_v171_input_writes, (void *)mgr, want[0], want[1], want[2], before[0], before[1],
+                 before[2], after[0], after[1], after[2], kept, g_v171_input_skips, 0x4, 0x8, 0xc,
+                 TNX_V171_INPUT_TYPE, (unsigned long long)TNX_V128_CTRL_RAW_X_OFF,
+                 TNX_V171_STAGE_STICK);
+    }
+}
+
+static void tnx_v171_input_release(void) {
+    uintptr_t mgr = 0;
+    int32_t held[3] = { 0, 0, 0 };
+    int32_t zero[3] = { 0, 0, 0 };
+    int engagedLast = g_v171_engaged_frame;
+
+    g_v171_engaged_frame = 0;
+
+    if (!TNX_V171_INPUT_MGR) return;
+    if (!g_v171_wrote_input) return;
+    if (engagedLast) return;
+
+    mgr = tnx_v171_input_mgr();
+
+    if (!mgr) return;
+
+    tnx_read_i32(mgr + 0x4, &held[0]);
+    tnx_read_i32(mgr + 0x8, &held[1]);
+    tnx_read_i32(mgr + 0xc, &held[2]);
+
+    g_v171_wrote_input = 0;
+
+    if (held[0] == 0 && held[1] == 0 && held[2] == 0) return;
+
+    tnx_write_bytes(mgr + 0x4, &zero[0], sizeof(zero[0]));
+    tnx_write_bytes(mgr + 0x8, &zero[1], sizeof(zero[1]));
+    tnx_write_bytes(mgr + 0xc, &zero[2], sizeof(zero[2]));
+
+    if (g_v171_neutral_logs < 4) {
+        g_v171_neutral_logs++;
+
+        tnx_logf("v171 input released: the record held (%d,%d,%d) and the previous frame was the last one this "
+                 "build wrote, so it is zeroed now - a release at the start of a frame that is about to "
+                 "write would blank the input and write it again in the same tick, and that flicker is "
+                 "what the character would show instead of its walk. An input left behind would keep the "
+                 "character walking on its own, and the release only runs at all when this build was "
+                 "the writer, so the player's own stick is never touched"
+                 "writing it, so it is set to zero once - an input left behind would keep the character "
+                 "walking on its own. The release only runs when this build wrote the record, so the "
+                 "player's own stick is never touched", held[0], held[1], held[2]);
+    }
+}
+
 static void tnx_v167_dead(int32_t ownX, int32_t ownY) {
     if (!g_v167_dead && TNX_V165_RAW_INPUT) {
         uintptr_t ctrl = tnx_v150_controller();
@@ -11151,6 +11302,21 @@ static int tnx_v160_dodge(int32_t ownX, int32_t ownY, int32_t *txOut, int32_t *t
 
     now = (uint64_t)(CFAbsoluteTimeGetCurrent() * 1000.0);
     stay = tnx_v160_clearance(mx, my, 0.0f, 0.0f);
+
+    if (TNX_V170_LIVE_GATE && g_v167_live_threats == 0) {
+        if (g_v170_live_logs < 8 && g_v160_prev_idx >= 0) {
+            g_v170_live_logs++;
+
+            tnx_logf("v170 nothing to dodge: every tracked shot was filtered out, so the ring is held "
+                     "back instead of scoring an empty list - with no live threat every one of the %d "
+                     "directions returns the same clearance, the first index wins and the heading stops "
+                     "depending on the shots at all", TNX_V160_DIRS);
+        }
+
+        g_v160_prev_idx = -1;
+
+        return 0;
+    }
 
     if (stay < TNX_V160_ENGAGE) g_v160_last_danger = now;
 
@@ -11409,6 +11575,8 @@ static int tnx_v162_clamp(int32_t *x, int32_t *y) {
 
 static void tnx_autododge_v48(void) {
     tnx_v146_phase("dodge-enter");
+
+    tnx_v171_input_release();
 
     tnx_v47_obj_t objects[TNX_V47_OBJECT_MAX];
     uintptr_t source = 0;
@@ -11882,6 +12050,27 @@ static void tnx_autododge_v48(void) {
     tnx_v169_death_signals((ownIndex >= 0 && ownIndex < usable) ? objects[ownIndex].object : 0, ownX,
                            ownY);
 
+    if (TNX_V170_ELEM_RESET && ownIndex >= 0 && ownIndex < usable &&
+        objects[ownIndex].object != g_v170_last_own) {
+        if (g_v170_last_own && g_v170_elem_logs < 4) {
+            g_v170_elem_logs++;
+
+            tnx_logf("v170 own element changed %p -> %p at (%d,%d): the ladder, the heading, the write "
+                     "clock and the issued flag are cleared, because a respawn or a different element "
+                     "carries none of the state the last life built",
+                     (void *)g_v170_last_own, (void *)objects[ownIndex].object, ownX, ownY);
+        }
+
+        g_v170_last_own = objects[ownIndex].object;
+        g_v167_stage = 0;
+        g_v167_stuck = 0;
+        g_v160_prev_idx = -1;
+        g_v160_hold_until = 0;
+        g_v160_last_danger = 0;
+        g_v47_last_write_ms = 0;
+        g_v152_issued = 0;
+    }
+
     if (TNX_V167_DEATH_GUARD && ownIndex >= 0 && ownIndex < usable && objects[ownIndex].dead) {
         tnx_v167_dead(ownX, ownY);
 
@@ -11921,14 +12110,14 @@ static void tnx_autododge_v48(void) {
         if (g_v160_active && g_v151_logs < TNX_V151_LOGS) {
             g_v151_logs++;
 
-            tnx_logf("v160 dodge own=(%d,%d) target=(%d,%d) projectiles=%d dirIdx=%d reach=%.0f "
-                     "engage=%.0f - %d directions are scored by the closest approach of the threat "
+            tnx_logf("v160 dodge own=(%d,%d) target=(%d,%d) projectiles=%d liveThreats=%d dirIdx=%d "
+                     "reach=%.0f engage=%.0f - %d directions are scored by the closest approach of the threat "
                      "against a point moving at the character speed along that direction, the score "
                      "carries a momentum term toward the previous direction, and the chosen heading "
                      "is locked for %d ms inside a band of %.0f, which is what stops the character "
                      "sliding between two nearly equal directions",
-                     ownX, ownY, g_v160_tx, g_v160_ty, g_v140_side_projs, g_v160_prev_idx,
-                     (double)TNX_V160_REACH, (double)TNX_V160_ENGAGE, TNX_V160_DIRS,
+                     ownX, ownY, g_v160_tx, g_v160_ty, g_v140_side_projs, g_v167_live_threats,
+                     g_v160_prev_idx, (double)TNX_V160_REACH, (double)TNX_V160_ENGAGE, TNX_V160_DIRS,
                      TNX_V160_LOCK_MS, (double)TNX_V160_KEEP_BAND);
         }
     }
@@ -11978,9 +12167,30 @@ static void tnx_autododge_v48(void) {
             targetY = g_v160_ty;
         }
 
+        if (TNX_V170_STEP > 0.0f) {
+            float sdx = (float)(targetX - ownX);
+            float sdy = (float)(targetY - ownY);
+            float slen = sqrtf(sdx * sdx + sdy * sdy);
+
+            if (slen > TNX_V170_STEP) {
+                if (g_v170_step_logs < 1) {
+                    g_v170_step_logs++;
+
+                    tnx_logf("v170 step cut to %.0f units: the request was %.0f units away, and asking "
+                             "for that on every frame is %.0f units per second at sixty frames, which "
+                             "no walk cycle can express, so the body slides; the reference caps its own "
+                             "step at speed/10 and reissues it every ten milliseconds",
+                             (double)TNX_V170_STEP, (double)slen, (double)(slen * 60.0f));
+                }
+
+                targetX = ownX + (int)(sdx / slen * TNX_V170_STEP);
+                targetY = ownY + (int)(sdy / slen * TNX_V170_STEP);
+            }
+        }
+
         tnx_v162_clamp(&targetX, &targetY);
 
-        if (g_v167_stage >= TNX_V167_STAGE_APPLIED && g_v140_side_hits > 0 && g_v152_issued &&
+        if (g_v167_stage >= TNX_V171_STAGE_POSITION && g_v140_side_hits > 0 && g_v152_issued &&
             targetX == g_v152_last_tx && targetY == g_v152_last_ty) {
             return;
         }
@@ -12101,26 +12311,46 @@ static void tnx_autododge_v48(void) {
 
         tnx_v167_watch(ownX, ownY);
 
-        if (!TNX_V166_INPUT_ONLY || g_v167_stage >= TNX_V167_STAGE_APPLIED) {
-            tnx_v164_mark_applied(targetX, targetY);
+        g_v171_engaged_frame = 1;
 
-            if (TNX_V165_RAW_INPUT && g_v167_stage >= TNX_V167_STAGE_STICK) tnx_v165_write_raw();
-        } else if (g_v167_logs < 1) {
-            g_v167_logs++;
+        tnx_v171_write_input(g_v165_dir_x, g_v165_dir_y);
 
-            tnx_logf("v167 stage %d: the move is the client input command plus the mode function %#llx "
-                     "and nothing else - no joystick pair, no applied pair and no write at +%#llx - "
-                     "because a field write carries the body while the engine's own function makes it "
-                     "walk; own=(%d,%d) target=(%d,%d)", g_v167_stage,
-                     (unsigned long long)TNX_V140_MODEPAIR_RVA,
-                     (unsigned long long)TNX_V128_CTRL_RAW_X_OFF, ownX, ownY, targetX, targetY);
+        if (TNX_V165_RAW_INPUT && g_v167_stage >= TNX_V171_STAGE_STICK) {
+            int32_t sx = (int32_t)((double)g_v165_dir_x * (double)TNX_V171_INPUT_MAG);
+            int32_t sy = (int32_t)((double)g_v165_dir_y * (double)TNX_V171_INPUT_MAG);
+
+            if (sx != g_v171_last_stick_x || sy != g_v171_last_stick_y) {
+                g_v171_last_stick_x = sx;
+                g_v171_last_stick_y = sy;
+
+                tnx_v165_write_raw();
+            } else {
+                g_v171_stick_skips++;
+            }
         }
 
-        if (!tnx_v144_mode_write(targetX, targetY, TNX_V140_MODEPAIR_FLAG)) {
+        if (g_v167_stage >= TNX_V171_STAGE_POSITION) tnx_v164_mark_applied(targetX, targetY);
+
+        if (g_v167_logs < 1) {
+            g_v167_logs++;
+
+            tnx_logf("v171 order: the engine input at scene+%#llx is the move now - type %d and the "
+                     "sidestep vector written into the record the user named - so the walk cycle comes "
+                     "from the stick and not from a position the renderer has to lerp towards. The raw "
+                     "pair at +%#llx arrives at stage %d, and the applied pair plus the mode function "
+                     "at stage %d, because those two start a new interpolation every frame and that is "
+                     "the slide; own=(%d,%d) target=(%d,%d) skipped=%d",
+                     (unsigned long long)TNX_MODE_INPUTMGR_OFF, TNX_V171_INPUT_TYPE,
+                     (unsigned long long)TNX_V128_CTRL_RAW_X_OFF, TNX_V171_STAGE_STICK,
+                     TNX_V171_STAGE_POSITION, ownX, ownY, targetX, targetY, g_v171_input_skips);
+        }
+
+        if (g_v167_stage >= TNX_V171_STAGE_POSITION &&
+            !tnx_v144_mode_write(targetX, targetY, TNX_V140_MODEPAIR_FLAG)) {
              
 
 
-            if (TNX_V150_ACT_WRITE && g_v167_stage >= TNX_V167_STAGE_APPLIED && g_v47_setpred) {
+            if (TNX_V150_ACT_WRITE && g_v167_stage >= TNX_V171_STAGE_POSITION && g_v47_setpred) {
                 ((tnx_v47_setpred_t)g_v47_setpred)((void *)g_scene_object, targetX, targetY);
             }
         }
@@ -13548,6 +13778,37 @@ static void setup(void) {
              "from the outside. The learned range is floored at %.0f and can only raise the reach, so "
              "a class first met in a short fight cannot teach the filter to ignore its real shots",
              (unsigned long long)TNX_V91_DEAD_OFF, (double)TNX_V167_THREAT_RANGE);
+
+    tnx_logf("plan v170, from the 16:10 run: (1) every write in that log says dirIdx=0 and "
+             "target=own+(600,0), a fixed east heading whatever the shots were doing. The cause is an "
+             "empty threat list: with the v167 filters dropping all of it, the clearance returns its "
+             "constant for all %d directions, the momentum term locks the first index and the dodge "
+             "engages anyway, so the character walks east into what is coming. The ring now refuses to "
+             "score when no shot survived the filters. (2) The step it issues is capped at %.0f units "
+             "instead of %.0f: asking for 600 units on every frame is 36000 units per second and no "
+             "walk cycle can express it, which is the slide; the reference caps its step at speed/10 "
+             "and reissues it every ten milliseconds. (3) The team filter arms as soon as one "
+             "enemy-team shot has been seen, instead of asking for both sides in the same frame, which "
+             "never happened while the writes kept reporting five of the player's own shots dropped. "
+             "(4) A new own element clears the ladder, the heading, the write clock and the issued "
+             "flag, so a respawn does not inherit the last life's state",
+             TNX_V160_DIRS, (double)TNX_V170_STEP, (double)DODGE_STEP);
+
+    tnx_logf("plan v171, from the user's reading of the v119 numbers: a written position is lerped - "
+             "src30, denomX and d38X in that log are the interpolation between the old and the new "
+             "place - so a new target every frame restarts that interpolation and the body rides; and "
+             "the walk cycle hangs on the stick, not on the position, so a position write leaves the "
+             "engine certain the player is standing while the body moves. The move is therefore the "
+             "engine's own input record at *(scene + %#llx): type %d at +%#x, x at +%#x, y at +%#x, all "
+             "int32, written with the sidestep vector and skipped when the value has not changed, so "
+             "the same input is not poked into the engine twice, and released with zeros the moment "
+             "this build stops being the writer of it. The v99 probe wrote those same two fields as "
+             "floats with a unit vector, which read as int32 is garbage, and that is why the earlier "
+             "attempt moved nothing. The position channels stay, but only as ladder stages: the raw "
+             "pair at +%#llx at stage %d, and the applied pair with the mode function at stage %d, "
+             "which is exactly where that lerp comes from", (unsigned long long)TNX_MODE_INPUTMGR_OFF,
+             TNX_V171_INPUT_TYPE, 0x4, 0x8, 0xc, (unsigned long long)TNX_V128_CTRL_RAW_X_OFF,
+             TNX_V171_STAGE_STICK, TNX_V171_STAGE_POSITION);
 
     tnx_start_timer();
 

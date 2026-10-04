@@ -52,9 +52,7 @@
 #define TNX_V197_STICK_WHEN_FREE 1
 #define TNX_V197_PREDICT_FLAG 1
 #define TNX_V197_STUCK_LOG 8
-#define TNX_V198_MOVESTATE 1
 #define TNX_V199_STICK_SIGN 1
-#define TNX_V199_STICK_ON_THREAT 1
 #define TNX_V201_WRITE_GUARD 1
 #define TNX_V201_DENY_LOGS 8
 #define TNX_V202_TEAM_STRICT 1
@@ -80,11 +78,8 @@
 #define TNX_V213_JOYSTATE_OFF 0xed7ULL
 #define TNX_V214_MATE_AVOID 1
 #define TNX_V214_MATE_CLEAR 700.0f
-#define TNX_V218_BODY_ALL 1
 #define TNX_V219_QUEUE 1
 #define TNX_V220_STEP 150.0f
-#define TNX_V220_BODY_CLEAR 700.0f
-#define TNX_V220_LOGS 6
 #define TNX_V221_LIST_OFF 0x20ULL
 #define TNX_V221_COUNT_OFF 0x0cULL
 #define TNX_V222_GATE_OFF 0x70ULL
@@ -98,10 +93,12 @@
 #define TNX_V226_ETA_MIN 0.35f
 #define TNX_V227_REJECT 1
 #define TNX_V227_MIN_SPEED 260.0f
-#define TNX_V227_MAX_SPEED 6500.0f
+#define TNX_V227_MAX_SPEED 9000.0f
 #define TNX_V227_BLINK_TICKS 2
 #define TNX_V227_BLINK_REM 320.0f
 #define TNX_V227_LOGS 8
+#define TNX_V228_BODY_SCAN 1
+#define TNX_V229_STEP_SCALE 0.30f
 #define TNX_V216_FLEE 1
 #define TNX_V216_FLEE_STEP 150.0f
 #define TNX_V216_LOGS 14
@@ -387,7 +384,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_227"
+#define TNX_BUILD_TAG "titanox_229"
 
 #define TNX_V165_JOY_MAG 600.0f
 #define TNX_V167_TEAM_FILTER 1
@@ -2803,13 +2800,13 @@ static int32_t g_v191_enemy_y[TNX_V189_PLAYER_MAX];
 static int g_v191_enemy_n = 0;
 
 static int tnx_v225_mode(void) {
-    int own = g_v189_pl_n;
+    int mates = g_v189_mate_n;
     int en = g_v191_enemy_n;
 
     if (!TNX_V225_MODE_TUNE) return 2;
-    if (own <= 1 && en <= 1) return 0;
-    if (own <= 1) return 1;
-    if (own <= 3 && en <= 3) return 2;
+    if (mates <= 0 && en <= 1) return 0;
+    if (mates <= 0) return 1;
+    if (mates <= 2) return 2;
 
     return 3;
 }
@@ -2817,7 +2814,7 @@ static int tnx_v225_mode(void) {
 static float tnx_v225_step(void) {
     static const float steps[4] = { 220.0f, 190.0f, 160.0f, 140.0f };
 
-    return steps[tnx_v225_mode()];
+    return steps[tnx_v225_mode()] * TNX_V229_STEP_SCALE;
 }
 
 static float tnx_v225_look_ms(void) {
@@ -8390,7 +8387,7 @@ static int tnx_v192_predict(int32_t x, int32_t y) {
         tnx_read_i32((uintptr_t)battle + TNX_MODE_PREDICTX_OFF, &px);
         tnx_read_i32((uintptr_t)battle + TNX_MODE_PREDICTY_OFF, &py);
 
-        {
+        if (TNX_V226_GATE_WRITE) {
             uint8_t one = 1;
             uint8_t back = 0;
 
@@ -13420,6 +13417,31 @@ static float tnx_v218_body_score(float px, float py, float dirX, float dirY, flo
     return best;
 }
 
+static float tnx_v228_body_score(float px, float py, float dirX, float dirY, float len) {
+    float ex = px + dirX * len;
+    float ey = py + dirY * len;
+    float best = 1.0e9f;
+    int i = 0;
+
+    if (!TNX_V228_BODY_SCAN) return tnx_v218_body_score(px, py, dirX, dirY, len);
+    if (g_dodge_probe_usable <= 0) return tnx_v218_body_score(px, py, dirX, dirY, len);
+
+    for (i = 0; i < g_dodge_probe_usable; i++) {
+        const tnx_v47_obj_t *o = &g_dodge_probe_list[i];
+        float d = 0.0f;
+
+        if (o->gid < TNX_V179_PLAYER_GID) continue;
+        if (o->gid >= TNX_V179_SHOT_GID) continue;
+        if (g_v182_own_elem && o->object == g_v182_own_elem) continue;
+
+        d = tnx_v192_seg_dist(px, py, ex, ey, (float)o->x, (float)o->y);
+
+        if (d < best) best = d;
+    }
+
+    return best;
+}
+
 static void tnx_v218_unblock(float px, float py, float len, float *dirX, float *dirY) {
     static const float rot[12] = { 15.0f, -15.0f, 30.0f, -30.0f, 45.0f, -45.0f,
                                    60.0f, -60.0f, 90.0f, -90.0f, 135.0f, -135.0f };
@@ -13435,7 +13457,7 @@ static void tnx_v218_unblock(float px, float py, float len, float *dirX, float *
     if (!TNX_V214_MATE_AVOID) return;
     if (len < 1.0f) return;
 
-    bestScore = tnx_v218_body_score(px, py, base, baseY, len);
+    bestScore = tnx_v228_body_score(px, py, base, baseY, len);
     baseScore = bestScore;
     bestX = base;
     bestY = baseY;
@@ -13446,7 +13468,7 @@ static void tnx_v218_unblock(float px, float py, float len, float *dirX, float *
         float sn = sinf(a);
         float rx = base * c - baseY * sn;
         float ry = base * sn + baseY * c;
-        float score = tnx_v218_body_score(px, py, rx, ry, len);
+        float score = tnx_v228_body_score(px, py, rx, ry, len);
 
         if (score > bestScore) {
             bestScore = score;
@@ -13869,7 +13891,7 @@ static void tnx_v198_state(void) {
              "at %#llx was forced to 1 and g70h how many of them the engine kept it, dropS dropF dropB the "
              "shots thrown away as too slow, too fast and too short lived and spd the speed range seen, "
              "dead counts the frames the control object failed the alive check so every store into it was "
-             "skipped, and denied counts the stores the region guard dropped",
+             "skipped, and denied counts the stores the region guard dropped, step is the walk step of the current mode %d",
              (void *)g_v205_joystick, (unsigned long long)g_v205_joystick_writes,
              (unsigned long long)g_v205_joystick_took, (unsigned long long)g_v206_escapes,
              (unsigned long long)g_v209_lookahead, (unsigned long long)g_v211_applied_writes,
@@ -13890,7 +13912,7 @@ static void tnx_v198_state(void) {
              (unsigned long long)g_v198_pred_took, (unsigned long long)g_v198_pred_miss,
              (void *)(uintptr_t)g_scene_object, (void *)g_v182_own_elem, (void *)g_v192_pred_last,
              (int)TNX_V220_STEP, (int)TNX_V126_TYPE_MOVE, (int)TNX_V224_SLOW_US,
-             (unsigned long long)TNX_V222_GATE_OFF);
+             (unsigned long long)TNX_V222_GATE_OFF, (int)tnx_v225_step());
 
     {
         uint16_t charState = 0;
@@ -14120,13 +14142,12 @@ static void tnx_autododge_v48(void) {
     if (TNX_V225_DIAG_EVERY <= 0 || (g_v48_ticks % (uint64_t)TNX_V225_DIAG_EVERY) == 0) {
         uint64_t diag0 = tnx_v213_us();
 
-        tnx_v193_core();
+        uint64_t slot = (g_v48_ticks / (uint64_t)TNX_V225_DIAG_EVERY) % 4;
 
-        tnx_v196_dump();
-
-        tnx_v179_census();
-
-        tnx_v172_probe();
+        if (slot == 0) tnx_v193_core();
+        else if (slot == 1) tnx_v196_dump();
+        else if (slot == 2) tnx_v179_census();
+        else tnx_v172_probe();
 
         g_v225_diag_us = tnx_v213_us() - diag0;
 

@@ -318,8 +318,15 @@ static int g_v123_defer_logs = 0;
 #define TNX_V165_RAW_INPUT 1
 #define TNX_V165_JOY_MAG 500.0f
 #define TNX_V166_INPUT_ONLY 1
-#define TNX_V166_STICK_STUCK_FRAMES 30
 #define TNX_V167_TEAM_FILTER 1
+#define TNX_V167_STUCK_FRAMES 30
+#define TNX_V167_SMART 1
+#define TNX_V167_WALL_PENALTY 1
+#define TNX_V167_WALL_HIT 9000.0f
+#define TNX_V167_THREAT_RANGE 2800.0f
+#define TNX_V167_RANGE_SLOTS 16
+#define TNX_V167_RANGE_MIN_SAMPLES 20
+#define TNX_V167_RANGE_SLACK 1.15f
 #define TNX_V167_DEATH_GUARD 1
 #define TNX_V167_STAGE_APPLIED 1
 #define TNX_V167_STAGE_STICK 2
@@ -6307,6 +6314,9 @@ static int g_v167_proj_own = 0;
 static int g_v167_proj_other = 0;
 static int g_v167_own_team_seen = 0;
 static int g_v167_filter_logs = 0;
+static int g_v167_drop_along = 0;
+static int g_v167_drop_reach = 0;
+static int g_v167_range_logs = 0;
 static int g_v167_stick_cleared = 0;
 
 static uintptr_t g_v140_proj_addr = 0;
@@ -6321,9 +6331,8 @@ static int g_v151_logs = 0;
 static int32_t g_v152_last_tx = 0;
 static int32_t g_v152_last_ty = 0;
 static int g_v152_issued = 0;
-static float g_v151_best_x = 0.0f;
-static float g_v151_best_y = 0.0f;
-static float g_v151_best_dist = -1.0f;
+
+
 
 
  
@@ -8070,7 +8079,6 @@ static uintptr_t tnx_v144_hop(uintptr_t base, int *whyOut) {
 }
 
 static const char *g_v145_own_from = "none";
-static int g_v147_dry_logs = 0;
 static int g_v145_pub_logs = 0;
 static int g_v145_stale_logs = 0;
 static int g_v145_actuate_logs = 0;
@@ -10373,6 +10381,8 @@ typedef struct {
     int32_t px;
     int32_t py;
     int32_t team;
+    int32_t spawnX;
+    int32_t spawnY;
     int hasPrev;
 } tnx_v140_proj_t;
 
@@ -10482,6 +10492,8 @@ static int tnx_v140_proj_scan(uintptr_t manager, int32_t count) {
             g_v140_projs[slot].elem = (uintptr_t)element;
             g_v140_projs[slot].px = px;
             g_v140_projs[slot].py = py;
+            g_v140_projs[slot].spawnX = px;
+            g_v140_projs[slot].spawnY = py;
             g_v140_projs[slot].hasPrev = 0;
         }
 
@@ -10818,11 +10830,6 @@ static int g_v164_logs = 0;
 static int g_v165_logs = 0;
 static float g_v165_dir_x = 0.0f;
 static float g_v165_dir_y = 0.0f;
-static int g_v166_stick_frames = 0;
-static int32_t g_v166_last_x = 0;
-static int32_t g_v166_last_y = 0;
-static int g_v166_fallback = 0;
-static int g_v166_logs = 0;
 
 static void tnx_v160_build_ring(void) {
     int i;
@@ -10836,6 +10843,64 @@ static void tnx_v160_build_ring(void) {
     }
 
     g_v160_ring_built = 1;
+}
+
+static int tnx_v162_clamp(int32_t *x, int32_t *y);
+
+static int g_v167_wall_hits = 0;
+
+static int tnx_v167_clamped_away(int32_t x, int32_t y) {
+    int32_t cx = x;
+    int32_t cy = y;
+
+    tnx_v162_clamp(&cx, &cy);
+
+    return (cx != x || cy != y) ? 1 : 0;
+}
+
+typedef struct {
+    uintptr_t cls;
+    float maxFlown;
+    int samples;
+} tnx_v167_range_t;
+
+static tnx_v167_range_t g_v167_ranges[TNX_V167_RANGE_SLOTS];
+
+static void tnx_v167_range_note(uintptr_t cls, float flown) {
+    int i;
+    int free = -1;
+
+    if (!cls) return;
+
+    for (i = 0; i < TNX_V167_RANGE_SLOTS; i++) {
+        if (g_v167_ranges[i].cls == cls) {
+            if (flown > g_v167_ranges[i].maxFlown) g_v167_ranges[i].maxFlown = flown;
+
+            g_v167_ranges[i].samples++;
+
+            return;
+        }
+
+        if (free < 0 && g_v167_ranges[i].cls == 0) free = i;
+    }
+
+    if (free >= 0) {
+        g_v167_ranges[free].cls = cls;
+        g_v167_ranges[free].maxFlown = flown;
+        g_v167_ranges[free].samples = 1;
+    }
+}
+
+static float tnx_v167_range_for(uintptr_t cls) {
+    int i;
+
+    for (i = 0; i < TNX_V167_RANGE_SLOTS; i++) {
+        if (g_v167_ranges[i].cls == cls && g_v167_ranges[i].samples >= TNX_V167_RANGE_MIN_SAMPLES) {
+            return g_v167_ranges[i].maxFlown * TNX_V167_RANGE_SLACK;
+        }
+    }
+
+    return TNX_V167_THREAT_RANGE;
 }
 
 static float tnx_v160_clearance(float mx, float my, float mvx, float mvy) {
@@ -10863,6 +10928,44 @@ static float tnx_v160_clearance(float mx, float my, float mvx, float mvy) {
         vy = (float)(p->y - p->py);
 
         if (sqrtf(vx * vx + vy * vy) < 1.0f) continue;
+
+        if (TNX_V167_SMART) {
+            float plen = sqrtf(vx * vx + vy * vy);
+            float ux = vx / plen;
+            float uy = vy / plen;
+            float dxs = (float)p->x - (float)p->spawnX;
+            float dys = (float)p->y - (float)p->spawnY;
+            float flown = sqrtf(dxs * dxs + dys * dys);
+            float ddx = (float)p->x - mx;
+            float ddy = (float)p->y - my;
+            float gap = sqrtf(ddx * ddx + ddy * ddy) - TNX_V154_INFLATE;
+            float along = (mx - (float)p->x) * ux + (my - (float)p->y) * uy;
+            float left = 0.0f;
+
+            tnx_v167_range_note(p->classRva, flown);
+
+            left = tnx_v167_range_for(p->classRva) - flown;
+
+            if (left <= 10.0f) continue;
+
+            if (along < -50.0f) {
+                g_v167_drop_along++;
+
+                continue;
+            }
+
+            if (along > left) {
+                g_v167_drop_reach++;
+
+                continue;
+            }
+
+            if (left < 0.85f * (gap > 0.0f ? gap : 0.0f)) {
+                g_v167_drop_reach++;
+
+                continue;
+            }
+        }
 
         relx = (float)p->x - mx;
         rely = (float)p->y - my;
@@ -11018,6 +11121,13 @@ static int tnx_v160_dodge(int32_t ownX, int32_t ownY, int32_t *txOut, int32_t *t
     for (i = 0; i < TNX_V160_DIRS; i++) {
         float sc = tnx_v160_clearance(mx, my, TNX_V160_SPEED * g_v160_ring_x[i],
                                       TNX_V160_SPEED * g_v160_ring_y[i]);
+
+        if (TNX_V167_WALL_PENALTY &&
+            tnx_v167_clamped_away((int32_t)(mx + g_v160_ring_x[i] * TNX_V160_REACH),
+                                  (int32_t)(my + g_v160_ring_y[i] * TNX_V160_REACH))) {
+            sc -= TNX_V167_WALL_HIT;
+            g_v167_wall_hits++;
+        }
 
         if (g_v160_prev_idx >= 0) {
             sc += TNX_V160_MOMENTUM * (g_v160_ring_x[i] * g_v160_ring_x[g_v160_prev_idx] +
@@ -11818,7 +11928,7 @@ static void tnx_autododge_v48(void) {
 
         tnx_v162_clamp(&targetX, &targetY);
 
-        if (g_v166_fallback && g_v140_side_hits > 0 && g_v152_issued &&
+        if (g_v167_stage >= TNX_V167_STAGE_APPLIED && g_v140_side_hits > 0 && g_v152_issued &&
             targetX == g_v152_last_tx && targetY == g_v152_last_ty) {
             return;
         }
@@ -11839,20 +11949,38 @@ static void tnx_autododge_v48(void) {
         if (g_v140_side_hits > 0 && g_v151_logs < TNX_V151_LOGS) {
             g_v151_logs++;
 
-            tnx_logf("v151 threat write own=(%d,%d) target=(%d,%d) onRay=%d bestDist=%.0f "
-                     "best=(%.2f,%.2f) step=%.0f gap=%d - the escape is the perpendicular of the "
-                     "single closest projectile on the ray, not a sum over all of them, because a "
-                     "sum lets two shots from opposite sides cancel and leaves the character "
-                     "standing in both lanes",
-                     ownX, ownY, targetX, targetY, g_v140_side_hits,
-                     (double)g_v151_best_dist, (double)g_v151_best_x, (double)g_v151_best_y,
-                     (double)step, TNX_V151_THREAT_MIN_MS);
+            tnx_logf("v151 threat write own=(%d,%d) target=(%d,%d) onRay=%d step=%.0f gap=%d of "
+                     "shots dropped: %d flew away, %d could not reach - the escape is the heading "
+                     "the ring scored best against the live threats, and the two counts are the "
+                     "shots the reference's own filters removed before scoring",
+                     ownX, ownY, targetX, targetY, g_v140_side_hits, (double)step,
+                     TNX_V151_THREAT_MIN_MS, g_v167_drop_along, g_v167_drop_reach);
 
-            tnx_logf("v160 write target=(%d,%d) own=(%d,%d) held=%d dirIdx=%d - the heading and "
-                     "the target are one decision, the target is only reissued when the locked "
-                     "heading changes, so the input stream carries one direction instead of a "
-                     "per frame corrected position", targetX, targetY, ownX, ownY, g_v160_active,
-                     g_v160_prev_idx);
+            tnx_logf("v160 write target=(%d,%d) own=(%d,%d) held=%d dirIdx=%d wallHits=%d - the "
+                     "heading and the target are one decision, the target is only reissued when "
+                     "the locked heading changes, so the input stream carries one direction "
+                     "instead of a per frame corrected position", targetX, targetY, ownX, ownY,
+                     g_v160_active, g_v160_prev_idx, g_v167_wall_hits);
+
+            if (g_v167_range_logs < 3) {
+                int shown = 0;
+
+                for (int k2 = 0; k2 < TNX_V167_RANGE_SLOTS && shown < 4; k2++) {
+                    if (g_v167_ranges[k2].cls &&
+                        g_v167_ranges[k2].samples >= TNX_V167_RANGE_MIN_SAMPLES) {
+                        tnx_logf("v167 learned range: projectile class %#llx flew at most %.0f units "
+                                 "over %d samples and the can-not-reach filter uses that with a "
+                                 "%.2f slack instead of the %.0f fallback",
+                                 (unsigned long long)g_v167_ranges[k2].cls,
+                                 (double)g_v167_ranges[k2].maxFlown, g_v167_ranges[k2].samples,
+                                 (double)TNX_V167_RANGE_SLACK, (double)TNX_V167_THREAT_RANGE);
+
+                        shown++;
+                    }
+                }
+
+                if (shown) g_v167_range_logs++;
+            }
         }
 
         if (targetX > TNX_V47_COORD_ABS_MAX) targetX = TNX_V47_COORD_ABS_MAX;
@@ -11934,19 +12062,6 @@ static void tnx_autododge_v48(void) {
                      "walk; own=(%d,%d) target=(%d,%d)", g_v167_stage,
                      (unsigned long long)TNX_V140_MODEPAIR_RVA,
                      (unsigned long long)TNX_V128_CTRL_RAW_X_OFF, ownX, ownY, targetX, targetY);
-        }
-
-        if (!TNX_V150_ACT_WRITE && !g_v166_fallback) {
-            if (g_v147_dry_logs < 8) {
-                g_v147_dry_logs++;
-
-                tnx_logf("v147 actuate write disabled target=(%d,%d) own=(%d,%d) ownFrom=%s - the "
-                         "candidate list no longer carries the container element: writing the pair "
-                         "at +0x10c on it clobbers the high half of the 8 byte pointer at +0x108 "
-                         "that the game frees at rva 0x9fd390, and free() rejecting that pointer is "
-                         "the SIGABRT of the 146 run", targetX, targetY, ownX, ownY,
-                         g_v145_own_from);
-            }
         }
 
         if (!tnx_v144_mode_write(targetX, targetY, TNX_V140_MODEPAIR_FLAG)) {
@@ -13333,9 +13448,10 @@ static void setup(void) {
              "and three quarters of travel at %.0f units per second instead of the last moment. (4) A "
              "watchdog watches own while the stick is engaged: %d frames without movement and the "
              "direct pair is turned back on for the run, so a cosmetic stick cannot leave the "
-             "character standing still", TNX_V47_DODGE_MIN_MS, TNX_V160_LOCK_MS,
+             "character standing still; the v167 ladder below replaced that single fallback with one "
+             "channel per step", TNX_V47_DODGE_MIN_MS, TNX_V160_LOCK_MS,
              TNX_V160_RELEASE_MS, (double)TNX_V160_ENGAGE, (double)TNX_V154_INFLATE,
-             (double)TNX_V160_SPEED, TNX_V166_STICK_STUCK_FRAMES);
+             (double)TNX_V160_SPEED, TNX_V167_STUCK_FRAMES);
 
     tnx_logf("plan v167, from the 15:30 run and the reference implementation: (1) the move is the "
              "client input command plus the mode function %#llx, which is exactly the pair the "
@@ -13352,6 +13468,22 @@ static void setup(void) {
              "dodge is held and the joystick pair is neutralised once, so a corpse is not steered and "
              "the next life starts on the input route with the heading, the write clock and the "
              "ladder cleared", (unsigned long long)TNX_V140_MODEPAIR_RVA, TNX_V167_STUCK_FRAMES);
+
+    tnx_logf("plan v168, from the v167 CI failure: (1) the build died on an undeclared "
+             "TNX_V167_STUCK_FRAMES, a name the watchdog used and the same edit never defined, so "
+             "this file is now checked for used-but-undeclared TNX_* and g_* identifiers before it "
+             "is written and the define is present. (2) Dead code removed: the v147 dry branch, "
+             "unreachable once the leaf setter was re-enabled; the v166 fallback block whose flag no "
+             "code could set; and the three v151 best globals that nothing assigned while the log "
+             "printed them as measurements. (3) The threat list uses the reference's own two "
+             "filters: a shot flying away is dropped and a shot that cannot close on the character "
+             "is dropped, and the range each one is judged against is learned per projectile class "
+             "from the distance that class has actually flown, with a %.0f fallback until a class "
+             "has been seen %d times. (4) A heading whose walk target leaves the map loses %.0f of "
+             "score, the shape of the reference's wall penalty, using the clamp this file already "
+             "had rather than a tile lookup whose signature is unverified; the wall count and the "
+             "learned ranges are printed so the next log carries the numbers",
+             (double)TNX_V167_THREAT_RANGE, TNX_V167_RANGE_MIN_SAMPLES, (double)TNX_V167_WALL_HIT);
 
     tnx_start_timer();
 

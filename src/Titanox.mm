@@ -313,9 +313,14 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_151"
+#define TNX_BUILD_TAG "titanox_153"
 
-#define TNX_V151_THREAT_MIN_MS 33
+#define TNX_V153_THREAT_TICKS 40
+#define TNX_V153_EXIT_DIST 520.0f
+#define TNX_V153_LOGS 24
+
+
+#define TNX_V151_THREAT_MIN_MS 0
 #define TNX_V151_THREAT_STEP_MULT 1.5f
 #define TNX_V151_LOGS 24
 
@@ -10427,6 +10432,52 @@ static int tnx_v140_proj_scan(uintptr_t manager, int32_t count) {
     return found;
 }
 
+static float tnx_v153_clearance(float px, float py, int skipK) {
+    float best = 100000.0f;
+    int k;
+
+    for (k = 0; k < TNX_V140_PROJ_MAX; k++) {
+        const tnx_v140_proj_t *p = &g_v140_projs[k];
+        float dx;
+        float dy;
+        float dd;
+        float rx;
+        float ry;
+        float t;
+        float hx;
+        float hy;
+        float ax;
+        float ay;
+        float d;
+
+        if (k == skipK) continue;
+        if (!p->elem || !p->hasPrev) continue;
+
+        dx = (float)(p->x - p->px);
+        dy = (float)(p->y - p->py);
+        dd = dx * dx + dy * dy;
+
+        if (dd < 1.0f) continue;
+
+        rx = px - (float)p->x;
+        ry = py - (float)p->y;
+
+        t = (rx * dx + ry * dy) / dd;
+
+        if (t < 0.0f || t > TNX_V153_THREAT_TICKS) continue;
+
+        hx = (float)p->x + dx * t;
+        hy = (float)p->y + dy * t;
+        ax = px - hx;
+        ay = py - hy;
+        d = sqrtf(ax * ax + ay * ay);
+
+        if (d < best) best = d;
+    }
+
+    return best;
+}
+
 static int tnx_v140_sidestep(int32_t ox, int32_t oy, float *sumX, float *sumY, int *hitsOut,
                              int *seenOut) {
     float sx = 0.0f;
@@ -10475,7 +10526,7 @@ static int tnx_v140_sidestep(int32_t ox, int32_t oy, float *sumX, float *sumY, i
         t = (vx * dx + vy * dy) / dd;
 
         if (t < 0.0f) continue;
-        if (t > TNX_V140_THREAT_TICKS) continue;
+        if (t > TNX_V153_THREAT_TICKS) continue;
 
         hx = (float)p->x + dx * t;
         hy = (float)p->y + dy * t;
@@ -10497,10 +10548,49 @@ static int tnx_v140_sidestep(int32_t ox, int32_t oy, float *sumX, float *sumY, i
         sy += uy * side * w;
         hits++;
 
-        if (g_v151_best_dist < 0.0f || dist < g_v151_best_dist) {
+        if (g_v151_best_dist < 0.0f || t < g_v153_best_t) {
             g_v151_best_dist = dist;
+            g_v151_best_t = t;
             g_v151_best_x = ux * side;
             g_v151_best_y = uy * side;
+            g_v153_best_k = k;
+        }
+    }
+
+    if (g_v151_best_dist >= 0.0f && g_v153_best_k >= 0) {
+        const tnx_v140_proj_t *b = &g_v140_projs[g_v153_best_k];
+        float bdx = (float)(b->x - b->px);
+        float bdy = (float)(b->y - b->py);
+        float blen = sqrtf(bdx * bdx + bdy * bdy);
+
+        if (blen >= 1.0f) {
+            float bux = -bdy / blen;
+            float buy = bdx / blen;
+            float exit = TNX_V153_EXIT_DIST;
+            float cPlus = tnx_v153_clearance((float)b->x + bux * exit, (float)b->y + buy * exit,
+                                             g_v153_best_k);
+            float cMinus = tnx_v153_clearance((float)b->x - bux * exit, (float)b->y - buy * exit,
+                                              g_v153_best_k);
+            float chosen = (cPlus >= cMinus) ? 1.0f : -1.0f;
+
+            if (cPlus == cMinus) {
+                chosen = (((float)(ox - b->x) * bux + (float)(oy - b->y) * buy) > 0.0f) ? 1.0f : -1.0f;
+            }
+
+            g_v151_best_x = bux * chosen;
+            g_v151_best_y = buy * chosen;
+            g_v153_side = (chosen > 0.0f) ? 1 : -1;
+
+            if (g_v153_logs < TNX_V153_LOGS) {
+                g_v153_logs++;
+
+                tnx_logf("v153 side pick bestDist=%.0f bestT=%.1f plus=%.0f minus=%.0f chosen=%d "
+                         "tmax=%d - both exit points are tested against every other projectile on "
+                         "a ray and the side with the larger clearance wins, because the old rule "
+                         "took the side the character already stood on and could step straight "
+                         "into a second shot", (double)g_v151_best_dist, (double)g_v153_best_t,
+                         (double)cPlus, (double)cMinus, g_v153_side, TNX_V153_THREAT_TICKS);
+            }
         }
     }
 
@@ -10591,6 +10681,13 @@ static void tnx_v148_receiver_probe(void) {
 
 static int g_v150_logs = 0;
 static int g_v151_logs = 0;
+static int g_v153_best_k = -1;
+static float g_v153_best_t = 0.0f;
+static int g_v153_side = 0;
+static int g_v153_logs = 0;
+static int32_t g_v152_last_tx = 0;
+static int32_t g_v152_last_ty = 0;
+static int g_v152_issued = 0;
 static float g_v151_best_x = 0.0f;
 static float g_v151_best_y = 0.0f;
 static float g_v151_best_dist = -1.0f;
@@ -11273,6 +11370,9 @@ static void tnx_autododge_v48(void) {
         g_v151_best_dist = -1.0f;
         g_v151_best_x = 0.0f;
         g_v151_best_y = 0.0f;
+        g_v153_best_t = 1.0e9f;
+        g_v153_best_k = -1;
+        g_v153_side = 0;
 
         tnx_v140_proj_scan(g_v48_manager, projCount);
         tnx_v140_sidestep(ownX, ownY, &sideX, &sideY, &g_v140_side_hits, &g_v140_side_projs);
@@ -11333,6 +11433,12 @@ static void tnx_autododge_v48(void) {
             return;
         }
 
+        if (g_v140_side_hits > 0 && g_v152_issued && ownX + (int)(g_v151_best_x *
+                TNX_V140_SIDE_WEIGHT * DODGE_STEP) == g_v152_last_tx &&
+            ownY + (int)(g_v151_best_y * TNX_V140_SIDE_WEIGHT * DODGE_STEP) == g_v152_last_ty) {
+            return;
+        }
+
         g_v47_last_write_ms = now;
 
         step = DODGE_STEP;
@@ -11349,6 +11455,12 @@ static void tnx_autododge_v48(void) {
         targetX = ownX + (int)(escapeX * step);
         targetY = ownY + (int)(escapeY * step);
 
+        if (g_v140_side_hits > 0) {
+            g_v152_last_tx = targetX;
+            g_v152_last_ty = targetY;
+            g_v152_issued = 1;
+        }
+
         if (g_v140_side_hits > 0 && g_v151_logs < TNX_V151_LOGS) {
             g_v151_logs++;
 
@@ -11360,6 +11472,11 @@ static void tnx_autododge_v48(void) {
                      ownX, ownY, targetX, targetY, g_v140_side_hits,
                      (double)g_v151_best_dist, (double)g_v151_best_x, (double)g_v151_best_y,
                      (double)step, TNX_V151_THREAT_MIN_MS);
+
+            tnx_logf("v152 threat write gap=%d reissue=%d - the gap is zero, so a threat driven "
+                     "write happens on every render frame the perpendicular moves, and the only "
+                     "write that is skipped is the one that would repeat the target already "
+                     "issued", TNX_V151_THREAT_MIN_MS, g_v152_issued);
         }
 
         if (targetX > TNX_V47_COORD_ABS_MAX) targetX = TNX_V47_COORD_ABS_MAX;

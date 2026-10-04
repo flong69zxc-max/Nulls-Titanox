@@ -6158,7 +6158,7 @@ static int g_v47_coord_usable = 0;
 static int g_v47_coord_distinct = 0;
 static int g_v176_gate_last = -1;
 static int g_v176_gate_logs = 0;
-static int g_v47_team_off = 0x4c;
+static int g_v47_team_off = (int)TNX_OBJ_TEAM_OFF;
 static int g_v47_map_w = 0;
 static int g_v47_map_h = 0;
 static int g_v47_map_ok = 0;
@@ -11666,6 +11666,8 @@ static void tnx_v174_stick(int engaged, float dirX, float dirY) {
     }
 }
 
+static uintptr_t g_v182_own_elem = 0;
+
 static void tnx_v179_census(void) {
     void *array = NULL;
     int32_t count = 0;
@@ -11702,8 +11704,9 @@ static void tnx_v179_census(void) {
 }
 
 static int tnx_v178_own(int32_t *xOut, int32_t *yOut) {
-    uintptr_t own = (uintptr_t)g_v144_own_elem;
+    uintptr_t own = g_v182_own_elem;
 
+    if (!own) own = (uintptr_t)g_v144_own_elem;
     if (!own) return 0;
     if (!tnx_read_i32(own + TNX_OBJ_X_OFF, xOut)) return 0;
     if (!tnx_read_i32(own + TNX_OBJ_Y_OFF, yOut)) return 0;
@@ -12937,6 +12940,8 @@ static void tnx_autododge_v48(void) {
     }
 
     if (TNX_V93_DEAD_FILTER && objects[ownIndex].dead) return;
+
+    g_v182_own_elem = objects[ownIndex].object;
 
     ownTeam = (g_v47_team_off == (int)TNX_OBJ_TEAM_OFF) ? objects[ownIndex].teamOld
                                                         : objects[ownIndex].teamNew;
@@ -14934,6 +14939,25 @@ static void setup(void) {
              "always present, gid 4000000 at (3150,4950), is respawned every second (its element "
              "address changes) and never moves, which is why it always reads one-sample",
              (unsigned long long)TNX_V128_CTRL_APPLIED_X_OFF);
+
+    tnx_logf("plan v182, from the 18:14 run. (1) The team reports are one bug, not two: g_v47_team_off "
+             "started life at 0x4c, and the file's own teamdump already settled what that is - four "
+             "elements read 1,1,0,0 through +0x40 against 0,2,29535,0 through +0x4c, and 29535 is the "
+             "two bytes of an inline string, so +0x4c is a std::string body and not a side. Only the "
+             "walk forces the offset back to +%#x, so between a scene appearing and the first walk of "
+             "that life every team is read four bytes off. The run shows exactly that and its "
+             "consequence: v100 dodge gates at 18:21:17 reads own=0x117638c00 ownTeam=1 with "
+             "teamOff=0x4c, and for the next two seconds every verdict is inverted - shots with team 0 "
+             "report threat and shots with team 1 report own-team. That is the whole of 'it reacts to "
+             "teammates' and 'after a death it only works once I shoot': the filter is inverted until "
+             "the walk runs, so it drops the enemy and keeps our own side. The offset now starts at "
+             "+%#x, the value the walk itself reverts to, so the wrong side is never live. (2) The "
+             "instruments were reading a different object: the 18:14 route lines show own=(2550,9750) "
+             "with movedLastSecond=0 for the whole run while the player was walking, so g_v144_own_elem "
+             "is not the character the dodge walks. g_v182_own_elem is now published from "
+             "objects[ownIndex] in the very block that reads ownTeam and the position, and every "
+             "instrument prefers it, so the route and paircal lines measure the character in control",
+             (unsigned)TNX_OBJ_TEAM_OFF, (unsigned)TNX_OBJ_TEAM_OFF);
 
     tnx_start_timer();
 

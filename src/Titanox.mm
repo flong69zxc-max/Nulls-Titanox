@@ -48,7 +48,6 @@
 #define TNX_V193_TOUCH_ID_OFF 0xf84ULL
 #define TNX_V193_TOUCH_STATE_OFF 0xf80ULL
 #define TNX_V193_FLAG_LOGS 8
-#define TNX_V196_TOUCH_ID 0
 #define TNX_V197_STICK_WHEN_FREE 1
 #define TNX_V197_PREDICT_FLAG 1
 #define TNX_V197_STUCK_LOG 8
@@ -70,9 +69,7 @@
 #define TNX_V209_LOOKAHEAD_MS 260.0f
 #define TNX_V209_PAIR_RAW 1
 #define TNX_V209_PAIR_MAX 2400.0f
-#define TNX_V211_APPLY 1
 #define TNX_V211_FLAG_OFF 0xf9cULL
-#define TNX_V211_LOGS 6
 #define TNX_V212_RAGE 1
 #define TNX_V212_LOOKAHEAD_MS 800.0f
 #define TNX_V213_JOYSTATE_OFF 0xed7ULL
@@ -392,7 +389,12 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_243"
+#define TNX_BUILD_TAG "titanox_244"
+
+#define TNX_V244_QUIET 1
+#define TNX_V244_HUMAN 1
+#define TNX_V244_EPS 1.0f
+#define TNX_V244_LOGS 8
 
 #define TNX_V243_DRAG 1
 #define TNX_V243_RETIRE 1
@@ -407,7 +409,6 @@ static int g_v123_defer_logs = 0;
 #define TNX_V243_DRAG_MAG 600.0f
 #define TNX_V243_ALIGN 0.5f
 #define TNX_V243_PROOF 3
-#define TNX_V243_LOGS 10
 
 #define TNX_V242_WALL_CLIP 1
 #define TNX_V242_TILE_SIZE 300.0f
@@ -11591,7 +11592,6 @@ static uint64_t tnx_v213_us(void) {
 static uint64_t g_v211_applied_writes = 0;
 static uint64_t g_v211_applied_live = 0;
 static uint64_t g_v211_applied_stale = 0;
-static int g_v211_logs = 0;
 
 static int g_v172_logs = 0;
 static int g_v172_probe_logs = 0;
@@ -11671,15 +11671,14 @@ static int32_t g_v174_last_own_y = 0;
 static int tnx_v178_own(int32_t *xOut, int32_t *yOut);
 
 static uint64_t g_v243_drag_writes = 0;
-static uint64_t g_v243_drag_stops = 0;
 static uint64_t g_v243_back_ok = 0;
 static uint64_t g_v243_back_bad = 0;
 static int g_v243_precond = -1;
 static int g_v243_gate = -1;
 static int g_v243_accepted = 0;
 static int g_v243_proofs = 0;
-static int g_v243_logs = 0;
-static int g_v243_engaged = 0;
+static int g_v243_drove = 0;
+static uint64_t g_v243_drive_tick = 0;
 static float g_v243_mark = 0.0f;
 static float g_v243_dot = 0.0f;
 static float g_v243_last_dx = 0.0f;
@@ -11688,6 +11687,16 @@ static int32_t g_v243_raw_x = 0;
 static int32_t g_v243_raw_y = 0;
 static int32_t g_v243_app_x = 0;
 static int32_t g_v243_app_y = 0;
+static int g_v244_human = 0;
+static int g_v244_touch = 0;
+static int g_v244_moved = 0;
+static uint64_t g_v244_stops = 0;
+static uint64_t g_v244_queue_skips = 0;
+static int g_v244_logs = 0;
+static float g_v244_org_x = 0.0f;
+static float g_v244_org_y = 0.0f;
+static float g_v244_cur_x = 0.0f;
+static float g_v244_cur_y = 0.0f;
 
 static int tnx_v243_sign(void) {
     uint8_t b = 0;
@@ -11706,9 +11715,14 @@ static void tnx_v243_snapshot(void) {
     int32_t appY = 0;
     uint8_t precond = 0;
     uint8_t gate = 0;
+    uint8_t touch = 0;
     float mark = 0.0f;
     float len = 0.0f;
     float dot = 0.0f;
+    float dragX = 0.0f;
+    float dragY = 0.0f;
+    float dragOx = 0.0f;
+    float dragOy = 0.0f;
 
     if (!TNX_V243_DRAG) return;
     if (!ctrl) return;
@@ -11729,7 +11743,32 @@ static void tnx_v243_snapshot(void) {
     g_v243_gate = (int)(gate & 1);
     g_v243_mark = mark;
 
-    if (!g_v243_engaged) return;
+    if (!TNX_V244_HUMAN) return;
+
+    if (!tnx_read_f32(ctrl + TNX_V243_CUR_X_OFF, &dragX) || !tnx_read_f32(ctrl + TNX_V243_CUR_Y_OFF, &dragY)) return;
+    if (!tnx_read_f32(ctrl + TNX_V243_ORG_X_OFF, &dragOx) || !tnx_read_f32(ctrl + TNX_V243_ORG_Y_OFF, &dragOy)) return;
+    if (!tnx_read_bytes(ctrl + TNX_V193_TOUCH_GATE_OFF, &touch, sizeof(touch))) return;
+
+    g_v244_moved = 0;
+
+    if (fabsf(dragX - g_v244_cur_x) > TNX_V244_EPS) g_v244_moved = 1;
+    if (fabsf(dragY - g_v244_cur_y) > TNX_V244_EPS) g_v244_moved = 1;
+    if (fabsf(dragOx - g_v244_org_x) > TNX_V244_EPS) g_v244_moved = 1;
+    if (fabsf(dragOy - g_v244_org_y) > TNX_V244_EPS) g_v244_moved = 1;
+
+    g_v244_touch = (int)(touch & 1);
+    g_v244_human = (g_v244_touch || g_v244_moved) ? 1 : 0;
+
+    if (g_v243_drove && g_v243_drive_tick + 1 < g_v48_ticks && !g_v244_human) {
+        tnx_write_f32(ctrl + TNX_V243_CUR_X_OFF, g_v244_org_x);
+        tnx_write_f32(ctrl + TNX_V243_CUR_Y_OFF, g_v244_org_y);
+        g_v244_cur_x = g_v244_org_x;
+        g_v244_cur_y = g_v244_org_y;
+        g_v243_drove = 0;
+        g_v244_stops++;
+    }
+
+    if (!g_v243_drove) return;
     if (g_v243_last_dx == 0.0f && g_v243_last_dy == 0.0f) return;
 
     len = sqrtf((float)(rawX * rawX + rawY * rawY));
@@ -11761,38 +11800,34 @@ static void tnx_v243_drag(int engaged, int haveOwn, int32_t ownX, int32_t ownY, 
     float by = 0.0f;
     int sign = 0;
 
-    g_v243_engaged = (engaged && haveOwn) ? 1 : 0;
-
     if (!TNX_V243_DRAG) return;
+    if (!engaged || !haveOwn) return;
     if (!tnx_v220_ctrl_ok(ctrl)) return;
 
     sign = tnx_v243_sign();
     len = sqrtf(dirX * dirX + dirY * dirY);
 
-    if (engaged && haveOwn && len >= 0.0001f) {
-        ox = (float)ownX;
-        oy = (float)ownY;
-        cx = ox + dirX / len * TNX_V243_DRAG_MAG * (float)sign;
-        cy = oy + dirY / len * TNX_V243_DRAG_MAG * (float)sign;
-        g_v243_last_dx = dirX / len * (float)sign;
-        g_v243_last_dy = dirY / len * (float)sign;
-        g_v243_drag_writes++;
+    if (len < 0.0001f) return;
 
-        tnx_write_f32(ctrl + TNX_V243_ORG_X_OFF, ox);
-        tnx_write_f32(ctrl + TNX_V243_ORG_Y_OFF, oy);
-    } else if (tnx_read_f32(ctrl + TNX_V243_ORG_X_OFF, &ox) &&
-               tnx_read_f32(ctrl + TNX_V243_ORG_Y_OFF, &oy)) {
-        cx = ox;
-        cy = oy;
-        g_v243_last_dx = 0.0f;
-        g_v243_last_dy = 0.0f;
-        g_v243_drag_stops++;
-    } else {
-        return;
-    }
+    ox = (float)ownX;
+    oy = (float)ownY;
+    cx = ox + dirX / len * TNX_V243_DRAG_MAG * (float)sign;
+    cy = oy + dirY / len * TNX_V243_DRAG_MAG * (float)sign;
 
+    tnx_write_f32(ctrl + TNX_V243_ORG_X_OFF, ox);
+    tnx_write_f32(ctrl + TNX_V243_ORG_Y_OFF, oy);
     tnx_write_f32(ctrl + TNX_V243_CUR_X_OFF, cx);
     tnx_write_f32(ctrl + TNX_V243_CUR_Y_OFF, cy);
+
+    g_v244_org_x = ox;
+    g_v244_org_y = oy;
+    g_v244_cur_x = cx;
+    g_v244_cur_y = cy;
+    g_v243_last_dx = dirX / len * (float)sign;
+    g_v243_last_dy = dirY / len * (float)sign;
+    g_v243_drove = 1;
+    g_v243_drive_tick = g_v48_ticks;
+    g_v243_drag_writes++;
 
     if (tnx_read_f32(ctrl + TNX_V243_CUR_X_OFF, &bx) && tnx_read_f32(ctrl + TNX_V243_CUR_Y_OFF, &by) &&
         fabsf(bx - cx) < 1.0f && fabsf(by - cy) < 1.0f) {
@@ -11801,29 +11836,34 @@ static void tnx_v243_drag(int engaged, int haveOwn, int32_t ownX, int32_t ownY, 
         g_v243_back_bad++;
     }
 
-    if (g_v243_logs < TNX_V243_LOGS) {
-        g_v243_logs++;
+    if (g_v244_logs < TNX_V244_LOGS) {
+        g_v244_logs++;
 
-        tnx_logf("v243 drag ctrl=%p engaged=%d haveOwn=%d own=(%d,%d) wrote cur=(%.0f,%.0f) org=(%.0f,%.0f) "
-                 "back=(%.0f,%.0f) ok=%llu bad=%llu writes=%llu stops=%llu sign=%d mark=%.3f "
-                 "precond=%d gate=%d raw=(%d,%d) applied=(%d,%d) dot=%+.2f proofs=%d accepted=%d - the "
-                 "engine builds its move vector as the pair at +%#llx/+%#llx minus the drag origin at "
-                 "+%#llx/+%#llx, so the drag pair is the input, while the pair at +%#llx that every "
-                 "earlier build wrote is the target the engine computes back from the drag and rewrites "
-                 "every frame; sign is the byte at %#llx the mover flips the delta with, mark at +%#llx "
-                 "is written by the engine's own apply path and is the cheapest proof that path ran, "
-                 "and dot is the alignment between the pair the engine wrote and the drag this build "
-                 "wrote, so a dot near one is the engine following this build and a dot near zero says "
-                 "something else owns the drag",
+        tnx_logf("v244 drag ctrl=%p engaged=%d haveOwn=%d own=(%d,%d) wrote cur=(%.0f,%.0f) org=(%.0f,%.0f) "
+                 "back=(%.0f,%.0f) ok=%llu bad=%llu writes=%llu stops=%llu quiet=%llu touch=%d moved=%d "
+                 "human=%d sign=%d mark=%.3f precond=%d gate=%d raw=(%d,%d) applied=(%d,%d) dot=%+.2f "
+                 "proofs=%d accepted=%d - the engine builds its move vector as the pair at +%#llx/+%#llx "
+                 "minus the drag origin at +%#llx/+%#llx, so that pair is the input and this build writes "
+                 "it only while it drives: stops counts the single write that puts the current point back "
+                 "on the origin when a drive ends, which is the stop a body that slid could not get, and "
+                 "quiet counts the frames the movement push was skipped because the push at +%#llx fed a "
+                 "queue the engine never drained, so the body went on moving on its own after this build "
+                 "stopped asking; moved is the drag pair differing from what this build wrote, which is "
+                 "the finger, and human is that or the touch bit, so human near zero while a finger is "
+                 "down means the finger test is still blind; the pair at +%#llx is engine state this "
+                 "build no longer writes, sign is the byte at %#llx the mover flips the delta with, mark "
+                 "at +%#llx is written by the engine's own apply path, and dot is the alignment between "
+                 "the pair the engine wrote and the drag this build wrote",
                  (void *)ctrl, engaged, haveOwn, ownX, ownY, (double)cx, (double)cy, (double)ox, (double)oy,
                  (double)bx, (double)by, (unsigned long long)g_v243_back_ok,
                  (unsigned long long)g_v243_back_bad, (unsigned long long)g_v243_drag_writes,
-                 (unsigned long long)g_v243_drag_stops, sign, (double)g_v243_mark,
+                 (unsigned long long)g_v244_stops, (unsigned long long)g_v244_queue_skips,
+                 g_v244_touch, g_v244_moved, g_v244_human, sign, (double)g_v243_mark,
                  g_v243_precond, g_v243_gate, g_v243_raw_x, g_v243_raw_y, g_v243_app_x, g_v243_app_y,
                  (double)g_v243_dot, g_v243_proofs, g_v243_accepted,
                  (unsigned long long)TNX_V243_CUR_X_OFF, (unsigned long long)TNX_V243_CUR_Y_OFF,
                  (unsigned long long)TNX_V243_ORG_X_OFF, (unsigned long long)TNX_V243_ORG_Y_OFF,
-                 (unsigned long long)TNX_V128_CTRL_RAW_X_OFF,
+                 (unsigned long long)TNX_V113_QUEUE_OFF, (unsigned long long)TNX_V128_CTRL_RAW_X_OFF,
                  (unsigned long long)TNX_V243_SIGN_RVA, (unsigned long long)TNX_V243_MARK_OFF);
     }
 }
@@ -12138,46 +12178,6 @@ static void tnx_v190_drive_note(int32_t ownX, int32_t ownY, int32_t tx, int32_t 
     }
 }
 
-static void tnx_v211_apply(uintptr_t ctrl, int32_t worldX, int32_t worldY) {
-    int32_t backX = 0;
-    int32_t backY = 0;
-    int32_t zero = 0;
-    uint8_t flag = 1;
-    uint8_t gate = 0;
-
-    if (!TNX_V211_APPLY) return;
-    if (!tnx_v220_ctrl_ok(ctrl)) return;
-    if (!g_v180_hold) return;
-
-    tnx_write_bytes(ctrl + TNX_V128_CTRL_APPLIED_X_OFF, &worldX, sizeof(worldX));
-    tnx_write_bytes(ctrl + TNX_V128_CTRL_APPLIED_Y_OFF, &worldY, sizeof(worldY));
-    tnx_write_bytes(ctrl + TNX_V211_FLAG_OFF, &flag, sizeof(flag));
-    tnx_write_bytes(ctrl + TNX_V128_CTRL_DIRTY_OFF, &zero, sizeof(zero));
-
-    g_v211_applied_writes++;
-
-    tnx_read_i32(ctrl + TNX_V128_CTRL_APPLIED_X_OFF, &backX);
-    tnx_read_i32(ctrl + TNX_V128_CTRL_APPLIED_Y_OFF, &backY);
-    tnx_read_bytes(ctrl + TNX_V128_CTRL_GATE_OFF, &gate, sizeof(gate));
-
-    if (backX == worldX && backY == worldY) g_v211_applied_live++;
-    else g_v211_applied_stale++;
-
-    if (g_v211_logs < TNX_V211_LOGS) {
-        g_v211_logs++;
-
-        tnx_logf("v211 apply ctrl=%p applied=(%d,%d) want=(%d,%d) gate=%d flag=%#llx live=%llu "
-                 "stale=%llu - the engine's own push ends with addInput, the applied pair, the flag "
-                 "at %#llx and a cleared dirty word, and an applied the movement code does not keep "
-                 "is the slide this build never wrote any of",
-                 (void *)ctrl, backX, backY, worldX, worldY, (int)gate,
-                 (unsigned long long)TNX_V211_FLAG_OFF,
-                 (unsigned long long)g_v211_applied_live,
-                 (unsigned long long)g_v211_applied_stale,
-                 (unsigned long long)TNX_V211_FLAG_OFF);
-    }
-}
-
 static float g_v231_walk_step = TNX_V189_STEP;
 static int32_t g_v231_prev_x = 0;
 static int32_t g_v231_prev_y = 0;
@@ -12322,9 +12322,6 @@ static int tnx_v189_drive(void) {
 
         g_v206_escapes++;
         tnx_v174_stick(1, (float)TNX_V199_STICK_SIGN * dx, (float)TNX_V199_STICK_SIGN * dy);
-        if (!TNX_V236_STICK_ONLY) {
-            tnx_v211_apply(ctrl, (int32_t)escapeX, (int32_t)escapeY);
-        }
         tnx_v207_precision(ownX, ownY, dx, dy, 1);
 
         return 1;
@@ -12379,6 +12376,9 @@ static int tnx_v189_drive(void) {
         }
 
         human = (hgate == 1 || hid >= 0) ? 1 : 0;
+
+        if (TNX_V244_HUMAN && g_v244_human) human = 1;
+
         threat = g_v160_active ? 1 : 0;
 
         if (human) g_v197_human++;
@@ -12396,7 +12396,10 @@ static int tnx_v189_drive(void) {
     tx = ownX + (int32_t)((double)dx / (double)len * (double)tnx_v231_step());
     ty = ownY + (int32_t)((double)dy / (double)len * (double)tnx_v231_step());
 
-    if (!TNX_V189_PAIR_ONLY) {
+    if (TNX_V244_QUIET) {
+        g_v244_queue_skips++;
+        g_v189_queue_calls++;
+    } else if (!TNX_V189_PAIR_ONLY) {
         if (TNX_V236_STICK_ONLY) g_v236_pos_skips++;
         else tnx_v113_enqueue(tx, ty);
         g_v189_queue_calls++;
@@ -12406,39 +12409,27 @@ static int tnx_v189_drive(void) {
 
     if (!TNX_V236_STICK_ONLY) {
         tnx_v192_predict(tx, ty);
-        tnx_v211_apply(ctrl, tx, ty);
     }
 
     if (TNX_V193_TOUCH_FLAG && ctrl) {
         uint8_t gateNow = 0;
         int32_t stateNow = 0;
         int32_t idNow = 0;
-        uint8_t one = 1;
 
         tnx_read_bytes(ctrl + TNX_V193_TOUCH_GATE_OFF, &gateNow, sizeof(gateNow));
         tnx_read_i32(ctrl + TNX_V193_TOUCH_STATE_OFF, &stateNow);
         tnx_read_i32(ctrl + TNX_V193_TOUCH_ID_OFF, &idNow);
 
-        if (gateNow != 1) {
-            tnx_write_bytes(ctrl + TNX_V193_TOUCH_GATE_OFF, &one, sizeof(one));
-            g_v193_gate_writes++;
-        }
-
-        if (TNX_V196_TOUCH_ID && idNow < 0) {
-            int32_t zeroId = 0;
-
-            tnx_write_bytes(ctrl + TNX_V193_TOUCH_ID_OFF, &zeroId, sizeof(zeroId));
-            g_v196_touchid_writes++;
-        }
-
         if (g_v193_flag_logs < TNX_V193_FLAG_LOGS) {
             g_v193_flag_logs++;
 
             tnx_logf("v196 touch gate=%d state=%d id=%d writes=%llu idWrites=%llu own=(%d,%d) applied=(%d,%d) - "
-                     "gate is the byte the engine's own touch handler tests before it applies the "
-                     "stick, state and id are the rest of its touch bookkeeping, and applied is the "
-                     "no touch sentinel it writes when it believes nothing is held; setting the gate "
-                     "is this build claiming the drag the game then animates",
+                      "gate is the byte the engine's own move function tests first, and this build reads "
+                      "it but never writes it any more: setting it sends the engine down the touch "
+                      "branch, which returns before the branch that reads the drag, so claiming a drag "
+                      "was the opposite of driving one, state and id are the rest of the touch "
+                      "bookkeeping, and applied is now only read back so this line can show the engine "
+                      "moving it instead of this build",
                      gateNow, stateNow, idNow, (unsigned long long)g_v193_gate_writes,
                      (unsigned long long)g_v196_touchid_writes, ownX, ownY, appX, appY);
         }

@@ -313,7 +313,10 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_162"
+#define TNX_BUILD_TAG "titanox_163"
+
+#define TNX_V163_MAP_DUMPS 3
+
 
 #define TNX_V162_BOUNDS_RVA 0x00991440ULL
 #define TNX_V162_BOUNDS_X_OFF 0xccULL
@@ -6287,9 +6290,6 @@ static uint64_t g_v140_proj_firsts = 0;
 
 static int g_v150_logs = 0;
 static int g_v151_logs = 0;
-static int g_v153_best_k = -1;
-static float g_v153_best_t = 0.0f;
-static int g_v153_side = 0;
 static int32_t g_v152_last_tx = 0;
 static int32_t g_v152_last_ty = 0;
 static int g_v152_issued = 0;
@@ -10906,6 +10906,56 @@ static uintptr_t tnx_v162_bounds_obj(uintptr_t receiver) {
     return out;
 }
 
+static int g_v163_map_dumps = 0;
+
+static void tnx_v163_map_dump(uintptr_t bounds) {
+    int32_t v[12];
+    uintptr_t q[8];
+    char line[256];
+    int i;
+    int used = 0;
+    int r;
+
+    if (g_v163_map_dumps >= TNX_V163_MAP_DUMPS) return;
+    if (!bounds) return;
+
+    g_v163_map_dumps++;
+
+    for (i = 0; i < 12; i++) {
+        v[i] = -1;
+        tnx_read_i32(bounds + (uintptr_t)i * 4ULL, &v[i]);
+    }
+
+    for (i = 0; i < 8; i++) {
+        void *p = NULL;
+
+        q[i] = 0;
+
+        if (tnx_read_ptr(bounds + 0x30ULL + (uintptr_t)i * 8ULL, &p) && p) q[i] = (uintptr_t)p;
+    }
+
+    r = snprintf(line, sizeof(line),
+                 "v163 map obj=%p i32[0..0x2c]=%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
+                 (void *)bounds, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10],
+                 v[11]);
+
+    if (r > 0) {
+        line[sizeof(line) - 1] = '\0';
+        tnx_write_line(line);
+    }
+
+    used = snprintf(line, sizeof(line),
+                    "v163 map obj=%p q[0x30..0x68]=%#llx,%#llx,%#llx,%#llx,%#llx,%#llx,%#llx,%#llx",
+                    (void *)bounds, (unsigned long long)q[0], (unsigned long long)q[1],
+                    (unsigned long long)q[2], (unsigned long long)q[3], (unsigned long long)q[4],
+                    (unsigned long long)q[5], (unsigned long long)q[6], (unsigned long long)q[7]);
+
+    if (used > 0) {
+        line[sizeof(line) - 1] = '\0';
+        tnx_write_line(line);
+    }
+}
+
 static int tnx_v162_clamp(int32_t *x, int32_t *y) {
     uintptr_t receiver = tnx_v144_hop(tnx_v150_controller(), NULL);
     uintptr_t bounds = tnx_v162_bounds_obj(receiver);
@@ -10914,14 +10964,36 @@ static int tnx_v162_clamp(int32_t *x, int32_t *y) {
     int32_t ox = *x;
     int32_t oy = *y;
 
-    if (!bounds) return 0;
+    if (!bounds) {
+        if (g_v162_logs < TNX_V162_LOGS) {
+            g_v162_logs++;
+
+            tnx_logf("v162 clamp skipped receiver=%p - the bounds accessor returned nothing, so the "
+                     "target is sent unchanged", (void *)receiver);
+        }
+
+        return 0;
+    }
+
     if (!tnx_read_i32(bounds + TNX_V162_BOUNDS_X_OFF, &maxX)) return 0;
     if (!tnx_read_i32(bounds + TNX_V162_BOUNDS_Y_OFF, &maxY)) return 0;
 
-    if (maxX <= 3 || maxY <= 3 || maxX > 200000 || maxY > 200000) return 0;
+    if (maxX <= 3 || maxY <= 3 || maxX > 200000 || maxY > 200000) {
+        if (g_v162_logs < TNX_V162_LOGS) {
+            g_v162_logs++;
+
+            tnx_logf("v162 clamp skipped max=(%d,%d) receiver=%p bounds=%p - the bounds were read but "
+                     "are not a playable extent, so the target is sent unchanged rather than clamped "
+                     "to a wrong box", maxX, maxY, (void *)receiver, (void *)bounds);
+        }
+
+        return 0;
+    }
 
     g_v162_max_x = maxX;
     g_v162_max_y = maxY;
+
+    tnx_v163_map_dump(bounds);
 
     if (*x > maxX - 2) *x = maxX - 2;
     if (*y > maxY - 2) *y = maxY - 2;
@@ -11478,23 +11550,14 @@ static void tnx_autododge_v48(void) {
         int targetY = 0;
         float step = DODGE_STEP;
 
-        if (length <= 0.0001f) return;
-
-        escapeX /= length;
-        escapeY /= length;
+        if (length > 0.0001f) {
+            escapeX /= length;
+            escapeY /= length;
+        } else if (!g_v160_active) {
+            return;
+        }
 
         now = (uint64_t)(CFAbsoluteTimeGetCurrent() * 1000.0);
-
-        step = DODGE_STEP;
-
-        if (g_v140_side_hits > 0 && g_v151_best_dist >= 0.0f) {
-            float urgency = (TNX_V140_THREAT_RADIUS - g_v151_best_dist) / TNX_V140_THREAT_RADIUS;
-
-            if (urgency < 0.0f) urgency = 0.0f;
-            if (urgency > 1.0f) urgency = 1.0f;
-
-            step = DODGE_STEP * (1.0f + urgency * (TNX_V151_THREAT_STEP_MULT - 1.0f));
-        }
 
         targetX = ownX + (int)(escapeX * step);
         targetY = ownY + (int)(escapeY * step);

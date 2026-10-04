@@ -105,6 +105,8 @@
 #define TNX_V233_KEEP_BAND 60.0f
 #define TNX_V235_HORIZON 1.0f
 #define TNX_V235_BODY_W 1.0f
+#define TNX_V240_SEL_MAX 8
+#define TNX_V240_STEPS 3
 #define TNX_V216_FLEE 1
 #define TNX_V216_FLEE_STEP 150.0f
 #define TNX_V216_LOGS 14
@@ -390,7 +392,23 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_239"
+#define TNX_BUILD_TAG "titanox_242"
+
+#define TNX_V242_WALL_CLIP 1
+#define TNX_V242_TILE_SIZE 300.0f
+#define TNX_V242_TILES_OFF 0x20ULL
+#define TNX_V242_COUNT_OFF 0xdcULL
+#define TNX_V242_TYPE_MOVE_OFF 0x56ULL
+#define TNX_V242_TYPE_PROJ_OFF 0x57ULL
+#define TNX_V242_GRID_MAX 128
+#define TNX_V242_REBUILD_TICKS 120
+#define TNX_V242_MIN_PASSES 30
+#define TNX_V242_MIN_CLIP 60.0f
+#define TNX_V242_MIN_IMG_PCT 50
+#define TNX_V242_MAX_SOLID_PCT 60
+#define TNX_V242_MAX_CLIP_PCT 70
+#define TNX_V242_MIN_SEGS 4
+#define TNX_V242_LOGS 8
 
 #define TNX_V165_JOY_MAG 600.0f
 #define TNX_V167_TEAM_FILTER 1
@@ -11989,6 +12007,29 @@ static uint64_t g_v233_keeps = 0;
 static uint64_t g_v233_engage = 0;
 static uint64_t g_v234_hseed = 0;
 static uint64_t g_v235_evals = 0;
+static int g_v240_sel[TNX_V240_SEL_MAX];
+static int g_v240_sel_n = 0;
+
+static void tnx_v240_select(float px, float py) {
+    float speed = g_v231_walk_step * 60.0f;
+    float reach = 0.0f;
+    int i = 0;
+
+    if (speed < 120.0f) speed = 120.0f;
+    if (speed > 1200.0f) speed = 1200.0f;
+
+    reach = speed * TNX_V235_HORIZON;
+    g_v240_sel_n = 0;
+
+    for (i = 0; i < g_v172_seg_count && g_v240_sel_n < TNX_V240_SEL_MAX; i++) {
+        const tnx_v172_seg_t *seg = &g_v172_seg[i];
+        float d = tnx_v192_seg_dist(px, py, seg->ax, seg->ay, seg->bx, seg->by);
+
+        if (d > reach + seg->inflatedR) continue;
+
+        g_v240_sel[g_v240_sel_n++] = i;
+    }
+}
 static uint64_t g_v236_pos_skips = 0;
 
 static float tnx_v231_step(void) {
@@ -13077,6 +13118,284 @@ static int tnx_v204_proj_mine(const tnx_v140_proj_t *p) {
     return bestMine;
 }
 
+static uint8_t g_v242_grid[TNX_V242_GRID_MAX * TNX_V242_GRID_MAX] = { 0 };
+static uintptr_t g_v242_tiles = 0;
+static int g_v242_w = 0;
+static int g_v242_h = 0;
+static int g_v242_cells = 0;
+static int g_v242_solid = 0;
+static int g_v242_move = 0;
+static int g_v242_img = 0;
+static int g_v242_own_tx = -1;
+static int g_v242_own_ty = -1;
+static int g_v242_own_proj = -1;
+static int g_v242_own_move = -1;
+static int g_v242_passes = 0;
+static int g_v242_armed = 0;
+static int g_v242_live = 0;
+static int g_v242_fail = 0;
+static int g_v242_seg_test = 0;
+static int g_v242_seg_clip = 0;
+static int g_v242_seg_frac = 0;
+static int g_v242_logs = 0;
+static uint64_t g_v242_built = 0;
+
+static void tnx_v242_log_grid(int force) {
+    char mask[16];
+    int ix = 0;
+    int iy = 0;
+    int n = 0;
+
+    if (!force && g_v242_logs >= TNX_V242_LOGS) return;
+
+    g_v242_logs++;
+
+    for (iy = g_v242_own_ty - 1; iy <= g_v242_own_ty + 1; iy++) {
+        if (iy > g_v242_own_ty - 1) mask[n++] = '/';
+
+        for (ix = g_v242_own_tx - 1; ix <= g_v242_own_tx + 1; ix++) {
+            if (ix < 0 || iy < 0 || ix >= g_v242_w || iy >= g_v242_h) mask[n++] = '?';
+            else mask[n++] = g_v242_grid[iy * g_v242_w + ix] ? '#' : '.';
+        }
+    }
+
+    mask[n] = 0;
+
+    tnx_logf("v242 grid w=%d h=%d cells=%d proj=%d move=%d img=%d own=(%d,%d) ownProj=%d ownMove=%d "
+             "mask=%s passes=%d armed=%d live=%d fail=%d tested=%d clipped=%d frac=%d - the tile map is "
+             "read the way the reference reads it: the array at +%#llx holds %d pointers indexed width*y+x, "
+             "the type is the pointer at tile+0, and its packed pair is movement at +%#llx and projectiles "
+             "at +%#llx, which the two one instruction getters in this image confirm. ownProj must read 0 "
+             "because a character cannot stand inside a wall, and proj above %d percent or a clip fraction "
+             "above %d percent means the layout or the tile scale is wrong, so the clip stays off and this "
+             "line names the gate that held it off",
+             g_v242_w, g_v242_h, g_v242_cells, g_v242_solid, g_v242_move, g_v242_img,
+             g_v242_own_tx, g_v242_own_ty, g_v242_own_proj, g_v242_own_move, mask,
+             g_v242_passes, g_v242_armed, g_v242_live, g_v242_fail,
+             g_v242_seg_test, g_v242_seg_clip, g_v242_seg_frac,
+             (unsigned long long)TNX_V242_TILES_OFF, g_v242_cells,
+             (unsigned long long)TNX_V242_TYPE_MOVE_OFF, (unsigned long long)TNX_V242_TYPE_PROJ_OFF,
+             TNX_V242_MAX_SOLID_PCT, TNX_V242_MAX_CLIP_PCT);
+}
+
+static int tnx_v242_cell(int tx, int ty, int *proj, int *move) {
+    void *tile = NULL;
+    void *type = NULL;
+    uint8_t bm = 0;
+    uint8_t bp = 0;
+
+    *proj = -1;
+    *move = -1;
+
+    if (!g_v242_tiles) return 0;
+    if (tx < 0 || ty < 0 || tx >= g_v242_w || ty >= g_v242_h) return 0;
+    if (!tnx_read_ptr(g_v242_tiles + (uintptr_t)(ty * g_v242_w + tx) * (uintptr_t)sizeof(void *), &tile)) return 0;
+
+    if (!tile) {
+        *proj = 0;
+        *move = 0;
+
+        return 1;
+    }
+
+    if (!tnx_read_ptr((uintptr_t)tile, &type) || !type) return 0;
+    if (!tnx_read_bytes((uintptr_t)type + TNX_V242_TYPE_MOVE_OFF, &bm, 1)) return 0;
+    if (!tnx_read_bytes((uintptr_t)type + TNX_V242_TYPE_PROJ_OFF, &bp, 1)) return 0;
+
+    *proj = (int)bp;
+    *move = (int)bm;
+
+    return 1;
+}
+
+static void tnx_v242_tile_of(float x, float y, int *tx, int *ty) {
+    if (x < 0.0f || y < 0.0f) {
+        *tx = -1;
+        *ty = -1;
+
+        return;
+    }
+
+    *tx = (int)(x / TNX_V242_TILE_SIZE);
+    *ty = (int)(y / TNX_V242_TILE_SIZE);
+}
+
+static int tnx_v242_build(void) {
+    void *tileMap = NULL;
+    void *tiles = NULL;
+    int32_t w = 0;
+    int32_t h = 0;
+    int32_t count = 0;
+    int32_t cells = 0;
+    int32_t i = 0;
+    int solid = 0;
+    int move = 0;
+    int img = 0;
+
+    g_v242_tiles = 0;
+    g_v242_w = 0;
+    g_v242_h = 0;
+    g_v242_cells = 0;
+    g_v242_solid = 0;
+    g_v242_move = 0;
+    g_v242_img = 0;
+
+    if (!g_scene_object) return 0;
+    if (!tnx_read_ptr(g_scene_object + TNX_MODE_TILEMAP_OFF, &tileMap) || !tileMap) return 0;
+    if (!tnx_read_i32((uintptr_t)tileMap + TNX_TILEMAP_WIDTH_OFF, &w)) return 0;
+    if (!tnx_read_i32((uintptr_t)tileMap + TNX_TILEMAP_HEIGHT_OFF, &h)) return 0;
+    if (w < TNX_V47_MAP_MIN || h < TNX_V47_MAP_MIN) return 0;
+    if (w > TNX_V242_GRID_MAX || h > TNX_V242_GRID_MAX) return 0;
+    if (!tnx_read_i32((uintptr_t)tileMap + TNX_V242_COUNT_OFF, &count)) return 0;
+    if (count < w * h) return 0;
+    if (!tnx_read_ptr((uintptr_t)tileMap + TNX_V242_TILES_OFF, &tiles) || !tiles) return 0;
+
+    cells = w * h;
+
+    memset(g_v242_grid, 0, (size_t)cells);
+
+    for (i = 0; i < cells; i++) {
+        void *tile = NULL;
+        void *type = NULL;
+        uint8_t bm = 0;
+        uint8_t bp = 0;
+
+        if (!tnx_read_ptr((uintptr_t)tiles + (uintptr_t)i * (uintptr_t)sizeof(void *), &tile) || !tile) continue;
+        if (!tnx_read_ptr((uintptr_t)tile, &type) || !type) continue;
+        if ((uintptr_t)type >= g_base && (uintptr_t)type < g_base + TNX_V60_IMAGE_SPAN) img++;
+        if (!tnx_read_bytes((uintptr_t)type + TNX_V242_TYPE_MOVE_OFF, &bm, 1)) continue;
+        if (!tnx_read_bytes((uintptr_t)type + TNX_V242_TYPE_PROJ_OFF, &bp, 1)) continue;
+
+        if (bm) move++;
+        if (bp) {
+            solid++;
+            g_v242_grid[i] = 1;
+        }
+    }
+
+    g_v242_tiles = (uintptr_t)tiles;
+    g_v242_w = w;
+    g_v242_h = h;
+    g_v242_cells = cells;
+    g_v242_solid = solid;
+    g_v242_move = move;
+    g_v242_img = img;
+
+    return 1;
+}
+
+static float tnx_v242_clip_range(float ax, float ay, float dx, float dy, float rem) {
+    int32_t ox = 0;
+    int32_t oy = 0;
+    float hx = 0.0f;
+    float hy = 0.0f;
+    float d = 0.0f;
+
+    if (!g_v242_live) return rem;
+
+    g_v242_seg_test++;
+
+    if (!tnx_v98_clip_walk((int32_t)ax, (int32_t)ay, (int32_t)(ax + dx * rem), (int32_t)(ay + dy * rem),
+                           (int32_t)TNX_V242_TILE_SIZE, g_v242_grid, g_v242_w, g_v242_h, &ox, &oy)) {
+        return rem;
+    }
+
+    hx = (float)ox;
+    hy = (float)oy;
+    d = sqrtf((hx - ax) * (hx - ax) + (hy - ay) * (hy - ay));
+
+    if (d < TNX_V242_MIN_CLIP) d = TNX_V242_MIN_CLIP;
+
+    g_v242_seg_clip++;
+
+    return d;
+}
+
+static void tnx_v242_arm(float ownX, float ownY) {
+    int tx = -1;
+    int ty = -1;
+    int proj = -1;
+    int move = -1;
+    int solidPct = 0;
+    int imgPct = 0;
+    int wasArmed = g_v242_armed;
+    int gate = 1;
+
+    if (g_v242_seg_test >= TNX_V242_MIN_SEGS && g_v242_seg_frac > TNX_V242_MAX_CLIP_PCT) {
+        g_v242_armed = 0;
+        g_v242_passes = 0;
+        g_v242_fail++;
+    }
+
+    g_v242_live = 0;
+    g_v242_seg_test = 0;
+    g_v242_seg_clip = 0;
+    g_v242_seg_frac = 0;
+
+    if (!TNX_V242_WALL_CLIP) return;
+
+    if (g_v242_armed && (g_v48_ticks - g_v242_built) < TNX_V242_REBUILD_TICKS) {
+        tnx_v242_tile_of(ownX, ownY, &tx, &ty);
+
+        if (tx == g_v242_own_tx && ty == g_v242_own_ty && g_v242_own_proj == 0) {
+            g_v242_live = 1;
+        } else if (tnx_v242_cell(tx, ty, &proj, &move) && proj == 0) {
+            g_v242_own_tx = tx;
+            g_v242_own_ty = ty;
+            g_v242_own_proj = proj;
+            g_v242_own_move = move;
+            g_v242_live = 1;
+        } else {
+            g_v242_armed = 0;
+            g_v242_passes = 0;
+            g_v242_fail++;
+            tnx_v242_log_grid(1);
+        }
+
+        return;
+    }
+
+    if (!tnx_v242_build()) {
+        g_v242_armed = 0;
+        g_v242_passes = 0;
+        g_v242_fail++;
+        tnx_v242_log_grid(1);
+
+        return;
+    }
+
+    g_v242_built = g_v48_ticks;
+
+    tnx_v242_tile_of(ownX, ownY, &tx, &ty);
+    tnx_v242_cell(tx, ty, &proj, &move);
+
+    g_v242_own_tx = tx;
+    g_v242_own_ty = ty;
+    g_v242_own_proj = proj;
+    g_v242_own_move = move;
+
+    solidPct = (g_v242_solid * 100) / g_v242_cells;
+    imgPct = (g_v242_img * 100) / g_v242_cells;
+
+    if (tx < 0 || ty < 0 || tx >= g_v242_w || ty >= g_v242_h) gate = 0;
+    if (proj != 0) gate = 0;
+    if (solidPct > TNX_V242_MAX_SOLID_PCT) gate = 0;
+    if (imgPct < TNX_V242_MIN_IMG_PCT) gate = 0;
+
+    if (gate) {
+        if (g_v242_passes < TNX_V242_MIN_PASSES) g_v242_passes++;
+        if (g_v242_passes >= TNX_V242_MIN_PASSES) g_v242_armed = 1;
+    } else {
+        g_v242_armed = 0;
+        g_v242_passes = 0;
+        g_v242_fail++;
+    }
+
+    if (g_v242_armed) g_v242_live = 1;
+
+    tnx_v242_log_grid((g_v242_armed != wasArmed) ? 1 : 0);
+}
+
 static void tnx_v172_build(void) {
     int k;
 
@@ -13158,6 +13477,8 @@ static void tnx_v172_build(void) {
             }
         }
 
+        rem = tnx_v242_clip_range((float)p->x, (float)p->y, vx / len, vy / len, rem);
+
         s = &g_v172_seg[g_v172_seg_count++];
         s->gid = p->gid;
         s->ax = (float)p->x;
@@ -13170,6 +13491,8 @@ static void tnx_v172_build(void) {
         s->remaining = rem;
         s->inflatedR = TNX_V172_PROJ_RADIUS + TNX_V172_PLAYER_RADIUS + TNX_V172_SAFETY_MARGIN;
     }
+
+    if (g_v242_seg_test > 0) g_v242_seg_frac = (g_v242_seg_clip * 100) / g_v242_seg_test;
 }
 
 static float tnx_v172_seg_dist2(float px, float py, const tnx_v172_seg_t *s) {
@@ -13545,11 +13868,11 @@ static float tnx_v235_clearance(float px, float py, float dirX, float dirY) {
     int i = 0;
     int k = 0;
 
-    for (i = 0; i < g_v172_seg_count; i++) {
-        const tnx_v172_seg_t *seg = &g_v172_seg[i];
+    for (i = 0; i < g_v240_sel_n; i++) {
+        const tnx_v172_seg_t *seg = &g_v172_seg[g_v240_sel[i]];
 
-        for (k = 0; k <= 4; k++) {
-            float t = TNX_V235_HORIZON * ((float)k / 4.0f);
+        for (k = 0; k <= TNX_V240_STEPS; k++) {
+            float t = TNX_V235_HORIZON * ((float)k / (float)TNX_V240_STEPS);
             float qx = px + dirX * speed * t;
             float qy = py + dirY * speed * t;
             float d = tnx_v192_seg_dist(qx, qy, seg->ax, seg->ay, seg->bx, seg->by) - seg->inflatedR;
@@ -13564,6 +13887,8 @@ static float tnx_v235_clearance(float px, float py, float dirX, float dirY) {
 }
 
 static float tnx_v235_score(float px, float py, float dirX, float dirY, float len) {
+    tnx_v240_select(px, py);
+
     return tnx_v235_clearance(px, py, dirX, dirY) +
            TNX_V235_BODY_W * tnx_v228_body_score(px, py, dirX, dirY, len);
 }
@@ -14143,12 +14468,37 @@ static void tnx_v198_state(void) {
             tnx_read_bytes(g_v192_pred_last + TNX_V222_GATE_OFF, &gate70, sizeof(gate70));
         }
 
-        tnx_logf("v213 joy char=%p state=%u mode=%d scene=%p state=%u ctrl=%p gate=%d - the joystick on "
+        uint16_t enState[2] = { 0, 0 };
+        int32_t enMode[2] = { 0, 0 };
+        int seen = 0;
+        int k = 0;
+
+        for (k = 0; k < g_dodge_probe_usable && seen < 2; k++) {
+            const tnx_v47_obj_t *o = &g_dodge_probe_list[k];
+            uint16_t st = 0;
+            int32_t md = 0;
+
+            if (!o->object) continue;
+            if (o->gid < TNX_V179_PLAYER_GID) continue;
+            if (o->gid >= TNX_V179_SHOT_GID) continue;
+            if (g_v182_own_elem && o->object == g_v182_own_elem) continue;
+            if (!tnx_read_bytes((uintptr_t)o->object + TNX_V213_JOYSTATE_OFF, &st, sizeof(st))) continue;
+
+            tnx_read_i32((uintptr_t)o->object + TNX_V172_BS_MODE, &md);
+            enState[seen] = st;
+            enMode[seen] = md;
+            seen++;
+        }
+
+        tnx_logf("v213 joy char=%p state=%u mode=%d scene=%p state=%u ctrl=%p gate=%d en0=%u/%d en1=%u/%d seen=%d - the joystick on "
                  "bitfield the reference reads to decide the walk cycle is at %#llx, so the object "
-                 "whose state goes non zero while the body walks is the one that owns the cycle",
+                 "whose state goes non zero while the body walks is the one that owns the cycle, and en0 and en1 "
+                 "are the same two fields read from two other players, so a walking enemy holding a value "
+                 "the own character does not is the flag to copy",
                  (void *)g_v182_own_elem, (unsigned)charState, charMode,
                  (void *)(uintptr_t)g_scene_object, (unsigned)sceneState,
                  (void *)(uintptr_t)g_v205_joystick, (int)gate70,
+                 (unsigned)enState[0], enMode[0], (unsigned)enState[1], enMode[1], seen,
                  (unsigned long long)TNX_V213_JOYSTATE_OFF);
     }
 }
@@ -14240,6 +14590,8 @@ static int tnx_v172_decide(int32_t ownX, int32_t ownY) {
     int stick = 0;
     int safeOk = 0;
     float desiredDeg = 0.0f;
+
+    tnx_v242_arm(px, py);
 
     tnx_v172_build();
 

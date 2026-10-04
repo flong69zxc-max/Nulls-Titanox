@@ -11753,6 +11753,8 @@ static void tnx_v174_route(int engaged) {
     int32_t ownY = 0;
     int32_t backX = 0;
     int32_t backY = 0;
+    int32_t appX = 0;
+    int32_t appY = 0;
     int dx = 0;
     int dy = 0;
     int moved = 0;
@@ -11772,6 +11774,8 @@ static void tnx_v174_route(int engaged) {
     if (ctrl) {
         tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_X_OFF, &backX);
         tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &backY);
+        tnx_read_i32(ctrl + TNX_V128_CTRL_APPLIED_X_OFF, &appX);
+        tnx_read_i32(ctrl + TNX_V128_CTRL_APPLIED_Y_OFF, &appY);
     }
 
     if (g_v174_route_seeded) {
@@ -11801,16 +11805,20 @@ static void tnx_v174_route(int engaged) {
     g_v174_last_own_x = ownX;
     g_v174_last_own_y = ownY;
 
-    tnx_logf("v175 route engaged=%d stick=(%d,%d) back=(%d,%d) own=(%d,%d) movedLastSecond=%d "
-             "stickSum=(%lld,%lld) stickDir=(%.2f,%.2f) moveDir=(%.2f,%.2f) dot=%+.2f aligned=%s "
-             "engagedTicks=%d queue=%d - the dot compares the heading this build wrote into the pair, "
-             "summed over the second, with the heading the character really travelled in that same "
-             "second: aligned=same means the pair drives the walk, aligned=opposite means the pair is "
-             "the screen vector and needs its sign flipped, and unrelated means something else is "
-             "steering, which is what a player who is touching the screen produces - so the test has "
-             "to be repeated with the screen untouched; engagedTicks says how much of that second was "
-             "ours and the queue count says whether the engine queues the input itself from this pair",
-             engaged, g_v174_stick_x, g_v174_stick_y, backX, backY, ownX, ownY, moved, sumX, sumY,
+    tnx_logf("v181 route engaged=%d stick=(%d,%d) back=(%d,%d) applied=(%d,%d) own=(%d,%d) "
+             "movedLastSecond=%d stickSum=(%lld,%lld) stickDir=(%.2f,%.2f) moveDir=(%.2f,%.2f) "
+             "dot=%+.2f aligned=%s engagedTicks=%d queue=%d - back is the pair this build wrote and "
+             "applied is the pair the ENGINE computes from what it read, so the two together decide the "
+             "animation question: when our pair is non zero, applied follows it and the character "
+             "moves but stands, then the engine is consuming our store and the walk cycle is keyed off "
+             "something else in the same object; when applied stays at whatever the player's own drag "
+             "left behind, the engine is reading the pair only on its own input path and a raw store "
+             "into the field can never animate, which leaves calling the engine's input handler as the "
+             "only route; the dot compares the heading we wrote, summed over the second, with the "
+             "heading the character really travelled in that same second, and engagedTicks says how "
+             "much of that second was ours",
+             engaged, g_v174_stick_x, g_v174_stick_y, backX, backY, appX, appY, ownX, ownY, moved,
+             sumX, sumY,
              (double)(sLen > 0.5f ? (float)sumX / sLen : 0.0f),
              (double)(sLen > 0.5f ? (float)sumY / sLen : 0.0f),
              (double)(mLen > 0.5f ? (float)dx / mLen : 0.0f),
@@ -14907,6 +14915,25 @@ static void setup(void) {
              "does not stop between two shots. The gate still stops the writes when the dodge has no "
              "heading at all, so a character that has nothing to dodge still stands still",
              TNX_V180_HOLD_TICKS);
+
+    tnx_logf("plan v181, from the 18:10 run and the engine's own handler, disassembled. (1) The walk "
+             "cycle has no separate field to write: the handler at 0x7A64F0 writes the pair at "
+             "ctrl+0xfa4 and ctrl+0xfa8 and then builds the message, and the block that follows it is "
+             "the deterministic spin logic, not a movement state. So the two fallbacks the recipe "
+             "offers - a stick state field and a movement type field - have no target in this build, "
+             "and the only thing left to settle is whether the engine consumes a raw store into the "
+             "pair or reads it only on its own input path. The route line now reads the ENGINE's own "
+             "applied pair at ctrl+%#llx next to ours, which answers it: applied that follows our "
+             "store means the engine is reading us and the animation is keyed elsewhere, while an "
+             "applied that stays at the player's own last drag means a raw store can never animate and "
+             "the engine's input handler has to be called instead. (2) The 18:10 run is one long "
+             "nothing-to-dodge: its census reads players only with shots=0 for thirteen of fourteen "
+             "seconds and the segments appear in the last second, right when gid 2000003 with team 1 "
+             "arrives - so 'after a death it only works after a shot' is the threat list doing its job, "
+             "not a gate, and the census column is the thing to watch. (3) The only non-player that is "
+             "always present, gid 4000000 at (3150,4950), is respawned every second (its element "
+             "address changes) and never moves, which is why it always reads one-sample",
+             (unsigned long long)TNX_V128_CTRL_APPLIED_X_OFF);
 
     tnx_start_timer();
 

@@ -335,7 +335,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_V171_STAGE_MAX 2
 #define TNX_V171_INPUT_MGR 0
 #define TNX_V172_JOY_WRITE 0
-#define TNX_V172_QUEUE_MOVE 0
+#define TNX_V172_QUEUE_MOVE 1
 #define TNX_V172_POSITION_WRITE 0
 #define TNX_V172_NUM_ANGLES 24
 #define TNX_V172_STEP 150.0f
@@ -361,7 +361,9 @@ static int g_v123_defer_logs = 0;
 #define TNX_V173_BASES 3
 #define TNX_V173_MAX_LINES 4
 #define TNX_V173_BUCKET_TICKS 60
-#define TNX_V174_RAW_STICK 1
+#define TNX_V174_RAW_STICK 0
+#define TNX_V177_LOGS 12
+#define TNX_V177_CLEAR_STICK 0
 #define TNX_V174_DT_MAX 12
 #define TNX_V174_STICK_TTL 3
 #define TNX_V174_MIN_PROJ_SPEED 10.0f
@@ -11758,6 +11760,61 @@ static void tnx_v174_threats(void) {
     }
 }
 
+static int g_v177_logs = 0;
+static int g_v177_seeded = 0;
+static int32_t g_v177_last_x = 0;
+static int32_t g_v177_last_y = 0;
+
+static void tnx_v177_paircal(int32_t ownX, int32_t ownY) {
+    uintptr_t ctrl = tnx_v150_controller();
+    int32_t px = 0;
+    int32_t py = 0;
+    int dx = 0;
+    int dy = 0;
+    float pLen = 0.0f;
+    float mLen = 0.0f;
+    float dot = 0.0f;
+    float angPair = 0.0f;
+    float angMove = 0.0f;
+
+    if ((g_v48_ticks % 60) != 0) return;
+    if (g_v177_logs >= TNX_V177_LOGS) return;
+    if (!ctrl) return;
+    if (!tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_X_OFF, &px)) return;
+    if (!tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &py)) return;
+
+    if (g_v177_seeded) {
+        dx = (int)(ownX - g_v177_last_x);
+        dy = (int)(ownY - g_v177_last_y);
+    }
+
+    g_v177_seeded = 1;
+    g_v177_last_x = ownX;
+    g_v177_last_y = ownY;
+
+    pLen = sqrtf((float)(px * px + py * py));
+    mLen = sqrtf((float)(dx * dx + dy * dy));
+
+    if (pLen < 1.0f || mLen < 1.0f) return;
+
+    g_v177_logs++;
+
+    dot = ((float)px / pLen) * ((float)dx / mLen) + ((float)py / pLen) * ((float)dy / mLen);
+    angPair = atan2f((float)py, (float)px) * 57.2958f;
+    angMove = atan2f((float)dy, (float)dx) * 57.2958f;
+
+    tnx_logf("v177 paircal pair=(%d,%d) len=%.0f move=(%d,%d) len=%.0f dot=%+.2f angPair=%.1f "
+             "angMove=%.1f angDelta=%.1f own=(%d,%d) - the engine writes the pair at ctrl+%#llx itself "
+             "when the player drags, so this line pairs its vector with the heading the character "
+             "really travelled in the same second; angDelta is the rotation between the screen space "
+             "the pair lives in and the world space the character moves in, and a handful of samples "
+             "in different directions is enough to write the pair for a chosen world heading, which is "
+             "what the walk cycle needs",
+             px, py, (double)pLen, dx, dy, (double)mLen, (double)dot, (double)angPair, (double)angMove,
+             (double)(angMove - angPair), ownX, ownY,
+             (unsigned long long)TNX_V128_CTRL_RAW_X_OFF);
+}
+
 static const char *const g_v173_names[TNX_V173_BASES] = { "scene", "mgr", "ctrl" };
 
 typedef struct {
@@ -13059,13 +13116,15 @@ static void tnx_autododge_v48(void) {
             g_v165_dir_y = escapeY;
         }
 
-        tnx_v167_clear_stick_once();
+        if (TNX_V177_CLEAR_STICK) tnx_v167_clear_stick_once();
 
         tnx_v167_watch(ownX, ownY);
 
         tnx_v174_stick(g_v160_active, g_v165_dir_x, g_v165_dir_y);
 
         tnx_v174_route(ownX, ownY, g_v160_active);
+
+        tnx_v177_paircal(ownX, ownY);
 
         g_v171_engaged_frame = 1;
 
@@ -14670,6 +14729,32 @@ static void setup(void) {
              "nothing and nothing is written. Every opening and closing of the gate is logged once, so "
              "a silence can never again be read as the dodge being bypassed",
              TNX_V176_MIN_USABLE);
+
+    tnx_logf("plan v177, from the JS recipe and the 17:29 run, with both checked against the image. "
+             "(1) The JS addresses are NOT this build. 0x818F4C and 0xB55168 are both inside functions: "
+             "the word before 0x818F4C is ldr w8,[x19,0x41d2] and it flows into cmp w8,4, and 0xB55168 "
+             "uses x20/x22/x21 with no prologue and reaches its epilogue at 0xB55218. No ldr or str "
+             "anywhere in the 18 MB image touches +0x2A0C or +0x2A10 - those offsets are four aligned "
+             "and below 0x3FFC, so a field there would be reached by a direct offset and would show up - "
+             "and the immediates 0x2A0C and 0xDB40 never appear at all. Calling them would enter the "
+             "middle of unrelated functions. (2) The idea is already in this file: at 0x7A64F0 the "
+             "engine's OWN touch handler writes the pair at ctrl+%#llx from the touch minus the control "
+             "centre, then mov w0,0x48, malloc, mov w1,2, bl %#llx and stp of the target pair at +0xc - "
+             "byte for byte the message this file builds, so v126 is not a server packet, it IS the "
+             "engine's local input. TNX_V113_ADDINPUT_RVA 0x74675c is a real function start whose "
+             "prologue stores the message and reads its type at [msg+8]. (3) The measurement agrees: "
+             "with the message route the character covers 152 units a second while the player's own "
+             "walking in the same logs is about 650, and with the pair route alone, in the 17:29 run, "
+             "the movement was exactly 0 over 74 ticks of writing. (4) The pair is SCREEN space - it is "
+             "the touch position minus the control centre, and the handler only writes it when the "
+             "squared distance passes %d squared - so a world heading put there is in the wrong space, "
+             "which is why v176 moved nothing. The message route is back on, the pair is no longer "
+             "written and no longer zeroed, and every second the engine's own pair is paired with the "
+             "heading the character really travelled in that same second, so the screen to world "
+             "rotation is read off the log instead of guessed and the pair can then be written for a "
+             "chosen world heading - which is what the walk cycle needs",
+             (unsigned long long)TNX_V128_CTRL_RAW_X_OFF,
+             (unsigned long long)TNX_V113_MSGCTOR_RVA, 225);
 
     tnx_start_timer();
 

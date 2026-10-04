@@ -340,7 +340,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_V172_NUM_ANGLES 24
 #define TNX_V172_STEP 150.0f
 #define TNX_V172_MAX_DIST 1500.0f
-#define TNX_V172_SAFETY_MARGIN 35.0f
+#define TNX_V172_SAFETY_MARGIN 400.0f
 #define TNX_V172_PLAYER_RADIUS 100.0f
 #define TNX_V172_PROJ_RADIUS 60.0f
 #define TNX_V172_DEFAULT_RANGE 9000.0f
@@ -358,7 +358,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_V172_BS_SIN 0x8f8
 #define TNX_V173_WIN 0x1000
 #define TNX_V173_WORDS (TNX_V173_WIN / 4)
-#define TNX_V173_BASES 3
+#define TNX_V173_BASES 4
 #define TNX_V173_MAX_LINES 4
 #define TNX_V173_BUCKET_TICKS 60
 #define TNX_V174_RAW_STICK 1
@@ -8936,8 +8936,6 @@ static int tnx_v128_resolve_own(const tnx_v47_obj_t *objects, int usable, int *i
 
     if (!objects || usable <= 0) return 0;
 
-    if (tnx_v134_own_from_list(objects, usable, indexOut, fromOut)) return 1;
-
     {
         uintptr_t minOwn = 0;
         int32_t minGid = 0;
@@ -9003,6 +9001,8 @@ static int tnx_v128_resolve_own(const tnx_v47_obj_t *objects, int usable, int *i
             return 1;
         }
     }
+
+    if (tnx_v134_own_from_list(objects, usable, indexOut, fromOut)) return 1;
 
     hasWit = tnx_v128_witness(&wx, &wy) && !(wx == 0 && wy == 0);
 
@@ -10311,9 +10311,9 @@ static void tnx_v90_gate_report(int slotHit) {
                 predictZero = 1;
             }
 
-            ownFound = tnx_v128_resolve_own(objects, usable, &ownIndex, &ownFrom);
+            ownFound = tnx_v183_own_latch(objects, usable, &ownIndex, &ownFrom);
 
-            if (!ownFound) ownFound = tnx_v183_own_latch(objects, usable, &ownIndex, &ownFrom);
+            if (!ownFound) ownFound = tnx_v128_resolve_own(objects, usable, &ownIndex, &ownFrom);
 
             if (!ownFound) ownFound = tnx_v91_resolve_own(objects, usable, &ownIndex, &ownFrom);
 
@@ -11954,7 +11954,7 @@ static void tnx_v177_paircal(void) {
              (unsigned long long)TNX_V128_CTRL_RAW_X_OFF);
 }
 
-static const char *const g_v173_names[TNX_V173_BASES] = { "scene", "mgr", "ctrl" };
+static const char *const g_v173_names[TNX_V173_BASES] = { "scene", "mgr", "ctrl", "char" };
 
 typedef struct {
     uintptr_t base;
@@ -12025,7 +12025,8 @@ static void tnx_v173_scan(void) {
 
         if (b == 0) base = (uintptr_t)g_scene_object;
         else if (b == 1) base = tnx_v173_hop((uintptr_t)g_scene_object, TNX_MODE_MANAGER_OFF);
-        else base = tnx_v150_controller();
+        else if (b == 2) base = tnx_v150_controller();
+        else base = g_v182_own_elem;
 
         if (!base) {
             if (w->have) {
@@ -13061,6 +13062,8 @@ static void tnx_autododge_v48(void) {
 
 
         g_v167_own_team = (int)ownTeam;
+
+    if (ownFound && ownTeam >= 0 && ownTeam <= TNX_V75_TEAM_MAX) g_v167_own_team_seen = 1;
 
         tnx_v140_proj_scan(g_v48_manager, projCount);
 
@@ -15012,6 +15015,33 @@ static void setup(void) {
              "stamp=7860 tick=7862, a two tick old element thrown away even though its address is a "
              "live heap object, which is what pushed the resolver into the list in the first place",
              (unsigned)TNX_OBJ_TEAM_OFF);
+
+    tnx_logf("plan v184, from the 18:58 run and the three reports. (1) 'It walks at the enemy through "
+             "him after I shoot' is the team filter being unarmed, and the geometry says why that is "
+             "lethal: own team's own bullet starts at the character's own body, so its closest approach "
+             "to own is at time zero and distance zero, which makes it the single most threatening "
+             "segment on the board - the dodge then walks along that bullet's path, which is straight "
+             "at the enemy. The filter only armed after it had seen a shot of ANOTHER team, and the run "
+             "never had one: every threat line reads armed=0 while the census holds shots=0 and one "
+             "second of shots=1, and that one shot is own's. The filter is now armed as soon as own's "
+             "own team is readable, so a shot of own's side is dropped whether or not another side has "
+             "fired yet. (2) The reaction window was a quarter of a second: the threat radius is "
+             "proj+player+safety = %.0f units and the safety part was 35, so a shot had to be inside "
+             "%.0f units before it counted - at the measured 780 units a second walk that is 0.25 s. "
+             "The safety margin is %.0f, so a shot is a threat from %.0f units out, about 0.7 s of "
+             "walk, which is the 'react at zero' the user asks for without inventing a faster clock. "
+             "(3) The dump he asked for is in: the window scanner has a fourth base, the character "
+             "itself, named char, so the slots that move while the PLAYER walks and the slots that move "
+             "while the DODGE drives can be diffed from the same log - the field that only moves for "
+             "the player's own input is the animation state we cannot write yet. (4) Own's latch now "
+             "runs before the heuristics instead of behind them: in the 18:58 run the smallest gid list "
+             "still won 22 of 39 resolutions because it is the first rule inside the resolver, which is "
+             "why the route lines still read own=(2550,9750); the list is now the last named rule and "
+             "the latch is tried first",
+             (double)(TNX_V172_PROJ_RADIUS + TNX_V172_PLAYER_RADIUS + 35.0f),
+             (double)(TNX_V172_PROJ_RADIUS + TNX_V172_PLAYER_RADIUS + 35.0f),
+             (double)TNX_V172_SAFETY_MARGIN,
+             (double)(TNX_V172_PROJ_RADIUS + TNX_V172_PLAYER_RADIUS + TNX_V172_SAFETY_MARGIN));
 
     tnx_start_timer();
 

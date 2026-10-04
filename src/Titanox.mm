@@ -337,7 +337,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_V172_JOY_WRITE 0
 #define TNX_V172_QUEUE_MOVE 1
 #define TNX_V172_POSITION_WRITE 0
-#define TNX_V172_NUM_ANGLES 24
+#define TNX_V172_NUM_ANGLES 48
 #define TNX_V172_STEP 150.0f
 #define TNX_V172_MAX_DIST 1500.0f
 #define TNX_V172_SAFETY_MARGIN 800.0f
@@ -366,6 +366,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_V179_PLAYER_GID 1000000
 #define TNX_V179_SHOT_GID 2000000
 #define TNX_V179_SHOT_GID_MAX 3000000
+#define TNX_V186_MIN_USABLE 1
 #define TNX_V180_DRIVE 1
 #define TNX_V180_HOLD_TICKS 30
 #define TNX_V177_CLEAR_STICK 0
@@ -12916,7 +12917,16 @@ static void tnx_autododge_v48(void) {
 
     usable = tnx_v48_collect(g_v48_manager, objects, TNX_V47_OBJECT_MAX, &rejected);
 
-    if (usable < 2) return;
+    if (usable < TNX_V186_MIN_USABLE) {
+        if ((g_v48_ticks % 60) == 0) {
+            tnx_logf("v186 dodge idle: %d usable object(s) and this build needs %d - the old floor was "
+                     "two, so a container holding only the player switched the dodge off completely "
+                     "while shots were in the air, which is the 19:18 run where the census reads "
+                     "players=1 shots=6 with no dodge line at all", usable, TNX_V186_MIN_USABLE);
+        }
+
+        return;
+    }
 
     if (!tnx_read_i32(g_scene_object + TNX_MODE_PREDICTX_OFF, &predictX)) predictX = 0;
     if (!tnx_read_i32(g_scene_object + TNX_MODE_PREDICTY_OFF, &predictY)) predictY = 0;
@@ -12926,9 +12936,10 @@ static void tnx_autododge_v48(void) {
     {
         const char *ownFrom = "none";
 
-        if (!tnx_v128_resolve_own(objects, usable, &ownIndex, &ownFrom) &&
+        if (!tnx_v183_own_latch(objects, usable, &ownIndex, &ownFrom) &&
+            !tnx_v128_resolve_own(objects, usable, &ownIndex, &ownFrom) &&
             !tnx_v91_resolve_own(objects, usable, &ownIndex, &ownFrom)) {
-            if (g_v47_giveup_logs < 6) {
+            if (g_v47_giveup_logs < 6 || (g_v48_ticks % 60) == 0) {
                 g_v47_giveup_logs++;
 
                 tnx_logf("v100 dodge idle: no own element - the scan found nothing at scanIndex=%d "
@@ -15100,6 +15111,28 @@ static void setup(void) {
              "state this build cannot write yet",
              (double)TNX_V172_SAFETY_MARGIN,
              (double)(TNX_V172_PROJ_RADIUS + TNX_V172_PLAYER_RADIUS + TNX_V172_SAFETY_MARGIN));
+
+    tnx_logf("plan v186, from the 19:18 run, and the 19:18 run says the dodge was off exactly while it "
+             "was needed. Its census climbs to players=1 shots=6 and then players=1 shots=7, and in "
+             "those same seconds there is no v172 dodge line at all while the route and census lines "
+             "keep printing - so the dodge returned between the census at the top and the scan. The "
+             "line that does it is `if (usable < 2) return;`: with the enemies dead the container holds "
+             "only the player, usable is one, and the whole dodge switches off with seven of their "
+             "shots in the air. That is the same class as the coord_ok floor fixed in v176 - a floor of "
+             "two where one is enough - and this one was never touched. It is %d now, and it says so "
+             "once a second while it is shut. (1) The dodge's own resolution chain did not contain the "
+             "latch: it still ran v128 then v91, so own could still be the smallest-gid player, and the "
+             "walk has a second chain without the latch as well. Both start with the latch now, so the "
+             "character the dodge used last tick wins in every path. (2) For the close range the angles "
+             "go from %d to %d, so the escape direction is chosen twice as finely when a shot is "
+             "already near. (3) One correction to the instrument itself: ctrl+%#llx is NOT the applied "
+             "stick, it is the engine's applied POSITION - the run prints applied=(2584,8692) then "
+             "(2612,8011), (2645,7088), (2669,6399) against own=(2568,9191), (2597,8434), (2625,7663), "
+             "(2650,6899), so it tracks the character's own coordinates and extrapolates them. It is "
+             "still worth printing as a second opinion on where the character is, but it cannot answer "
+             "whether the engine consumed the pair",
+             TNX_V186_MIN_USABLE, (int)24.0f, TNX_V172_NUM_ANGLES,
+             (unsigned long long)TNX_V128_CTRL_APPLIED_X_OFF);
 
     tnx_start_timer();
 

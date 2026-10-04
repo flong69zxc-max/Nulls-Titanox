@@ -3,6 +3,7 @@
 #import <objc/runtime.h>
 #import <mach/mach.h>
 #import <mach/vm_map.h>
+#import <mach/mach_time.h>
 #import <mach-o/dyld.h>
 #import <mach-o/loader.h>
 #import <dlfcn.h>
@@ -74,6 +75,9 @@
 #define TNX_V211_APPLY 1
 #define TNX_V211_FLAG_OFF 0xf9cULL
 #define TNX_V211_LOGS 6
+#define TNX_V212_RAGE 1
+#define TNX_V212_LOOKAHEAD_MS 500.0f
+#define TNX_V213_JOYSTATE_OFF 0xed7ULL
 #define TNX_V198_LOGS 10
 #define TNX_V198_PRED_LOGS 6
 #define TNX_V196_CLUSTER 700.0f
@@ -354,7 +358,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_211"
+#define TNX_BUILD_TAG "titanox_213"
 
 #define TNX_V165_JOY_MAG 600.0f
 #define TNX_V167_TEAM_FILTER 1
@@ -11304,6 +11308,28 @@ static uint64_t g_v205_joystick_took = 0;
 static uint64_t g_v206_escapes = 0;
 static uint64_t g_v207_logs = 0;
 static uint64_t g_v209_lookahead = 0;
+static uint64_t g_v212_rage_frames = 0;
+static uint64_t g_v213_drive_t0 = 0;
+static uint64_t g_v213_dec_us = 0;
+static uint64_t g_v213_dec_us_max = 0;
+
+static uint64_t tnx_v213_us(void) {
+    static mach_timebase_info_data_t tb;
+    static int ready = 0;
+    uint64_t t = 0;
+
+    if (!ready) {
+        ready = 1;
+        mach_timebase_info(&tb);
+    }
+
+    t = mach_absolute_time();
+
+    if (tb.denom == 0) return t / 1000ULL;
+
+    return (t / (uint64_t)tb.denom) * (uint64_t)tb.numer / 1000ULL;
+}
+
 static uint64_t g_v211_applied_writes = 0;
 static uint64_t g_v211_applied_live = 0;
 static uint64_t g_v211_applied_stale = 0;
@@ -11724,6 +11750,7 @@ static void tnx_v211_apply(uintptr_t ctrl, int32_t worldX, int32_t worldY) {
 
 static int tnx_v189_drive(void) {
     uintptr_t ctrl = tnx_v150_controller();
+    g_v213_drive_t0 = tnx_v213_us();
     int32_t ownX = 0;
     int32_t ownY = 0;
     float dx = 0.0f;
@@ -12884,10 +12911,12 @@ static float tnx_v207_eta_ms(float x, float y) {
 }
 
 static int tnx_v209_imminent(float x, float y) {
-    if (TNX_V209_LOOKAHEAD_MS <= 0.0f) return 0;
+    float look = TNX_V212_RAGE ? TNX_V212_LOOKAHEAD_MS : TNX_V209_LOOKAHEAD_MS;
+
+    if (look <= 0.0f) return 0;
     if (g_v172_seg_count <= 0) return 0;
 
-    return (tnx_v207_eta_ms(x, y) <= TNX_V209_LOOKAHEAD_MS) ? 1 : 0;
+    return (tnx_v207_eta_ms(x, y) <= look) ? 1 : 0;
 }
 
 static void tnx_v207_precision(int32_t ownX, int32_t ownY, float dirX, float dirY, int escape) {
@@ -12923,6 +12952,14 @@ static void tnx_v207_precision(int32_t ownX, int32_t ownY, float dirX, float dir
     }
 
     eta = tnx_v207_eta_ms((float)ownX, (float)ownY);
+
+    if (g_v213_drive_t0) {
+        uint64_t now = tnx_v213_us();
+
+        g_v213_dec_us = (now >= g_v213_drive_t0) ? (now - g_v213_drive_t0) : 0;
+
+        if (g_v213_dec_us > g_v213_dec_us_max) g_v213_dec_us_max = g_v213_dec_us;
+    }
 
     if (g_v172_build_tick >= 0) lag = (int)((int64_t)g_v48_ticks - (int64_t)g_v172_build_tick);
 
@@ -13307,22 +13344,49 @@ static int tnx_v205_walk(float dirX, float dirY) {
 
 static void tnx_v198_state(void) {
     tnx_logf("v211 state joystick=%p writes=%llu took=%llu escapes=%llu lookahead=%llu appliedW=%llu "
-             "appliedLive=%llu appliedStale=%llu "
+             "appliedLive=%llu appliedStale=%llu rage=%llu decUs=%llu maxUs=%llu "
              "denied=%llu "
              "predTook=%llu predMiss=%llu objects scene=%p character=%p battle=%p - writes counts the "
              "frames the drag block was written, took counts the frames the engine still held it with "
              "mode 2, escapes counts the frames the dodge moved on the clearance pick instead of "
              "standing still, lookahead counts the frames the dodge engaged on time to impact instead "
              "of waiting for contact, appliedW counts the frames the push tail of the engine was replayed, "
-             "appliedLive how many the movement code kept and appliedStale how many it overwrote, "
+             "appliedLive how many the movement code kept and appliedStale how many it overwrote, rage "
+             "counts the frames rage mode forced the pick, and decUs is the microseconds from the "
+             "start of the drive to the stick write with maxUs the worst of them, "
              "and denied counts the stores the region guard dropped",
              (void *)g_v205_joystick, (unsigned long long)g_v205_joystick_writes,
              (unsigned long long)g_v205_joystick_took, (unsigned long long)g_v206_escapes,
              (unsigned long long)g_v209_lookahead, (unsigned long long)g_v211_applied_writes,
              (unsigned long long)g_v211_applied_live, (unsigned long long)g_v211_applied_stale,
+             (unsigned long long)g_v212_rage_frames, (unsigned long long)g_v213_dec_us,
+             (unsigned long long)g_v213_dec_us_max,
              (unsigned long long)g_v201_write_denied,
              (unsigned long long)g_v198_pred_took, (unsigned long long)g_v198_pred_miss,
              (void *)(uintptr_t)g_scene_object, (void *)g_v182_own_elem, (void *)g_v192_pred_last);
+
+    {
+        uint16_t charState = 0;
+        uint16_t sceneState = 0;
+        int32_t charMode = 0;
+
+        if (g_v182_own_elem) {
+            tnx_read_bytes(g_v182_own_elem + TNX_V213_JOYSTATE_OFF, &charState, sizeof(charState));
+            tnx_read_i32(g_v182_own_elem + TNX_V172_BS_MODE, &charMode);
+        }
+
+        if (g_scene_object) {
+            tnx_read_bytes((uintptr_t)g_scene_object + TNX_V213_JOYSTATE_OFF, &sceneState,
+                           sizeof(sceneState));
+        }
+
+        tnx_logf("v213 joy char=%p state=%u mode=%d scene=%p state=%u ctrl=%p - the joystick on "
+                 "bitfield the reference reads to decide the walk cycle is at %#llx, so the object "
+                 "whose state goes non zero while the body walks is the one that owns the cycle",
+                 (void *)g_v182_own_elem, (unsigned)charState, charMode,
+                 (void *)(uintptr_t)g_scene_object, (unsigned)sceneState,
+                 (void *)(uintptr_t)g_v205_joystick, (unsigned long long)TNX_V213_JOYSTATE_OFF);
+    }
 }
 
 static int tnx_v172_write(float dirX, float dirY) {
@@ -13416,6 +13480,11 @@ static int tnx_v172_decide(int32_t ownX, int32_t ownY) {
     tnx_v172_build();
 
     threatened = tnx_v172_threatened(px, py);
+
+    if (TNX_V212_RAGE && g_v172_seg_count > 0) {
+        threatened = 1;
+        g_v212_rage_frames++;
+    }
 
     if (tnx_v209_imminent(px, py)) {
         threatened = 1;

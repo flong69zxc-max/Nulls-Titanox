@@ -51,6 +51,9 @@
 #define TNX_V197_STICK_WHEN_FREE 1
 #define TNX_V197_PREDICT_FLAG 1
 #define TNX_V197_STUCK_LOG 8
+#define TNX_V198_MOVESTATE 1
+#define TNX_V198_LOGS 10
+#define TNX_V198_PRED_LOGS 6
 #define TNX_V196_CLUSTER 700.0f
 #define TNX_V196_FREEST_ANGLES 24
 #define TNX_V196_FREEST_MIN 120.0f
@@ -329,7 +332,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_197"
+#define TNX_BUILD_TAG "titanox_198"
 
 #define TNX_V165_JOY_MAG 600.0f
 #define TNX_V167_TEAM_FILTER 1
@@ -2688,6 +2691,9 @@ static int g_v191_roster_logs = 0;
 static int g_v191_enemy_blocks = 0;
 static int g_v191_oneshot_segs = 0;
 static int g_v192_body_blocks = 0;
+static uint64_t g_v198_pred_took = 0;
+static uint64_t g_v198_pred_miss = 0;
+static int g_v198_pred_logs = 0;
 static int g_v192_body_mine = 0;
 static int g_v192_body_enemy = 0;
 static int32_t g_v196_pl_gid[TNX_V189_PLAYER_MAX];
@@ -8197,6 +8203,26 @@ static int tnx_v192_predict(int32_t x, int32_t y) {
 
     ((void (*)(void *, int, int, int))g_addr_setprediction)(battle, x, y, TNX_V197_PREDICT_FLAG);
 
+    {
+        int32_t px = 0;
+        int32_t py = 0;
+
+        tnx_read_i32((uintptr_t)battle + TNX_MODE_PREDICTX_OFF, &px);
+        tnx_read_i32((uintptr_t)battle + TNX_MODE_PREDICTY_OFF, &py);
+
+        if (px == x && py == y) g_v198_pred_took++;
+        else g_v198_pred_miss++;
+
+        if (g_v198_pred_logs < TNX_V198_PRED_LOGS) {
+            g_v198_pred_logs++;
+
+            tnx_logf("v198 predict battle=%p sent=(%d,%d) read=(%d,%d) took=%llu miss=%llu - the pair "
+                     "the call writes is read straight back, so a call landing on the wrong object "
+                     "cannot look like a working prediction", battle, x, y, px, py,
+                     (unsigned long long)g_v198_pred_took, (unsigned long long)g_v198_pred_miss);
+        }
+    }
+
     g_v192_pred_last = (uintptr_t)battle;
     g_v192_pred_calls++;
 
@@ -11407,6 +11433,8 @@ static uint64_t g_v189_queue_skips = 0;
 static int32_t g_v189_sent_dx = 0;
 static int32_t g_v189_sent_dy = 0;
 static int32_t g_v189_last_tx = 0;
+static int tnx_v198_movestate(float dirX, float dirY);
+
 static int32_t g_v189_last_ty = 0;
 static uint64_t g_v189_last_decision = 0;
 static int64_t g_v189_decide_x = 0;
@@ -11625,6 +11653,8 @@ static int tnx_v189_drive(void) {
             g_v197_stick_skips++;
         }
     }
+
+    tnx_v198_movestate(dx, dy);
 
     tx = ownX + (int32_t)((double)dx / (double)len * (double)TNX_V189_STEP);
     ty = ownY + (int32_t)((double)dy / (double)len * (double)TNX_V189_STEP);
@@ -12791,6 +12821,119 @@ static int tnx_v172_best(float px, float py, float *tx, float *ty) {
     return found;
 }
 
+static int g_v198_logs = 0;
+static uint64_t g_v198_stage_writes = 0;
+static uint64_t g_v198_char_writes = 0;
+static uint64_t g_v198_stage_took = 0;
+static uint64_t g_v198_char_took = 0;
+static int g_v198_probe_done = 0;
+
+static void tnx_v198_probe(uintptr_t target, const char *name) {
+    float ax = 0.0f;
+    float ay = 0.0f;
+    float bx = 0.0f;
+    float by = 0.0f;
+    float cs = 0.0f;
+    float sn = 0.0f;
+    uint32_t mode = 0;
+
+    if (!target) return;
+
+    if (!tnx_v172_joy_read(target, &ax, &ay, &bx, &by, &mode, &cs, &sn)) {
+        tnx_logf("v198 %s layout unreadable", name);
+
+        return;
+    }
+
+    tnx_logf("v198 %s mode=%u ax=%.3f ay=%.3f bx=%.3f by=%.3f cos=%.3f sin=%.3f - mode 2 or 3 is a "
+             "held stick and the reference scripts read these fields to know whether the character is "
+             "moving, so a zero mode on a live object while the player walks means this is not the "
+             "object that holds it", name, mode, (double)ax, (double)ay, (double)bx, (double)by,
+             (double)cs, (double)sn);
+}
+
+static void tnx_v198_settle(uintptr_t target, const char *name, float nx, float ny, uint64_t *took) {
+    float ax = 0.0f;
+    float ay = 0.0f;
+    float bx = 0.0f;
+    float by = 0.0f;
+    float cs = 0.0f;
+    float sn = 0.0f;
+    uint32_t mode = 0;
+
+    if (!tnx_v172_joy_read(target, &ax, &ay, &bx, &by, &mode, &cs, &sn)) return;
+
+    if (fabsf(ax - nx) < 0.5f && fabsf(ay - ny) < 0.5f && mode == 2) *took++;
+
+    if (g_v198_logs < TNX_V198_LOGS) {
+        g_v198_logs++;
+
+        tnx_logf("v198 %s wrote=(%.1f,%.1f) read mode=%u ax=%.1f ay=%.1f bx=%.1f by=%.1f - a read back "
+                 "equal to the write and a mode of 2 is the engine holding a stick this build put "
+                 "there, the difference between a body carried and a body walked", name, (double)nx,
+                 (double)ny, mode, (double)ax, (double)ay, (double)bx, (double)by);
+    }
+}
+
+static int tnx_v198_movestate(float dirX, float dirY) {
+    uintptr_t stage = (uintptr_t)g_scene_object;
+    uintptr_t chr = g_v182_own_elem;
+    int32_t two = 2;
+    float len = sqrtf(dirX * dirX + dirY * dirY);
+    float nx = 0.0f;
+    float ny = 0.0f;
+
+    if (!TNX_V198_MOVESTATE) return 0;
+    if (len < 0.001f) return 0;
+
+    nx = dirX / len * TNX_V172_JOY_SCALE;
+    ny = dirY / len * TNX_V172_JOY_SCALE;
+
+    if (!g_v198_probe_done) {
+        g_v198_probe_done = 1;
+
+        tnx_v198_probe(stage, "scene");
+        tnx_v198_probe(chr, "character");
+
+        tnx_logf("v198 objects scene=%p character=%p battle=%p - the candidates for the object that "
+                 "carries the move state, printed once so a log says which one holds it",
+                 (void *)stage, (void *)chr, (void *)g_v192_pred_last);
+    }
+
+    if (stage) {
+        tnx_write_f32(stage + TNX_V172_BS_AX, nx);
+        tnx_write_f32(stage + TNX_V172_BS_AY, ny);
+        tnx_write_f32(stage + TNX_V172_BS_BX, nx);
+        tnx_write_f32(stage + TNX_V172_BS_BY, ny);
+        tnx_write_bytes(stage + TNX_V172_BS_MODE, &two, sizeof(two));
+        g_v198_stage_writes++;
+        tnx_v198_settle(stage, "scene", nx, ny, &g_v198_stage_took);
+    }
+
+    if (chr && chr != stage) {
+        tnx_write_f32(chr + TNX_V172_BS_AX, nx);
+        tnx_write_f32(chr + TNX_V172_BS_AY, ny);
+        tnx_write_f32(chr + TNX_V172_BS_BX, nx);
+        tnx_write_f32(chr + TNX_V172_BS_BY, ny);
+        tnx_write_bytes(chr + TNX_V172_BS_MODE, &two, sizeof(two));
+        g_v198_char_writes++;
+        tnx_v198_settle(chr, "character", nx, ny, &g_v198_char_took);
+    }
+
+    return 1;
+}
+
+static void tnx_v198_state(void) {
+    tnx_logf("v198 state stageW=%llu stook=%llu charW=%llu ctook=%llu predTook=%llu predMiss=%llu "
+             "objects scene=%p character=%p battle=%p - stook and ctook count the frames the engine "
+             "still held the stick this build wrote after the write, which is the positive test for "
+             "the move state; predTook counts the prediction landing on the object it was sent to",
+             (unsigned long long)g_v198_stage_writes, (unsigned long long)g_v198_stage_took,
+             (unsigned long long)g_v198_char_writes, (unsigned long long)g_v198_char_took,
+             (unsigned long long)g_v198_pred_took, (unsigned long long)g_v198_pred_miss,
+             (void *)(uintptr_t)g_scene_object, (void *)g_v182_own_elem, (void *)g_v192_pred_last);
+}
+
 static int tnx_v172_write(float dirX, float dirY) {
     uintptr_t bs = tnx_v172_bs();
     float len = sqrtf(dirX * dirX + dirY * dirY);
@@ -12953,6 +13096,8 @@ static void tnx_autododge_v48(void) {
     tnx_v174_route(g_v160_active);
 
     tnx_v189_drift();
+
+    tnx_v198_state();
 
     tnx_v193_core();
 
@@ -15691,6 +15836,24 @@ static void setup(void) {
              "counted as deadPick now; and 44 real threats against 446 own team shots and 674 one "
              "sample lines says the ring was mostly watching objects that never move",
              (unsigned long long)TNX_V193_TOUCH_GATE_OFF, 8);
+
+    tnx_logf("plan v198. The slide has one cause and it is in this file: tnx_v172_write writes the "
+             "engine's own move state - ax %#x, ay %#x, bx %#x, by %#x and mode 2 at %#x, the same "
+             "fields the reference reads to answer 'is the character moving' - and nothing in the "
+             "build ever called it, so the body was carried by the input queue for revision after "
+             "revision. It is called every frame the dodge drives now, on both candidate objects, "
+             "because which of them carries that struct is not known yet, and every write is read "
+             "back: stook and ctook count the frames the engine still held this build's value with "
+             "mode at 2, which is the positive test for a stick the game believes. The prediction is "
+             "read back the same way, so a call that lands on the wrong object cannot pass for a "
+             "working one. The reference's own movement is a single call, setClientPredictionMoveTo of "
+             "the logic battle with the target and a true flag - four arguments, and this build now "
+             "passes the fourth - and it pushes the same type 2 input through the same manager at "
+             "battle+%#x that this build uses. What is left different is where the call comes from: "
+             "its scripts write from inside the game's own update and this build writes from the "
+             "render hook, and that is the next thing to move if the read backs come back empty",
+             TNX_V172_BS_AX, TNX_V172_BS_AY, TNX_V172_BS_BX, TNX_V172_BS_BY, TNX_V172_BS_MODE,
+             (unsigned long long)TNX_V113_MGR_OFF);
 
     tnx_start_timer();
 

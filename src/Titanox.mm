@@ -14,6 +14,9 @@
 #import <stdlib.h>
 #import <string.h>
 #import <unistd.h>
+/* v146: sigaction, siginfo_t, SIGSEGV/SIGBUS/SIGABRT/SIGILL/SIGFPE and raise() come from here;
+ * nothing else in the import list pulls it in, so it is named explicitly rather than assumed. */
+#import <signal.h>
 #import "offsets.h"
 #import "lc_detect.h"
 
@@ -310,7 +313,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_145"
+#define TNX_BUILD_TAG "titanox_146"
 
 /* v145 - one own, published once per tick.
  *
@@ -882,6 +885,8 @@ static void tnx_write_line(const char *text) {
     }
 }
 
+
+
 static void tlog(NSString *msg) {
     if (!msg) return;
 
@@ -901,6 +906,101 @@ static void tnx_logf(const char *format, ...) {
     tnx_write_line(buffer);
 }
 
+/* ---------------------------------------------------------------------------
+ * v146 crash locator.
+ *
+ * The v145 run died 16 ms after the actuator succeeded and the log simply stopped: no line
+ * names the stage that was running, and the log cap would swallow it anyway. This keeps the
+ * last stage names in a ring and writes them from a signal handler straight to the log file
+ * descriptor, bypassing both the buffer and the byte cap, so the next crash names its own
+ * stage, the faulting address and the eight stages that preceded it.
+ * The handler is deliberately last-resort only: it re-raises with SIG_DFL so the system
+ * still produces its own report.
+ * ------------------------------------------------------------------------- */
+static char g_v146_phase[48] = "boot";
+static char g_v146_hist[8][48];
+static volatile int g_v146_hist_n = 0;
+static volatile int g_v146_fd = -1;
+static volatile uint64_t g_v146_stage_ticks = 0;
+static int g_v146_installed = 0;
+
+static void tnx_v146_phase(const char *p) {
+    int n;
+
+    if (!p) return;
+
+    strncpy(g_v146_phase, p, sizeof(g_v146_phase) - 1);
+    g_v146_phase[sizeof(g_v146_phase) - 1] = '\0';
+
+    n = g_v146_hist_n;
+
+    if (n < 0) n = 0;
+    if (n > 7) n = 7;
+
+    strncpy(g_v146_hist[n], p, sizeof(g_v146_hist[0]) - 1);
+    g_v146_hist[n][sizeof(g_v146_hist[0]) - 1] = '\0';
+
+    g_v146_hist_n = (n + 1) & 7;
+    g_v146_stage_ticks++;
+
+    if (g_v146_fd < 0) {
+        FILE *h = tnx_log_handle();
+
+        if (h) g_v146_fd = fileno(h);
+    }
+}
+
+static void tnx_v146_crash(int sig, siginfo_t *info, void *ctx) {
+    char buf[768];
+    void *fault = (info && info->si_addr) ? info->si_addr : (void *)0;
+    int n;
+
+    (void)ctx;
+
+    n = snprintf(buf, sizeof(buf),
+                 "\n[CRASH] sig=%d fault=%p phase=%s stages=%llu h0=%s h1=%s h2=%s h3=%s "
+                 "h4=%s h5=%s h6=%s h7=%s - phase is the stage that was running when the "
+                 "signal arrived, the rest are the stages before it in arrival order, and this "
+                 "line is written with write(2) so the log cap cannot drop it\n",
+                 sig, fault, g_v146_phase, (unsigned long long)g_v146_stage_ticks,
+                 g_v146_hist[0], g_v146_hist[1], g_v146_hist[2], g_v146_hist[3],
+                 g_v146_hist[4], g_v146_hist[5], g_v146_hist[6], g_v146_hist[7]);
+
+    if (n > 0 && g_v146_fd >= 0) {
+        ssize_t ignored = write((int)g_v146_fd, buf, (size_t)n);
+
+        (void)ignored;
+    }
+
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
+static void tnx_v146_install(void) {
+    struct sigaction sa;
+    int sigs[5] = { SIGSEGV, SIGBUS, SIGABRT, SIGILL, SIGFPE };
+    FILE *h = tnx_log_handle();
+    int i;
+
+    if (g_v146_installed) return;
+
+    g_v146_installed = 1;
+
+    if (h) g_v146_fd = fileno(h);
+
+    memset(&sa, 0, sizeof(sa));
+
+    sa.sa_sigaction = tnx_v146_crash;
+    sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
+
+    sigemptyset(&sa.sa_mask);
+
+    for (i = 0; i < 5; i++) sigaction(sigs[i], &sa, NULL);
+
+    tnx_logf("v146 crash locator armed fd=%d sigs=5 - the next signal writes the running stage "
+             "and the eight before it to that descriptor, so a crash names itself instead of "
+             "ending the log", (int)g_v146_fd);
+}
 
 #define TNX_SLOT_COUNT 32
 #define TNX_ALERT_SIGHTINGS 2
@@ -4243,6 +4343,8 @@ static void tnx_run_workload(void) {
      * from the 1 Hz scan timer cannot split them across two lists. */
     tnx_v142_tick_begin("pre-locate");
 
+    tnx_v146_phase("locate");
+
     tnx_locate_battle_mode();
 
     /* the locate call may have published a new battle; re-take so the rest of the tick uses
@@ -4260,12 +4362,19 @@ static void tnx_run_workload(void) {
         }
     }
 
+    tnx_v146_phase("autododge");
     tnx_run_autododge();
+    tnx_v146_phase("autoaim");
     tnx_run_autoaim();
+    tnx_v146_phase("watermark");
     tnx_render_watermark();
+    tnx_v146_phase("overlay");
     tnx_overlay_update();
 
+    tnx_v146_phase("alert");
     tnx_alert_battle_check();
+
+    tnx_v146_phase("tick-end");
 }
 
 static void tnx_objc_rep0(id self, SEL _cmd) {
@@ -6491,6 +6600,8 @@ static void tnx_v48_discriminate(uintptr_t manager) {
 
     memset(objects, 0, sizeof(objects));
     memset(words, 0, sizeof(words));
+
+    tnx_v146_phase("walk");
 
     usable = tnx_v48_collect(manager, objects, TNX_V47_OBJECT_MAX, &rejected);
 
@@ -10021,7 +10132,9 @@ static void tnx_v90_gate_report(int slotHit) {
              * reached from here, so own is published here rather than only in the dodge block
              * further down, which would have made the actuate read the previous tick's element. */
             if (ownFound && ownIndex >= 0 && ownIndex < usable) {
-                tnx_v145_publish_own(objects[ownIndex].object, ownFrom);
+                tnx_v146_phase("own");
+
+        tnx_v145_publish_own(objects[ownIndex].object, ownFrom);
             }
 
             tnx_v102_write_test(objects, usable, ownFound ? ownIndex : -1);
@@ -10446,6 +10559,8 @@ static int tnx_v144_mode_write(int x, int y, int flag) {
         return 0;
     }
 
+    tnx_v146_phase("mode-pick");
+
     mode = tnx_v144_mode_pick(&vt, &who, &why);
 
     if (!mode) {
@@ -10477,7 +10592,11 @@ static int tnx_v144_mode_write(int x, int y, int flag) {
                  (void *)mode, (void *)vt, who, x, y, flag, beforeGate);
     }
 
+    tnx_v146_phase("mode-call");
+
     ((void (*)(void *, int, int, int))fn)((void *)mode, x, y, flag);
+
+    tnx_v146_phase("mode-readback");
 
     tnx_read_i32(mode + TNX_V127_GATE_FLAG_OFF, &afterGate);
     kept = (tnx_read_i32(mode + TNX_V127_GATE_X_OFF, &afterX) && afterX == x) ? 1 : 0;
@@ -10499,6 +10618,8 @@ static int tnx_v144_mode_write(int x, int y, int flag) {
 }
 
 static void tnx_autododge_v48(void) {
+    tnx_v146_phase("dodge-enter");
+
     tnx_v47_obj_t objects[TNX_V47_OBJECT_MAX];
     uintptr_t source = 0;
     const char *sourceKind = "none";
@@ -10863,6 +10984,8 @@ static void tnx_autododge_v48(void) {
 
     memset(objects, 0, sizeof(objects));
 
+    tnx_v146_phase("collect");
+
     usable = tnx_v48_collect(g_v48_manager, objects, TNX_V47_OBJECT_MAX, &rejected);
 
     if (usable < 2) return;
@@ -10966,6 +11089,8 @@ static void tnx_autododge_v48(void) {
     /* v140: projectiles are a second, independent threat source. The hostile loop above only
      * sees characters, so a shot already in the air produced threats=0 and the dodge returned
      * before it could look at it. This runs before that early return. */
+    tnx_v146_phase("sidestep");
+
     g_v140_side_hits = 0;
     g_v140_side_projs = 0;
 
@@ -11069,8 +11194,15 @@ static void tnx_autododge_v48(void) {
             }
         }
 
+        tnx_v146_phase("mode-write");
+
         if (!tnx_v144_mode_write(targetX, targetY, TNX_V140_MODEPAIR_FLAG)) {
-            ((tnx_v47_setpred_t)g_v47_setpred)((void *)g_scene_object, targetX, targetY);
+            /* v146: the fallback leaf is reached only when the primary actuator refused, and it
+             * is called through a pointer that is zero whenever the fingerprint did not pass,
+             * so it is checked here rather than trusted. */
+            if (g_v47_setpred) {
+                ((tnx_v47_setpred_t)g_v47_setpred)((void *)g_scene_object, targetX, targetY);
+            }
         }
 
         g_v47_writes++;
@@ -12459,6 +12591,9 @@ static void poll_for_game(int tick) {
 
 __attribute__((constructor))
 static void start(void) {
+    /* v146: armed before anything else so a fault during setup is located too. */
+    tnx_v146_install();
+
     dispatch_async(dispatch_get_main_queue(), ^{
         tlog(@"=== titanox started (zero latency mode) ===");
         poll_for_game(0);

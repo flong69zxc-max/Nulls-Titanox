@@ -327,7 +327,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_V167_RANGE_SLOTS 16
 #define TNX_V167_RANGE_MIN_SAMPLES 20
 #define TNX_V167_RANGE_SLACK 1.15f
-#define TNX_V167_DEATH_GUARD 1
+#define TNX_V167_DEATH_GUARD 0
 #define TNX_V167_STAGE_APPLIED 1
 #define TNX_V167_STAGE_STICK 2
 #define TNX_V167_STAGE_MAX 2
@@ -10896,7 +10896,9 @@ static float tnx_v167_range_for(uintptr_t cls) {
 
     for (i = 0; i < TNX_V167_RANGE_SLOTS; i++) {
         if (g_v167_ranges[i].cls == cls && g_v167_ranges[i].samples >= TNX_V167_RANGE_MIN_SAMPLES) {
-            return g_v167_ranges[i].maxFlown * TNX_V167_RANGE_SLACK;
+            float learned = g_v167_ranges[i].maxFlown * TNX_V167_RANGE_SLACK;
+
+            return learned > TNX_V167_THREAT_RANGE ? learned : TNX_V167_THREAT_RANGE;
         }
     }
 
@@ -11047,6 +11049,46 @@ static void tnx_v167_clear_stick_once(void) {
     tnx_logf("v167 stick neutralised once: +%#llx held (%d,%d) and this build does not write it on the "
              "input route, so a value left behind by an earlier build would keep the character walking "
              "on its own", (unsigned long long)TNX_V128_CTRL_RAW_X_OFF, rawX, rawY);
+}
+
+static int g_v169_signal_logs = 0;
+
+static void tnx_v169_death_signals(uintptr_t ownElem, int32_t ownX, int32_t ownY) {
+    static int lastDead = -999;
+    static int lastOwnAlive = -999;
+    static int lastCtrlAlive = -999;
+    uintptr_t ctrl = 0;
+    uint8_t deadByte = 0;
+    int dead = -1;
+    int ownAlive = -1;
+    int ctrlAlive = -1;
+
+    if (!ownElem) return;
+
+    if (tnx_read_bytes(ownElem + TNX_V91_DEAD_OFF, &deadByte, sizeof(deadByte))) dead = (int)deadByte;
+
+    if (!tnx_read_i32(ownElem + TNX_V127_OWN_ALIVE_OFF, &ownAlive)) ownAlive = -1;
+
+    ctrl = tnx_v150_controller();
+
+    if (ctrl && !tnx_read_i32(ctrl + TNX_V128_CTRL_ALIVE_OFF, &ctrlAlive)) ctrlAlive = -1;
+
+    if (dead == lastDead && ownAlive == lastOwnAlive && ctrlAlive == lastCtrlAlive) return;
+
+    lastDead = dead;
+    lastOwnAlive = ownAlive;
+    lastCtrlAlive = ctrlAlive;
+
+    if (g_v169_signal_logs >= 12) return;
+
+    g_v169_signal_logs++;
+
+    tnx_logf("v169 death signals own=%p (%d,%d) deadByte@+%#llx=%d own+0x140=%d ctrl+0xf80=%d - the "
+             "v167 guard used the walk's dead byte at +%#llx and held the dodge while the player was "
+             "alive, because that byte reads %d on a live object; whichever of these three moves on a "
+             "real death is the one to guard on", (void *)ownElem, ownX, ownY,
+             (unsigned long long)TNX_V91_DEAD_OFF, dead, ownAlive, ctrlAlive,
+             (unsigned long long)TNX_V91_DEAD_OFF, dead);
 }
 
 static void tnx_v167_dead(int32_t ownX, int32_t ownY) {
@@ -11837,6 +11879,9 @@ static void tnx_autododge_v48(void) {
      
 
 
+    tnx_v169_death_signals((ownIndex >= 0 && ownIndex < usable) ? objects[ownIndex].object : 0, ownX,
+                           ownY);
+
     if (TNX_V167_DEATH_GUARD && ownIndex >= 0 && ownIndex < usable && objects[ownIndex].dead) {
         tnx_v167_dead(ownX, ownY);
 
@@ -11886,6 +11931,13 @@ static void tnx_autododge_v48(void) {
                      (double)TNX_V160_REACH, (double)TNX_V160_ENGAGE, TNX_V160_DIRS,
                      TNX_V160_LOCK_MS, (double)TNX_V160_KEEP_BAND);
         }
+    }
+
+    if (!g_v140_side_hits && (g_v167_proj_own + g_v167_proj_other) > 0 && (g_v48_ticks % 240) == 0) {
+        tnx_logf("v169 no shot survived the filters: tracked=%d ownTeam=%d flewAway=%d cannotReach=%d - "
+                 "the ring had nothing left to dodge, so a dodge that stops while shots are in the "
+                 "air is read from this line first", g_v167_proj_own + g_v167_proj_other,
+                 g_v167_proj_own, g_v167_drop_along, g_v167_drop_reach);
     }
 
     if (threats == 0 && g_v140_side_hits == 0) {
@@ -13484,6 +13536,18 @@ static void setup(void) {
              "had rather than a tile lookup whose signature is unverified; the wall count and the "
              "learned ranges are printed so the next log carries the numbers",
              (double)TNX_V167_THREAT_RANGE, TNX_V167_RANGE_MIN_SAMPLES, (double)TNX_V167_WALL_HIT);
+
+    tnx_logf("plan v169, from the 16:01 run: the dodge did not move once - no v151 write, no v160 "
+             "write, no joystick pair - and the log says why in four lines: 'own is dead' at 16:02:07 "
+             "and 'own is alive again' at 16:02:31, so the v167 death guard was holding nearly the "
+             "whole run. Its signal is the byte the walk reads at +%#llx, and that byte reads 0, 1 and "
+             "63 on live objects in the same log, so it is not a death flag; the guard is now off and "
+             "the three candidates - that byte, own+0x140 and ctrl+0xf80 - are printed every time one "
+             "of them changes, so the next log names the one to guard on. A second line reports a "
+             "threat list that the new filters emptied, because those two states looked identical "
+             "from the outside. The learned range is floored at %.0f and can only raise the reach, so "
+             "a class first met in a short fight cannot teach the filter to ignore its real shots",
+             (unsigned long long)TNX_V91_DEAD_OFF, (double)TNX_V167_THREAT_RANGE);
 
     tnx_start_timer();
 

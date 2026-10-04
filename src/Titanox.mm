@@ -7782,6 +7782,42 @@ static int tnx_v102_inject_own(tnx_v47_obj_t *objects, int usable, int capacity)
     return usable + 1;
 }
 
+static uintptr_t g_v182_own_elem = 0;
+static int g_v183_latch_logs = 0;
+
+static int tnx_v183_own_latch(const tnx_v47_obj_t *objects, int usable, int *indexOut,
+                              const char **fromOut) {
+    int i = 0;
+
+    if (indexOut) *indexOut = -1;
+    if (fromOut) *fromOut = "none";
+    if (!objects || usable <= 0 || !g_v182_own_elem) return 0;
+
+    for (i = 0; i < usable; i++) {
+        if (objects[i].object != g_v182_own_elem) continue;
+        if (objects[i].gid < TNX_V75_GID_FLOOR || objects[i].gid >= TNX_V138_PLAYER_GID_MAX) return 0;
+        if (objects[i].teamOld < 0 || objects[i].teamOld > TNX_V75_TEAM_MAX) return 0;
+
+        if (indexOut) *indexOut = i;
+        if (fromOut) *fromOut = "latched";
+
+        if (g_v183_latch_logs < 6) {
+            g_v183_latch_logs++;
+
+            tnx_logf("v183 own latched idx=%d gid=%d pos=(%d,%d) - the character the dodge used last tick "
+                     "is still in the container with a plausible gid and team, so it is taken again "
+                     "before any of the heuristics run; the smallest gid rule below can pick another "
+                     "player and did, in the 18:44 run, where own resolved to a fixed (2550,9750) that "
+                     "the character never occupied",
+                     i, objects[i].gid, objects[i].x, objects[i].y);
+        }
+
+        return 1;
+    }
+
+    return 0;
+}
+
 static int tnx_v102_take_own(const tnx_v47_obj_t *objects, int usable, int *indexOut,
                              const char **fromOut) {
     int i;
@@ -8188,9 +8224,8 @@ static uintptr_t tnx_v127_own_obj(void) {
 
 
     if (g_v144_own_elem) {
-        if (g_v144_own_stamp == g_v142_tick_stamp &&
-            tnx_v144_cand_ok(g_v144_own_elem, &why, &vt)) {
-            g_v145_own_from = "published";
+        if (tnx_v144_cand_ok(g_v144_own_elem, &why, &vt)) {
+            g_v145_own_from = (g_v144_own_stamp == g_v142_tick_stamp) ? "published" : "published-old";
 
             return g_v144_own_elem;
         }
@@ -10278,6 +10313,8 @@ static void tnx_v90_gate_report(int slotHit) {
 
             ownFound = tnx_v128_resolve_own(objects, usable, &ownIndex, &ownFrom);
 
+            if (!ownFound) ownFound = tnx_v183_own_latch(objects, usable, &ownIndex, &ownFrom);
+
             if (!ownFound) ownFound = tnx_v91_resolve_own(objects, usable, &ownIndex, &ownFrom);
 
             if (!ownFound) ownFound = tnx_v102_take_own(objects, usable, &ownIndex, &ownFrom);
@@ -11665,8 +11702,6 @@ static void tnx_v174_stick(int engaged, float dirX, float dirY) {
         }
     }
 }
-
-static uintptr_t g_v182_own_elem = 0;
 
 static void tnx_v179_census(void) {
     void *array = NULL;
@@ -14958,6 +14993,25 @@ static void setup(void) {
              "objects[ownIndex] in the very block that reads ownTeam and the position, and every "
              "instrument prefers it, so the route and paircal lines measure the character in control",
              (unsigned)TNX_OBJ_TEAM_OFF, (unsigned)TNX_OBJ_TEAM_OFF);
+
+    tnx_logf("plan v183, from the 18:44 run. The team side is now stable - teamOff reads +%#x in every "
+             "line but one and ownTeam never flips - and what is left is that the dodge was not looking "
+             "at the player. Its own gate line says ownFound=0 for forty straight seconds while the "
+             "census counted four players, and in the seconds it did resolve it says "
+             "ownFrom=v135-list own=0x15b0cd800 selfPos=(2550,9750) against targetPos=(2250,1950): a "
+             "fixed point the character never stood on. So every heading it computed came from somebody "
+             "else's position, which is 'after a death it does not work at all' and 'it reacts very "
+             "slowly' at the same time. The reason is the first rule of the resolver: "
+             "tnx_v134_own_from_list picks the player with the SMALLEST gid, so any player with a lower "
+             "gid becomes own. Two changes. (1) The character the dodge used on the previous tick is "
+             "taken again whenever it is still in the container with a plausible gid and team, and that "
+             "attempt now runs before the heuristics, so own stops changing owners between ticks and "
+             "changes only when it really leaves the container - ownFrom=latched in the log. (2) The "
+             "published own is accepted whenever the object itself validates, instead of only when its "
+             "stamp equals the current tick: the run prints v145 own not used elem=0x15b0cd800 "
+             "stamp=7860 tick=7862, a two tick old element thrown away even though its address is a "
+             "live heap object, which is what pushed the resolver into the list in the first place",
+             (unsigned)TNX_OBJ_TEAM_OFF);
 
     tnx_start_timer();
 

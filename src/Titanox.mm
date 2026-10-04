@@ -366,6 +366,8 @@ static int g_v123_defer_logs = 0;
 #define TNX_V179_PLAYER_GID 1000000
 #define TNX_V179_SHOT_GID 2000000
 #define TNX_V179_SHOT_GID_MAX 3000000
+#define TNX_V180_DRIVE 1
+#define TNX_V180_HOLD_TICKS 30
 #define TNX_V177_CLEAR_STICK 0
 #define TNX_V174_DT_MAX 12
 #define TNX_V174_STICK_TTL 3
@@ -11709,6 +11711,42 @@ static int tnx_v178_own(int32_t *xOut, int32_t *yOut) {
     return 1;
 }
 
+static int32_t g_v180_tx = 0;
+static int32_t g_v180_ty = 0;
+static uint64_t g_v180_hold = 0;
+
+static void tnx_v180_drive(void) {
+    int32_t ownX = 0;
+    int32_t ownY = 0;
+    float dx = 0.0f;
+    float dy = 0.0f;
+    int held = 0;
+
+    if (g_v160_active) {
+        g_v180_tx = g_v160_tx;
+        g_v180_ty = g_v160_ty;
+        g_v180_hold = g_v48_ticks;
+        held = 1;
+    } else if (g_v180_hold && (g_v48_ticks - g_v180_hold) <= TNX_V180_HOLD_TICKS) {
+        held = 1;
+    }
+
+    if (!held) {
+        tnx_v174_stick(0, 0.0f, 0.0f);
+
+        return;
+    }
+
+    if (!tnx_v178_own(&ownX, &ownY)) return;
+
+    dx = (float)(g_v180_tx - ownX);
+    dy = (float)(g_v180_ty - ownY);
+
+    tnx_v174_stick(1, dx, dy);
+
+    tnx_v113_enqueue(g_v180_tx, g_v180_ty);
+}
+
 static void tnx_v174_route(int engaged) {
     uintptr_t ctrl = tnx_v150_controller();
     int32_t ownX = 0;
@@ -12996,6 +13034,8 @@ static void tnx_autododge_v48(void) {
             g_v165_dir_y = g_v172_ty - (float)ownY;
         }
 
+        tnx_v180_drive();
+
         if (g_v160_active && g_v151_logs < TNX_V151_LOGS) {
             g_v151_logs++;
 
@@ -13160,7 +13200,7 @@ static void tnx_autododge_v48(void) {
 
         tnx_v146_phase("mode-write");
 
-        if (TNX_V156_INPUT_WRITE && TNX_V172_QUEUE_MOVE) {
+        if (!TNX_V180_DRIVE && TNX_V156_INPUT_WRITE && TNX_V172_QUEUE_MOVE) {
             int pushed = tnx_v113_enqueue(targetX, targetY);
 
             if (g_v156_logs < TNX_V156_LOGS || !pushed) {
@@ -13186,7 +13226,7 @@ static void tnx_autododge_v48(void) {
 
         tnx_v167_watch(ownX, ownY);
 
-        tnx_v174_stick(g_v160_active, g_v165_dir_x, g_v165_dir_y);
+        if (!TNX_V180_DRIVE) tnx_v174_stick(g_v160_active, g_v165_dir_x, g_v165_dir_y);
 
         g_v171_engaged_frame = 1;
 
@@ -14854,6 +14894,19 @@ static void setup(void) {
              "and not a gate - the single gate line reads open. The new census line splits the container "
              "by gid band every second, so a silent dodge always names its own emptiness",
              (double)TNX_V165_JOY_MAG, (double)TNX_V165_JOY_MAG, 780);
+
+    tnx_logf("plan v180, from the 18:02 run: the pair works and the log proves it - route lines with "
+             "engagedTicks=23 and 26 read dot +1.00 with aligned=same, so the heading written into "
+             "ctrl+0xfa4 is the heading the character walks, and the same run reaches 769 units a "
+             "second against the player's 780. What is left is that the writes sat AFTER the gate "
+             "that returns when there are no threats, so the pair and the message were only sent on "
+             "the frames a threat was live: engagedTicks was 23 and 26 out of 60, and the character "
+             "walked in bursts instead of continuously - which is exactly what reads as sliding. Both "
+             "writes now happen right after the dodge decides a heading, before that gate, and the "
+             "heading and the target are held for %d more ticks after the last decision so the walk "
+             "does not stop between two shots. The gate still stops the writes when the dodge has no "
+             "heading at all, so a character that has nothing to dodge still stands still",
+             TNX_V180_HOLD_TICKS);
 
     tnx_start_timer();
 

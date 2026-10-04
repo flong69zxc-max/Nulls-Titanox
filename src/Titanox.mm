@@ -313,7 +313,12 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_164"
+#define TNX_BUILD_TAG "titanox_165"
+
+#define TNX_V165_RAW_INPUT 1
+#define TNX_V165_JOY_MAG 500.0f
+#define TNX_V165_LOGS 12
+
 
 #define TNX_V163_MAP_DUMPS 3
 
@@ -326,11 +331,11 @@ static int g_v123_defer_logs = 0;
 
 #define TNX_V160_DIRS 48
 #define TNX_V160_REACH 600.0f
-#define TNX_V160_HORIZON 1.0f
+#define TNX_V160_HORIZON 1.5f
 #define TNX_V160_ENGAGE 200.0f
-#define TNX_V160_KEEP_BAND 120.0f
+#define TNX_V160_KEEP_BAND 60.0f
 #define TNX_V160_MOMENTUM 100.0f
-#define TNX_V160_LOCK_MS 100
+#define TNX_V160_LOCK_MS 60
 #define TNX_V160_RELEASE_MS 120
 #define TNX_V160_SPEED 720.0f
 
@@ -10755,6 +10760,10 @@ static uint64_t g_v160_last_danger = 0;
 static int32_t g_v160_tx = 0;
 static int32_t g_v160_ty = 0;
 static int g_v160_active = 0;
+static int g_v164_logs = 0;
+static int g_v165_logs = 0;
+static float g_v165_dir_x = 0.0f;
+static float g_v165_dir_y = 0.0f;
 
 static void tnx_v160_build_ring(void) {
     int i;
@@ -10881,6 +10890,8 @@ static int tnx_v160_dodge(int32_t ownX, int32_t ownY, int32_t *txOut, int32_t *t
     }
 
     g_v160_prev_idx = chosen;
+    g_v165_dir_x = g_v160_ring_x[chosen];
+    g_v165_dir_y = g_v160_ring_y[chosen];
 
     if (txOut) *txOut = ownX + (int32_t)(g_v160_ring_x[chosen] * TNX_V160_REACH);
     if (tyOut) *tyOut = ownY + (int32_t)(g_v160_ring_y[chosen] * TNX_V160_REACH);
@@ -10889,7 +10900,7 @@ static int tnx_v160_dodge(int32_t ownX, int32_t ownY, int32_t *txOut, int32_t *t
 }
 
 static int g_v162_logs = 0;
-static int g_v164_logs = 0;
+
 static int32_t g_v162_max_x = 0;
 static int32_t g_v162_max_y = 0;
 
@@ -10908,6 +10919,40 @@ static uintptr_t tnx_v162_bounds_obj(uintptr_t receiver) {
 }
 
 static int g_v163_map_dumps = 0;
+
+static void tnx_v165_write_raw(void) {
+    uintptr_t ctrl = tnx_v150_controller();
+    int32_t beforeX = 0;
+    int32_t beforeY = 0;
+    int32_t afterX = 0;
+    int32_t afterY = 0;
+    int32_t wx = (int32_t)(g_v165_dir_x * TNX_V165_JOY_MAG);
+    int32_t wy = (int32_t)(g_v165_dir_y * TNX_V165_JOY_MAG);
+    int written = 0;
+
+    if (!ctrl) return;
+    if (!tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_X_OFF, &beforeX)) return;
+    if (!tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &beforeY)) return;
+
+    if (tnx_write_bytes(ctrl + TNX_V128_CTRL_RAW_X_OFF, &wx, sizeof(wx)) &&
+        tnx_write_bytes(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &wy, sizeof(wy))) {
+        written = 1;
+    }
+
+    tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_X_OFF, &afterX);
+    tnx_read_i32(ctrl + TNX_V128_CTRL_RAW_Y_OFF, &afterY);
+
+    if (g_v165_logs < TNX_V165_LOGS) {
+        g_v165_logs++;
+
+        tnx_logf("v165 raw joystick ctrl=%p want=(%d,%d) before=(%d,%d) after=(%d,%d) written=%d - "
+                 "this is the pair the touch handler writes and the battle update reads, so writing "
+                 "it on the controller makes the game treat the move as player input: the walk cycle "
+                 "plays and the engine itself queues the move input instead of the body being carried "
+                 "without its run animation", (void *)ctrl, wx, wy, beforeX, beforeY, afterX, afterY,
+                 written);
+    }
+}
 
 static void tnx_v164_mark_applied(int32_t x, int32_t y) {
     uintptr_t ctrl = tnx_v150_controller();
@@ -11695,6 +11740,8 @@ static void tnx_autododge_v48(void) {
         }
 
         tnx_v148_receiver_probe();
+
+        if (TNX_V165_RAW_INPUT && g_v160_active) tnx_v165_write_raw();
 
         tnx_v164_mark_applied(targetX, targetY);
 

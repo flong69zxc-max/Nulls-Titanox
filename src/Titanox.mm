@@ -389,8 +389,12 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_245"
+#define TNX_BUILD_TAG "titanox_246"
 
+#define TNX_V246_HP_OFF 0xacULL
+#define TNX_V246_HPMAX_OFF 0xb0ULL
+#define TNX_V246_LOGS 24
+#define TNX_V246_CLEAN_LOGS 5
 #define TNX_V245_JOURNAL 24
 #define TNX_V245_JOURNAL_LINES 8
 #define TNX_V245_STALE_SIGHT 1
@@ -1124,6 +1128,16 @@ static volatile int g_v146_hist_n = 0;
 static volatile int g_v146_fd = -1;
 static volatile uint64_t g_v146_stage_ticks = 0;
 static int g_v146_installed = 0;
+
+static uintptr_t g_v245_addr[TNX_V245_JOURNAL];
+static uint32_t g_v245_value[TNX_V245_JOURNAL];
+static uint64_t g_v245_tick[TNX_V245_JOURNAL];
+static const char *g_v245_phase[TNX_V245_JOURNAL];
+static uint8_t g_v245_size[TNX_V245_JOURNAL];
+static uint8_t g_v245_denied[TNX_V245_JOURNAL];
+static volatile int g_v245_at = 0;
+static volatile uint64_t g_v245_writes = 0;
+static uint64_t g_v245_stale = 0;
 
 static void tnx_v146_phase(const char *p) {
     int n;
@@ -2253,16 +2267,6 @@ static BOOL tnx_v201_writable(uintptr_t address, size_t length) {
 
     return cursor >= end;
 }
-
-static uintptr_t g_v245_addr[TNX_V245_JOURNAL];
-static uint32_t g_v245_value[TNX_V245_JOURNAL];
-static uint64_t g_v245_tick[TNX_V245_JOURNAL];
-static const char *g_v245_phase[TNX_V245_JOURNAL];
-static uint8_t g_v245_size[TNX_V245_JOURNAL];
-static uint8_t g_v245_denied[TNX_V245_JOURNAL];
-static volatile int g_v245_at = 0;
-static volatile uint64_t g_v245_writes = 0;
-static uint64_t g_v245_stale = 0;
 
 static void tnx_v245_note(uintptr_t address, const void *src, size_t length, int denied) {
     int n = g_v245_at;
@@ -14836,6 +14840,105 @@ static int tnx_v196_freest(float px, float py, float *tx, float *ty) {
     return 1;
 }
 
+static int32_t g_v246_hp = -1;
+static int32_t g_v246_hpmax = -1;
+static uint64_t g_v246_hits = 0;
+static uint64_t g_v246_hit_engaged = 0;
+static uint64_t g_v246_hit_idle = 0;
+static uint64_t g_v246_hp_lost = 0;
+static uint64_t g_v246_episodes = 0;
+static uint64_t g_v246_clean = 0;
+static uint64_t g_v246_eaten = 0;
+static uint64_t g_v246_engaged_frames = 0;
+static uint64_t g_v246_threat_frames = 0;
+static int g_v246_ep_open = 0;
+static int g_v246_ep_dirty = 0;
+static int g_v246_logs = 0;
+static int g_v246_clean_seen = 0;
+
+static void tnx_v246_log(const char *event) {
+    if (g_v246_logs >= TNX_V246_LOGS) return;
+
+    g_v246_logs++;
+
+    tnx_logf("v246 dodge %s hp=%d/%d hits=%llu engagedHits=%llu idleHits=%llu lost=%llu episodes=%llu "
+             "clean=%llu eaten=%llu threatFrames=%llu engagedFrames=%llu - clean is a threat window "
+             "that closed with the health untouched, which is a dodge that worked, eaten is one that "
+             "closed after the health dropped, and the hit split says whether this build was driving "
+             "at the moment the health dropped, so a high idleHits means the dodge was not even "
+             "engaged when the shot landed",
+             event, g_v246_hp, g_v246_hpmax, (unsigned long long)g_v246_hits,
+             (unsigned long long)g_v246_hit_engaged, (unsigned long long)g_v246_hit_idle,
+             (unsigned long long)g_v246_hp_lost, (unsigned long long)g_v246_episodes,
+             (unsigned long long)g_v246_clean, (unsigned long long)g_v246_eaten,
+             (unsigned long long)g_v246_threat_frames, (unsigned long long)g_v246_engaged_frames);
+}
+
+static void tnx_v246_stats(void) {
+    uintptr_t own = g_v182_own_elem;
+    int32_t hp = 0;
+    int32_t hpmax = 0;
+    int threat = 0;
+
+    if (!own) own = (uintptr_t)g_v144_own_elem;
+    if (!own) return;
+    if (!tnx_read_i32(own + TNX_V246_HP_OFF, &hp)) return;
+    if (!tnx_read_i32(own + TNX_V246_HPMAX_OFF, &hpmax)) return;
+    if (hpmax <= 0) return;
+
+    if (g_v246_hp < 0) g_v246_hp = hp;
+    if (g_v246_hpmax < 0) g_v246_hpmax = hpmax;
+    if (hpmax != g_v246_hpmax) g_v246_hpmax = hpmax;
+
+    if (hp < g_v246_hp) {
+        g_v246_hits++;
+        g_v246_ep_dirty = 1;
+
+        if (g_v243_drove) g_v246_hit_engaged++;
+        else g_v246_hit_idle++;
+
+        g_v246_hp_lost += (uint64_t)(g_v246_hp - hp);
+        g_v246_hp = hp;
+        tnx_v246_log("hit");
+
+        return;
+    }
+
+    g_v246_hp = hp;
+
+    threat = g_v160_active ? 1 : 0;
+
+    if (threat) g_v246_threat_frames++;
+    if (threat && g_v243_drove) g_v246_engaged_frames++;
+
+    if (threat && !g_v246_ep_open) {
+        g_v246_ep_open = 1;
+        g_v246_ep_dirty = 0;
+        g_v246_episodes++;
+
+        return;
+    }
+
+    if (!threat && g_v246_ep_open) {
+        g_v246_ep_open = 0;
+
+        if (g_v246_ep_dirty) {
+            g_v246_eaten++;
+            tnx_v246_log("eaten");
+
+            return;
+        }
+
+        g_v246_clean++;
+        g_v246_clean_seen++;
+
+        if (g_v246_clean_seen >= TNX_V246_CLEAN_LOGS) {
+            g_v246_clean_seen = 0;
+            tnx_v246_log("clean");
+        }
+    }
+}
+
 static int tnx_v172_decide(int32_t ownX, int32_t ownY) {
     float px = (float)ownX;
     float py = (float)ownY;
@@ -14848,6 +14951,7 @@ static int tnx_v172_decide(int32_t ownX, int32_t ownY) {
     float desiredDeg = 0.0f;
 
     tnx_v242_arm(px, py);
+    tnx_v246_stats();
 
     tnx_v172_build();
 

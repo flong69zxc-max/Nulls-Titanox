@@ -313,7 +313,12 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_158"
+#define TNX_BUILD_TAG "titanox_159"
+
+#define TNX_V159_MIN_PROJ_DIST 200.0f
+#define TNX_V159_DIR_BAD_TICKS 2
+#define TNX_V159_LOGS 24
+
 
 #define TNX_V157_MIN_COMMIT 300.0f
 
@@ -8242,6 +8247,11 @@ static int g_v156_logs = 0;
 static uint64_t g_v156_push_logs = 0;
 static float g_v157_dir = 0.0f;
 static int g_v157_dir_set = 0;
+static float g_v159_own_x = 0.0f;
+static float g_v159_own_y = 0.0f;
+static int g_v159_dir_bad = 0;
+static uint64_t g_v159_filtered = 0;
+static int g_v159_logs = 0;
 
 static int tnx_v113_enqueue(int x, int y) {
     uintptr_t ctorFn = tnx_v113_entry(TNX_V113_MSGCTOR_RVA);
@@ -10513,6 +10523,15 @@ static float tnx_v153_clearance(float px, float py, int skipK) {
 
         if (dd < 1.0f) continue;
 
+        {
+            float pdx = (float)p->x - g_v159_own_x;
+            float pdy = (float)p->y - g_v159_own_y;
+            float pd2 = pdx * pdx + pdy * pdy;
+
+            if (pd2 < TNX_V159_MIN_PROJ_DIST * TNX_V159_MIN_PROJ_DIST) continue;
+            if (pdx * dx + pdy * dy >= 0.0f) continue;
+        }
+
         rx = px - (float)p->x;
         ry = py - (float)p->y;
 
@@ -10949,6 +10968,15 @@ static float tnx_v154_clearance(float px, float py) {
 
         if (dd < 1.0f) continue;
 
+        {
+            float pdx = (float)p->x - g_v159_own_x;
+            float pdy = (float)p->y - g_v159_own_y;
+            float pd2 = pdx * pdx + pdy * pdy;
+
+            if (pd2 < TNX_V159_MIN_PROJ_DIST * TNX_V159_MIN_PROJ_DIST) continue;
+            if (pdx * dx + pdy * dy >= 0.0f) continue;
+        }
+
         rx = px - (float)p->x;
         ry = py - (float)p->y;
 
@@ -11058,11 +11086,28 @@ static int tnx_v154_best(int32_t px, int32_t py, float desX, float desY, int32_t
 
         if (tnx_v157_dir_eval(px, py, g_v157_dir, &heldDist, NULL) &&
             heldDist >= TNX_V157_MIN_COMMIT) {
+            g_v159_dir_bad = 0;
+
             if (txOut) *txOut = px + (int32_t)(cosf(g_v157_dir) * heldDist);
             if (tyOut) *tyOut = py + (int32_t)(sinf(g_v157_dir) * heldDist);
 
             return 1;
         }
+
+        g_v159_dir_bad++;
+
+        if (g_v159_dir_bad < TNX_V159_DIR_BAD_TICKS) {
+            float shortDist = 0.0f;
+
+            if (tnx_v157_dir_eval(px, py, g_v157_dir, &shortDist, NULL) && shortDist > 0.0f) {
+                if (txOut) *txOut = px + (int32_t)(cosf(g_v157_dir) * shortDist);
+                if (tyOut) *tyOut = py + (int32_t)(sinf(g_v157_dir) * shortDist);
+
+                return 1;
+            }
+        }
+
+        g_v157_dir_set = 0;
     }
 
     if (desX != 0.0f || desY != 0.0f) {
@@ -11600,6 +11645,8 @@ static void tnx_autododge_v48(void) {
 
         if (g_v48_manager) tnx_read_i32(g_v48_manager + TNX_MGR_COUNT_OFF, &projCount);
 
+        g_v159_own_x = (float)ownX;
+        g_v159_own_y = (float)ownY;
         g_v151_best_dist = -1.0f;
         g_v151_best_x = 0.0f;
         g_v151_best_y = 0.0f;

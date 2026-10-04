@@ -89,8 +89,6 @@
 #define TNX_V225_MODE_TUNE 1
 #define TNX_V226_GATE_WRITE 1
 #define TNX_V226_HIT_ONLY 1
-#define TNX_V226_ETA_SCALE 1
-#define TNX_V226_ETA_MIN 0.35f
 #define TNX_V227_REJECT 1
 #define TNX_V227_MIN_SPEED 260.0f
 #define TNX_V227_MAX_SPEED 9000.0f
@@ -98,7 +96,10 @@
 #define TNX_V227_BLINK_REM 320.0f
 #define TNX_V227_LOGS 8
 #define TNX_V228_BODY_SCAN 1
-#define TNX_V229_STEP_SCALE 0.30f
+#define TNX_V231_WALK_MIN 1.0f
+#define TNX_V231_WALK_MAX 60.0f
+#define TNX_V231_WALK_EMA 0.12f
+#define TNX_V231_STEP_FROM_WALK 1
 #define TNX_V216_FLEE 1
 #define TNX_V216_FLEE_STEP 150.0f
 #define TNX_V216_LOGS 14
@@ -384,7 +385,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_229"
+#define TNX_BUILD_TAG "titanox_231"
 
 #define TNX_V165_JOY_MAG 600.0f
 #define TNX_V167_TEAM_FILTER 1
@@ -431,7 +432,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_V186_MIN_USABLE 1
 
 #define TNX_V189_HOLD_TICKS 3
-#define TNX_V189_STEP 120.0f
+#define TNX_V189_STEP 3.0f
 #define TNX_V189_PAIR_ONLY 0
 #define TNX_V189_MATE_CLEAR 240.0f
 #define TNX_V189_MATE_MAX 8
@@ -1471,7 +1472,6 @@ static void tnx_autododge_v48(void);
 static uint64_t tnx_v213_us(void);
 static uint64_t g_v224_t0 = 0;
 static uint64_t g_v224_slow = 0;
-static uint64_t g_v226_scaled = 0;
 static uint64_t g_v227_drop_slow = 0;
 static uint64_t g_v227_drop_fast = 0;
 static uint64_t g_v227_drop_blink = 0;
@@ -1482,7 +1482,6 @@ static uint64_t g_v226_gate_writes = 0;
 static uint64_t g_v226_gate_held = 0;
 static uint64_t g_v225_diag_us = 0;
 static uint64_t g_v225_diag_max_us = 0;
-
 
 static void tnx_slot_note(int index, void *self, uint64_t arg1) {
     uint32_t bit = 0;
@@ -2809,12 +2808,6 @@ static int tnx_v225_mode(void) {
     if (mates <= 2) return 2;
 
     return 3;
-}
-
-static float tnx_v225_step(void) {
-    static const float steps[4] = { 220.0f, 190.0f, 160.0f, 140.0f };
-
-    return steps[tnx_v225_mode()] * TNX_V229_STEP_SCALE;
 }
 
 static float tnx_v225_look_ms(void) {
@@ -11913,8 +11906,48 @@ static void tnx_v211_apply(uintptr_t ctrl, int32_t worldX, int32_t worldY) {
     }
 }
 
+static float g_v231_walk_step = TNX_V189_STEP;
+static int32_t g_v231_prev_x = 0;
+static int32_t g_v231_prev_y = 0;
+static int g_v231_prev_ok = 0;
+static uint64_t g_v231_measured = 0;
+
+static float tnx_v231_step(void) {
+    return g_v231_walk_step;
+}
+
+static void tnx_v231_measure(void) {
+    int32_t x = 0;
+    int32_t y = 0;
+    float d = 0.0f;
+
+    if (!TNX_V231_STEP_FROM_WALK) return;
+    if (!tnx_v178_own(&x, &y)) return;
+
+    if (g_v231_prev_ok && !g_v180_hold) {
+        float ddx = (float)(x - g_v231_prev_x);
+        float ddy = (float)(y - g_v231_prev_y);
+
+        d = sqrtf(ddx * ddx + ddy * ddy);
+
+        if (d > 0.5f && d < TNX_V231_WALK_MAX * 3.0f) {
+            g_v231_walk_step = g_v231_walk_step * (1.0f - TNX_V231_WALK_EMA) + d * TNX_V231_WALK_EMA;
+            g_v231_measured++;
+
+            if (g_v231_walk_step < TNX_V231_WALK_MIN) g_v231_walk_step = TNX_V231_WALK_MIN;
+            if (g_v231_walk_step > TNX_V231_WALK_MAX) g_v231_walk_step = TNX_V231_WALK_MAX;
+        }
+    }
+
+    g_v231_prev_x = x;
+    g_v231_prev_y = y;
+    g_v231_prev_ok = 1;
+}
+
 static int tnx_v189_drive(void) {
     uintptr_t ctrl = tnx_v150_controller();
+
+    tnx_v231_measure();
     int32_t ownX = 0;
     int32_t ownY = 0;
     float dx = 0.0f;
@@ -11992,7 +12025,7 @@ static int tnx_v189_drive(void) {
         dx /= len;
         dy /= len;
         tnx_v218_unblock((float)ownX, (float)ownY,
-                        TNX_V225_MODE_TUNE ? tnx_v225_step() : TNX_V220_STEP, &dx, &dy);
+                        tnx_v231_step(), &dx, &dy);
         dx *= len;
         dy *= len;
     }
@@ -12000,21 +12033,7 @@ static int tnx_v189_drive(void) {
     {
         float step = TNX_V220_STEP;
 
-        if (TNX_V225_MODE_TUNE) step = tnx_v225_step();
-
-        if (TNX_V226_ETA_SCALE) {
-            float look = TNX_V225_MODE_TUNE ? tnx_v225_look_ms() : TNX_V212_LOOKAHEAD_MS;
-            float eta = tnx_v207_eta_ms((float)ownX, (float)ownY);
-            float f = 1.0f;
-
-            if (look > 1.0f && eta < look) f = 1.0f - eta / look;
-
-            if (f < TNX_V226_ETA_MIN) f = TNX_V226_ETA_MIN;
-            if (f > 1.0f) f = 1.0f;
-
-            step *= f;
-            g_v226_scaled++;
-        }
+        step = tnx_v231_step();
 
         if (len > step) {
             dx = dx / len * step;
@@ -12058,8 +12077,8 @@ static int tnx_v189_drive(void) {
     tnx_v205_walk(dx, dy);
     tnx_v207_precision(ownX, ownY, dx, dy, 0);
 
-    tx = ownX + (int32_t)((double)dx / (double)len * (double)TNX_V189_STEP);
-    ty = ownY + (int32_t)((double)dy / (double)len * (double)TNX_V189_STEP);
+    tx = ownX + (int32_t)((double)dx / (double)len * (double)tnx_v231_step());
+    ty = ownY + (int32_t)((double)dy / (double)len * (double)tnx_v231_step());
 
     if (!TNX_V189_PAIR_ONLY) {
         tnx_v113_enqueue(tx, ty);
@@ -13891,7 +13910,7 @@ static void tnx_v198_state(void) {
              "at %#llx was forced to 1 and g70h how many of them the engine kept it, dropS dropF dropB the "
              "shots thrown away as too slow, too fast and too short lived and spd the speed range seen, "
              "dead counts the frames the control object failed the alive check so every store into it was "
-             "skipped, and denied counts the stores the region guard dropped, step is the walk step of the current mode %d",
+             "skipped, and denied counts the stores the region guard dropped, walkStep is the per push step measured from the player own walking %d",
              (void *)g_v205_joystick, (unsigned long long)g_v205_joystick_writes,
              (unsigned long long)g_v205_joystick_took, (unsigned long long)g_v206_escapes,
              (unsigned long long)g_v209_lookahead, (unsigned long long)g_v211_applied_writes,
@@ -13912,7 +13931,7 @@ static void tnx_v198_state(void) {
              (unsigned long long)g_v198_pred_took, (unsigned long long)g_v198_pred_miss,
              (void *)(uintptr_t)g_scene_object, (void *)g_v182_own_elem, (void *)g_v192_pred_last,
              (int)TNX_V220_STEP, (int)TNX_V126_TYPE_MOVE, (int)TNX_V224_SLOW_US,
-             (unsigned long long)TNX_V222_GATE_OFF, (int)tnx_v225_step());
+             (unsigned long long)TNX_V222_GATE_OFF, (int)tnx_v231_step());
 
     {
         uint16_t charState = 0;

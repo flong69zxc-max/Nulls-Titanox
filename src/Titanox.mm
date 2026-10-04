@@ -42,6 +42,16 @@
 #define TNX_V191_ENEMY_MARGIN 60.0f
 #define TNX_V191_TRUST_LOGS 8
 #define TNX_V191_ROSTER_LOGS 10
+
+/* v192, from the reference script that walks properly instead of sliding. Its movement is three
+   calls per frame, all of them the engine's own: the client prediction for the local character, the
+   input manager add for the input itself, and the joystick pair read back. This build had the ctor,
+   the target and the add, and never called the prediction at all - the one step whose absence leaves
+   the body to be carried by the input instead of predicted and walked. */
+#define TNX_V192_PREDICT 1
+#define TNX_V192_BODY_CLEAR 180.0f
+#define TNX_V192_PREDICT_LOGS 8
+#define TNX_V192_BODY_LOGS 8
 #define OBJC_HOOK_MAX 32
 #define WANTED_MAX 4
 #define SCAN_MAX 256
@@ -316,7 +326,7 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_191"
+#define TNX_BUILD_TAG "titanox_192"
 
 #define TNX_V165_JOY_MAG 600.0f
 #define TNX_V167_TEAM_FILTER 1
@@ -2847,6 +2857,9 @@ static int g_v191_trust_logs = 0;
 static int g_v191_roster_logs = 0;
 static int g_v191_enemy_blocks = 0;
 static int g_v191_oneshot_segs = 0;
+static int g_v192_body_blocks = 0;
+static int g_v192_body_logs = 0;
+static uint64_t g_v192_human_live = 0;
 
 static const char *tnx_v189_state_name(void) {
     if (g_v189_state == TNX_V189_STATE_DEAD) return "DEAD";
@@ -8470,6 +8483,55 @@ static int tnx_v113_queue_count(uintptr_t *mgrOut) {
 
 static uint64_t g_v156_push_logs = 0;
 
+/* v192: the client prediction, which the reference calls on every frame it moves.
+
+   The script that walks properly does three things per frame and all three are the game's own: it
+   builds the input, it stores the target into the client prediction, and it hands the input to the
+   input manager. This build had two of the three; the prediction was fingerprinted at boot and never
+   called, and the mode's pair at +0x1d4 was only ever read back as a probe. The prediction is the
+   engine's own local movement, so leaving it out is what leaves the body to be carried by the input
+   queue - the slide - instead of being walked under the game's own movement code. */
+static uintptr_t g_v192_pred_last = 0;
+static int g_v192_predict_logs = 0;
+static uint64_t g_v192_pred_calls = 0;
+static uint64_t g_v192_pred_fails = 0;
+
+static int tnx_v192_predict(int32_t x, int32_t y) {
+    uintptr_t battleFn = tnx_v113_entry(TNX_V113_GETBATTLE_RVA);
+    void *battle = NULL;
+
+    if (!TNX_V192_PREDICT) return 0;
+    if (!g_addr_setprediction) return 0;
+    if (!battleFn) return 0;
+
+    battle = ((void *(*)(void))battleFn)();
+
+    if (!battle) {
+        g_v192_pred_fails++;
+
+        return 0;
+    }
+
+    ((void (*)(void *, int, int))g_addr_setprediction)(battle, x, y);
+
+    g_v192_pred_last = (uintptr_t)battle;
+    g_v192_pred_calls++;
+
+    if (g_v192_predict_logs < TNX_V192_PREDICT_LOGS) {
+        g_v192_predict_logs++;
+
+        tnx_logf("v192 predict call=%llu battle=%p target=(%d,%d) fn=%p - the same object whose "
+                 "+%#llx holds the input manager, so this is the battle client the manager belongs "
+                 "to and the prediction is stored on it; the reference script calls exactly this "
+                 "with its new position on every frame it moves, which is the step that makes the "
+                 "game walk the character instead of carrying it",
+                 (unsigned long long)g_v192_pred_calls, battle, x, y, (void *)g_addr_setprediction,
+                 (unsigned long long)TNX_V113_MGR_OFF);
+    }
+
+    return 1;
+}
+
 static int tnx_v113_enqueue(int x, int y) {
     uintptr_t ctorFn = tnx_v113_entry(TNX_V113_MSGCTOR_RVA);
     uintptr_t inputFn = tnx_v113_entry(TNX_V113_ADDINPUT_RVA);
@@ -10756,6 +10818,33 @@ static int tnx_v191_enemy_blocked(float x, float y, float ownX, float ownY) {
     return 0;
 }
 
+/* v192: distance from a point to the segment own -> candidate, and the test that uses it.
+
+   The v189 mate test only looked at the END of the path, so a candidate beyond a teammate was
+   accepted and the character walked straight through him - which is the report. This test walks the
+   whole segment, and it uses every other player rather than the side read, so a broken team byte
+   cannot hide a body: mates and enemies are both bodies, and the only thing that changes with the
+   side is the destination test for enemies. */
+static float tnx_v192_seg_dist(float ax, float ay, float bx, float by, float px, float py) {
+    float vx = bx - ax;
+    float vy = by - ay;
+    float wx = px - ax;
+    float wy = py - ay;
+    float len2 = vx * vx + vy * vy;
+    float t = 0.0f;
+    float dx = 0.0f;
+    float dy = 0.0f;
+
+    if (len2 > 0.001f) t = (wx * vx + wy * vy) / len2;
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+
+    dx = px - (ax + t * vx);
+    dy = py - (ay + t * vy);
+
+    return sqrtf(dx * dx + dy * dy);
+}
+
 static int tnx_v189_mate_blocked(float x, float y) {
     int i = 0;
     float r2 = TNX_V189_MATE_CLEAR * TNX_V189_MATE_CLEAR;
@@ -11770,13 +11859,18 @@ static void tnx_v190_engage_report(const char *why) {
              "which is a walk of 180 units a second and no longer the twenty a frame that only a "
              "teleport reaches; traveled is the whole path own covered during the run against 780 "
              "units a second for a walk, which is the number that says whether the body follows the "
-             "writes at all", why, (unsigned long long)g_v190_engage_start,
+             "writes at all; human=%llu counts the frames the player's own finger was on the stick, so a "
+             "run with human at its maximum and traveled at a walk speed is the dodge working while "
+             "the stick is held, and the prediction went out %llu times with %llu refusals", why,
+             (unsigned long long)g_v190_engage_start,
              (unsigned long long)g_v190_engage_last,
              (unsigned long long)(g_v190_engage_last - g_v190_engage_start),
              (unsigned long long)g_v190_engage_writes,
              (unsigned long long)(g_v190_move_tick ? g_v190_move_tick - g_v190_engage_start : 0),
              (unsigned long long)g_v191_max_frame, (unsigned long long)g_v191_traveled,
-             g_v190_own_x, g_v190_own_y, g_v190_pick_x, g_v190_pick_y, TNX_V191_MOVE_MIN);
+             g_v190_own_x, g_v190_own_y, g_v190_pick_x, g_v190_pick_y, TNX_V191_MOVE_MIN,
+             (unsigned long long)g_v192_human_live, (unsigned long long)g_v192_pred_calls,
+             (unsigned long long)g_v192_pred_fails);
 }
 
 static void tnx_v190_drive_note(int32_t ownX, int32_t ownY, int32_t tx, int32_t ty, int32_t appX,
@@ -11803,6 +11897,7 @@ static void tnx_v190_drive_note(int32_t ownX, int32_t ownY, int32_t tx, int32_t 
         g_v191_traveled = 0;
         g_v191_pair_dot_sum = 0.0f;
         g_v191_pair_dot_n = 0;
+        g_v192_human_live = 0;
     }
 
     g_v190_engage_last = g_v48_ticks;
@@ -11824,7 +11919,9 @@ static void tnx_v190_drive_note(int32_t ownX, int32_t ownY, int32_t tx, int32_t 
             g_v190_move_tick = g_v48_ticks;
         }
 
-        if ((uint64_t)d2 > g_v191_max_frame) g_v191_max_frame = (uint64_t)d2;
+        if ((uint64_t)sqrtf((float)d2) > g_v191_max_frame) {
+            g_v191_max_frame = (uint64_t)sqrtf((float)d2);
+        }
 
         g_v191_traveled += (uint64_t)sqrtf((float)d2);
 
@@ -11854,6 +11951,14 @@ static void tnx_v190_drive_note(int32_t ownX, int32_t ownY, int32_t tx, int32_t 
 
     if (appX == tx && appY == ty) g_v190_applied_match++;
     else g_v190_applied_miss++;
+
+    /* v192: is the player's own finger driving while this build drives? The pair field holds this
+       build's last value after a write here, so a pair that is neither zero nor ours is the human's
+       touch, and the report needs that split: the complaint is that the dodge does nothing while
+       the stick is held and works while standing. */
+    if ((pairX || pairY) && !(pairX == g_v174_stick_x && pairY == g_v174_stick_y)) {
+        g_v192_human_live++;
+    }
 
     if (appX == TNX_V128_APPLIED_IDLE && appY == TNX_V128_APPLIED_IDLE) g_v190_applied_idle++;
 
@@ -11936,6 +12041,9 @@ static int tnx_v189_drive(void) {
        applied pair that still reads the sentinel while this build is writing every frame means the
        send is not reaching the movement code. Reading after the write would only ever read back what
        was just stored, which is why the order matters here. */
+    /* the reference's middle step, called with the same one frame step that goes into the input */
+    tnx_v192_predict(tx, ty);
+
     if (ctrl) {
         tnx_read_i32(ctrl + TNX_V128_CTRL_APPLIED_X_OFF, &appX);
         tnx_read_i32(ctrl + TNX_V128_CTRL_APPLIED_Y_OFF, &appY);
@@ -12784,6 +12892,42 @@ static float tnx_v172_clearance(float x, float y) {
     return best;
 }
 
+static int tnx_v192_body_blocked(float x, float y, float ownX, float ownY) {
+    int i = 0;
+
+    if (g_v189_pl_n <= 0) return 0;
+
+    for (i = 0; i < g_v189_pl_n; i++) {
+        float px = 0.0f;
+        float py = 0.0f;
+
+        if (g_v189_pl_mine[i]) continue;
+
+        px = (float)g_v189_pl_x[i];
+        py = (float)g_v189_pl_y[i];
+
+        if (tnx_v192_seg_dist(ownX, ownY, x, y, px, py) < TNX_V192_BODY_CLEAR) {
+            g_v192_body_blocks++;
+
+            if (g_v192_body_logs < TNX_V192_BODY_LOGS) {
+                g_v192_body_logs++;
+
+                tnx_logf("v192 body in the way body=(%d,%d) mine=%d own=(%d,%d) candidate=(%d,%d) "
+                         "off=%d blocks=%d - a heading whose path runs through another player is "
+                         "refused outright, so the walk cannot be aimed through a teammate; the "
+                         "distance is measured to the segment and not to its end, which is what the "
+                         "v189 test got wrong", (int)px, (int)py, g_v189_pl_mine[i], (int)ownX,
+                         (int)ownY, (int)x, (int)y,
+                         (int)tnx_v192_seg_dist(ownX, ownY, x, y, px, py), g_v192_body_blocks);
+            }
+
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 static int tnx_v172_valid_point(float x, float y) {
     int32_t cx = (int32_t)x;
     int32_t cy = (int32_t)y;
@@ -12804,7 +12948,13 @@ static int tnx_v172_valid_point(float x, float y) {
         return 0;
     }
 
-    /* v191: and an enemy's body is not a destination either */
+    /* v192: and no heading whose path runs through any other player's body, mate or enemy, so a
+       teammate cannot be walked into whether the side read works or not */
+    if (tnx_v192_body_blocked(x, y, (float)g_v189_own_x, (float)g_v189_own_y)) {
+        return 0;
+    }
+
+    /* v191: an enemy's body is not a destination either */
     if (tnx_v191_enemy_blocked(x, y, (float)g_v189_own_x, (float)g_v189_own_y)) {
         g_v191_enemy_blocks++;
 
@@ -15781,6 +15931,33 @@ static void setup(void) {
              "first of those produced a respawn event with a jump of %d units from the origin",
              6, 5, 0, (double)TNX_V189_MATE_CLEAR, TNX_V191_ENEMY_HARD, TNX_V191_ENEMY_MARGIN,
              TNX_V191_ENEMY_FAR, 655, 341, 1157, 441, 1157, TNX_V191_MOVE_MIN, 1.0, 2554);
+
+    tnx_logf("plan v192, and the reference script that walks properly is the missing recipe. It moves "
+             "with three calls per frame and all three are the game's own: it builds the input with "
+             "the ctor and stores the target into it, it stores the same target into the CLIENT "
+             "PREDICTION, and it hands the input to the input manager. This build had the ctor, the "
+             "target and the manager add already; the prediction was fingerprinted at boot and never "
+             "called, and the mode's pair at +%#llx was only ever read back as a probe. The prediction "
+             "is the engine's own local movement, so leaving it out is exactly what leaves the body "
+             "carried by the input queue instead of walked by the movement code, which is the slide "
+             "report. It is called now, with the same one frame step that goes into the input, on "
+             "every frame this build drives. (2) The teammate report: the v189 test looked only at the "
+             "END of the path, so a candidate beyond a teammate was accepted and the character walked "
+             "through him. The test now runs along the whole segment from own to the candidate and it "
+             "uses every other player, not the side read, so a team byte that reads 0 for everyone - "
+             "which the 21:04 log shows it does for two players in one container - can no longer hide "
+             "a body: %d units of clearance. The side only changes the destination test. (3) The "
+             "engage report carries human=%llu, the frames the player's own finger was on the stick "
+             "while this build drove, because the complaint is that the dodge does nothing while the "
+             "stick is held and works while standing; a run with human at its maximum and traveled at "
+             "walk speed is coexistence, and a run with human high and traveled at zero says the "
+             "player's own input wins. The reference settles that case by pushing from inside the "
+             "game's own movement update and by redirecting the player's direction rather than adding "
+             "a second input, which is the next move if the counter says it is still needed. (4) The "
+             "21:04 log also shows the roster reading the truth once the guard is in: players=%d "
+             "mates=%d enemies=%d teams=0/1/0/1/0/1 trust=%d, and trust going to zero on the "
+             "four-player read where own's side came back as three", (unsigned long long)TNX_MODE_PREDICTX_OFF,
+             (double)TNX_V192_BODY_CLEAR, 0, 6, 2, 3, 1);
 
     tnx_start_timer();
 

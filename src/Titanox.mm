@@ -313,9 +313,10 @@ static int g_v123_defer_logs = 0;
 #define TNX_SLOT_LIST_OFF 0x80ULL
 #define TNX_SLOT_LISTCOUNT_OFF 0x8cULL
 
-#define TNX_BUILD_TAG "titanox_147"
+#define TNX_BUILD_TAG "titanox_148"
 
 #define TNX_V147_ACT_WRITE 0
+#define TNX_V148_PROBE_LOGS 6
 
 /* v145 - one own, published once per tick.
  *
@@ -10498,6 +10499,78 @@ static int tnx_v140_sidestep(int32_t ox, int32_t oy, float *sumX, float *sumY, i
     return hits;
 }
 
+static int g_v148_probe_logs = 0;
+
+static uintptr_t tnx_v148_cls(uintptr_t obj) {
+    uintptr_t vt = 0;
+
+    if (!tnx_v144_vt_ok(obj, &vt)) return 0;
+
+    return (vt >= g_base) ? (vt - g_base) : 0;
+}
+
+static void tnx_v148_receiver_line(const char *name, uintptr_t holder) {
+    void *wrap = NULL;
+    void *inner = NULL;
+    int32_t rawX = -1;
+    int32_t rawY = -1;
+    int32_t dirty = -1;
+    int32_t appX = -1;
+    int32_t appY = -1;
+    int32_t gate = -1;
+    int32_t gx = -1;
+    int32_t gy = -1;
+    int32_t gk = -1;
+    int innerOk = 0;
+
+    if (holder) {
+        tnx_read_i32(holder + TNX_V128_CTRL_RAW_X_OFF, &rawX);
+        tnx_read_i32(holder + TNX_V128_CTRL_RAW_Y_OFF, &rawY);
+        tnx_read_i32(holder + TNX_V128_CTRL_DIRTY_OFF, &dirty);
+        tnx_read_i32(holder + TNX_V128_CTRL_APPLIED_X_OFF, &appX);
+        tnx_read_i32(holder + TNX_V128_CTRL_APPLIED_Y_OFF, &appY);
+        tnx_read_ptr(holder + TNX_V140_CTRL_MODE_OFF, &wrap);
+    }
+
+    if (wrap) tnx_read_ptr((uintptr_t)wrap + TNX_V126_OWN_INNER_OFF, &inner);
+
+    if (inner) {
+        innerOk = tnx_v144_vt_ok((uintptr_t)inner, NULL);
+        tnx_read_i32((uintptr_t)inner + TNX_V127_GATE_FLAG_OFF, &gate);
+        tnx_read_i32((uintptr_t)inner + TNX_V127_GATE_X_OFF, &gx);
+        tnx_read_i32((uintptr_t)inner + TNX_V127_GATE_Y_OFF, &gy);
+        tnx_read_i32((uintptr_t)inner + TNX_V112_INPUT_K_OFF, &gk);
+    }
+
+    tnx_logf("v148 receiver %s holder=%p holderCls=%#llx raw=(%d,%d) dirty=%d applied=(%d,%d) "
+             "wrap=[+%#llx]=%p wrapCls=%#llx inner=[wrap+%#llx]=%p innerCls=%#llx innerOk=%d "
+             "gate=%d pair=(%d,%d,%d) - the engine reaches the actuator receiver by dereferencing "
+             "the hop field of one holder and taking the inner slot of the result, so the holder "
+             "whose inner is non null with a class in __DATA_CONST is the one to call and every "
+             "other holder is named here to be excluded; battle-global comes from %#llx",
+             name, (void *)holder, (unsigned long long)tnx_v148_cls(holder), rawX, rawY, dirty,
+             appX, appY, (unsigned long long)TNX_V140_CTRL_MODE_OFF, (void *)wrap,
+             (unsigned long long)tnx_v148_cls((uintptr_t)wrap),
+             (unsigned long long)TNX_V126_OWN_INNER_OFF, (void *)inner,
+             (unsigned long long)tnx_v148_cls((uintptr_t)inner), innerOk, gate, gx, gy, gk,
+             (unsigned long long)TNX_V129_BATTLE_RVA);
+}
+
+static void tnx_v148_receiver_probe(void) {
+    uintptr_t battle = 0;
+
+    if (g_v148_probe_logs >= TNX_V148_PROBE_LOGS) return;
+
+    g_v148_probe_logs++;
+
+    tnx_v148_receiver_line("scene", (uintptr_t)g_scene_object);
+    tnx_v148_receiver_line("players", g_players_object);
+
+    if (g_base) tnx_read_ptr(g_base + TNX_V129_BATTLE_RVA, &battle);
+
+    tnx_v148_receiver_line("battle-global", battle);
+}
+
 static uintptr_t tnx_v144_mode_pick(uintptr_t *vtOut, const char **whoOut, const char **whyOut) {
     uintptr_t cand[2];
     const char *names[2] = { "engine-chain", "players-chain" };
@@ -11200,6 +11273,8 @@ static void tnx_autododge_v48(void) {
         tnx_v146_phase("mode-write");
 
         if (!TNX_V147_ACT_WRITE) {
+            tnx_v148_receiver_probe();
+
             if (g_v147_dry_logs < 8) {
                 g_v147_dry_logs++;
 

@@ -109,7 +109,7 @@ void tnx_log_roll(void) {
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     NSDateFormatter *df = NULL;
     NSString *ts = nil;
-    NSString *fmt = @"[%@] === drop=27 log rolled over #%llu, the earlier window is dropped here ===\n";
+    NSString *fmt = @"[%@] === drop=26 log rolled over #%llu, the earlier window is dropped here ===\n";
     NSString *marker = nil;
 
     if (g_log) {

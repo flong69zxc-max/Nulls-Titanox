@@ -1,5 +1,4 @@
 #include "titanox.h"
-#include "data/chars_data.h"
 
 uint64_t g_applied_writes = 0;
 

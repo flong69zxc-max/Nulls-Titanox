@@ -134,6 +134,27 @@ else:
         fail("hero table has no TNX_HERO_COUNT")
     ok("hero table: %d rows" % len(rows))
 
+cd_t = read("src/data/chars_data.h")
+declared = set(re.findall(r"\b(tnx_[a-z0-9_]+)\s*\(", cd_t))
+declared |= set(re.findall(r"#define\s+(TNX_[A-Z0-9_]+)", cd_t))
+declared |= set(re.findall(r"extern\s+(?:const\s+)?[A-Za-z_][A-Za-z0-9_ ]*?\b(g_[a-z0-9_]+)\s*\[", cd_t))
+clash = []
+for name in sorted(declared):
+    for p3 in ALL:
+        if p3.startswith("src/data/"):
+            continue
+        t3 = read(p3)
+        for m in re.finditer(r"^\s*(?:static\s+)?(?:const\s+)?[A-Za-z_][A-Za-z0-9_]*\s*\**\s*" + re.escape(name) + r"\s*\(", t3, re.M):
+            clash.append("%s defined or declared again in %s:%d" % (name, p3, t3[:m.start()].count("\n") + 1))
+            break
+        for m in re.finditer(r"^\s*#define\s+" + re.escape(name) + r"\b", t3, re.M):
+            clash.append("%s is redefined in %s:%d" % (name, p3, t3[:m.start()].count("\n") + 1))
+            break
+for c in clash:
+    fail("name clash: " + c)
+if not clash:
+    ok("%d names from the hero header are free of clashes in src/" % len(declared))
+
 log = read("src/core/log.mm")
 if not re.search(r"drop=\d+", log):
     fail("src/core/log.mm lost its drop= stamp, the publish check would have nothing to verify")

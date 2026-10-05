@@ -7,18 +7,11 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = Titanox
 
-Titanox_FILES = src/core/memory.mm
-Titanox_FILES += src/core/log.mm
-Titanox_FILES += src/core/crash.mm
-Titanox_FILES += src/core/hooks.mm
-Titanox_FILES += src/utils/strings.mm
-Titanox_FILES += src/utils/geometry.mm
-Titanox_FILES += src/helpers/scan.mm
-Titanox_FILES += src/helpers/move.mm
-Titanox_FILES += src/features/autododge.mm
-Titanox_FILES += src/features/walls.mm
-Titanox_FILES += src/features/report.mm
-Titanox_FILES += src/resolve_targets.mm
+Titanox_FILES = $(wildcard src/core/*.mm)
+Titanox_FILES += $(wildcard src/utils/*.mm)
+Titanox_FILES += $(wildcard src/helpers/*.mm)
+Titanox_FILES += $(wildcard src/features/*.mm)
+Titanox_FILES += $(wildcard src/*.mm)
 Titanox_FILES += $(TITANOX)/brk_hook/Hook/hook.c
 Titanox_FILES += $(TITANOX)/brk_hook/Hook/mach_excServer.c
 

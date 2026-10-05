@@ -4,6 +4,10 @@
 #define TNX_DODGE_PROJ_ONLY 1
 #endif
 
+#ifndef TNX_HIT_MARGIN
+#define TNX_HIT_MARGIN 60.0f
+#endif
+
 static int tnx_dodge_is_proj(uintptr_t obj) {
     void *vt = NULL;
     intptr_t cls = 0;
@@ -1419,27 +1423,33 @@ float tnx_eta_ms(float x, float y) {
         float abx = s->bx - s->ax;
         float aby = s->by - s->ay;
         float denom = abx * abx + aby * aby;
-        float t = 0.0f;
+        float len = 0.0f;
+        float raw = 0.0f;
         float cx = 0.0f;
         float cy = 0.0f;
         float d = 0.0f;
+        float rem = 0.0f;
         float ms = 0.0f;
 
-        if (denom > 0.0001f) {
-            t = ((x - s->ax) * abx + (y - s->ay) * aby) / denom;
-        }
+        len = sqrtf(denom);
 
-        if (t < 0.0f) t = 0.0f;
-        if (t > 1.0f) t = 1.0f;
-
-        cx = s->ax + abx * t - x;
-        cy = s->ay + aby * t - y;
-        d = sqrtf(cx * cx + cy * cy) - s->inflatedR;
-
-        if (d < 0.0f) d = 0.0f;
+        if (len <= 0.001f) continue;
         if (s->speed <= 1.0f) continue;
 
-        ms = d / s->speed * 1000.0f;
+        raw = ((x - s->ax) * abx + (y - s->ay) * aby) / denom;
+
+        if (raw < 0.0f) continue;
+        if (raw > 1.0f) continue;
+
+        cx = s->ax + abx * raw - x;
+        cy = s->ay + aby * raw - y;
+        d = sqrtf(cx * cx + cy * cy) - s->inflatedR;
+
+        if (d > TNX_HIT_MARGIN) continue;
+        if (d < 0.0f) d = 0.0f;
+
+        rem = (1.0f - raw) * len;
+        ms = rem / s->speed * 1000.0f;
 
         if (ms < best) best = ms;
     }

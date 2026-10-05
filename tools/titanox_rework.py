@@ -243,17 +243,17 @@ const tnx_hero_t *tnx_hero_row(int index);
 
 const tnx_hero_t *tnx_hero_by_hash(uint32_t hash);
 
-int tnx_own_speed(void);
+int tnx_hero_speed(void);
 
-int tnx_own_radius(void);
+int tnx_hero_radius(void);
 
-int tnx_own_hp_max(void);
+int tnx_hero_hp_max(void);
 
-int tnx_inflated_radius(int projectile_radius, int fallback);
+int tnx_hero_inflated(int projectile_radius, int fallback);
 
 int tnx_hero_melee(int index);
 
-void tnx_own_identify(int hp_max, int speed_units);
+void tnx_hero_identify(int hp_max, int speed_units);
 
 void tnx_hero_report(void);
 """
@@ -266,7 +266,7 @@ const int g_hero_count = TNX_HERO_COUNT;
 
 static int g_own_row = -1;
 
-static uint32_t tnx_hash32(const char *s) {
+static uint32_t tnx_hero_hash32(const char *s) {
     uint32_t h = 2166136261u;
     int i = 0;
 
@@ -301,13 +301,13 @@ const tnx_hero_t *tnx_hero_by_hash(uint32_t hash) {
     int i = 0;
 
     for (i = 0; i < TNX_HERO_COUNT; i++) {
-        if (tnx_hash32(g_heroes[i].name) == hash) return &g_heroes[i];
+        if (tnx_hero_hash32(g_heroes[i].name) == hash) return &g_heroes[i];
     }
 
     return NULL;
 }
 
-void tnx_own_set(int index) {
+void tnx_hero_own(int index) {
     if (index < 0 || index >= TNX_HERO_COUNT) return;
 
     if (g_own_row == index) return;
@@ -324,28 +324,28 @@ void tnx_own_set(int index) {
              g_heroes[index].wSpread, (g_heroes[index].flags & TNX_HF_MELEE) ? 1 : 0);
 }
 
-int tnx_own_speed(void) {
+int tnx_hero_speed(void) {
     if (g_own_row < 0) return (int)TNX_PLAYER_SPEED;
     if (g_heroes[g_own_row].speed <= 0) return (int)TNX_PLAYER_SPEED;
 
     return g_heroes[g_own_row].speed;
 }
 
-int tnx_own_radius(void) {
+int tnx_hero_radius(void) {
     if (g_own_row < 0) return (int)TNX_PLAYER_RADIUS;
     if (g_heroes[g_own_row].radius <= 0) return (int)TNX_PLAYER_RADIUS;
 
     return g_heroes[g_own_row].radius;
 }
 
-int tnx_own_hp_max(void) {
+int tnx_hero_hp_max(void) {
     if (g_own_row < 0) return 0;
 
     return g_heroes[g_own_row].hp;
 }
 
-int tnx_inflated_radius(int projectile_radius, int fallback) {
-    int own = tnx_own_radius();
+int tnx_hero_inflated(int projectile_radius, int fallback) {
+    int own = tnx_hero_radius();
     int r = projectile_radius + own;
 
     if (r <= 0) return fallback;
@@ -363,7 +363,7 @@ int tnx_hero_melee(int index) {
 
 int g_own_cand = 0;
 
-void tnx_own_identify(int hp_max, int speed_units) {
+void tnx_hero_identify(int hp_max, int speed_units) {
     int i = 0;
     int cand = 0;
     int picked = -1;
@@ -384,7 +384,7 @@ void tnx_own_identify(int hp_max, int speed_units) {
 
     if (cand <= 0) return;
 
-    tnx_own_set(picked);
+    tnx_hero_own(picked);
 
     TNX_LOGX("heroid hp=%d cand=%d picked=%s speed=%d - the own character is identified by matching "
              "the health the game reports against the table, which needs no new offsets: cand is how "
@@ -607,7 +607,7 @@ def wire(apply):
         patch_file(path, pairs, apply)
 
     allmm = "\n".join(read(q) for q in mm_files() if q.endswith(".mm"))
-    if "tnx_own_speed(" not in allmm:
+    if "tnx_hero_speed(" not in allmm:
         REPORT["skipped"].append("no own speed call site was wired, the table would be unused")
     else:
         REPORT["checks"].append("own speed is taken from the hero table")
@@ -618,14 +618,14 @@ COMMON_INCLUDES_ANCHOR = "COMMON_INCLUDES = \\\n\t-Isrc \\"
 WIRE = {
     "src/features/autododge.mm": [
         ('#include "titanox.h"', '#include "titanox.h"\n#include "data/chars_data.h"'),
-        ("dirX * TNX_PLAYER_SPEED", "dirX * (float)tnx_own_speed()"),
-        ("dirY * TNX_PLAYER_SPEED", "dirY * (float)tnx_own_speed()"),
-        ("travel / TNX_PLAYER_SPEED", "travel / (float)tnx_own_speed()"),
-        ("float speed = TNX_PLAYER_SPEED;", "float speed = (float)tnx_own_speed();"),
+        ("dirX * TNX_PLAYER_SPEED", "dirX * (float)tnx_hero_speed()"),
+        ("dirY * TNX_PLAYER_SPEED", "dirY * (float)tnx_hero_speed()"),
+        ("travel / TNX_PLAYER_SPEED", "travel / (float)tnx_hero_speed()"),
+        ("float speed = TNX_PLAYER_SPEED;", "float speed = (float)tnx_hero_speed();"),
     ],
     "src/features/report.mm": [
         ('#include "titanox.h"', '#include "titanox.h"\n#include "data/chars_data.h"'),
-        ("    if (hpmax <= 0) return;\n", "    if (hpmax <= 0) return;\n\n    tnx_own_identify(hpmax, 0);\n"),
+        ("    if (hpmax <= 0) return;\n", "    if (hpmax <= 0) return;\n\n    tnx_hero_identify(hpmax, 0);\n"),
     ],
 }
 

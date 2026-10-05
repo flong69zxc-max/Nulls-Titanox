@@ -1,5 +1,7 @@
 #include "titanox.h"
 
+int g_pred_blocked = 0;
+
 #ifndef TNX_JS_STICK
 #define TNX_JS_STICK 1
 #endif
@@ -392,6 +394,19 @@ int tnx_pred_set(int x, int y) {
 
     if (!TNX_PRED_SET) return 0;
 
+    if (!g_coord_ok) {
+        if (g_pred_blocked < TNX_QGUARD_LOGS) {
+            g_pred_blocked++;
+
+            TNX_LOGX("predSkip x=%d y=%d coordOk=%d usable=%d tick=%llu - the prediction is only"
+                     " written once the coordinates are calibrated, otherwise the first frames of a"
+                     " battle command the character to the origin",
+                     x, y, g_coord_ok, g_coord_usable, (unsigned long long)g_ticks_3);
+        }
+
+        return 0;
+    }
+
     setFn = tnx_entry_2(TNX_SETINPUT_RVA);
 
     if (!setFn) return 0;
@@ -431,6 +446,8 @@ int g_enq_stop_3 = 0;
 int g_enq_stop_4 = 0;
 
 int tnx_enqueue(int x, int y) {
+    if (!g_coord_ok) return 0;
+
 
     uintptr_t ctorFn = tnx_entry_2(TNX_MSGCTOR_RVA);
     uintptr_t inputFn = tnx_entry_2(TNX_ADDINPUT_RVA);

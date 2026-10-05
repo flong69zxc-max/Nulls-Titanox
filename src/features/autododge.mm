@@ -382,7 +382,7 @@ void tnx_roster(uintptr_t ownElem, int ownIndex, int ownTeam,
             if (g_cluster_logs < TNX_TRUST_LOGS) {
                 g_cluster_logs++;
 
-                tnx_logf("side by cluster players=%d ownSpawn=(%d,%d) mates=%d enemies=%d "
+                TNX_LOGX("side by cluster players=%d ownSpawn=(%d,%d) mates=%d enemies=%d "
                          "byteMates=%d byteEnemies=%d radius=%.0f - the team byte is not believed, so "
                          "the side comes from where the players came from: a team spawns together and "
                          "the two spawn areas are far apart, which is a signal that does not depend on "
@@ -393,7 +393,7 @@ void tnx_roster(uintptr_t ownElem, int ownIndex, int ownTeam,
         } else if (g_cluster_logs < TNX_TRUST_LOGS) {
             g_cluster_logs++;
 
-            tnx_logf("side agreement byte=%d/%d cluster=%d/%d agree=%d players=%d - both answers "
+            TNX_LOGX("side agreement byte=%d/%d cluster=%d/%d agree=%d players=%d - both answers "
                      "are printed every time the roster changes, so a byte that drifts and a cluster "
                      "that misreads are told apart instead of guessed at", g_mate_n,
                      g_enemy_n, g_mates, g_enemies, g_agree, g_pl_n);
@@ -416,7 +416,7 @@ void tnx_roster(uintptr_t ownElem, int ownIndex, int ownTeam,
     if (g_mate_n != matesBefore || g_roster_logs < TNX_ROSTER_LOGS) {
         g_roster_logs++;
 
-        tnx_logf("roster players=%d mates=%d enemies=%d teams=%d/%d/%d/%d/%d/%d own=(%d,%d) "
+        TNX_LOGX("roster players=%d mates=%d enemies=%d teams=%d/%d/%d/%d/%d/%d own=(%d,%d) "
                  "ownMatched=%d ownTeam=%d trust=%d blocked=%d - the raw table is printed because "
                  "the previous line printed only the counts and a 3v3 came back as five teammates "
                  "with own at the origin: players=6 mates=5 ownTeam=0 own=(0,0). own is matched by "
@@ -435,7 +435,7 @@ void tnx_roster(uintptr_t ownElem, int ownIndex, int ownTeam,
     if (g_trust_logs < TNX_TRUST_LOGS && !g_team_trust) {
         g_trust_logs++;
 
-        tnx_logf("side read distrusted players=%d ownSide=%d distinctTeams=%d - more than half "
+        TNX_LOGX("side read distrusted players=%d ownSide=%d distinctTeams=%d - more than half "
                  "of the players came back on own's side, or every player came back on one team, "
                  "which no real match produces; the mate block is off and the own shot filter is off "
                  "until the next roster, so the dodge reacts to every moving shot and refuses no "
@@ -856,7 +856,7 @@ int tnx_drive(void) {
         if (g_flag_logs < TNX_FLAG_LOGS) {
             g_flag_logs++;
 
-            tnx_logf("touch gate=%d state=%d id=%d writes=%llu idWrites=%llu own=(%d,%d) applied=(%d,%d) - "
+            TNX_LOGX("touch gate=%d state=%d id=%d writes=%llu idWrites=%llu own=(%d,%d) applied=(%d,%d) - "
                       "gate is the byte the engine's own move function tests first, and this build reads "
                       "it but never writes it any more: setting it sends the engine down the touch "
                       "branch, which returns before the branch that reads the drag, so claiming a drag "
@@ -913,7 +913,7 @@ int tnx_drive(void) {
         g_stuck_2++;
         g_stuck_logs++;
 
-        tnx_logf("stuck writes=%llu own=(%d,%d) step=%.0f nearestBody=%.0f dot=%+.2f mine=%d "
+        TNX_LOGX("stuck writes=%llu own=(%d,%d) step=%.0f nearestBody=%.0f dot=%+.2f mine=%d "
                  "withinStep=%d pick=(%d,%d) - the body does not move although this build keeps "
                  "writing, which is what a character pressed against another player looks like: dot "
                  "near +1 means the step points at that body, withinStep counts the bodies closer "
@@ -940,7 +940,7 @@ int tnx_drive(void) {
         ((g_ticks_3 % 60) == 0 && g_drive_logs < 240)) {
         g_drive_logs++;
 
-        tnx_logf("drive held=%d engaged=%d own=(%d,%d) pick=(%d,%d) sent=(%d,%d) step=%.0f "
+        TNX_LOGX("drive held=%d engaged=%d own=(%d,%d) pick=(%d,%d) sent=(%d,%d) step=%.0f "
                  "pair=(%d,%d) queue=%llu skipped=%llu pairOnly=%d holdTicks=%d - the step handed "
                  "to the client input is one frame of travel and not the pick, so the body is "
                  "walked instead of carried; a sent distance that has grown back to the pick means "
@@ -1069,7 +1069,7 @@ void tnx_respawn_event(int32_t x, int32_t y, int32_t px, int32_t py) {
     if (g_life_logs < TNX_LIFE_MAX_LOGS) {
         g_life_logs++;
 
-        tnx_logf("RESPAWN #%d own=(%d,%d) from=(%d,%d) jump=%d cand=(%d,%d,%d) learned=%s=%d - "
+        TNX_LOGX("RESPAWN #%d own=(%d,%d) from=(%d,%d) jump=%d cand=(%d,%d,%d) learned=%s=%d - "
                  "the character was teleported, which a walk cannot do, so this is the one life "
                  "event established without trusting a flag; the per life state is cleared here and "
                  "the candidates are held for %d frames to see which changed across the event",
@@ -1099,7 +1099,7 @@ int tnx_life(uintptr_t ownElem, int32_t ownX, int32_t ownY) {
         if (changed && g_signal_logs_2 < TNX_LIFE_MAX_LOGS) {
             g_signal_logs_2++;
 
-            tnx_logf("signals own=(%d,%d) own+d4=%d own+140=%d ctrl+f80=%d learned=%s=%d - "
+            TNX_LOGX("signals own=(%d,%d) own+d4=%d own+140=%d ctrl+f80=%d learned=%s=%d - "
                      "printed on every change of any candidate, so a run that carries a death names "
                      "the flag even if the respawn learning never fires", ownX, ownY,
                      g_cand_now[0], g_cand_now[1], g_cand_now[2],
@@ -1132,7 +1132,7 @@ int tnx_life(uintptr_t ownElem, int32_t ownX, int32_t ownY) {
             if (g_learn_logs < TNX_LEARN_LOGS) {
                 g_learn_logs++;
 
-                tnx_logf("death flag learned slot=%d %s dead=%d alive=%d changes=%d from the "
+                TNX_LOGX("death flag learned slot=%d %s dead=%d alive=%d changes=%d from the "
                          "respawn at tick=%d - this candidate changed across the teleport, held its "
                          "new value for %d frames, and moved %d times in this life, fewer than any "
                          "rival, so it is the flag a guard may use; until this line exists no guard "
@@ -1170,7 +1170,7 @@ int tnx_life(uintptr_t ownElem, int32_t ownX, int32_t ownY) {
             if (g_life_logs < TNX_LIFE_MAX_LOGS) {
                 g_life_logs++;
 
-                tnx_logf("own is DEAD own=(%d,%d) %s=%d - the learned flag says so, so the "
+                TNX_LOGX("own is DEAD own=(%d,%d) %s=%d - the learned flag says so, so the "
                          "dodge is held and nothing is written until it clears; the label carries "
                          "the same state on screen", ownX, ownY, tnx_cand_name(g_dead_slot),
                          g_dead_value);
@@ -1188,7 +1188,7 @@ int tnx_life(uintptr_t ownElem, int32_t ownX, int32_t ownY) {
         if (g_life_logs < TNX_LIFE_MAX_LOGS) {
             g_life_logs++;
 
-            tnx_logf("own is alive again own=(%d,%d) %s=%d - the learned candidate left its "
+            TNX_LOGX("own is alive again own=(%d,%d) %s=%d - the learned candidate left its "
                      "dead value, so the dodge resumes on a cleared life and cleared heading", ownX,
                      ownY, tnx_cand_name(g_dead_slot),
                      g_cand_now[g_dead_slot]);
@@ -1221,7 +1221,7 @@ void tnx_drift(void) {
     g_drift_logs++;
     g_drift_done = g_last_decision;
 
-    tnx_logf("drift after the last decision: frames=%d traveled=%d from=(%d,%d) own=(%d,%d) "
+    TNX_LOGX("drift after the last decision: frames=%d traveled=%d from=(%d,%d) own=(%d,%d) "
              "lastSent=(%d,%d) sentStep=%.0f holdTicks=%d - this is the distance covered in the "
              "second after the dodge stopped choosing, so a traveled distance near the walk speed of "
              "780 means the body is still riding the last target, and one near zero means the writes "
@@ -1242,7 +1242,7 @@ void tnx_dump(void) {
 
     g_dump_logs++;
 
-    tnx_logf("dump own pos=(%d,%d) ok=%d team=%d trust=%d mates=%d enemies=%d cluster=%d/%d "
+    TNX_LOGX("dump own pos=(%d,%d) ok=%d team=%d trust=%d mates=%d enemies=%d cluster=%d/%d "
              "agree=%d players=%d segs=%d engaged=%d pick=(%d,%d) bodyMine=%d bodyEnemy=%d freest=%llu "
              "gate=%llu pred=%llu/%llu",
              g_own_x, g_own_y, tnx_own_ok(g_own_x, g_own_y),
@@ -1253,7 +1253,7 @@ void tnx_dump(void) {
              (unsigned long long)g_pred_calls, (unsigned long long)g_pred_fails);
 
     for (i = 0; i < g_pl_n && i < 6; i++) {
-        tnx_logf("dump p%d gid=%d pos=(%d,%d) spawn=(%d,%d) team=%d mine=%d",
+        TNX_LOGX("dump p%d gid=%d pos=(%d,%d) spawn=(%d,%d) team=%d mine=%d",
                  i, g_pl_gid[i], g_pl_x[i], g_pl_y[i], g_pl_sx[i],
                  g_pl_sy[i], g_pl_team[i], g_pl_mine[i]);
     }
@@ -1266,7 +1266,7 @@ void tnx_dump(void) {
         if (!p->hasPrev) age = 0;
         else age = (p->qtick > p->ptick) ? (p->qtick - p->ptick) : 0;
 
-        tnx_logf("dump j%d gid=%d pos=(%d,%d) prev=(%d,%d) spawn=(%d,%d) team=%d dt=%llu",
+        TNX_LOGX("dump j%d gid=%d pos=(%d,%d) prev=(%d,%d) spawn=(%d,%d) team=%d dt=%llu",
                  i, p->gid, p->x, p->y, p->px, p->py, p->spawnX, p->spawnY, p->team,
                  (unsigned long long)age);
     }
@@ -1275,7 +1275,7 @@ void tnx_dump(void) {
 void tnx_core(void) {
     if ((g_ticks_3 % 60) != 0) return;
 
-    tnx_logf("core tick=%llu own=(%d,%d) ownOk=%d team=%d mates=%d enemies=%d trust=%d "
+    TNX_LOGX("core tick=%llu own=(%d,%d) ownOk=%d team=%d mates=%d enemies=%d trust=%d "
              "players=%d segs=%d trackedOwn=%d trackedOther=%d oneshot=%d body=%d enemyBlock=%d "
              "mateBlock=%d gate=%llu pred=%llu/%llu deadPick=%llu human=%llu driveWrites=%llu "
              "stickSkips=%llu stuck=%llu",
@@ -1313,7 +1313,7 @@ void tnx_probe_2(void) {
             vtRva = (unsigned long long)((uintptr_t)vt - g_base);
         }
 
-        tnx_logf("bs live scene=%p bs=%p ctrl=%p classRva=%#llx - the one-shot waits for a live "
+        TNX_LOGX("bs live scene=%p bs=%p ctrl=%p classRva=%#llx - the one-shot waits for a live "
                  "scene now, so the class word is read from the object the dodge really uses and not "
                  "from a null pointer, which is what the previous run printed as scene=0x0 and "
                  "classRva=0; updateMovement cannot be hooked on this target - a scan of every "
@@ -1327,7 +1327,7 @@ void tnx_probe_2(void) {
     if (g_own_logs_7 < 20 && (g_ticks_3 % 60) == 0) {
         g_own_logs_7++;
 
-        tnx_logf("own check ownElem=%p ownFrom=%s - the same object the dodge reads its position "
+        TNX_LOGX("own check ownElem=%p ownFrom=%s - the same object the dodge reads its position "
                  "from, printed next to the element lines so the two own sources in the log can be "
                  "told apart instead of being read as a disagreement",
                  (void *)g_own_elem, g_own_from_3);
@@ -1338,7 +1338,7 @@ void tnx_probe_2(void) {
 
         if (!tnx_joy_read(bs, &ax, &ay, &bx, &by, &mode, &cs, &sn)) return;
 
-        tnx_logf("joyprobe bs=%p ax=%+.4f ay=%+.4f bx=%+.4f by=%+.4f mode=%u cos=%+.4f sin=%+.4f "
+        TNX_LOGX("joyprobe bs=%p ax=%+.4f ay=%+.4f bx=%+.4f by=%+.4f mode=%u cos=%+.4f sin=%+.4f "
                  "- read only, nothing is written in this build; move the stick by hand and if these "
                  "move and mode reads 2 or 3 this is the joystick, otherwise this class keeps the "
                  "stick elsewhere and the window diff below is the way to it",
@@ -1426,7 +1426,7 @@ void tnx_build(void) {
                 if (g_logs_9 < TNX_LOGS_5) {
                     g_logs_9++;
 
-                    tnx_logf("drop rule=%d gid=%d speed=%.0f age=%llu rem=%.0f team=%d - a shot of "
+                    TNX_LOGX("drop rule=%d gid=%d speed=%.0f age=%llu rem=%.0f team=%d - a shot of "
                              "this shape cannot be walked out of, so reacting to it only spends "
                              "movement and hides the ones that can be dodged",
                              rule, p->gid, (double)speed,
@@ -1669,7 +1669,7 @@ void tnx_predict_2(int32_t ownX, int32_t ownY, float tx, float ty) {
     g_logs_8++;
 
     if (best < 0) {
-        tnx_logf("predict tick=%llu own=(%d,%d) tgt=(%.0f,%.0f) threats=0 react=%d flees=%llu - "
+        TNX_LOGX("predict tick=%llu own=(%d,%d) tgt=(%.0f,%.0f) threats=0 react=%d flees=%llu - "
                  "no segment is live, so there is nothing to lead and the pick is a plain step",
                  (unsigned long long)g_ticks_3, ownX, ownY, (double)tx, (double)ty, react,
                  (unsigned long long)g_flees);
@@ -1679,7 +1679,7 @@ void tnx_predict_2(int32_t ownX, int32_t ownY, float tx, float ty) {
 
     d = sqrtf((qx - px) * (qx - px) + (qy - py) * (qy - py));
 
-    tnx_logf("predict tick=%llu own=(%d,%d) tgt=(%.0f,%.0f) threats=%d react=%d gid=%d "
+    TNX_LOGX("predict tick=%llu own=(%d,%d) tgt=(%.0f,%.0f) threats=%d react=%d gid=%d "
              "impact=(%.0f,%.0f) lead=(%.0f,%.0f) d=%.0f eta=%.0fms spd=%.0f ms=%.0f - impact is the "
              "closest point of the nearest flight to own, lead is the offset own has to clear, and a "
              "react above one tick means the pick was made a frame or more after the threat appeared",
@@ -1733,7 +1733,7 @@ void tnx_precision(int32_t ownX, int32_t ownY, float dirX, float dirY, int escap
 
     if (g_build_tick >= 0) lag = (int)((int64_t)g_ticks_3 - (int64_t)g_build_tick);
 
-    tnx_logf("precision tick=%llu own=(%d,%d) dir=(%.0f,%.0f) escape=%d pair=(%d,%d) "
+    TNX_LOGX("precision tick=%llu own=(%d,%d) dir=(%.0f,%.0f) escape=%d pair=(%d,%d) "
              "applied=(%d,%d) mode=%d joy=%p threats=%d eta=%.0fms buildLag=%d pred=(%d,%d) "
              "took=%llu denied=%llu - eta is the time the nearest bullet needs to reach own at its "
              "own speed, so any decision later than eta is a decision after the hit, and buildLag is "
@@ -2241,7 +2241,7 @@ int tnx_freest(float px, float py, float *tx, float *ty) {
     if (g_freest_logs < TNX_FREEST_LOGS) {
         g_freest_logs++;
 
-        tnx_logf("freest own=(%.0f,%.0f) pick=(%.0f,%.0f) eta=%.0f nowEta=%.0f room=%.0f segs=%d "
+        TNX_LOGX("freest own=(%.0f,%.0f) pick=(%.0f,%.0f) eta=%.0f nowEta=%.0f room=%.0f segs=%d "
                  "score=%.0f nowClear=%.0f bullets=%llu hold=%llu - the pick is the direction with the "
                  "largest clearance along the path it would walk in one second, and the body stays put "
                  "when no direction beats standing still; bullets counts the headings refused because "
@@ -2353,7 +2353,7 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
     if (g_logs_4 < 24 && (g_ticks_3 % 60) == 0) {
         g_logs_4++;
 
-        tnx_logf("dodge segs=%d threatened=%d picked=%d target=(%.0f,%.0f) dist=%.0f stick=%d "
+        TNX_LOGX("dodge segs=%d threatened=%d picked=%d target=(%.0f,%.0f) dist=%.0f stick=%d "
                  "angle=%.1f write=%d moving=%d - the threat segments start where each shot is NOW "
                  "and run along its own flight, so a shot that already passed is behind the segment "
                  "and not a reason to run; the directions are walked outward from the stick angle so "
@@ -2421,7 +2421,7 @@ void tnx_autododge_v48(void) {
 
     if (g_dodge_calls <= TNX_CALL_LOGS ||
         (g_dodge_calls % TNX_CALL_EVERY) == 0) {
-        tnx_logf("dodge CALLED n=%llu base=%p scene=%p container=%p array=%p count=%d hop=%d "
+        TNX_LOGX("dodge CALLED n=%llu base=%p scene=%p container=%p array=%p count=%d hop=%d "
                  "gidFloor=%d gidMax=%d playerMax=%d - printed before every early return and keyed "
                  "on the number of calls and not on a tick counter, because the v137 run printed no "
                  "probe line at all and the two possible reasons, a gate before the line and a "
@@ -2456,14 +2456,14 @@ void tnx_autododge_v48(void) {
                 listGid = g_dodge_probe_list[listIdx].gid;
             }
 
-            tnx_logf("dodge list usable=%d from=%s idx=%d gid=%d minGidSeen=%d chosenGid=%d "
+            TNX_LOGX("dodge list usable=%d from=%s idx=%d gid=%d minGidSeen=%d chosenGid=%d "
                      "chosenIdx=%d - the resolver runs on the very array the walk collected and "
                      "reports which entry it picked, so a disagreement between the smallest id seen "
                      "and the id chosen is visible in one line instead of being inferred",
                      g_dodge_probe_usable, listFrom, listIdx, listGid, probeGid, listGid, listIdx);
         }
 
-        tnx_logf("dodge probe tick=%llu frames=%llu scene=%p container=%p array=%p count=%d "
+        TNX_LOGX("dodge probe tick=%llu frames=%llu scene=%p container=%p array=%p count=%d "
                  "hop=%d own=%p ownGid=%d ownTeam=%d coordOk=%d coordUsable=%d writeTest=%d - this "
                  "line is printed before every early return of the dodge, so 'the dodge did not run' "
                  "can never again be concluded from the absence of a log line; in the v134 run the "
@@ -2498,7 +2498,7 @@ void tnx_autododge_v48(void) {
         if (g_no_source_passes >= 5 && !g_route_logged) {
             g_route_logged = 1;
 
-            tnx_logf("route: five passes with no source at all - mode=%p manager=%p "
+            TNX_LOGX("route: five passes with no source at all - mode=%p manager=%p "
                      "objvote=%p trailBest=%p; the remaining path is the ClientInput route, and its "
                      "hooks report separately (E5 setClientPredictionMoveTo, E6 sendMovement)",
                      (void *)g_scene_object, (void *)g_players_object, (void *)g_objvote_best_owner,
@@ -2513,7 +2513,7 @@ void tnx_autododge_v48(void) {
     if (!sourceIsMode && !g_players_object && source && strcmp(sourceKind, "trail") == 0 &&
         g_trail_best >= 0 && g_trail_best < g_trail_count && g_trail[g_trail_best].live == 0) {
         if ((g_ticks_3 % 900) == 1) {
-            tnx_logf("dodge idle ticks=%llu: best trail candidate has live=0, waiting "
+            TNX_LOGX("dodge idle ticks=%llu: best trail candidate has live=0, waiting "
                      "(trailBest=%p nonEmpty=%d count=%d stable=%d)",
                      (unsigned long long)g_ticks_3, (void *)source,
                      g_trail[g_trail_best].nonEmpty, g_trail[g_trail_best].count,
@@ -2533,7 +2533,7 @@ void tnx_autododge_v48(void) {
 
         if (g_scene_object && tnx_read_i32(g_scene_object + TNX_MODE_PREDICTX_OFF, &nowX) &&
             tnx_read_i32(g_scene_object + TNX_MODE_PREDICTY_OFF, &nowY)) {
-            tnx_logf("write verify: wrote=(%d,%d) now=(%d,%d) %s frames=%d testWrites=%llu - "
+            TNX_LOGX("write verify: wrote=(%d,%d) now=(%d,%d) %s frames=%d testWrites=%llu - "
                      "kept means the engine left the two words alone, overwritten means the input "
                      "path rewrites them before anything is sent",
                      g_wrote_x, g_wrote_y, nowX, nowY,
@@ -2562,7 +2562,7 @@ void tnx_autododge_v48(void) {
 
                         shown++;
 
-                        tnx_logf("verify pos elem[%d] %p pos=(%d,%d)", i, element, px, py);
+                        TNX_LOGX("verify pos elem[%d] %p pos=(%d,%d)", i, element, px, py);
                     }
                 }
             }
@@ -2581,7 +2581,7 @@ void tnx_autododge_v48(void) {
 
             tnx_interp(&oix, &oiy);
 
-            tnx_logf("dodge ENTERED tick=%llu frames=%llu mode=%p manager=%p hop=%d source=%p "
+            TNX_LOGX("dodge ENTERED tick=%llu frames=%llu mode=%p manager=%p hop=%d source=%p "
                      "kind=%s setpredFn=%d coordOk=%d usable=%d writes=%llu ownInterpX=%d ownInterpY=%d "
                      "modeVar=%d gate1=%d gate2=%d - ownInterpX/Y is the live own position read from "
                      "client+%#llx/+%#llx, so a dodge line with coordOk=0 can still carry a moving own "
@@ -2601,7 +2601,7 @@ void tnx_autododge_v48(void) {
 
     if (!source) {
         if ((g_ticks_3 % 900) == 1) {
-            tnx_logf("dodge idle ticks=%llu: no mode, no manager and no trail candidate yet "
+            TNX_LOGX("dodge idle ticks=%llu: no mode, no manager and no trail candidate yet "
                      "(bestLive=%d bestCount=%d) setpred=%d",
                      (unsigned long long)g_ticks_3, g_manager_best_live,
                      g_manager_best_count, g_setpred_state);
@@ -2636,7 +2636,7 @@ void tnx_autododge_v48(void) {
         if (managerChanged && g_walk_relogs < 6) {
             g_walk_relogs++;
 
-            tnx_logf("walk manager=%p hop=%d source=%p kind=%s - the container is re-read from "
+            TNX_LOGX("walk manager=%p hop=%d source=%p kind=%s - the container is re-read from "
                      "the chain globals on this tick, so the walk follows scene+0x28 -> +%#llx "
                      "instead of stopping on the client", resolved, g_hop_chosen,
                      (void *)source, sourceKind, (unsigned long long)TNX_CLIENT_HOP_OFF);
@@ -2654,7 +2654,7 @@ void tnx_autododge_v48(void) {
                 g_walk_tick = g_ticks_4;
                 periodic = 1;
 
-                tnx_logf("walk tick=%llu manager=%p count=%d - the walk is driven by the tick "
+                TNX_LOGX("walk tick=%llu manager=%p count=%d - the walk is driven by the tick "
                          "and by the count, not by the array, so it reports every %d ticks while "
                          "the hop is %d even when the container itself has not changed",
                          (unsigned long long)g_ticks_4, resolved, liveCount, TNX_WALK_EVERY,
@@ -2675,7 +2675,7 @@ void tnx_autododge_v48(void) {
 
                 if (loud) tnx_discriminate((uintptr_t)resolved);
             } else {
-                tnx_logf("probe skipped: source %p (%s) has no manager at +0x%llx and hop=%d",
+                TNX_LOGX("probe skipped: source %p (%s) has no manager at +0x%llx and hop=%d",
                          (void *)source, sourceIsMode ? "mode" : "manager",
                          (unsigned long long)TNX_MODE_MANAGER_OFF, g_hop_chosen);
             }
@@ -2687,7 +2687,7 @@ void tnx_autododge_v48(void) {
     if (!g_setpred_state) {
         if (g_giveup_logs < 3) {
             g_giveup_logs++;
-            tnx_logf("dodge idle: no verified actuator (fingerprint state=%d -- this is the "
+            TNX_LOGX("dodge idle: no verified actuator (fingerprint state=%d -- this is the "
                      "byte check of the function, not a write)", g_setpred_state);
         }
         return;
@@ -2701,7 +2701,7 @@ void tnx_autododge_v48(void) {
             g_gate_logs++;
 
             if (g_gate_logs <= 16) {
-                tnx_logf("gate %s: coord_ok=%d usable=%d distinct=%d minUsable=%d - the dodge runs "
+                TNX_LOGX("gate %s: coord_ok=%d usable=%d distinct=%d minUsable=%d - the dodge runs "
                          "on usable objects now, because a container that holds only the player still "
                          "carries the player's own coordinates and the whole threat list, while the old "
                          "gate was coord_ok alone: the 17:12 run shows it going false for five seconds "
@@ -2719,13 +2719,13 @@ void tnx_autododge_v48(void) {
     if (!g_scene_object) {
         if (g_giveup_logs < 9) {
             g_giveup_logs++;
-            tnx_logf("dodge idle: coordinates confirmed but the mode is unknown, so the "
+            TNX_LOGX("dodge idle: coordinates confirmed but the mode is unknown, so the "
                      "actuator has no `this` -- nothing written");
 
             if (!g_idle_probe_logged) {
                 g_idle_probe_logged = 1;
 
-                tnx_logf("dodge idle probe modeCandidate=%p vt=%#llx whyRejected=%s hits=%d "
+                TNX_LOGX("dodge idle probe modeCandidate=%p vt=%#llx whyRejected=%s hits=%d "
                          "fromChain=%d", (void *)g_last_cand,
                          (unsigned long long)g_last_vt,
                          g_last_why[0] ? g_last_why : "none-seen", g_chain_hits,
@@ -2743,7 +2743,7 @@ void tnx_autododge_v48(void) {
 
     if (usable < TNX_MIN_USABLE_2) {
         if ((g_ticks_3 % 60) == 0) {
-            tnx_logf("dodge idle: %d usable object(s) and this build needs %d - the old floor was "
+            TNX_LOGX("dodge idle: %d usable object(s) and this build needs %d - the old floor was "
                      "two, so a container holding only the player switched the dodge off completely "
                      "while shots were in the air, which is the 19:18 run where the census reads "
                      "players=1 shots=6 with no dodge line at all", usable, TNX_MIN_USABLE_2);
@@ -2766,7 +2766,7 @@ void tnx_autododge_v48(void) {
             if (g_giveup_logs < 6 || (g_ticks_3 % 60) == 0) {
                 g_giveup_logs++;
 
-                tnx_logf("dodge idle: no own element - the scan found nothing at scanIndex=%d "
+                TNX_LOGX("dodge idle: no own element - the scan found nothing at scanIndex=%d "
                          "scanPtr=%p and the prediction fallback (%d,%d) found nothing either, "
                          "usable=%d", g_own_index_3, (void *)g_own_ptr_4, predictX, predictY,
                          usable);
@@ -2787,7 +2787,7 @@ void tnx_autododge_v48(void) {
 
             if (ownVt >= g_base) ownCls = ownVt - g_base;
 
-            tnx_logf("dodge own elem=%p vt=%p classRva=%#llx from=%s index=%d pos=(%d,%d) - "
+            TNX_LOGX("dodge own elem=%p vt=%p classRva=%#llx from=%s index=%d pos=(%d,%d) - "
                      "classRva is what the census classRva of the same element index has to match, "
                      "and the actuator uses this exact element or nothing",
                      (void *)g_own_elem, (void *)ownVt, (unsigned long long)ownCls, ownFrom,
@@ -2797,7 +2797,7 @@ void tnx_autododge_v48(void) {
         if (!g_own_logged) {
             g_own_logged = 1;
 
-            tnx_logf("dodge own resolved from %s at +%#llx index=%d object=%p pos=(%d,%d) - "
+            TNX_LOGX("dodge own resolved from %s at +%#llx index=%d object=%p pos=(%d,%d) - "
                      "the scan is tried first and the prediction pair is only the fallback, so "
                      "the dodge and the gate line name the same element", ownFrom,
                      (unsigned long long)g_own_off, ownIndex, objects[ownIndex].object,
@@ -2882,7 +2882,7 @@ void tnx_autododge_v48(void) {
         if (g_last_own && g_elem_logs < 4) {
             g_elem_logs++;
 
-            tnx_logf("own element changed %p -> %p at (%d,%d): the ladder, the heading, the write "
+            TNX_LOGX("own element changed %p -> %p at (%d,%d): the ladder, the heading, the write "
                      "clock and the issued flag are cleared, because a respawn or a different element "
                      "carries none of the state the last life built",
                      (void *)g_last_own, (void *)objects[ownIndex].object, ownX, ownY);
@@ -2944,7 +2944,7 @@ void tnx_autododge_v48(void) {
         if (g_active_2 && g_logs < TNX_LOGS) {
             g_logs++;
 
-            tnx_logf("dodge own=(%d,%d) target=(%d,%d) projectiles=%d liveThreats=%d dirIdx=%d "
+            TNX_LOGX("dodge own=(%d,%d) target=(%d,%d) projectiles=%d liveThreats=%d dirIdx=%d "
                      "reach=%.0f engage=%.0f - %d directions are scored by the closest approach of the threat "
                      "against a point moving at the character speed along that direction, the score "
                      "carries a momentum term toward the previous direction, and the chosen heading "
@@ -2957,7 +2957,7 @@ void tnx_autododge_v48(void) {
     }
 
     if (!g_side_hits && (g_proj_own + g_proj_other) > 0 && (g_ticks_3 % 240) == 0) {
-        tnx_logf("no shot survived the filters: tracked=%d ownTeam=%d flewAway=%d cannotReach=%d - "
+        TNX_LOGX("no shot survived the filters: tracked=%d ownTeam=%d flewAway=%d cannotReach=%d - "
                  "the ring had nothing left to dodge, so a dodge that stops while shots are in the "
                  "air is read from this line first", g_proj_own + g_proj_other,
                  g_proj_own, g_drop_along, g_drop_reach);
@@ -2965,7 +2965,7 @@ void tnx_autododge_v48(void) {
 
     if (threats == 0 && g_side_hits == 0) {
         if (g_ticks_2 % 256 == 0) {
-            tnx_logf("live ticks=%llu own=(%d,%d) team=%d pred=(%d,%d) hostilesAlive=%d "
+            TNX_LOGX("live ticks=%llu own=(%d,%d) team=%d pred=(%d,%d) hostilesAlive=%d "
                      "enemiesActive=%d enemiesInRange=0 projSeen=%d projOnRay=0 writes=%llu "
                      "threatsTotal=%llu",
                      (unsigned long long)g_ticks_2, ownX, ownY, ownTeam, predictX, predictY,
@@ -3010,7 +3010,7 @@ void tnx_autododge_v48(void) {
                 if (g_step_logs < 1) {
                     g_step_logs++;
 
-                    tnx_logf("step cut to %.0f units: the request was %.0f units away; a distance "
+                    TNX_LOGX("step cut to %.0f units: the request was %.0f units away; a distance "
                              "to a point is not a per frame step and the engine walks toward its target "
                              "at its own speed, so the old cap of twenty was six times smaller than the "
                              "request the dodge itself makes and left the engine almost nothing to walk "
@@ -3050,14 +3050,14 @@ void tnx_autododge_v48(void) {
         if (g_side_hits > 0 && g_logs < TNX_LOGS) {
             g_logs++;
 
-            tnx_logf("threat write own=(%d,%d) target=(%d,%d) onRay=%d step=%.0f gap=%d of "
+            TNX_LOGX("threat write own=(%d,%d) target=(%d,%d) onRay=%d step=%.0f gap=%d of "
                      "shots dropped: %d flew away, %d could not reach - the escape is the heading "
                      "the ring scored best against the live threats, and the two counts are the "
                      "shots the reference's own filters removed before scoring",
                      ownX, ownY, targetX, targetY, g_side_hits, (double)step,
                      TNX_THREAT_MIN_MS, g_drop_along, g_drop_reach);
 
-            tnx_logf("write target=(%d,%d) own=(%d,%d) held=%d dirIdx=%d - the "
+            TNX_LOGX("write target=(%d,%d) own=(%d,%d) held=%d dirIdx=%d - the "
                      "heading and the target are one decision, the target is only reissued when "
                      "the locked heading changes, so the input stream carries one direction "
                      "instead of a per frame corrected position", targetX, targetY, ownX, ownY,
@@ -3079,7 +3079,7 @@ void tnx_autododge_v48(void) {
                 if (g_setpred_blocked_logs < 6) {
                     g_setpred_blocked_logs++;
 
-                    tnx_logf("setprediction BLOCKED: this=%p vt=%#llx [this+%#llx]=%p "
+                    TNX_LOGX("setprediction BLOCKED: this=%p vt=%#llx [this+%#llx]=%p "
                              "[chain+%#llx]=%p container=%p -- the chain does not reach the walked "
                              "container, nothing written", (void *)g_scene_object,
                              (unsigned long long)thisVt, (unsigned long long)TNX_MODE_MANAGER_OFF,
@@ -3091,7 +3091,7 @@ void tnx_autododge_v48(void) {
             }
 
             if (g_writes_3 == 0) {
-                tnx_logf("about to write: scene=%p vt=%#llx chain=%p manager=%p target=(%d,%d) "
+                TNX_LOGX("about to write: scene=%p vt=%#llx chain=%p manager=%p target=(%d,%d) "
                          "mode=%p actRva=%#llx leafRva=%#llx - the leaf %#llx is only a fallback, its "
                          "only caller in the image is the deserializer at 0xa26520, so a write that "
                          "lands there is stored and never consumed",
@@ -3119,7 +3119,7 @@ void tnx_autododge_v48(void) {
         if (g_logs_3 < 1) {
             g_logs_3++;
 
-            tnx_logf("order: the engine input at scene+%#llx is the move now - type %d and the "
+            TNX_LOGX("order: the engine input at scene+%#llx is the move now - type %d and the "
                      "sidestep vector written into the record the user named - so the walk cycle comes "
                      "from the stick and not from a position the renderer has to lerp towards. The raw "
                      "pair at +%#llx arrives at stage %d, and the applied pair plus the mode function "
@@ -3141,7 +3141,7 @@ void tnx_autododge_v48(void) {
         g_check_done = 0;
 
         if (g_writes_3 <= TNX_LOG_FIRST || (g_writes_3 % TNX_LOG_EVERY) == 0) {
-            tnx_logf("write #%llu own=(%d,%d) team=%d hostilesAlive=%d enemiesInRange=%d "
+            TNX_LOGX("write #%llu own=(%d,%d) team=%d hostilesAlive=%d enemiesInRange=%d "
                      "step=(%d,%d) target=(%d,%d) predBefore=(%d,%d)",
                      (unsigned long long)g_writes_3, ownX, ownY, ownTeam,
                      threatsAlive, threats, (int)(escapeX * DODGE_STEP),
@@ -3177,12 +3177,12 @@ void tnx_dodge_plan(uintptr_t manager, int32_t team) {
 
         live++;
 
-        tnx_logf("dodge team=%d i=%d obj=%p gid=%d team=%d dead=%d s88=%#llx s90=%#llx",
+        TNX_LOGX("dodge team=%d i=%d obj=%p gid=%d team=%d dead=%d s88=%#llx s90=%#llx",
                  team, i, element, gid, t, dead,
                  (unsigned long long)s88, (unsigned long long)s90);
     }
 
-    tnx_logf("dodge team=%d live=%d DISABLED - no coordinate source: slot 0x88 takes an "
+    TNX_LOGX("dodge team=%d live=%d DISABLED - no coordinate source: slot 0x88 takes an "
              "argument at 0xae48f0, so it is not getX; the RVAs above identify the class",
              team, live);
 }

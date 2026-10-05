@@ -3526,7 +3526,23 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
 }
 
 void tnx_autododge_v48(void) {
+    static int tagOnce = 0;
+
     tnx_phase("dodge-enter");
+
+    if (!tagOnce) {
+        tagOnce = 1;
+
+        TNX_LOGX("build v34 snap=%d rawStick=%d joyMag=%.0f snapMag=%.0f reach=%.0f dodgeStep=%.0f - "
+                 "the build tag together with the state of every writer that could hand the engine a "
+                 "direction scaled by a few hundred: with snap=%d the only call that passed a %.0f unit "
+                 "vector to the move function is dead and rawStick=%d kills the raw stick pair, so a "
+                 "crash address carrying that magnitude cannot come out of this binary, and the absence "
+                 "of this line means the binary is older than the drop that added it",
+                 (int)TNX_SNAP, (int)TNX_RAW_STICK, (double)TNX_JOY_MAG, (double)TNX_SNAP_MAG,
+                 (double)TNX_REACH, (double)DODGE_STEP, (int)TNX_SNAP, (double)TNX_SNAP_MAG,
+                 (int)TNX_RAW_STICK);
+    }
 
     tnx_input_release();
 

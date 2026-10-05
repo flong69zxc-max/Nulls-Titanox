@@ -1,5 +1,8 @@
 #include "titanox.h"
 
+#include <dlfcn.h>
+#include <sys/ucontext.h>
+
 char g_phase[48] = "boot";
 
 char g_hist[8][48];
@@ -38,6 +41,36 @@ void tnx_phase(const char *p) {
     }
 }
 
+void tnx_where(uintptr_t addr, char *out, size_t n) {
+    Dl_info info;
+
+    if (!out || n == 0) return;
+
+    out[0] = '\0';
+
+    if (!addr) {
+        snprintf(out, n, "(none)");
+        return;
+    }
+
+    if (g_base && addr >= g_base && addr < (g_base + 0x40000000ULL)) {
+        snprintf(out, n, "game+%#llx", (unsigned long long)(addr - g_base));
+        return;
+    }
+
+    memset(&info, 0, sizeof(info));
+
+    if (dladdr((void *)addr, &info) && info.dli_fname) {
+        const char *slash = strrchr(info.dli_fname, '/');
+
+        snprintf(out, n, "%s+%#llx", slash ? (slash + 1) : info.dli_fname,
+                 (unsigned long long)(addr - (uintptr_t)info.dli_fbase));
+        return;
+    }
+
+    snprintf(out, n, "unmapped");
+}
+
 void tnx_crash(int sig, siginfo_t *info, void *ctx) {
     char buf[768];
     void *fault = (info && info->si_addr) ? info->si_addr : (void *)0;
@@ -58,6 +91,39 @@ void tnx_crash(int sig, siginfo_t *info, void *ctx) {
         ssize_t ignored = write((int)g_fd, buf, (size_t)n);
 
         (void)ignored;
+    }
+
+    {
+        ucontext_t *uc = (ucontext_t *)ctx;
+        uintptr_t pc = 0;
+        uintptr_t lr = 0;
+        uintptr_t sp = 0;
+        char pcs[80];
+        char lrs[80];
+
+#if defined(__arm64__) || defined(__aarch64__)
+        if (uc) {
+            pc = (uintptr_t)uc->uc_mcontext->__ss.__pc;
+            lr = (uintptr_t)uc->uc_mcontext->__ss.__lr;
+            sp = (uintptr_t)uc->uc_mcontext->__ss.__sp;
+        }
+#endif
+
+        tnx_where(pc, pcs, sizeof(pcs));
+        tnx_where(lr, lrs, sizeof(lrs));
+
+        n = snprintf(buf, sizeof(buf),
+                     "\n[CRASH] pc=%p %s lr=%p %s sp=%p far=%p - pc is the code that was running and lr "
+                     "the call site it would return to, both resolved against the images, so a pc in the "
+                     "game with an lr in titanox is a game function we called, while both in titanox is "
+                     "our own code and far is the address the fault touched\n",
+                     (void *)pc, pcs, (void *)lr, lrs, (void *)sp, fault);
+
+        if (n > 0 && g_fd >= 0) {
+            ssize_t ignored = write((int)g_fd, buf, (size_t)n);
+
+            (void)ignored;
+        }
     }
 
     {

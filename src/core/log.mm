@@ -34,7 +34,7 @@ const char *g_log_keep[64] = {
     "hb ", "publish", "live ", "hook",
     "census", "roster", "render", "dodge ",
     "drive ", "engage running", "controller ", "predSet",
-    "predMiss", "clamp ",
+    "predMiss", "clamp ", "snap ", "build ",
     "shot ", "crit ",
     "stat ", "advise ",
     NULL

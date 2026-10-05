@@ -388,13 +388,7 @@ static int tnx_pred_ok(uintptr_t pred) {
 
 int tnx_pred_set(int x, int y) {
     uintptr_t setFn = 0;
-    uintptr_t ctrl = 0;
-    void *battle = NULL;
-    uintptr_t cand[4] = { 0, 0, 0, 0 };
-    int why = -1;
-    int pick = -1;
-    int32_t backX = 0;
-    int32_t backY = 0;
+    uintptr_t pred = 0;
 
     if (!TNX_PRED_SET) return 0;
 
@@ -402,60 +396,23 @@ int tnx_pred_set(int x, int y) {
 
     if (!setFn) return 0;
 
-    ctrl = tnx_controller();
+    pred = tnx_controller();
 
-    if (ctrl) cand[0] = tnx_hop(ctrl, &why);
-
-    cand[1] = ctrl;
-
-    if (g_base && tnx_read_ptr(g_base + TNX_BATTLE_RVA, &battle) && battle) {
-        cand[2] = tnx_hop((uintptr_t)battle, &why);
-        cand[3] = (uintptr_t)battle;
-    }
-
-    for (int i = 0; i < 4; i++) {
-        if (tnx_pred_ok(cand[i])) {
-            pick = i;
-
-            break;
-        }
-    }
-
-    if (pick < 0) {
+    if (!tnx_pred_ok(pred)) {
         if (g_pred_ok < 4) {
-            int alignOk[4] = { 0, 0, 0, 0 };
-            int readOk[4] = { 0, 0, 0, 0 };
-            int writeOk[4] = { 0, 0, 0, 0 };
-            int vtOk[4] = { 0, 0, 0, 0 };
-
-            for (int i = 0; i < 4; i++) {
-                tnx_pred_probe(cand[i], &alignOk[i], &readOk[i], &writeOk[i], &vtOk[i]);
-            }
-
-            TNX_LOGX("predMiss ctrl=%p battle=%p why=%d c0=%p a%d r%d w%d v%d c1=%p a%d r%d w%d v%d "
-                     "c2=%p a%d r%d w%d v%d c3=%p a%d r%d w%d v%d",
-                     (void *)ctrl, (void *)battle, why,
-                     (void *)cand[0], alignOk[0], readOk[0], writeOk[0], vtOk[0],
-                     (void *)cand[1], alignOk[1], readOk[1], writeOk[1], vtOk[1],
-                     (void *)cand[2], alignOk[2], readOk[2], writeOk[2], vtOk[2],
-                     (void *)cand[3], alignOk[3], readOk[3], writeOk[3], vtOk[3]);
+            TNX_LOGX("predMiss pred=%p - the receiver is the logic client itself, no hop, and a "
+                     "receiver that fails here is one the write cannot land on, so nothing of the "
+                     "local prediction follows the dodge on this frame", (void *)pred);
             g_pred_ok++;
         }
 
         return 0;
     }
 
-    ((void (*)(uintptr_t, int, int, int))setFn)(cand[pick], x, y, TNX_PRED_FLAG);
-
-    tnx_read_i32(cand[pick] + TNX_INPUT_X_OFF, &backX);
-    tnx_read_i32(cand[pick] + TNX_INPUT_Y_OFF, &backY);
+    ((void (*)(uintptr_t, int, int, int))setFn)(pred, x, y, TNX_PRED_FLAG);
 
     if (g_pred_ok < 4) {
-        TNX_LOGX("predSet pick=%d base=%p x=%d y=%d flag=%d back=(%d,%d) - picks are "
-                 "hop(controller), controller, hop(battleGlobal), battleGlobal, and back is the "
-                 "readback of the two fields setClientPredictionMoveTo writes, so back equal to "
-                 "the sent target is the write landing on the object the engine itself hands it",
-                 pick, (void *)cand[pick], x, y, (int)TNX_PRED_FLAG, backX, backY);
+        TNX_LOGX("predSet pred=%p x=%d y=%d flag=%d", (void *)pred, x, y, (int)TNX_PRED_FLAG);
         g_pred_ok++;
     }
 

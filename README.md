@@ -27,6 +27,6 @@ make -j"$(( $(nproc) + 1 ))" ARCHS=arm64 DEBUG=0 FINALPACKAGE=1
 Addresses in `src/core/offsets.h` are RVAs for that exact build. Other versions
 won't work.
 
-## License
+## Credits
 
-MIT, see `LICENSE`.
+Hooking framework: [Ragekill3377/Titanox](https://github.com/Ragekill3377/Titanox), MIT.

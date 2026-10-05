@@ -419,6 +419,9 @@ int tnx_pred_set(int x, int y) {
     return 1;
 }
 
+int g_qguard_probe = 0;
+int g_qguard_skip = 0;
+
 int g_enq_stop_1 = 0;
 
 int g_enq_stop_2 = 0;
@@ -477,6 +480,25 @@ int tnx_enqueue(int x, int y) {
     tnx_write_bytes((uintptr_t)msg + TNX_X_OFF, &vx, sizeof(vx));
     tnx_write_bytes((uintptr_t)msg + TNX_Y_OFF, &vy, sizeof(vy));
 
+    if (TNX_QUEUE_GUARD && g_qguard_probe < 1) {
+        void *mvt = NULL;
+        int32_t back = 0;
+
+        g_qguard_probe++;
+
+        tnx_read_ptr((uintptr_t)msg, &mvt);
+        tnx_read_i32((uintptr_t)msg + TNX_TYPE_OFF, &back);
+
+        TNX_LOGX("msgProbe msg=%p vtable=%p vtableRva=%#llx typeWritten=%d typeRead=%d shaped=%d "
+                 "size=%#llx - vtableRva=0 and shaped=0 mean the constructor did not build the "
+                 "object and the push is what kills the frame; vtableRva!=0 with shaped=1 means "
+                 "the message is fine and the manager is the one to look at",
+                 (void *)msg, mvt,
+                 (unsigned long long)(g_base && (uintptr_t)mvt > g_base ? (uintptr_t)mvt - g_base : 0),
+                 (int)type, (int)back, (int)tnx_instance_shaped((uintptr_t)msg),
+                 (unsigned long long)TNX_MSG_SIZE);
+    }
+
     {
         uintptr_t battleFn = tnx_entry_2(TNX_GETBATTLE_RVA);
 
@@ -526,6 +548,32 @@ int tnx_enqueue(int x, int y) {
     }
 
     g_enq_stop_4++;
+
+    if (TNX_QUEUE_GUARD || TNX_QUEUE_GUARD_MGR) {
+        int msgOk = tnx_instance_shaped((uintptr_t)msg);
+        int mgrOk = tnx_manager_shape((uintptr_t)mgr);
+
+        if ((TNX_QUEUE_GUARD && !msgOk) || (TNX_QUEUE_GUARD_MGR && !mgrOk)) {
+            if (g_qguard_skip < TNX_QGUARD_LOGS) {
+                void *mvt = NULL;
+                void *gvt = NULL;
+
+                g_qguard_skip++;
+
+                tnx_read_ptr((uintptr_t)msg, &mvt);
+                tnx_read_ptr((uintptr_t)mgr, &gvt);
+
+                TNX_LOGX("queueSkip msg=%p msgVt=%p msgShaped=%d mgr=%p mgrVt=%p mgrShaped=%d "
+                         "tick=%llu - the object we are about to hand to the engine is not shaped "
+                         "like the thing it must be, so the push is skipped; the page-writable "
+                         "guard cannot see this, a readable freed block passes it",
+                         (void *)msg, mvt, msgOk, (void *)mgr, gvt, mgrOk,
+                         (unsigned long long)g_ticks_3);
+            }
+
+            return 0;
+        }
+    }
 
     ((void (*)(void *, void *))inputFn)(mgr, msg);
 

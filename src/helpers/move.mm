@@ -410,6 +410,14 @@ int tnx_pred_set(int x, int y) {
     return 1;
 }
 
+int g_enq_stop_1 = 0;
+
+int g_enq_stop_2 = 0;
+
+int g_enq_stop_3 = 0;
+
+int g_enq_stop_4 = 0;
+
 int tnx_enqueue(int x, int y) {
 
     uintptr_t ctorFn = tnx_entry_2(TNX_MSGCTOR_RVA);
@@ -428,11 +436,29 @@ int tnx_enqueue(int x, int y) {
     g_q_before_2 = -1;
     g_q_after_2 = -1;
 
-    if (!inputFn) return 0;
+    if (!inputFn) {
+        if (g_enq_stop_1 < 8) {
+            g_enq_stop_1++;
+
+            TNX_LOGX("enqueueStop addInput rva=%#llx base=%p callable=0",
+                     (unsigned long long)TNX_ADDINPUT_RVA, (void *)g_base);
+        }
+
+        return 0;
+    }
 
     msg = tnx_msg_alloc();
 
-    if (!msg) return 0;
+    if (!msg) {
+        if (g_enq_stop_2 < 8) {
+            g_enq_stop_2++;
+
+            TNX_LOGX("enqueueStop alloc how=%s size=%#llx", g_alloc_how,
+                     (unsigned long long)TNX_MSG_SIZE, (unsigned long long)TNX_MSG_SIZE);
+        }
+
+        return 0;
+    }
 
     memset(msg, 0, (size_t)TNX_MSG_SIZE);
 
@@ -456,6 +482,8 @@ int tnx_enqueue(int x, int y) {
         }
     }
 
+    (void)tnx_pred_set(x, y);
+
     mgr = tnx_manager();
 
     if (!mgr) {
@@ -477,11 +505,18 @@ int tnx_enqueue(int x, int y) {
         void *mgrInner = NULL;
 
         if (!tnx_read_ptr((uintptr_t)mgr + TNX_CI_MGR_QUEUE_OFF, &mgrInner) || !mgrInner) {
+            if (g_enq_stop_3 < 8) {
+                g_enq_stop_3++;
+
+                TNX_LOGX("enqueueStop queueSlot mgr=%p slot+%#llx=%p", (void *)mgr,
+                         (unsigned long long)TNX_CI_MGR_QUEUE_OFF, (void *)mgrInner);
+            }
+
             return 0;
         }
     }
 
-    (void)tnx_pred_set(x, y);
+    g_enq_stop_4++;
 
     ((void (*)(void *, void *))inputFn)(mgr, msg);
 

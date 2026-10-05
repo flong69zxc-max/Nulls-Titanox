@@ -3,19 +3,25 @@ name: Titanox
 on:
   push:
     branches: [main]
+    paths:
+      - 'src/**'
+      - 'Makefile'
+      - 'control'
+      - 'layout/**'
+      - '.github/workflows/titanox.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: titanox-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
@@ -39,7 +45,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/theos
-          key: theos-linux-v1
+          key: theos-linux-v2
+          restore-keys: theos-linux-
 
       - name: Theos
         run: |
@@ -56,7 +63,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p deps
-          git clone --depth 1 https://github.com/flong69zxc-max/Titanox.git deps/Titanox
+          git clone -q --depth 1 https://github.com/flong69zxc-max/Titanox.git deps/Titanox
 
       - name: Build
         run: |
@@ -79,3 +86,4 @@ jobs:
           path: out/Titanox.dylib
           if-no-files-found: error
           compression-level: 1
+          retention-days: 3

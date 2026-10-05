@@ -1,85 +1,160 @@
-name: Titanox
+name: lay out
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+  push:
+    paths:
+      - 'handover/**'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  build:
-    runs-on: macos-14
-    timeout-minutes: 20
-
+  lay-out:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install tools
+      - name: put the handover files in place
         run: |
           set -euo pipefail
-          brew list ldid >/dev/null 2>&1 || brew install ldid
-          brew list make >/dev/null 2>&1 || brew install make
-          echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
-
-      - uses: actions/cache@v4
-        with:
-          path: theos
-          key: theos-${{ runner.os }}-diagnostics-v2
-
-      - name: Setup Theos
-        run: |
-          set -euo pipefail
-          if [ ! -d theos/.git ]; then
-            git clone --recursive --depth 1 --shallow-submodules \
-              https://github.com/theos/theos.git theos
+          if [ ! -d handover ]; then
+            echo "no handover folder, nothing to do"
+            exit 0
           fi
-          git -C theos submodule update --init --recursive
-          echo "THEOS=$PWD/theos" >> "$GITHUB_ENV"
-          echo "$PWD/theos/bin" >> "$GITHUB_PATH"
-          git -C theos rev-parse HEAD
+          moved=0
+          while IFS= read -r -d '' file; do
+            dest="${file#handover/}"
+            dest="$(printf '%s' "$dest" | sed -e 's/_1\(\.[^./]*\)$/\1/' -e 's/_1$//')"
+            mkdir -p "$(dirname "$dest")"
+            cp "$file" "$dest"
+            echo "$dest"
+            moved=$((moved + 1))
+          done < <(find handover -type f -print0)
+          echo "$moved files"
 
-      - name: Get Titanox
+      - name: check the split before dropping the old source
         run: |
           set -euo pipefail
-          mkdir -p deps
-          git clone --depth 1 \
-            https://github.com/flong69zxc-max/Titanox.git deps/Titanox
-          git rev-parse HEAD
-          git -C deps/Titanox rev-parse HEAD
+          for f in src/titanox.h src/core/config.h src/core/memory.mm src/core/log.mm \
+                   src/core/crash.mm src/core/hooks.mm src/utils/strings.mm src/utils/geometry.mm \
+                   src/helpers/scan.mm src/helpers/move.mm src/features/autododge.mm \
+                   src/features/walls.mm src/features/report.mm; do
+            if [ ! -s "$f" ]; then
+              echo "missing or empty: $f"
+              exit 1
+            fi
+          done
+          rm -f src/Titanox.mm
+          echo "the modules are in, src/Titanox.mm is gone"
 
-      - name: Build
+      - name: write the license
         run: |
           set -euo pipefail
-          gmake clean
-          gmake -j"$(sysctl -n hw.ncpu)" \
-            ARCHS=arm64 DEBUG=0 FINALPACKAGE=1
+          if [ -f LICENSE ]; then
+            echo "LICENSE is already there, left alone"
+            exit 0
+          fi
+          year="$(date +%Y)"
+          cat > LICENSE <<EOF
+          MIT License
 
-      - name: Collect artifact
+          Copyright (c) $year flong69zxc-max
+
+          Permission is hereby granted, free of charge, to any person obtaining a copy
+          of this software and associated documentation files (the "Software"), to deal
+          in the Software without restriction, including without limitation the rights
+          to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+          copies of the Software, and to permit persons to whom the Software is
+          furnished to do so, subject to the following conditions:
+
+          The above copyright notice and this permission notice shall be included in all
+          copies or substantial portions of the Software.
+
+          THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+          IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+          FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+          AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+          LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+          OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+          SOFTWARE.
+          EOF
+          sed -i 's/^          //' LICENSE
+          echo "LICENSE written"
+
+      - name: write the readme
         run: |
           set -euo pipefail
-          mkdir -p out
-          dylib="$(find .theos -type f \
-            -name Titanox.dylib \
-            ! -path '*.dSYM/*' \
-            | sort | head -n 1)"
-          test -n "$dylib"
-          cp "$dylib" out/Titanox.dylib
-          xcrun lipo -info out/Titanox.dylib
-          xcrun otool -L out/Titanox.dylib
-          shasum -a 256 out/Titanox.dylib
-          {
-            printf 'Nulls-Titanox '
-            git rev-parse HEAD
-            printf 'Titanox '
-            git -C deps/Titanox rev-parse HEAD
-          } > out/build-commits.txt
+          if [ -f README.md ]; then
+            echo "README.md is already there, left alone"
+            exit 0
+          fi
+          cat > README.md <<'EOF'
+          # Titanox
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Titanox
-          path: |
-            out/Titanox.dylib
-            out/build-commits.txt
-          if-no-files-found: error
+          A tweak for Nulls Brawl on iOS. It walks the character out of incoming fire
+          and writes down what it did.
+
+          It is built against one specific Nulls Brawl arm64 build. The addresses in
+          src/offsets.h and src/lc_detect.h belong to that build, so a game update
+          breaks the tweak and those two files have to be redone.
+
+          ## Layout
+
+          src/core holds the image bounds, the safe readers and writers, the log, the
+          crash handler and the hook slots. src/utils is the small stuff: strings,
+          floats, coordinate clamping. src/helpers finds the game objects and drives the
+          movement. src/features is the dodge, the tile grid it reads and the stats line.
+
+          Everything the modules share lives in src/titanox.h, which pulls in the config,
+          the types and then one header per module. Nothing is static, so a symbol used
+          across modules is declared in the header of the module that defines it.
+
+          ## Build
+
+              make package
+              make install
+
+          theos and the iOS sdk are the only requirements. arm64 only.
+
+          ## Log
+
+          On device the log is at /var/mobile/Documents/Titanox.log. Every line carries a
+          version tag, so a change can be read back with a grep on the tag:
+
+              grep 'v246 dodge' Titanox.log
+
+          The lines worth knowing:
+
+              v244 drag     what the stick was told to do, and whether the engine kept it
+              v246 dodge    health before and after a threat, and whether the dodge was moving
+              v242 grid     the tile map as the engine sees it, with a mask around the player
+              v211 state    one line per tick with every counter
+
+          ## Notes
+
+          The dodge reads the same tile map the game reads and drives the game's own touch
+          drag instead of poking a movement field, so the movement it asks for is the kind
+          the engine already knows how to follow. It does not aim and it does not shoot.
+
+          Writes go through a guard that refuses an address the process cannot write to,
+          and every write is kept in a small ring. If the game does abort anyway, the
+          [CRASH] line in the log is followed by the last writes with their address, size
+          and the phase they happened in, which is usually enough to name the culprit.
+          EOF
+          sed -i 's/^          //' README.md
+          echo "README.md written"
+
+      - name: commit
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "nothing changed"
+            exit 0
+          fi
+          git commit -q -m "lay out sources into modules"
+          git push
+          echo "pushed"

@@ -498,13 +498,13 @@ jobs:
           if __name__ == '__main__':
               sys.exit(main())
           PY
-          python3 -c "import ast,sys; ast.parse(open('/tmp/cut.py').read())"
+          python3 -c "import ast; ast.parse(open('/tmp/cut.py').read())"
           echo "cutter ready"
 
       - name: cut the source into modules
         run: |
           set -euo pipefail
-          echo "layout v3, the cutter is inside this workflow"
+          echo "layout v4"
           echo "files before: $(find src -type f | wc -l)"
           if [ ! -f src/Titanox.mm ]; then
             if [ -s src/titanox.h ]; then
@@ -515,10 +515,7 @@ jobs:
             echo "put the source at src/Titanox.mm and run again"
             exit 1
           fi
-          ls -la src/ | tail -n 6
           SPLIT_OUT=. SPLIT_SUFFIX='' python3 /tmp/cut.py
-          echo "files after: $(find src -type f | wc -l)"
-          find src -name '*.h' -o -name '*.mm' | sort
           for f in src/titanox.h src/core/imports.h src/core/config.h src/core/types.h \
                    src/core/memory.mm src/core/log.mm src/core/crash.mm src/core/hooks.mm \
                    src/utils/strings.mm src/utils/geometry.mm src/helpers/scan.mm \
@@ -530,25 +527,77 @@ jobs:
             fi
           done
           rm -f src/Titanox.mm
-          echo "the modules are in, src/Titanox.mm is gone"
+          echo "files after: $(find src -type f | wc -l)"
 
-      - name: check the makefile
+      - name: fix the makefile
         run: |
           set -euo pipefail
           missing=""
           grep -q -- '-Isrc' Makefile || missing="$missing -Isrc"
+          if grep -q 'src/Titanox.mm' Makefile; then
+            missing="$missing src/Titanox.mm"
+          fi
           for f in src/core/memory.mm src/core/log.mm src/core/crash.mm src/core/hooks.mm \
                    src/utils/strings.mm src/utils/geometry.mm src/helpers/scan.mm \
                    src/helpers/move.mm src/features/autododge.mm src/features/walls.mm \
                    src/features/report.mm; do
             grep -q "$f" Makefile || missing="$missing $f"
           done
-          if [ -n "$missing" ]; then
-            echo "the Makefile still needs:$missing"
-            echo "copy the handover Makefile in, or add those to Titanox_FILES and COMMON_INCLUDES"
-            exit 1
+          if [ -z "$missing" ]; then
+            echo "the Makefile already lists every module and -Isrc"
+            exit 0
           fi
-          echo "the Makefile lists every module and -Isrc"
+          echo "the Makefile needs:$missing"
+          if [ -f Makefile ] && [ ! -f Makefile.before-split ]; then
+            cp Makefile Makefile.before-split
+            echo "the old one is kept at Makefile.before-split"
+          fi
+          cat > Makefile <<'MF'
+          TARGET := iphone:clang:latest:15.0
+          ARCHS := arm64
+
+          TITANOX := deps/Titanox/libtitanox
+
+          include $(THEOS)/makefiles/common.mk
+
+          TWEAK_NAME = Titanox
+
+          Titanox_FILES = src/core/memory.mm
+          Titanox_FILES += src/core/log.mm
+          Titanox_FILES += src/core/crash.mm
+          Titanox_FILES += src/core/hooks.mm
+          Titanox_FILES += src/utils/strings.mm
+          Titanox_FILES += src/utils/geometry.mm
+          Titanox_FILES += src/helpers/scan.mm
+          Titanox_FILES += src/helpers/move.mm
+          Titanox_FILES += src/features/autododge.mm
+          Titanox_FILES += src/features/walls.mm
+          Titanox_FILES += src/features/report.mm
+          Titanox_FILES += src/resolve_targets.mm
+          Titanox_FILES += $(TITANOX)/brk_hook/Hook/hook.c
+          Titanox_FILES += $(TITANOX)/brk_hook/Hook/mach_excServer.c
+
+          COMMON_INCLUDES = \
+          	-Isrc \
+          	-Iinclude \
+          	-I$(TITANOX) \
+          	-I$(TITANOX)/libtitanox \
+          	-I$(TITANOX)/brk_hook \
+          	-I$(TITANOX)/brk_hook/Hook
+
+          Titanox_CFLAGS = -Iinclude -Isrc -I$(TITANOX)/brk_hook/Hook
+
+          Titanox_OBJCFLAGS = -fobjc-arc -std=c++17 $(COMMON_INCLUDES) \
+          	-Wno-unused-function -Wno-unused-variable -Wno-unused-parameter \
+          	-Wno-everything
+
+          Titanox_LDFLAGS = -Wl,-undefined,dynamic_lookup
+
+          Titanox_FRAMEWORKS = Foundation UIKit
+
+          include $(THEOS_MAKE_PATH)/tweak.mk
+          MF
+          echo "the Makefile is written"
 
       - name: write the license
         run: |

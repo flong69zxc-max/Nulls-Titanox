@@ -443,6 +443,17 @@ int tnx_enqueue(int x, int y) {
         g_stuck_3++;
     }
 
+    {
+        uintptr_t mgrInner = 0;
+
+        if (!tnx_read_ptr((uintptr_t)mgr + TNX_CI_MGR_QUEUE_OFF, &mgrInner) || !mgrInner) {
+            TNX_LOGX("queuePush aborted: mgr=%p queue slot +%#llx = %p", (void *)mgr,
+                     (unsigned long long)TNX_CI_MGR_QUEUE_OFF, (void *)mgrInner);
+
+            return 0;
+        }
+    }
+
     (void)tnx_pred_set(x, y);
 
     ((void (*)(void *, void *))inputFn)(mgr, msg);

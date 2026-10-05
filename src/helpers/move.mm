@@ -348,14 +348,26 @@ int tnx_pending(int want, uint64_t *mask) {
 
 static int g_pred_ok = 0;
 
+static int tnx_pred_ok(uintptr_t pred) {
+    uintptr_t vt = 0;
+
+    if (!pred) return 0;
+    if ((pred & 7) != 0) return 0;
+    if (!tnx_addr_readable(pred, 0x120)) return 0;
+    if (!tnx_read_ptr(pred, &vt)) return 0;
+    if (!vt) return 0;
+
+    return 1;
+}
+
 int tnx_pred_set(int x, int y) {
-    uintptr_t ctrl = tnx_controller();
     uintptr_t hopFn = 0;
     uintptr_t setFn = 0;
+    uintptr_t base = 0;
     uintptr_t pred = 0;
+    void *battle = NULL;
 
     if (!TNX_PRED_SET) return 0;
-    if (!ctrl) return 0;
 
     hopFn = tnx_entry_2(TNX_HOP_RVA);
     setFn = tnx_entry_2(TNX_SETINPUT_RVA);
@@ -363,17 +375,24 @@ int tnx_pred_set(int x, int y) {
     if (!hopFn) return 0;
     if (!setFn) return 0;
 
-    pred = ((uintptr_t (*)(uintptr_t))hopFn)(ctrl);
+    base = tnx_controller();
 
-    if (!pred) return 0;
-    if ((pred & 7) != 0) return 0;
-    if (!tnx_addr_readable(pred, 0x40)) return 0;
+    if (base) pred = ((uintptr_t (*)(uintptr_t))hopFn)(base);
+
+    if (!tnx_pred_ok(pred) && g_base) {
+        if (tnx_read_ptr(g_base + TNX_BATTLE_RVA, &battle) && battle) {
+            base = (uintptr_t)battle;
+            pred = ((uintptr_t (*)(uintptr_t))hopFn)(base);
+        }
+    }
+
+    if (!tnx_pred_ok(pred)) return 0;
 
     ((void (*)(uintptr_t, int, int, int))setFn)(pred, x, y, TNX_PRED_FLAG);
 
     if (g_pred_ok < 4) {
-        TNX_LOGX("predSet ctrl=%p hop=%p pred=%p x=%d y=%d flag=%d", (void *)ctrl,
-                 (void *)hopFn, (void *)pred, x, y, (int)TNX_PRED_FLAG);
+        TNX_LOGX("predSet base=%p pred=%p x=%d y=%d flag=%d", (void *)base, (void *)pred,
+                 x, y, (int)TNX_PRED_FLAG);
         g_pred_ok++;
     }
 
@@ -444,12 +463,9 @@ int tnx_enqueue(int x, int y) {
     }
 
     {
-        uintptr_t mgrInner = 0;
+        void *mgrInner = NULL;
 
         if (!tnx_read_ptr((uintptr_t)mgr + TNX_CI_MGR_QUEUE_OFF, &mgrInner) || !mgrInner) {
-            TNX_LOGX("queuePush aborted: mgr=%p queue slot +%#llx = %p", (void *)mgr,
-                     (unsigned long long)TNX_CI_MGR_QUEUE_OFF, (void *)mgrInner);
-
             return 0;
         }
     }

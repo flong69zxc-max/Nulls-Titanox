@@ -20,7 +20,7 @@
 #import <unistd.h>
 #import <signal.h>
 #import "core/offsets.h"
-#import "lc_detect.h"
+#import "utils/lc_detect.h"
 #include "hook.h"
 #if __has_include(<ptrauth.h>)
 #import <ptrauth.h>

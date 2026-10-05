@@ -2,8 +2,8 @@
 #define TITANOX_FEATURES_WALLS_H
 
 #include "core/types.h"
-
-#define TNX_MAP_BASE_OFF 0x28ULL
+#include "core/config.h"
+#include "core/offsets.h"
 
 extern uint8_t g_grid[TNX_GRID_MAX * TNX_GRID_MAX];
 extern uintptr_t g_tiles;

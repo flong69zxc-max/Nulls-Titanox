@@ -3006,6 +3006,8 @@ int g_side_hits = 0;
 
 int g_side_projs = 0;
 
+int g_proj_skipped = 0;
+
 int tnx_proj_scan(uintptr_t manager, int32_t count) {
     void *array = NULL;
     int found = 0;
@@ -3064,6 +3066,12 @@ int tnx_proj_scan(uintptr_t manager, int32_t count) {
                          (unsigned long long)vtRva, gid, seenClsN,
                          (unsigned long long)TNX_OBJ_X_OFF, (unsigned long long)TNX_OBJ_Y_OFF);
             }
+        }
+
+        if (TNX_PROJ_CLASS_ONLY && vtRva != (uintptr_t)TNX_CLASS_PROJ_RVA) {
+            g_proj_skipped++;
+
+            continue;
         }
 
         if (!tnx_read_i32((uintptr_t)element + TNX_OBJ_X_OFF, &px)) continue;
@@ -3337,6 +3345,7 @@ void tnx_census(void) {
     int players = 0;
     int shots = 0;
     int other = 0;
+    int projClass = 0;
 
     if ((g_ticks_3 % 60) != 0) return;
     if (!g_manager) return;
@@ -3352,17 +3361,24 @@ void tnx_census(void) {
 
         gid = tnx_gid((uintptr_t)element, NULL);
 
+        {
+            void *vt = NULL;
+
+            if (tnx_read_ptr((uintptr_t)element, &vt) && vt &&
+                ((uintptr_t)vt - g_base) == (uintptr_t)TNX_CLASS_PROJ_RVA) projClass++;
+        }
+
         if (gid >= TNX_SHOT_GID && gid < TNX_SHOT_GID_MAX) shots++;
         else if (gid >= TNX_PLAYER_GID && gid < TNX_SHOT_GID) players++;
         else other++;
     }
 
-    tnx_logf("census count=%d players=%d shots=%d other=%d manager=%p - one line a second with "
+    tnx_logf("census count=%d players=%d shots=%d other=%d projClass=%d skipped=%d manager=%p - one line a second with "
              "the container split by gid band, so a dodge that reports segs=0 says whether there was "
              "anything to dodge at all: the 17:53 run held only players and two objects in the four "
              "million band, one of them standing still and one moving at two units a frame, while the "
              "projectiles that were recognised in the 17:12 and 17:45 runs carry gids in the %d band",
-             count, players, shots, other, (void *)g_manager, TNX_SHOT_GID);
+             count, players, shots, other, projClass, g_proj_skipped, (void *)g_manager, TNX_SHOT_GID);
 }
 
 int tnx_own(int32_t *xOut, int32_t *yOut) {
@@ -3662,6 +3678,11 @@ uint64_t tnx_rend_delta(void) {
 
 void tnx_state(void) {
     g_mgr = (uintptr_t)tnx_manager();
+
+    g_census_container = 0;
+    g_census_array = 0;
+    g_census_first = 0;
+    g_census_ms = 0;
 
     tnx_logf("state joystick=%p writes=%llu took=%llu escapes=%llu lookahead=%llu appliedW=%llu "
              "appliedLive=%llu appliedStale=%llu rage=%llu flees=%llu deadRep=%llu clamped=%llu qDrain=%llu qMax=%llu qNow=%llu qStuck=%llu qMask=%#llx dragW=%llu dragLive=%llu mateTurn=%llu mateStuck=%llu keep=%llu engage=%llu hseed=%llu clearEval=%llu stickOnly=%llu reentry=%llu rSkip=%llu uSkip=%llu U1orig=%p U2orig=%p upd=%llu updMove=%llu ticks=%llu updD=%llu rendD=%llu gateNow=%d decUs=%llu maxUs=%llu slow=%llu diagMax=%llu g70w=%llu g70h=%llu dropS=%llu dropF=%llu dropB=%llu spd=(%.0f..%.0f) "

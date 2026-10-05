@@ -32,7 +32,7 @@
 #define TNX_ESCAPE 1
 #define TNX_PRECISION 1
 #define TNX_EVERY 60
-#define TNX_LOOKAHEAD_MS 260.0f
+#define TNX_LOOKAHEAD_MS 220.0f
 #define TNX_PAIR_RAW 1
 #define TNX_PAIR_MAX 2400.0f
 #define TNX_RAGE 1
@@ -48,7 +48,7 @@
 #define TNX_GATE_WRITE 1
 #define TNX_HIT_ONLY 1
 #define TNX_REJECT 1
-#define TNX_MIN_SPEED 260.0f
+#define TNX_MIN_SPEED 220.0f
 #define TNX_MAX_SPEED 9000.0f
 #define TNX_BLINK_TICKS 2
 #define TNX_BLINK_REM 320.0f
@@ -58,19 +58,19 @@
 #define TNX_WALK_MAX 60.0f
 #define TNX_WALK_EMA 0.12f
 #define TNX_ENGAGE_2 40.0f
-#define TNX_MOMENTUM 100.0f
+#define TNX_MOMENTUM 55.0f
 #define TNX_KEEP_BAND_2 120.0f
 #define TNX_HORIZON 1.0f
 #define TNX_BODY_W 1.0f
 #define TNX_SEL_MAX 8
-#define TNX_STEPS 3
+#define TNX_STEPS 4
 #define TNX_FLEE 1
 #define TNX_FLEE_STEP 150.0f
 #define TNX_LOGS_4 14
 #define TNX_EVERY_2 30
 #define TNX_PRED_LOGS 6
 #define TNX_CLUSTER 700.0f
-#define TNX_FREEST_ANGLES 24
+#define TNX_FREEST_ANGLES 32
 #define TNX_FREEST_MIN 120.0f
 #define TNX_DUMP 1
 #define TNX_DUMP_LOGS 40
@@ -186,7 +186,7 @@
 #define TNX_TEAM_FILTER 0
 #define TNX_STUCK_FRAMES 30
 #define TNX_WALL_HIT 9000.0f
-#define TNX_THREAT_RANGE 2800.0f
+#define TNX_THREAT_RANGE 3400.0f
 #define TNX_RANGE_MIN_SAMPLES 20
 #define TNX_STEP 120.0f
 #define TNX_ELEM_RESET 1
@@ -195,7 +195,7 @@
 #define TNX_STAGE_MAX 2
 #define TNX_INPUT_MGR 0
 #define TNX_JOY_WRITE 0
-#define TNX_NUM_ANGLES 48
+#define TNX_NUM_ANGLES 64
 #define TNX_STEP_2 150.0f
 #define TNX_MAX_DIST 1500.0f
 #define TNX_SAFETY_MARGIN 800.0f
@@ -228,7 +228,7 @@
 #define TNX_SHOT_GID 2000000
 #define TNX_SHOT_GID_MAX 3000000
 #define TNX_MIN_USABLE_2 1
-#define TNX_HOLD_TICKS 3
+#define TNX_HOLD_TICKS 2
 #define TNX_STEP_3 120.0f
 #define TNX_PAIR_ONLY 0
 #define TNX_STICK_ONLY 0
@@ -258,8 +258,8 @@
 #define TNX_MAP_DUMPS 3
 #define TNX_LOGS_2 12
 #define TNX_DIRS 48
-#define TNX_REACH 600.0f
-#define TNX_ENGAGE 900.0f
+#define TNX_REACH 700.0f
+#define TNX_ENGAGE 1000.0f
 #define TNX_KEEP_BAND 0.0f
 #define TNX_LOCK_MS 130
 #define TNX_RELEASE_MS 120
@@ -392,6 +392,9 @@
 #define TNX_FLOAT_MAX 10000.0f
 #define TNX_TEAM_MAX 8
 
-#define TNX_HOOK_DIAG 0
+#define TNX_REACT_CRIT 1
+#define TNX_CRITICAL_MS 200.0f
+#define TNX_DIR_COUNT 64
+#define TNX_SEG_TTI_LOGS 8
 
 #endif

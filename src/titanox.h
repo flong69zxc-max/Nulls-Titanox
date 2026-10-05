@@ -6,6 +6,7 @@
 #include "core/crash.h"
 #include "core/hooks.h"
 #include "core/log.h"
+#include "core/log_gate.h"
 #include "core/memory.h"
 #include "utils/geometry.h"
 #include "utils/strings.h"
@@ -17,5 +18,6 @@
 #include "features/walls.h"
 #include "features/sign.h"
 #include "features/sd.h"
+#include "features/modmenu.h"
 
 #endif

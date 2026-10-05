@@ -802,7 +802,7 @@ BOOL tnx_addr_writable(uintptr_t address, size_t length) {
         uintptr_t start = 0;
 
         if (!tnx_query_region(cursor, &protection, NULL, &size, &start)) return NO;
-        if (size == 0 || size > 0x10000000ULL) return NO;
+        if (size == 0) return NO;
         if ((protection & VM_PROT_WRITE) == 0) return NO;
 
         uintptr_t next = start + (uintptr_t)size;

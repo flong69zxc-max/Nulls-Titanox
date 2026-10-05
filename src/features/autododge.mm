@@ -117,7 +117,7 @@
 #endif
 
 #ifndef TNX_SNAP
-#define TNX_SNAP 1
+#define TNX_SNAP 0
 #endif
 
 #ifndef TNX_SNAP_MAG
@@ -1592,6 +1592,8 @@ int g_snap_live = 0;
 
 int g_snap_logs = 0;
 
+int g_snap_off_logs = 0;
+
 int g_side_tick = 0;
 
 int g_side_flips = 0;
@@ -1752,7 +1754,23 @@ int tnx_snap(float dx, float dy) {
 
     g_snap_live = 0;
 
-    if (!TNX_SNAP) return 0;
+    if (!TNX_SNAP) {
+        if (g_snap_off_logs < 4) {
+            g_snap_off_logs++;
+
+            TNX_LOGX("snap off elem=%p client=%p mag=%.0f - this was the only call that handed the "
+                     "engine move function the container element as the receiver together with a "
+                     "direction of magnitude %.0f, and the crash addresses carried exactly that value "
+                     "in one half of a pointer, so the move is left to tnx_pred_set alone, which is "
+                     "the same engine call made on the logic client with a destination, so one frame "
+                     "carries two actions instead of three",
+                     (void *)own, (void *)tnx_controller(), (double)TNX_SNAP_MAG,
+                     (double)TNX_SNAP_MAG);
+        }
+
+        return 0;
+    }
+
     if (!fn || !own) return 0;
     if (!tnx_ok(len, 0.001f, 1.0e9f)) return 0;
 

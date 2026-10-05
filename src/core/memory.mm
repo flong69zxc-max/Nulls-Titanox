@@ -718,8 +718,8 @@ const struct tnx_t_g_slot_specs g_slot_specs[TNX_SLOT_COUNT] = {
     { "E2/table100a770 slot1 @bcfc28", "E2", 0x00bcfc28ULL, 0, tnx_slot_repl_14, 0 },
     { "V1/disabled-fewer-noisy-slots", "V1", 0, 0, tnx_slot_repl_15, 0 },
     { "V2/vt0fe9d00+40/8c6150", "V2", 0x008c6150ULL, 0x00fe9d40ULL, tnx_slot_repl_16, 0 },
-    { "E5/setClientPredictionMoveTo @b90b8c", "E5", 0x00b90b8cULL, 0, tnx_slot_repl_17, 1 },
-    { "E6/sendMovement @7c13dc", "E6", 0x007c13dcULL, 0, tnx_slot_repl_18, 1 },
+    { "E5/logicPredictMoveSet @ac3f20", "E5", 0x00ac3f20ULL, 0, tnx_slot_repl_17, 1 },
+    { "E6/clientInputManagerUpdate @746898", "E6", 0x00746898ULL, 0, tnx_slot_repl_18, 1 },
 
     { "D7/table10086c0 slot2 @b8ae88", "D7", 0x00b8ae88ULL, 0, tnx_slot_repl_19, 0 },
     { "D8/table10086c0 slot3 @b8ac7c", "D8", 0x00b8ac7cULL, 0, tnx_slot_repl_20, 0 },

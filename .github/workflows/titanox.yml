@@ -63,7 +63,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p deps
-          git clone -q --depth 1 https://github.com/flong69zxc-max/Titanox.git deps/Titanox
+          git clone -q --depth 1 https://github.com/${{ github.repository_owner }}/Titanox.git deps/Titanox
 
       - name: Build
         run: |

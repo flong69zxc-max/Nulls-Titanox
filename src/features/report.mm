@@ -230,8 +230,6 @@ void tnx_stats(void) {
 
     if (hpmax <= 0 || hp <= 0 || hp > hpmax) return;
 
-    tnx_hero_identify(hpmax, 0);
-
     if (g_hp < 0) g_hp = hp;
     if (g_hpmax < 0) g_hpmax = hpmax;
     if (hpmax != g_hpmax) g_hpmax = hpmax;

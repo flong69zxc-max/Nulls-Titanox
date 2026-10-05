@@ -1,4 +1,5 @@
 #include "titanox.h"
+#include "data/chars_data.h"
 
 #ifndef TNX_DODGE_PROJ_ONLY
 #define TNX_DODGE_PROJ_ONLY 1
@@ -1464,63 +1465,6 @@ void tnx_core(void) {
              (unsigned long long)g_stuck_2);
 }
 
-void tnx_probe_2(void) {
-    uintptr_t bs = tnx_bs();
-    void *vt = NULL;
-    float ax = 0.0f;
-    float ay = 0.0f;
-    float bx = 0.0f;
-    float by = 0.0f;
-    float cs = 0.0f;
-    float sn = 0.0f;
-    uint32_t mode = 0;
-    unsigned long long vtRva = 0;
-
-    tnx_scan();
-
-    if (!bs) return;
-
-    if (g_probe_logs_2 < 1) {
-        g_probe_logs_2++;
-
-        if (tnx_read_ptr(bs, &vt) && (uintptr_t)vt > g_base) {
-            vtRva = (unsigned long long)((uintptr_t)vt - g_base);
-        }
-
-        TNX_LOGX("bs live scene=%p bs=%p ctrl=%p classRva=%#llx - the one-shot waits for a live "
-                 "scene now, so the class word is read from the object the dodge really uses and not "
-                 "from a null pointer, which is what the previous run printed as scene=0x0 and "
-                 "classRva=0; updateMovement cannot be hooked on this target - a scan of every "
-                 "eight-byte word of __DATA_CONST and __DATA found no slot pointing at it and inline "
-                 "patching is not supported - so the BattleScreen object is the scene this file "
-                 "already resolves and the joystick is searched in its window by the v173 scanner. "
-                 "The class word 0xfe9d00 is the identity the earlier note names",
-                 (void *)g_scene_object, (void *)bs, (void *)tnx_controller(), vtRva);
-    }
-
-    if (g_own_logs_7 < 20 && (g_ticks_3 % 60) == 0) {
-        g_own_logs_7++;
-
-        TNX_LOGX("own check ownElem=%p ownFrom=%s - the same object the dodge reads its position "
-                 "from, printed next to the element lines so the two own sources in the log can be "
-                 "told apart instead of being read as a disagreement",
-                 (void *)g_own_elem, g_own_from_3);
-    }
-
-    if (g_probe_logs_2 < 22 && (g_ticks_3 % 60) == 0) {
-        g_probe_logs_2++;
-
-        if (!tnx_joy_read(bs, &ax, &ay, &bx, &by, &mode, &cs, &sn)) return;
-
-        TNX_LOGX("joyprobe bs=%p ax=%+.4f ay=%+.4f bx=%+.4f by=%+.4f mode=%u cos=%+.4f sin=%+.4f "
-                 "- read only, nothing is written in this build; move the stick by hand and if these "
-                 "move and mode reads 2 or 3 this is the joystick, otherwise this class keeps the "
-                 "stick elsewhere and the window diff below is the way to it",
-                 (void *)bs, (double)ax, (double)ay, (double)bx, (double)by, mode, (double)cs,
-                 (double)sn);
-    }
-}
-
 static int tnx_key_c(int n) {
     if (n <= 1) return 0;
     if (n <= 2) return 1;
@@ -2482,9 +2426,9 @@ int tnx_valid_point(float x, float y) {
 }
 
 int tnx_walk_into_bullet(float px, float py, float dirX, float dirY, float travel) {
-    float pvx = dirX * TNX_PLAYER_SPEED;
-    float pvy = dirY * TNX_PLAYER_SPEED;
-    float horizon = travel / TNX_PLAYER_SPEED;
+    float pvx = dirX * (float)tnx_hero_speed();
+    float pvy = dirY * (float)tnx_hero_speed();
+    float horizon = travel / (float)tnx_hero_speed();
     int i;
 
     for (i = 0; i < g_seg_count; i++) {
@@ -2632,29 +2576,6 @@ int tnx_best(float px, float py, float *tx, float *ty) {
     return found;
 }
 
-int tnx_write(float dirX, float dirY) {
-    uintptr_t bs = tnx_bs();
-    float len = sqrtf(dirX * dirX + dirY * dirY);
-    float nx = 0.0f;
-    float ny = 0.0f;
-    int32_t two = 2;
-
-    if (len < 0.001f) return 0;
-    if (!bs) return 0;
-
-    nx = dirX / len * TNX_JOY_SCALE;
-    ny = dirY / len * TNX_JOY_SCALE;
-
-    if (!tnx_write_f32(bs + TNX_BS_AX, nx)) return 0;
-    if (!tnx_write_f32(bs + TNX_BS_AY, ny)) return 0;
-    if (!tnx_write_f32(bs + TNX_BS_BX, nx)) return 0;
-    if (!tnx_write_f32(bs + TNX_BS_BY, ny)) return 0;
-
-    tnx_write_bytes(bs + TNX_BS_MODE, &two, sizeof(two));
-
-    return 1;
-}
-
 static float tnx_js_clear(float px, float py, float mvx, float mvy) {
     float best = 1.0e9f;
     int i = 0;
@@ -2726,7 +2647,7 @@ int tnx_freest(float px, float py, float *tx, float *ty) {
     int i = 0;
     int n = TNX_JS_DODGE ? TNX_DIR_COUNT : TNX_FREEST_ANGLES;
     float radius = TNX_JS_DODGE ? TNX_REACH : TNX_STEP_2;
-    float speed = TNX_PLAYER_SPEED;
+    float speed = (float)tnx_hero_speed();
     float nowClear = tnx_js_clear(px, py, 0.0f, 0.0f);
     float bestScore = -1.0e18f;
     float bestEta = 0.0f;

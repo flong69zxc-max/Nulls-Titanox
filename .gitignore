@@ -9,3 +9,5 @@ derived/
 *.o
 *.a
 *.log
+tools/rework_report.md
+tools/rework_report.json

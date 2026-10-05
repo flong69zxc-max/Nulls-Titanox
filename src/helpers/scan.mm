@@ -2289,62 +2289,6 @@ uintptr_t tnx_own_obj(void) {
     return 0;
 }
 
-void tnx_setter(int32_t vx, int32_t vy) {
-    uintptr_t fn = tnx_entry_2(TNX_SETPRED4_RVA);
-    uintptr_t own = tnx_own_obj();
-    int32_t alive = 0;
-
-    g_setter_called = 0;
-
-    if (!TNX_ACT_SETTER) return;
-    if (!fn || !own) return;
-    if (!tnx_read_i32(own + TNX_GATE_X_OFF, &g_own_before_x)) return;
-    if (!tnx_read_i32(own + TNX_GATE_Y_OFF, &g_own_before_y)) return;
-    if (!tnx_read_i32(own + TNX_OWN_ALIVE_OFF, &alive)) return;
-
-    g_own_obj = own;
-
-    ((void (*)(void *, int, int, int))fn)((void *)own, vx, vy, TNX_SETFLAG);
-
-    g_setter_called = 1;
-
-    TNX_LOGX("setter own=%p x=%d y=%d flag=%d in10c was=%d in110 was=%d alive140=%d - this is the "
-             "exact call the engine makes for itself at %#llx, where it passes the getOwnCharacter "
-             "result and the clamped stick pair; the receiver is read the same way here (%#llx then its "
-             "+%#llx) and never guessed, and the pair is never (0,0) because the apply path has to see a "
-             "movement and not a release",
-             (void *)own, vx, vy, TNX_SETFLAG, g_own_before_x, g_own_before_y, alive,
-             (unsigned long long)0x79de14ULL, (unsigned long long)TNX_OWN_OFF,
-             (unsigned long long)TNX_OWN_INNER_OFF);
-}
-
-void tnx_elem_write(uintptr_t element, int32_t vx, int32_t vy) {
-    int32_t was = 0;
-
-    g_elem_called = 0;
-
-    if (!TNX_ACT_ELEM) return;
-    if (!element) return;
-    if (!tnx_read_i32(element + TNX_OBJ_X_OFF, &g_elem_x0)) return;
-    if (!tnx_read_i32(element + TNX_OBJ_Y_OFF, &g_elem_y0)) return;
-
-    g_elem = element;
-    was = g_elem_x0;
-
-    if (!tnx_write_bytes(element + TNX_OBJ_X_OFF, &vx, sizeof(vx))) return;
-    if (!tnx_write_bytes(element + TNX_OBJ_Y_OFF, &vy, sizeof(vy))) return;
-
-    g_elem_called = 1;
-
-    TNX_LOGX("elemwrite elem=%p x=%d y=%d was=(%d,%d) - the int pair at +%#llx/+%#llx of the walked "
-             "element is written directly and read back a whole second later, because the v123 probe read "
-             "through four frames and a server that reconciles on a 50 ms cadence would still look "
-             "successful there; the difference between a local shadow and an authoritative position is "
-             "exactly whether the pair is still ours a second later",
-             (void *)element, vx, vy, was, g_elem_y0, (unsigned long long)TNX_OBJ_X_OFF,
-             (unsigned long long)TNX_OBJ_Y_OFF);
-}
-
 int tnx_mode(void) {
     int32_t mode = -1;
 

@@ -11,12 +11,14 @@ Titanox_FILES = $(wildcard src/core/*.mm)
 Titanox_FILES += $(wildcard src/utils/*.mm)
 Titanox_FILES += $(wildcard src/helpers/*.mm)
 Titanox_FILES += $(wildcard src/features/*.mm)
+Titanox_FILES += $(wildcard src/data/*.mm)
 Titanox_FILES += $(wildcard src/*.mm)
 Titanox_FILES += $(TITANOX)/brk_hook/Hook/hook.c
 Titanox_FILES += $(TITANOX)/brk_hook/Hook/mach_excServer.c
 
 COMMON_INCLUDES = \
 	-Isrc \
+	-Isrc/data \
 	-Iinclude \
 	-I$(TITANOX) \
 	-I$(TITANOX)/libtitanox \

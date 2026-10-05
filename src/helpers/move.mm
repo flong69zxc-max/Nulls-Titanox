@@ -1630,6 +1630,7 @@ void tnx_drag(int engaged, int haveOwn, int32_t ownX, int32_t ownY, float dirX, 
 }
 
 void tnx_stick(int engaged, float dirX, float dirY) {
+    if (!TNX_V245_STICK) return;
     uintptr_t ctrl = tnx_controller();
     int32_t wx = 0;
     int32_t wy = 0;

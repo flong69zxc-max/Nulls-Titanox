@@ -165,7 +165,8 @@
 #define TNX_HUMAN 1
 #define TNX_EPS 1.0f
 #define TNX_LOGS_7 8
-#define TNX_DRAG 1
+#define TNX_DRAG 0
+#define TNX_V245_STICK 0
 #define TNX_RETIRE 1
 #define TNX_DRAG_MAG 600.0f
 #define TNX_ALIGN 0.5f
@@ -182,7 +183,7 @@
 #define TNX_MIN_SEGS 4
 #define TNX_LOGS_6 8
 #define TNX_JOY_MAG 600.0f
-#define TNX_TEAM_FILTER 1
+#define TNX_TEAM_FILTER 0
 #define TNX_STUCK_FRAMES 30
 #define TNX_WALL_HIT 9000.0f
 #define TNX_THREAT_RANGE 2800.0f

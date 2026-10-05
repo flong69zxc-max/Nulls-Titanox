@@ -778,6 +778,7 @@ BOOL tnx_query_region(uintptr_t address,
     }
 
     if (result != KERN_SUCCESS || size == 0) return NO;
+    if ((uintptr_t)regionAddress > address) return NO;
     if ((uintptr_t)regionAddress + (uintptr_t)size <= address) return NO;
 
     if (protection) *protection = info.protection;

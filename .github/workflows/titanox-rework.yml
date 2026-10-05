@@ -1,4 +1,4 @@
-name: Titanox rework 1
+name: Titanox rework
 
 on:
   workflow_dispatch:
@@ -110,8 +110,8 @@ jobs:
           set -euo pipefail
           args="--version ${VERSION}"
           if [ "${APPLY}" = "true" ]; then args="${args} --apply"; fi
-          python3 tools/titanox_rework_1.py ${args}
-          python3 tools/titanox_verify_1.py
+          python3 tools/titanox_rework.py ${args}
+          python3 tools/titanox_verify.py
 
       - name: Build
         run: |
@@ -165,9 +165,9 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: titanox_rework_1_report
+          name: rework_report
           path: |
-            tools/titanox_rework_1_report.md
-            tools/titanox_rework_1_report.json
+            tools/rework_report.md
+            tools/rework_report.json
           if-no-files-found: warn
           compression-level: 1

@@ -3300,97 +3300,38 @@ static int tnx_bounds_try(uintptr_t receiver, int32_t *wOut, int32_t *hOut) {
 }
 
 int tnx_ctrl_bounds(uintptr_t base, int32_t *wOut, int32_t *hOut) {
-    uintptr_t hop = 0;
-
     if (!base) return 0;
+    if (!tnx_pointer_plausible(base)) return 0;
     if (!tnx_callable(TNX_BOUNDS_RVA)) return 0;
 
-    if (tnx_bounds_try(base, wOut, hOut)) return 1;
-
-    hop = tnx_hop(base, NULL);
-
-    if (!tnx_bounds_try(hop, wOut, hOut)) return 0;
-
-    return 1;
+    return tnx_bounds_try(base, wOut, hOut);
 }
 
 uintptr_t tnx_controller(void) {
-    static uintptr_t cached = 0;
-    uintptr_t battleFn = tnx_entry_2(TNX_GETBATTLE_RVA);
-    void *obj = NULL;
-    void *raw = NULL;
-    uintptr_t cand[5] = { 0, 0, 0, 0, 0 };
-    uintptr_t scene = 0;
     uintptr_t client = tnx_client();
-    uintptr_t win = 0;
-    int32_t sw = 0;
-    int32_t sh = 0;
-    int ok = 0;
-    int hit = -1;
+    int32_t cw = 0;
+    int32_t ch = 0;
 
-    if (cached) {
-        int32_t cw = 0;
-        int32_t ch = 0;
+    if (client && tnx_ctrl_bounds(client, &cw, &ch)) {
+        g_ctrl_pick = 1;
 
-        if (tnx_ctrl_bounds(cached, &cw, &ch)) return cached;
-
-        cached = 0;
-    }
-
-    if (battleFn) {
-        obj = ((void *(*)(void))battleFn)();
-
-        if (obj && tnx_pointer_plausible((uintptr_t)obj) &&
-            tnx_addr_readable((uintptr_t)obj, 0x1000)) {
-            scene = (uintptr_t)obj;
-        }
-    }
-
-    cand[0] = scene;
-    cand[1] = client;
-    cand[2] = (uintptr_t)g_scene_object;
-
-    if (g_base && tnx_read_ptr(g_base + TNX_BATTLE_RVA, &raw)) cand[3] = (uintptr_t)raw;
-
-    cand[4] = tnx_own_obj();
-
-    for (int i = 0; i < 5; i++) {
-        if (!tnx_pointer_plausible(cand[i])) continue;
-
-        ok = tnx_ctrl_bounds(cand[i], &sw, &sh);
-
-        if (ok) {
-            hit = i;
-
-            break;
-        }
-    }
-
-    if (hit >= 0) win = cand[hit];
-
-    if (!g_ctrl_logs) {
-        g_ctrl_logs = 1;
-
-        TNX_LOGX("controller scene=%p client=%p sceneObj=%p battle=%p own=%p hit=%d bounds=(%d,%d) "
-                 "pick=%p - the receiver the prediction and the clamp need is hop(controller), so "
-                 "the controller is the object the map accessor resolves on, not the object the "
-                 "engine reads its input manager from: the engine hands setClientPredictionMoveTo "
-                 "the hop of its own update screen and takes the input manager off another object "
-                 "entirely, so the two are not interchangeable",
-                 (void *)scene, (void *)client, (void *)g_scene_object, (void *)cand[3],
-                 (void *)cand[4], hit, sw, sh, (void *)win);
-    }
-
-    if (hit >= 0) {
-        g_ctrl_pick = hit + 1;
-        cached = win;
-
-        return win;
+        return client;
     }
 
     g_ctrl_pick = 0;
 
-    return client ? client : scene;
+    if (!g_ctrl_logs) {
+        g_ctrl_logs = 1;
+
+        TNX_LOGX("controller client=%p resolved=0 bounds=(%d,%d) - the logic client is [scene+0x28], "
+                 "the object the engine reaches through a hop of its own update screen before "
+                 "setClientPredictionMoveTo, and it is the same object the map accessor resolves on "
+                 "and the same one the element container walks, so a miss here means the scene "
+                 "pointer is stale rather than that the object is wrong",
+                 (void *)client, cw, ch);
+    }
+
+    return client;
 }
 
 void tnx_watch(int32_t ownX, int32_t ownY) {

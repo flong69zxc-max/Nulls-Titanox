@@ -3661,6 +3661,8 @@ uint64_t tnx_rend_delta(void) {
 }
 
 void tnx_state(void) {
+    g_mgr = (uintptr_t)tnx_manager();
+
     tnx_logf("state joystick=%p writes=%llu took=%llu escapes=%llu lookahead=%llu appliedW=%llu "
              "appliedLive=%llu appliedStale=%llu rage=%llu flees=%llu deadRep=%llu clamped=%llu qDrain=%llu qMax=%llu qNow=%llu qStuck=%llu qMask=%#llx dragW=%llu dragLive=%llu mateTurn=%llu mateStuck=%llu keep=%llu engage=%llu hseed=%llu clearEval=%llu stickOnly=%llu reentry=%llu rSkip=%llu uSkip=%llu U1orig=%p U2orig=%p upd=%llu updMove=%llu ticks=%llu updD=%llu rendD=%llu gateNow=%d decUs=%llu maxUs=%llu slow=%llu diagMax=%llu g70w=%llu g70h=%llu dropS=%llu dropF=%llu dropB=%llu spd=(%.0f..%.0f) "
              "dead=%llu denied=%llu "
@@ -3775,6 +3777,9 @@ void tnx_state(void) {
                  (unsigned)enState[0], enMode[0], (unsigned)enState[1], enMode[1], seen,
                  (unsigned long long)TNX_JOYSTATE_OFF);
     }
+
+    tnx_sd_log();
+
 }
 
 uint64_t tnx_word_2(uintptr_t address) {

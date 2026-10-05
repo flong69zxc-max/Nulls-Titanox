@@ -144,5 +144,6 @@ void tnx_stick(int engaged, float dirX, float dirY);
 void tnx_route(int engaged);
 void tnx_threats(void);
 int tnx_body_blocked(float x, float y, float ownX, float ownY);
+uintptr_t tnx_client(void);
 
 #endif

@@ -4,12 +4,12 @@
 #define TNX_DODGE_PROJ_ONLY 1
 #endif
 
-static int tnx_dodge_is_proj(void *obj) {
+static int tnx_dodge_is_proj(uintptr_t obj) {
     void *vt = NULL;
     intptr_t cls = 0;
 
     if (!obj) return 0;
-    if (!tnx_read_ptr((uintptr_t)obj, &vt) || !vt) return 0;
+    if (!tnx_read_ptr(obj, &vt) || !vt) return 0;
 
     cls = (intptr_t)((uintptr_t)vt - g_base);
 

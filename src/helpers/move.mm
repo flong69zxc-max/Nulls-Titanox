@@ -10,6 +10,7 @@
 
 #ifndef TNX_STICK_RAW_WRITE
 #define TNX_STICK_RAW_WRITE 1
+#define TNX_PRED_SPAN 0x118
 #endif
 
 uint32_t g_token_2 = 0;
@@ -354,7 +355,8 @@ static int tnx_pred_ok(uintptr_t pred) {
 
     if (!pred) return 0;
     if ((pred & 7) != 0) return 0;
-    if (!tnx_addr_readable(pred, 0x120)) return 0;
+    if (!tnx_addr_readable(pred, TNX_PRED_SPAN)) return 0;
+    if (!tnx_addr_writable(pred, TNX_PRED_SPAN)) return 0;
     if (!tnx_read_ptr(pred, &vtRaw)) return 0;
 
     vt = (uintptr_t)vtRaw;

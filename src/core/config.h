@@ -413,4 +413,12 @@
 #define TNX_ADV_STEP 50.0f
 #define TNX_ADV_MIN 4
 
+#define TNX_SIDE_MARGIN 0.15f
+#define TNX_LEARN_W 140.0f
+#define TNX_SKIP_UNSAFE 1
+#define TNX_BLACK_SPEED_TOL 60.0f
+#define TNX_BLACK_RADIUS_TOL 40.0f
+#define TNX_NEAR_MULT 1.5f
+#define TNX_NO_THREAT_TICKS 30
+
 #endif

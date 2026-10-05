@@ -3285,7 +3285,9 @@ uintptr_t tnx_controller(void) {
     if (((uintptr_t)obj & 7) != 0) return 0;
     if (!tnx_addr_readable((uintptr_t)obj, 0x1000)) return 0;
 
-    return (uintptr_t)obj;
+    (void)obj;
+
+    return tnx_client();
 }
 
 void tnx_watch(int32_t ownX, int32_t ownY) {

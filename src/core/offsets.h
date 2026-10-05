@@ -183,7 +183,14 @@
 #define TNX_CTRL_GATE_OFF 0xf9eULL
 #define TNX_CTRL_APPLIED_X_OFF 0xfccULL
 #define TNX_CTRL_APPLIED_Y_OFF 0xfd0ULL
-#define TNX_BATTLE_RVA 0x1123b48ULL
+#define TNX_BATTLE_RVA 0x1123e58ULL
+#define TNX_RVA_BATTLE_SCREEN_GET 0x008ce9d8ULL
+#define TNX_RVA_BATTLE_ISSTATE 0x008ce9e8ULL
+#define TNX_RVA_BATTLE_SET_FLAG70 0x008ce9e0ULL
+#define TNX_RVA_SCREEN_SLOT 0x008cdfd4ULL
+#define TNX_OFF_BATTLE_STATE 0x50ULL
+#define TNX_OFF_BATTLE_SCREEN 0x48ULL
+#define TNX_OFF_CTRL_TOUCH_GATE 0xf7fULL
 #define TNX_GATE_BYTE_OFF 0x7aULL
 #define TNX_CLIENT_OFF 0x28ULL
 #define TNX_CLIENT_POS_X_OFF 0x80ULL
@@ -372,3 +379,48 @@ int rt_is_code(image_ref_t img, uintptr_t target);
 #endif
 
 #endif
+
+#define TNX_NATIVE_RENDER 1
+#define TNX_EGL_IMPORTS 0
+#define TNX_GL_IMPORTS 0
+#define TNX_METAL_IMPORTS 15
+#define TNX_CLASS_METAL_VIEW "MetalView"
+#define TNX_CLASS_NULL_VIEW "NullView"
+#define TNX_CLASS_APP_CONTROLLER "AppController"
+#define TNX_CLASS_GAME_VIEW_CONTROLLER "GameViewController"
+#define TNX_SEL_NEXT_DRAWABLE "nextDrawable"
+#define TNX_SEL_PRESENT_DRAWABLE "presentDrawable:afterMinimumDuration:"
+#define TNX_SEL_COMMAND_BUFFER "commandBuffer"
+#define TNX_SEL_COMMAND_QUEUE "newCommandQueue"
+#define TNX_SEL_NEW_BUFFER "newBufferWithLength:options:"
+#define TNX_SEL_PIPELINE "newRenderPipelineStateWithDescriptor:error:"
+#define TNX_SEL_SET_PIPELINE "setRenderPipelineState:"
+#define TNX_SEL_SET_VERTEX_FN "setVertexFunction:"
+#define TNX_SEL_SET_FRAGMENT_FN "setFragmentFunction:"
+#define TNX_SEL_COLOR_ATTACHMENTS "colorAttachments"
+#define TNX_SEL_SET_LOAD_ACTION "setLoadAction:"
+#define TNX_SEL_SET_STORE_ACTION "setStoreAction:"
+#define TNX_SEL_SET_CLEAR_COLOR "setClearColor:"
+#define TNX_SEL_SET_VIEWPORT "setViewport:"
+#define TNX_SEL_DRAW_PRIMITIVES "drawPrimitives:vertexStart:vertexCount:instanceCount:"
+#define TNX_SEL_END_ENCODING "endEncoding"
+#define TNX_SEL_WAIT_COMPLETED "waitUntilCompleted"
+#define TNX_SEL_SET_DRAWABLE_SIZE "setDrawableSize:"
+#define TNX_SEL_RESIZE_DRAWABLE "resizeDrawable:"
+#define TNX_SEL_METAL_LAYER "metalLayer"
+#define TNX_SEL_DEVICE "device"
+#define TNX_RVA_NAME_CTOR 0x00b6b94cULL
+#define TNX_RVA_NAME_GET 0x00b6ba5cULL
+#define TNX_RVA_METALVIEW_GETTER 0x00b5dbe0ULL
+#define TNX_RVA_MOVIECLIP_NAME_REF 0x00b5f0a8ULL
+#define TNX_NAME_OFF_HASH 0x04ULL
+#define TNX_NAME_OFF_BUFFER 0x08ULL
+#define TNX_NAME_OFF_SSO 0x20ULL
+#define TNX_NAME_OFF_LEN 0x37ULL
+#define TNX_NAME_OFF_VALID 0x40ULL
+#define TNX_STR_MOVIECLIP_RVA 0x00e94bacULL
+#define TNX_STR_STAGE_RVA 0x00ed0946ULL
+#define TNX_STR_SPRITE_RVA 0x00ebabffULL
+#define TNX_STR_TEXTFIELD_RVA 0x00e804a2ULL
+#define TNX_FNV_OFFSET 0x811c9dc5UL
+#define TNX_FNV_PRIME 0x01000193UL

@@ -887,7 +887,6 @@ int tnx_drive(void) {
     uintptr_t ctrl = tnx_controller();
 
     tnx_measure();
-    tnx_snapshot_3();
     int32_t ownX = 0;
     int32_t ownY = 0;
     float dx = 0.0f;
@@ -3528,7 +3527,6 @@ void tnx_autododge_v48(void) {
         if (slot == 0) tnx_core();
         else if (slot == 1) tnx_dump();
         else if (slot == 2) tnx_census();
-        else tnx_probe_2();
 
         g_diag_us = tnx_us() - diag0;
 
@@ -3659,7 +3657,6 @@ void tnx_autododge_v48(void) {
         }
     }
 
-    tnx_frame_window();
     tnx_frame();
 
     g_ticks_3++;
@@ -3809,7 +3806,6 @@ void tnx_autododge_v48(void) {
             if (resolved) {
                 int loud = (changed || managerChanged || !g_probe_done_2);
 
-                tnx_probe_3((uintptr_t)resolved, g_scene_object, loud);
 
                 if (loud) tnx_discriminate((uintptr_t)resolved);
             } else {
@@ -4275,14 +4271,12 @@ void tnx_autododge_v48(void) {
 
         tnx_phase("mode-write");
 
-        tnx_receiver_probe();
 
         if (!g_active_2) {
             g_dir_x = escapeX;
             g_dir_y = escapeY;
         }
 
-        tnx_watch(ownX, ownY);
 
         g_engaged_frame = 1;
 

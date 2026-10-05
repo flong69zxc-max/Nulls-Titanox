@@ -118,7 +118,7 @@ uintptr_t tnx_map_object(void) {
 
     if (!g_scene_object) return 0;
     if (!tnx_read_ptr((uintptr_t)g_scene_object + TNX_MAP_BASE_OFF, &client) || !client) return 0;
-    if (!tnx_read_ptr((uintptr_t)client + TNX_MODE_TILEMAP_OFF, &map) || !map) return 0;
+    if (!tnx_read_ptr((uintptr_t)client + TNX_MAP_PTR_OFF, &map) || !map) return 0;
 
     return (uintptr_t)map;
 }
@@ -163,7 +163,7 @@ int tnx_cell(int tx, int ty, int *proj, int *move) {
 
     if (!g_tiles) return 0;
     if (tx < 0 || ty < 0 || tx >= g_w || ty >= g_h) return 0;
-    if (!tnx_read_ptr(g_tiles + (uintptr_t)(ty * g_w + tx) * (uintptr_t)sizeof(void *), &tile)) return 0;
+    if (!tnx_read_ptr(g_tiles + (uintptr_t)(ty * g_w + tx) * (uintptr_t)TNX_TILE_PTR_STRIDE, &tile)) return 0;
 
     if (!tile) {
         *proj = 0;
@@ -173,8 +173,8 @@ int tnx_cell(int tx, int ty, int *proj, int *move) {
     }
 
     if (!tnx_read_ptr((uintptr_t)tile, &type) || !type) return 0;
-    if (!tnx_read_bytes((uintptr_t)type + TNX_TYPE_MOVE_OFF, &bm, 1)) return 0;
-    if (!tnx_read_bytes((uintptr_t)type + TNX_TYPE_PROJ_OFF, &bp, 1)) return 0;
+    if (!tnx_read_bytes((uintptr_t)type + TNX_TILE_TYPE_MOVE_OFF, &bm, 1)) return 0;
+    if (!tnx_read_bytes((uintptr_t)type + TNX_TILE_TYPE_PROJ_OFF, &bp, 1)) return 0;
 
     *proj = (int)bp;
     *move = (int)bm;
@@ -217,14 +217,14 @@ int tnx_build_2(void) {
 
     if (!g_scene_object) return 0;
     if (!tnx_read_ptr((uintptr_t)g_scene_object + TNX_MAP_BASE_OFF, &client) || !client) return 0;
-    if (!tnx_read_ptr((uintptr_t)client + TNX_MODE_TILEMAP_OFF, &tileMap) || !tileMap) return 0;
-    if (!tnx_read_i32((uintptr_t)tileMap + TNX_TILEMAP_WIDTH_OFF, &w)) return 0;
-    if (!tnx_read_i32((uintptr_t)tileMap + TNX_TILEMAP_HEIGHT_OFF, &h)) return 0;
+    if (!tnx_read_ptr((uintptr_t)client + TNX_MAP_PTR_OFF, &tileMap) || !tileMap) return 0;
+    if (!tnx_read_i32((uintptr_t)tileMap + TNX_MAP_WIDTH_OFF, &w)) return 0;
+    if (!tnx_read_i32((uintptr_t)tileMap + TNX_MAP_HEIGHT_OFF, &h)) return 0;
     if (w < TNX_MAP_MIN || h < TNX_MAP_MIN) return 0;
     if (w > TNX_GRID_MAX || h > TNX_GRID_MAX) return 0;
-    if (!tnx_read_i32((uintptr_t)tileMap + TNX_COUNT_OFF_3, &count)) return 0;
+    if (!tnx_read_i32((uintptr_t)tileMap + TNX_MAP_COUNT_OFF, &count)) return 0;
     if (count < w * h) return 0;
-    if (!tnx_read_ptr((uintptr_t)tileMap + TNX_TILES_OFF, &tiles) || !tiles) return 0;
+    if (!tnx_read_ptr((uintptr_t)tileMap + TNX_MAP_TILES_OFF, &tiles) || !tiles) return 0;
 
     cells = w * h;
 
@@ -236,11 +236,11 @@ int tnx_build_2(void) {
         uint8_t bm = 0;
         uint8_t bp = 0;
 
-        if (!tnx_read_ptr((uintptr_t)tiles + (uintptr_t)i * (uintptr_t)sizeof(void *), &tile) || !tile) continue;
+        if (!tnx_read_ptr((uintptr_t)tiles + (uintptr_t)i * (uintptr_t)TNX_TILE_PTR_STRIDE, &tile) || !tile) continue;
         if (!tnx_read_ptr((uintptr_t)tile, &type) || !type) continue;
         if ((uintptr_t)type >= g_base && (uintptr_t)type < g_base + TNX_IMAGE_SPAN) img++;
-        if (!tnx_read_bytes((uintptr_t)type + TNX_TYPE_MOVE_OFF, &bm, 1)) continue;
-        if (!tnx_read_bytes((uintptr_t)type + TNX_TYPE_PROJ_OFF, &bp, 1)) continue;
+        if (!tnx_read_bytes((uintptr_t)type + TNX_TILE_TYPE_MOVE_OFF, &bm, 1)) continue;
+        if (!tnx_read_bytes((uintptr_t)type + TNX_TILE_TYPE_PROJ_OFF, &bp, 1)) continue;
 
         if (bm) move++;
         if (bp) {

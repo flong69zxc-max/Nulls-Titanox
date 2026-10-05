@@ -18,6 +18,5 @@
 #include "features/walls.h"
 #include "features/sign.h"
 #include "features/sd.h"
-#include "features/modmenu.h"
 
 #endif

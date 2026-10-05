@@ -58,7 +58,7 @@
 #define TNX_WALK_MAX 60.0f
 #define TNX_WALK_EMA 0.12f
 #define TNX_ENGAGE_2 40.0f
-#define TNX_MOMENTUM 55.0f
+#define TNX_MOMENTUM 0.0f
 #define TNX_KEEP_BAND_2 120.0f
 #define TNX_HORIZON 1.0f
 #define TNX_BODY_W 1.0f
@@ -174,14 +174,14 @@
 #define TNX_WALL_CLIP 1
 #define TNX_TILE_SIZE 300.0f
 #define TNX_GRID_MAX 128
-#define TNX_REBUILD_TICKS 120
-#define TNX_MIN_PASSES 30
+#define TNX_REBUILD_TICKS 60
+#define TNX_MIN_PASSES 3
 #define TNX_MIN_CLIP 60.0f
-#define TNX_MIN_IMG_PCT 50
+#define TNX_MIN_IMG_PCT 0
 #define TNX_MAX_SOLID_PCT 60
 #define TNX_MAX_CLIP_PCT 70
 #define TNX_MIN_SEGS 4
-#define TNX_LOGS_6 8
+#define TNX_LOGS_6 24
 #define TNX_JOY_MAG 600.0f
 #define TNX_TEAM_FILTER 0
 #define TNX_STUCK_FRAMES 30
@@ -203,7 +203,7 @@
 #define TNX_PROJ_RADIUS 60.0f
 #define TNX_DEFAULT_RANGE 9000.0f
 #define TNX_MAX_LIFETIME_MS 5000
-#define TNX_EXTEND_DEFAULT 300.0f
+#define TNX_EXTEND_DEFAULT 60.0f
 #define TNX_PLAYER_SPEED 720.0f
 #define TNX_JOY_SCALE 100.0f
 #define TNX_SEG_MAX 32
@@ -228,8 +228,8 @@
 #define TNX_SHOT_GID 2000000
 #define TNX_SHOT_GID_MAX 3000000
 #define TNX_MIN_USABLE_2 1
-#define TNX_HOLD_TICKS 2
-#define TNX_STEP_3 120.0f
+#define TNX_HOLD_TICKS 1
+#define TNX_STEP_3 60.0f
 #define TNX_PAIR_ONLY 0
 #define TNX_STICK_ONLY 0
 #define TNX_DRIVE_FROM_UPDATE 0
@@ -400,8 +400,8 @@
 #define TNX_VIEW_RANGE 3400.0f
 #define TNX_SHOT_LOGS 16
 
-#define TNX_COMMIT_MS 80.0f
-#define TNX_COMMIT_GROW 0.25f
+#define TNX_COMMIT_MS 0.0f
+#define TNX_COMMIT_GROW 0.0f
 #define TNX_DODGE_DIST 400.0f
 #define TNX_DIST_FACTOR 0.6f
 #define TNX_MULTI_THREAT 2
@@ -419,7 +419,7 @@
 #define TNX_BLACK_SPEED_TOL 60.0f
 #define TNX_BLACK_RADIUS_TOL 40.0f
 #define TNX_NEAR_MULT 1.5f
-#define TNX_NO_THREAT_TICKS 30
+#define TNX_NO_THREAT_TICKS 6
 
 #define TNX_HOWTO_LOGS 12
 
@@ -439,5 +439,15 @@
 #define TNX_HP_TICKS 30
 #define TNX_HP_LOGS 8
 #define TNX_HP_CAND 12
+
+#define TNX_SNAP 1
+#define TNX_SNAP_MAG 600.0f
+#define TNX_SNAP_LOGS 8
+#define TNX_SIDE_FLIP 1
+#define TNX_SIDE_STALE 45
+#define TNX_CAL_TICKS 6
+#define TNX_CAL_MISS 40
+#define TNX_WALL_LOGS 8
+#define TNX_TEAM_LOGS 6
 
 #endif

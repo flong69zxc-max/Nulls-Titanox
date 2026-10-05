@@ -756,8 +756,19 @@ int32_t g_last_x_2 = 0;
 
 int32_t g_last_y_2 = 0;
 
+static uintptr_t tnx_pair_base(void) {
+    uintptr_t battle = 0;
+    uintptr_t alt = tnx_controller();
+
+    if (g_base && tnx_read_ptr(g_base + TNX_BATTLE_RVA, &battle) && battle) {
+        if (tnx_hop(battle, NULL)) return battle;
+    }
+
+    return alt;
+}
+
 void tnx_paircal(void) {
-    uintptr_t ctrl = tnx_controller();
+    uintptr_t ctrl = tnx_pair_base();
     int32_t ownX = 0;
     int32_t ownY = 0;
     int32_t px = 0;
@@ -808,4 +819,4 @@ void tnx_paircal(void) {
              px, py, (double)pLen, dx, dy, (double)mLen, (double)dot, (double)angPair, (double)angMove,
              (double)(angMove - angPair), ownX, ownY,
              (unsigned long long)TNX_CTRL_RAW_X_OFF);
-}
+}\n

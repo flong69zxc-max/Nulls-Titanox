@@ -322,18 +322,28 @@ int tnx_battle_gate(int scene) {
     return g_battle_active;
 }
 
+extern int g_enq_stop_1;
+
+extern int g_enq_stop_2;
+
+extern int g_enq_stop_3;
+
 void tnx_log_heartbeat(void) {
     int sigDelta = g_modesig_hits - g_hb_sig_prev;
 
     tnx_logf("hb tick=%llu battle=%d reason=%s slot=%p state=%d objFired=%llu "
              "modesigHits=%d sigLast=%d chainHits=%d classesPass=%d g_mode=%p src=%s mgr=%p "
-             "count=%d fb=%d liveObjs=%d liveTeams=%d parked=%d",
+             "count=%d fb=%d liveObjs=%d liveTeams=%d parked=%d drop=16 ctrlPick=%d "
+             "clampMax=(%d,%d) enqOk=%llu enqBlocked=%llu predCalls=%llu",
              (unsigned long long)g_ticks_4,
              g_battle_active, g_battle_reason, (void *)g_site, g_state_2,
              (unsigned long long)tnx_object_dispatches(), g_modesig_hits, sigDelta,
              g_chain_hits, g_class_pass,
              (void *)g_scene_object, g_mode_source_2, (void *)g_players_object, g_manager_count,
-             g_fb_on, g_live_objs, g_live_teams, g_idle_on);
+             g_fb_on, g_live_objs, g_live_teams, g_idle_on, g_ctrl_pick,
+             (int)g_max_x, (int)g_max_y, (unsigned long long)g_enq_ok,
+             (unsigned long long)(g_enq_stop_1 + g_enq_stop_2 + g_enq_stop_3),
+             (unsigned long long)g_pred_calls);
 
     tnx_log_census();
 

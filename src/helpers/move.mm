@@ -189,9 +189,9 @@ void *tnx_msg_alloc(void) {
         return ((void *(*)(size_t))got)((size_t)TNX_MSG_SIZE);
     }
 
-    g_alloc_how = "malloc";
+    g_alloc_how = "none";
 
-    return malloc((size_t)TNX_MSG_SIZE);
+    return NULL;
 }
 
 void *tnx_q_last(void) {

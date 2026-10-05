@@ -221,7 +221,7 @@
 #define TNX_BUCKET_TICKS 60
 #define TNX_RAW_STICK 0
 #define TNX_RAW_SWAP 0
-#define TNX_PRED_SET 0
+#define TNX_PRED_SET 1
 #define TNX_PRED_FLAG 1
 #define TNX_LOGS_3 12
 #define TNX_PLAYER_GID 1000000

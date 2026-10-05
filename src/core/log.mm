@@ -36,6 +36,7 @@ const char *g_log_keep[64] = {
     "drive ", "engage running", "controller ", "predSet",
     "predMiss", "clamp ",
     "shot ", "crit ",
+    "stat ", "advise ",
     NULL
 };
 
@@ -108,7 +109,7 @@ void tnx_log_roll(void) {
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     NSDateFormatter *df = NULL;
     NSString *ts = nil;
-    NSString *fmt = @"[%@] === drop=25 log rolled over #%llu, the earlier window is dropped here ===\n";
+    NSString *fmt = @"[%@] === drop=26 log rolled over #%llu, the earlier window is dropped here ===\n";
     NSString *marker = nil;
 
     if (g_log) {
@@ -346,7 +347,7 @@ void tnx_log_heartbeat(void) {
 
     tnx_logf("hb tick=%llu battle=%d reason=%s slot=%p state=%d objFired=%llu "
              "modesigHits=%d sigLast=%d chainHits=%d classesPass=%d g_mode=%p src=%s mgr=%p "
-             "count=%d fb=%d liveObjs=%d liveTeams=%d parked=%d drop=25 ctrlPick=%d "
+             "count=%d fb=%d liveObjs=%d liveTeams=%d parked=%d drop=26 ctrlPick=%d "
              "clampMax=(%d,%d) enqOk=%llu enqBlocked=%llu predCalls=%llu",
              (unsigned long long)g_ticks_4,
              g_battle_active, g_battle_reason, (void *)g_site, g_state_2,

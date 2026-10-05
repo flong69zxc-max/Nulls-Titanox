@@ -9,7 +9,7 @@
 #endif
 
 #ifndef TNX_STICK_RAW_WRITE
-#define TNX_STICK_RAW_WRITE 0
+#define TNX_STICK_RAW_WRITE 1
 #endif
 
 uint32_t g_token_2 = 0;
@@ -296,9 +296,7 @@ int tnx_predict(int32_t x, int32_t y) {
         if (g_pred_logs < TNX_PRED_LOGS) {
             g_pred_logs++;
 
-            TNX_LOGX("predict battle=%p sent=(%d,%d) read=(%d,%d) took=%llu miss=%llu - the pair "
-                     "the call writes is read straight back, so a call landing on the wrong object "
-                     "cannot look like a working prediction", battle, x, y, px, py,
+            TNX_LOGX("predict battle=%p sent=(%d,%d) read=(%d,%d) took=%llu miss=%llu", battle, x, y, px, py,
                      (unsigned long long)g_pred_took, (unsigned long long)g_pred_miss);
         }
     }
@@ -309,11 +307,7 @@ int tnx_predict(int32_t x, int32_t y) {
     if (g_predict_logs < TNX_PREDICT_LOGS) {
         g_predict_logs++;
 
-        TNX_LOGX("predict call=%llu battle=%p target=(%d,%d) fn=%p - the same object whose "
-                 "+%#llx holds the input manager, so this is the battle client the manager belongs "
-                 "to and the prediction is stored on it; the reference script calls exactly this "
-                 "with its new position on every frame it moves, which is the step that makes the "
-                 "game walk the character instead of carrying it",
+        TNX_LOGX("predict call=%llu battle=%p target=(%d,%d) fn=%p",
                  (unsigned long long)g_pred_calls, battle, x, y, (void *)g_addr_setprediction,
                  (unsigned long long)TNX_MGR_OFF);
     }
@@ -353,7 +347,7 @@ int tnx_pending(int want, uint64_t *mask) {
 }
 
 int tnx_enqueue(int x, int y) {
-    /* plain ClientInput x/y at +0xc/+0x10, then addInput - the engine does the rest */
+
     uintptr_t ctorFn = tnx_entry_2(TNX_MSGCTOR_RVA);
     uintptr_t inputFn = tnx_entry_2(TNX_ADDINPUT_RVA);
     int32_t vx = x;
@@ -401,9 +395,7 @@ int tnx_enqueue(int x, int y) {
     mgr = tnx_manager();
 
     if (!mgr) {
-        TNX_LOGX("queuePush aborted x=%d y=%d msg=%p alloc=%s - battle+%#llx is null, so the "
-                 "message was built but not pushed and is left allocated on purpose rather than freed "
-                 "through a pointer the queue never saw",
+        TNX_LOGX("queuePush aborted x=%d y=%d msg=%p alloc=%s",
                  x, y, msg, g_alloc_how, (unsigned long long)TNX_MGR_OFF);
 
         return 0;
@@ -436,14 +428,7 @@ int tnx_enqueue(int x, int y) {
     g_push_frame = g_ticks_3;
 
     if (g_push_logs < TNX_PUSH_LOGS || (g_push_logs % 64) == 0) {
-        TNX_LOGX("queuePush tick=%llu type=%d x=%d y=%d msg=%p mgr=%p alloc=%s seqBefore=%d "
-                 "seqAfter=%d qBefore=%d qAfter=%d qLast=%p - the movement message of this build is the one "
-                 "the battle update builds at %#llx: size %#x, the ctor %#llx stores the type at +%#llx with "
-                 "w1 loaded with %d and not 2, the clamped pair goes to +%#llx as two int32, and the push is "
-                 "addInput %#llx with the manager read as %#llx+%#llx; the allocator used here is %s because "
-                 "the stub %#llx opens with adrp and the callable gate refuses it, so the GOT slot %#llx is "
-                 "read and malloc is the last resort, and manager+%#llx is the sequence counter addInput "
-                 "increments, so seqAfter above seqBefore is proof the call ran at all",
+        TNX_LOGX("queuePush tick=%llu type=%d x=%d y=%d msg=%p mgr=%p alloc=%s seqBefore=%d seqAfter=%d qBefore=%d qAfter=%d qLast=%p",
                  (unsigned long long)g_tick_2, TNX_TYPE_MOVE, x, y, msg, mgr, g_alloc_how,
                  g_seq_before, g_seq_after, g_q_before_2, g_q_after_2, g_q_last,
                  (unsigned long long)0x79de88ULL, (unsigned)TNX_MSG_SIZE,
@@ -564,13 +549,7 @@ void tnx_probe(void) {
         tnx_read_ptr((uintptr_t)container + TNX_CLIENT_OFF, &hop);
     }
 
-    TNX_LOGX("probe scene=%p own=%p hop0=%p hop1=%p raw+%#llx=(%d,%d) dirty+%#llx=%d "
-             "alive+%#llx=%d id+%#llx=%d gate+%#llx=%d applied+%#llx=(%d,%d) ownFlag+%#llx=%d "
-             "ownMode+%#llx=%d - %#llx reads the pair it clamps out of the object it is handed in x0 "
-             "as 'ldr w0,[x19,+%#llx]; ldr w1,[x19,+%#llx]' and the same object answers %#llx, so this "
-             "line says whether the scene the walk already holds is that object: with a non-zero pair "
-             "here and applied+%#llx moving while the raw pair is held, the input of this battle is a "
-             "pair on the scene and not a message",
+    TNX_LOGX("probe scene=%p own=%p hop0=%p hop1=%p raw+%#llx=(%d,%d) dirty+%#llx=%d alive+%#llx=%d id+%#llx=%d gate+%#llx=%d applied+%#llx=(%d,%d) ownFlag+%#llx=%d ownMode+%#llx=%d",
              (void *)ctrl, (void *)own, container, hop, (unsigned long long)TNX_CTRL_RAW_X_OFF,
              raw_x, raw_y, (unsigned long long)TNX_CTRL_DIRTY_OFF, dirty,
              (unsigned long long)TNX_CTRL_ALIVE_OFF, alive,
@@ -608,9 +587,7 @@ int tnx_resolve_own(const tnx_obj_t *objects, int usable, int *indexOut,
         if (g_score_logs_2 < 8) {
             g_score_logs_2++;
 
-            TNX_LOGX("score enter arr=%p n=%d g_arr=%p g_n=%d tick_arr=%p tick_n=%d - own is "
-                     "looked for on the tick snapshot and never on the live globals, so this line "
-                     "and the walk line must print the same arr and n in the same tick",
+            TNX_LOGX("score enter arr=%p n=%d g_arr=%p g_n=%d tick_arr=%p tick_n=%d",
                      (void *)g_tick_array, g_tick_count, (void *)g_players_array,
                      g_players_count, (void *)g_tick_array, g_tick_count);
         }
@@ -657,10 +634,7 @@ int tnx_resolve_own(const tnx_obj_t *objects, int usable, int *indexOut,
             if (indexOut) *indexOut = i;
             if (fromOut) *fromOut = "v129-gid";
 
-            TNX_LOGX("own-gid idx=%d gid=%d pos=(%d,%d) wantGid=%d slotIdx=%d - own is named by the "
-                     "id the slot element of hop0 carries, which is the engine's own index and not a "
-                     "distance, because the interpolated pair is not a position when the mode never "
-                     "reaches the lerp branch",
+            TNX_LOGX("own-gid idx=%d gid=%d pos=(%d,%d) wantGid=%d slotIdx=%d",
                      i, objects[i].gid, objects[i].x, objects[i].y, wantGid, g_own_slot_idx);
 
             return 1;
@@ -672,10 +646,7 @@ int tnx_resolve_own(const tnx_obj_t *objects, int usable, int *indexOut,
     hasWit = tnx_witness(&wx, &wy) && !(wx == 0 && wy == 0);
 
     if (!hasWit) {
-        TNX_LOGX("own-none usable=%d wantGid=%d slotOwn=%p slotIdx=%d interpUnusable=1 - neither "
-                 "the slot element nor an element with the slot id is in the collected list and the "
-                 "interpolated pair is (0,0), so own is left unresolved instead of being taken from a "
-                 "witness that this mode never updates",
+        TNX_LOGX("own-none usable=%d wantGid=%d slotOwn=%p slotIdx=%d interpUnusable=1",
                  usable, wantGid, (void *)slotOwn, g_own_slot_idx);
 
         return 0;
@@ -708,10 +679,7 @@ int tnx_resolve_own(const tnx_obj_t *objects, int usable, int *indexOut,
     if (g_own_logs_3 < TNX_OWN_LOGS_2) {
         g_own_logs_3++;
 
-        TNX_LOGX("own-near idx=%d gid=%d pos=(%d,%d) interp=(%d,%d) d2=%lld wantGid=%d - own is "
-                 "the list element closest to the pair read from client+%#llx/+%#llx only after the "
-                 "slot element and the slot id both missed, and this line is the one that has to be "
-                 "watched for a wrong gid being chosen",
+        TNX_LOGX("own-near idx=%d gid=%d pos=(%d,%d) interp=(%d,%d) d2=%lld wantGid=%d",
                  best, objects[best].gid, objects[best].x, objects[best].y, wx, wy, (long long)bestD,
                  wantGid, (unsigned long long)TNX_CLIENT_POS_X_OFF,
                  (unsigned long long)TNX_CLIENT_POS_Y_OFF);
@@ -771,10 +739,7 @@ void tnx_actuate(void) {
             tnx_read_i32(own + TNX_MODE_OFF, &modeBefore);
         }
 
-        TNX_LOGX("setter-before x0=%p [x0+%#llx]=%d [x0+%#llx]=%d [x0+%#llx]=%d [x0+%#llx]=%d "
-                 "mode+%#llx=%d call=%d - the receiver of %#llx is the own object and never the scene, "
-                 "because %#llx stores on the getOwnCharacter result and the reader reads the same "
-                 "object, so a call with the scene as x0 would store where nothing reads",
+        TNX_LOGX("setter-before x0=%p [x0+%#llx]=%d [x0+%#llx]=%d [x0+%#llx]=%d [x0+%#llx]=%d mode+%#llx=%d call=%d",
                  (void *)own, (unsigned long long)TNX_INPUT_X_OFF, pairBeforeX,
                  (unsigned long long)TNX_INPUT_Y_OFF, pairBeforeY,
                  (unsigned long long)TNX_INPUT_K_OFF, pairBeforeK,
@@ -793,11 +758,7 @@ void tnx_actuate(void) {
         tnx_read_i32(own + TNX_GATE_FLAG_OFF, &gateAfter);
         tnx_read_i32(own + TNX_MODE_OFF, &modeAfter);
 
-        TNX_LOGX("setter-after x0=%p [x0+%#llx]=%d [x0+%#llx]=%d [x0+%#llx]=%d [x0+%#llx]=%d "
-                 "mode=%d wrote=%d want=(%d,%d) - the four words are read on the very receiver the call "
-                 "was made on, so this line names where the store landed; +%#llx=1 means the producer "
-                 "half of the pair %#llx consumes is in place, and a word that reads back as want=(%d,%d) "
-                 "is the only proof the call ran at all",
+        TNX_LOGX("setter-after x0=%p [x0+%#llx]=%d [x0+%#llx]=%d [x0+%#llx]=%d [x0+%#llx]=%d mode=%d wrote=%d want=(%d,%d)",
                  (void *)own, (unsigned long long)TNX_INPUT_X_OFF, pairAfterX,
                  (unsigned long long)TNX_INPUT_Y_OFF, pairAfterY,
                  (unsigned long long)TNX_INPUT_K_OFF, pairAfterK,
@@ -832,20 +793,11 @@ void tnx_actuate(void) {
         if (g_actuate_logs < 8) {
             g_actuate_logs++;
 
-            TNX_LOGX("actuate own=%p ownFrom=%s ownClassRva=%#llx valid=%d - this is the same "
-                     "value the gate line and the dodge block read, so own here and ownFound there "
-                     "have to point at one element in one tick or the split is still open",
+            TNX_LOGX("actuate own=%p ownFrom=%s ownClassRva=%#llx valid=%d",
                      (void *)own, g_own_from_3, (unsigned long long)ownCls, own ? 1 : 0);
         }
 
-        TNX_LOGX("actuate mode=%d call=%d doWrite=%d doSetter=%d own=%p ownFrom=%s "
-                 "ownClassRva=%#llx scene=%p wrote raw+%#llx "
-                 "(%d,%d) over (%d,%d) on the scene, setterRan=%d, wouldCall %#llx(own,%d,%d,%d) from "
-                 "the witness "
-                 "(%d,%d) - mode %d is chain-only and never reaches this line, %d writes only the raw "
-                 "pair the battle update clamps for itself, %d calls only the setter and %d does both; "
-                 "the pair is %d,%d and not the old %d,%d, because the message carries clamp(position + "
-                 "step) and a step of hundreds is a teleport the server has no reason to accept",
+        TNX_LOGX("actuate mode=%d call=%d doWrite=%d doSetter=%d own=%p ownFrom=%s ownClassRva=%#llx scene=%p wrote raw+%#llx (%d,%d) over (%d,%d) on the scene, setterRan=%d, wouldCall %#llx(own,%d,%d,%d) from the witness (%d,%d)",
                  TNX_MODE, g_calls, doWrite, doSetter, (void *)own, g_own_from_3,
                  (unsigned long long)ownCls, (void *)ctrl,
                  (unsigned long long)TNX_CTRL_RAW_X_OFF, raw_x, raw_y, raw_keep_x, raw_keep_y,
@@ -895,12 +847,7 @@ void tnx_witness_line(int plus) {
     if (moved) g_moves++;
     if (elemMoved) g_elem_moves++;
 
-    TNX_LOGX("witness +%d interp=(%d,%d) was=(%d,%d) moved=%d moves=%lld | elem=%p pos=(%d,%d) "
-             "was=(%d,%d) elemMoved=%d elemMoves=%lld | scene raw+%#llx=(%d,%d) applied+%#llx=(%d,%d) "
-             "- neither the interp pair at client+%#llx/+%#llx nor the walked element pair is written "
-             "by this build any more, so a moved=1 here is the engine moving own after the injected "
-             "pair and not a read back of our own store, which is the mistake the v127 direct element "
-             "write made when it scored moved=1 on the very pair it had just written",
+    TNX_LOGX("witness +%d interp=(%d,%d) was=(%d,%d) moved=%d moves=%lld | elem=%p pos=(%d,%d) was=(%d,%d) elemMoved=%d elemMoves=%lld | scene raw+%#llx=(%d,%d) applied+%#llx=(%d,%d)",
              plus, wx, wy, g_wit_x0, g_wit_y0, moved, (long long)g_moves,
              (void *)g_wit_elem, ex, ey, g_wit_x1, g_wit_y1, elemMoved,
              (long long)g_elem_moves, (unsigned long long)TNX_CTRL_RAW_X_OFF, raw_x, raw_y,
@@ -977,13 +924,7 @@ void tnx_frame_window(void) {
 
         tnx_read_i32(tnx_client() + TNX_INPUT_K_OFF, &ck);
 
-        TNX_LOGX("frame tick=%llu frame=+%llu qcount=%d mode=%d gate=%d inner=%d in10c=%d(%s) "
-                 "in110=%d(%s) in114=%d client80=%d client84=%d - the window carries the mode id because "
-                 "three different causes leave the same empty readback: the queue not being consumed, "
-                 "the queue consumed while the +%#llx branch is gated because mode != %d, and the branch "
-                 "running while the apply path never touches +%#llx; gate=1 means mode == %d and "
-                 "(*[mode+%#llx])+%#x == 1; client80/client84 is the pair %#llx writes on the client at "
-                 "client+%#llx, which is the interpolation output and the sharpest position signal here",
+        TNX_LOGX("frame tick=%llu frame=+%llu qcount=%d mode=%d gate=%d inner=%d in10c=%d(%s) in110=%d(%s) in114=%d client80=%d client84=%d",
                  (unsigned long long)g_tick_2, (unsigned long long)d, tnx_queue_count(NULL),
                  tnx_mode(), tnx_gate(), tnx_inner(), inX, tnx_state_x(inX),
                  inY, tnx_state_y(inY), ck, cx, cy, (unsigned long long)TNX_READER_RVA,
@@ -1009,9 +950,7 @@ void tnx_window(int plus) {
         tnx_read_i32(tnx_client() + TNX_INPUT_K_OFF, &inK);
     }
 
-    TNX_LOGX("window tick=+%d qcount=%d in10c=%d in110=%d in114=%d want=(%d,%d) match=%d - the "
-             "window is one line every %d ticks instead of one per tick, because the queue drain was "
-             "already shown to be steady and the per tick line only spent the log budget",
+    TNX_LOGX("window tick=+%d qcount=%d in10c=%d in110=%d in114=%d want=(%d,%d) match=%d",
              plus, tnx_queue_count(NULL), inX, inY, inK, g_enq_x, g_enq_y,
              tnx_fields(), TNX_FRAME_EVERY);
 }
@@ -1043,10 +982,7 @@ void tnx_test(const tnx_obj_t *objects, int usable, int ownIndex) {
             g_test_state_2 = 4;
             g_tested_2 = 1;
 
-            TNX_LOGX("notest mode_max=%d saw7=%d gateSeen=%d gate=%d - the build ran without the "
-                     "enqueue test and this line is the mode census: with saw7=0 the +%#llx branch is "
-                     "unreachable in this battle because the mode id never reaches %d, so the whole "
-                     "+0xac pipeline, %#llx and the client pair write belong to that mode alone",
+            TNX_LOGX("notest mode_max=%d saw7=%d gateSeen=%d gate=%d",
                      g_mode_max, g_mode_seen7, g_gate_seen, tnx_gate(),
                      (unsigned long long)TNX_READER_RVA, TNX_MODE_TARGET,
                      (unsigned long long)0xa26890ULL);
@@ -1085,11 +1021,7 @@ void tnx_test(const tnx_obj_t *objects, int usable, int ownIndex) {
             g_test_state_2 = 4;
             g_tested_2 = 1;
 
-            TNX_LOGX("chain-only mode=%d own=%p ownFromWitness=(%d,%d) elem=%p elemPos=(%d,%d) "
-                     "slotOwn=%p slotIdx=%d slotGid=%d expect=%d queue=%d - nothing is written in this "
-                     "mode on purpose: the chain check has to answer whether the scene the walk holds "
-                     "is the object whose +%#llx the battle update clamps, and whether own is an "
-                     "element of hop0, before any write is allowed to look like a result",
+            TNX_LOGX("chain-only mode=%d own=%p ownFromWitness=(%d,%d) elem=%p elemPos=(%d,%d) slotOwn=%p slotIdx=%d slotGid=%d expect=%d queue=%d",
                      TNX_MODE, (void *)tnx_own_obj(), g_wit_x0, g_wit_y0,
                      (void *)g_wit_elem, g_wit_x1, g_wit_y1, (void *)g_own_slot,
                      g_own_slot_idx, g_own_slot_gid, TNX_OWN_EXPECT_GID,
@@ -1132,12 +1064,7 @@ void tnx_test(const tnx_obj_t *objects, int usable, int ownIndex) {
         tnx_probe();
         tnx_actuate();
 
-        TNX_LOGX("test mode=%d pair=(%d,%d) enum dest=(%d,%d) enq=%d seq %d->%d q %d->%d qLast=%p "
-                 "| write=%d setter=%d scene=%p rawOff=%#llx setterFn=%#llx own=%p | witnesses elem=%p "
-                 "(%d,%d) interp=(%d,%d) - the three channels are no longer fired together: %d only "
-                 "writes the raw pair on the scene, %d only calls the setter on own, %d does both and "
-                 "also pushes the nearby destination so the queue is measured apart from the two local "
-                 "channels, and the walked element is written by none of them",
+        TNX_LOGX("test mode=%d pair=(%d,%d) enum dest=(%d,%d) enq=%d seq %d->%d q %d->%d qLast=%p | write=%d setter=%d scene=%p rawOff=%#llx setterFn=%#llx own=%p | witnesses elem=%p (%d,%d) interp=(%d,%d)",
                  TNX_MODE, g_enq_x, g_enq_y, g_wit_x0, g_wit_y0,
                  g_wit_x0 + TNX_DX, g_wit_y0 + TNX_DY,
                  g_enq_ok, g_seq_before, g_seq_after, g_q_before_2, g_q_after_2,
@@ -1177,11 +1104,7 @@ void tnx_test(const tnx_obj_t *objects, int usable, int ownIndex) {
 
         qnow = tnx_queue_count(NULL);
 
-        TNX_LOGX("test short before=(%d,%d) after=(%d,%d) qAfter=%d qNow=%d readback=%d atTick=%d - "
-                 "the walked element is a hop2 brawler in this build, so before and after here are its "
-                 "int pair at +%#llx/+%#llx and not a roster slot: the hop2 list is adopted because the "
-                 "roster wins on ids while every one of its positions is (0,0), and an id is worth "
-                 "nothing to a dodge that needs coordinates",
+        TNX_LOGX("test short before=(%d,%d) after=(%d,%d) qAfter=%d qNow=%d readback=%d atTick=%d",
                  g_test_before_x, g_test_before_y, objects[ownIndex].x, objects[ownIndex].y,
                  g_q_after, qnow, g_readback, g_readback_tick,
                  (unsigned long long)TNX_OBJ_X_OFF, (unsigned long long)TNX_OBJ_Y_OFF);
@@ -1222,12 +1145,7 @@ void tnx_test(const tnx_obj_t *objects, int usable, int ownIndex) {
         verdict = "real";
     }
 
-    TNX_LOGX("summary calls=%d haveWit=%d interp=(%d,%d) interpMoves=%lld elem=%p elemPos=(%d,%d) "
-             "elemMoves=%lld ownFlag=%d ownPair=(%d,%d) - the verdict below is computed from the walked "
-             "element, but that element is not written anywhere in this build, so it can only change if "
-             "the engine moved own; the interp pair at client+%#llx/+%#llx is the second witness and "
-             "the own pair is the field the setter %#llx stores, which the engine is expected to "
-             "rewrite on its own events and therefore never to survive a whole second",
+    TNX_LOGX("summary calls=%d haveWit=%d interp=(%d,%d) interpMoves=%lld elem=%p elemPos=(%d,%d) elemMoves=%lld ownFlag=%d ownPair=(%d,%d)",
              g_calls, g_have_wit, g_wit_x0, g_wit_y0, (long long)g_moves,
              (void *)g_wit_elem, g_wit_x1, g_wit_y1, (long long)g_elem_moves,
              g_own_flag, g_own_held_x, g_own_held_y,
@@ -1235,13 +1153,7 @@ void tnx_test(const tnx_obj_t *objects, int usable, int ownIndex) {
              (unsigned long long)TNX_CLIENT_POS_Y_OFF,
              (unsigned long long)TNX_SETPRED4_RVA);
 
-    TNX_LOGX("test long before=(%d,%d) after2=(%d,%d) moved=%d kept=%d verdict=%s mode_max=%d "
-             "saw7=%d gateSeen=%d gate1=%d gate2=%d qBefore=%d "
-             "qAfter=%d qNow=%d readback=%d atTick=%d rowCount=%d - verdict=real means the pair survived "
-             "the long check, client-only means it was read back and then reset, enqueue-ok-not-consumed "
-             "means the count grew while the pair never appeared, enqueue-failed means the count never "
-             "grew so addInput or the manager is wrong, readback-unreadable means the scene words could "
-             "not be read at all",
+    TNX_LOGX("test long before=(%d,%d) after2=(%d,%d) moved=%d kept=%d verdict=%s mode_max=%d saw7=%d gateSeen=%d gate1=%d gate2=%d qBefore=%d qAfter=%d qNow=%d readback=%d atTick=%d rowCount=%d",
              g_test_before_x, g_test_before_y, x, y, g_moved_2, g_kept_2, verdict,
              g_mode_max, g_mode_seen7, g_gate_seen,
              (tnx_mode() == TNX_MODE_TARGET) ? 1 : 0, (tnx_inner() == 1) ? 1 : 0,
@@ -1280,12 +1192,7 @@ void tnx_queue_line(void) {
         tnx_read_i32(tnx_client() + TNX_INPUT_K_OFF, &inK);
     }
 
-    TNX_LOGX("queue tick=%llu count=%d mode=%d gate=%d mgr=%p sceneState=%d flags=%llu ac=%d "
-             "in10c=%d in110=%d in114=%d resetSentinel=%d - the count is printed every tick because the "
-             "verdict of this run is whether it rises after the push and falls after the consumer ran, "
-             "and the reader at %#llx and addInput at %#llx have no data slot so no hook can count them; "
-             "in110=-1 marks the reset path, while the apply target of the consumer is a larger object "
-             "because %#x is written on it",
+    TNX_LOGX("queue tick=%llu count=%d mode=%d gate=%d mgr=%p sceneState=%d flags=%llu ac=%d in10c=%d in110=%d in114=%d resetSentinel=%d",
              (unsigned long long)g_tick_2, count, tnx_mode(), tnx_gate(), (void *)mgr,
              g_prev_state, (unsigned long long)g_enqueues, tnx_read_flag(), inX, inY, inK,
              (inY == -1) ? 1 : 0, (unsigned long long)TNX_READER_RVA,
@@ -1316,8 +1223,7 @@ void tnx_hop2(void) {
 
         g_hop2_logs++;
 
-        TNX_LOGX("hop2 tick=%llu at=%p array=null - [[scene+%#llx]+%#llx] resolves but its list is "
-                 "not filled yet, so the wait runs to %d ticks before hop1 is trusted again",
+        TNX_LOGX("hop2 tick=%llu at=%p array=null",
                  (unsigned long long)g_tick_2, inner,
                  (unsigned long long)TNX_HOP2_OWNER_OFF,
                  (unsigned long long)TNX_HOP2_INNER_OFF, TNX_HOP2_WAIT);
@@ -1332,9 +1238,7 @@ void tnx_hop2(void) {
         if (tnx_read_ptr((uintptr_t)e0, &vt0) && vt0) vt0Rva = (uintptr_t)vt0 - g_base;
     }
 
-    TNX_LOGX("hop2 FILLED tick=%llu container=%p count=%d elem0=%p elem0vt=%#llx - this is the list "
-             "that carried a team split in the earlier run, so the walk should be retargeted here and "
-             "[[scene+%#llx]+%#llx] kept as the hop, with hop1 only a log fallback",
+    TNX_LOGX("hop2 FILLED tick=%llu container=%p count=%d elem0=%p elem0vt=%#llx",
              (unsigned long long)g_tick_2, inner, count, e0, (unsigned long long)vt0Rva,
              (unsigned long long)TNX_HOP2_OWNER_OFF,
              (unsigned long long)TNX_HOP2_INNER_OFF);
@@ -1416,15 +1320,7 @@ void tnx_input_release(void) {
     if (g_neutral_logs < 4) {
         g_neutral_logs++;
 
-        TNX_LOGX("input released: the record held (%d,%d,%d) and the previous frame was the last one this "
-                 "build wrote, so it is zeroed now - a release at the start of a frame that is about to "
-                 "write would blank the input and write it again in the same tick, and that flicker is "
-                 "what the character would show instead of its walk. An input left behind would keep the "
-                 "character walking on its own, and the release only runs at all when this build was "
-                 "the writer, so the player's own stick is never touched"
-                 "writing it, so it is set to zero once - an input left behind would keep the character "
-                 "walking on its own. The release only runs when this build wrote the record, so the "
-                 "player's own stick is never touched", held[0], held[1], held[2]);
+        TNX_LOGX("input released: the record held (%d,%d,%d) and the previous frame was the last one this build wrote, so it is zeroed now", held[0], held[1], held[2]);
     }
 }
 
@@ -1598,12 +1494,17 @@ void tnx_stick(int engaged, float dirX, float dirY) {
     int want = 0;
     int haveOwn = 0;
     float len = 0.0f;
+    uintptr_t rawXOff = 0;
+    uintptr_t rawYOff = 0;
 
     haveOwn = tnx_own(&ownX, &ownY);
     tnx_drag(engaged, haveOwn, ownX, ownY, dirX, dirY);
 
     if (!TNX_RAW_STICK) return;
     if (!tnx_ctrl_ok(ctrl)) return;
+
+    rawXOff = TNX_RAW_SWAP ? TNX_CTRL_RAW_Y_OFF : TNX_CTRL_RAW_X_OFF;
+    rawYOff = TNX_RAW_SWAP ? TNX_CTRL_RAW_X_OFF : TNX_CTRL_RAW_Y_OFF;
 
     if (engaged) {
         len = sqrtf(dirX * dirX + dirY * dirY);
@@ -1644,8 +1545,8 @@ void tnx_stick(int engaged, float dirX, float dirY) {
 
         g_stick_hold = 0;
 
-        if (relCtrl && tnx_read_i32(relCtrl + TNX_CTRL_RAW_X_OFF, &relX) &&
-            tnx_read_i32(relCtrl + TNX_CTRL_RAW_Y_OFF, &relY)) {
+        if (relCtrl && tnx_read_i32(relCtrl + rawXOff, &relX) &&
+            tnx_read_i32(relCtrl + rawYOff, &relY)) {
             if (relX != g_stick_x || relY != g_stick_y) return;
         }
     }
@@ -1654,9 +1555,9 @@ void tnx_stick(int engaged, float dirX, float dirY) {
     g_stick_y = wy;
 
     if (TNX_STICK_RAW_WRITE && !(TNX_RETIRE && g_accepted && !TNX_JS_STICK)) {
-        if (!tnx_write_bytes(ctrl + TNX_CTRL_RAW_X_OFF, &wx, sizeof(wx))) return;
+        if (!tnx_write_bytes(ctrl + rawXOff, &wx, sizeof(wx))) return;
 
-        tnx_write_bytes(ctrl + TNX_CTRL_RAW_Y_OFF, &wy, sizeof(wy));
+        tnx_write_bytes(ctrl + rawYOff, &wy, sizeof(wy));
     }
 
     {
@@ -1668,13 +1569,10 @@ void tnx_stick(int engaged, float dirX, float dirY) {
 
             stickLogs++;
 
-            tnx_read_i32(ctrl + TNX_CTRL_RAW_X_OFF, &backX);
-            tnx_read_i32(ctrl + TNX_CTRL_RAW_Y_OFF, &backY);
+            tnx_read_i32(ctrl + rawXOff, &backX);
+            tnx_read_i32(ctrl + rawYOff, &backY);
 
-            TNX_LOGX("stick write #%d ctrl=%p want=(%d,%d) back=(%d,%d) kept=%d engaged=%d - the "
-                     "pair is the one the touch handler writes and the battle update reads, and the "
-                     "read back is the only proof the store landed; a kept=0 means the engine rewrote "
-                     "the pair between our store and the read, which names a different writer",
+            TNX_LOGX("stick write #%d ctrl=%p want=(%d,%d) back=(%d,%d) kept=%d engaged=%d",
                      stickLogs, (void *)ctrl, wx, wy, backX, backY,
                      (backX == wx && backY == wy) ? 1 : 0, want);
         }
@@ -1739,18 +1637,7 @@ void tnx_route(int engaged) {
     g_last_own_x = ownX;
     g_last_own_y = ownY;
 
-    TNX_LOGX("route engaged=%d stick=(%d,%d) back=(%d,%d) applied=(%d,%d) own=(%d,%d) "
-             "movedLastSecond=%d stickSum=(%lld,%lld) stickDir=(%.2f,%.2f) moveDir=(%.2f,%.2f) "
-             "dot=%+.2f aligned=%s engagedTicks=%d queue=%d - back is the pair this build wrote and "
-             "applied is the pair the ENGINE computes from what it read, so the two together decide the "
-             "animation question: when our pair is non zero, applied follows it and the character "
-             "moves but stands, then the engine is consuming our store and the walk cycle is keyed off "
-             "something else in the same object; when applied stays at whatever the player's own drag "
-             "left behind, the engine is reading the pair only on its own input path and a raw store "
-             "into the field can never animate, which leaves calling the engine's input handler as the "
-             "only route; the dot compares the heading we wrote, summed over the second, with the "
-             "heading the character really travelled in that same second, and engagedTicks says how "
-             "much of that second was ours",
+    TNX_LOGX("route engaged=%d stick=(%d,%d) back=(%d,%d) applied=(%d,%d) own=(%d,%d) movedLastSecond=%d stickSum=(%lld,%lld) stickDir=(%.2f,%.2f) moveDir=(%.2f,%.2f) dot=%+.2f aligned=%s engagedTicks=%d queue=%d",
              engaged, g_stick_x, g_stick_y, backX, backY, appX, appY, ownX, ownY, moved,
              sumX, sumY,
              (double)(sLen > 0.5f ? (float)sumX / sLen : 0.0f),
@@ -1781,10 +1668,7 @@ void tnx_threats(void) {
             verdict = "still";
         }
 
-        TNX_LOGX("threat gid=%d elem=%p at=(%d,%d) prev=(%d,%d) dt=%llu vel=(%.1f,%.1f) team=%d "
-                 "verdict=%s ownTeam=%d armed=%d - one line per tracked projectile with the verdict the "
-                 "threat list gives it, so a list that comes out empty names the filter that emptied it "
-                 "instead of leaving 'no shot survived' to be inferred",
+        TNX_LOGX("threat gid=%d elem=%p at=(%d,%d) prev=(%d,%d) dt=%llu vel=(%.1f,%.1f) team=%d verdict=%s ownTeam=%d armed=%d",
                  p->gid, (void *)p->elem, p->x, p->y, p->px, p->py,
                  (unsigned long long)(p->qtick - p->ptick), (double)vx, (double)vy, p->team, verdict,
                  g_own_team_3, g_own_team_seen);
@@ -1814,11 +1698,7 @@ int tnx_body_blocked(float x, float y, float ownX, float ownY) {
             if (g_body_logs < TNX_BODY_LOGS) {
                 g_body_logs++;
 
-                TNX_LOGX("body in the way body=(%d,%d) mine=%d own=(%d,%d) candidate=(%d,%d) "
-                         "off=%d blocks=%d - a heading whose path runs through another player is "
-                         "refused outright, so the walk cannot be aimed through a teammate; the "
-                         "distance is measured to the segment and not to its end, which is what the "
-                         "test got wrong", (int)px, (int)py, g_pl_mine[i], (int)ownX,
+                TNX_LOGX("body in the way body=(%d,%d) mine=%d own=(%d,%d) candidate=(%d,%d) off=%d blocks=%d", (int)px, (int)py, g_pl_mine[i], (int)ownX,
                          (int)ownY, (int)x, (int)y,
                          (int)tnx_seg_dist(ownX, ownY, x, y, px, py), g_body_blocks);
             }

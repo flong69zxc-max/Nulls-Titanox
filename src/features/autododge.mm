@@ -666,6 +666,10 @@ float g_tti_min = 0.0f;
 
 uint64_t g_crit_took = 0;
 
+float g_shot_speed[TNX_PROJ_MAX];
+
+uint64_t g_shot_logs = 0;
+
 int g_tti_logs = 0;
 
 uint64_t g_engage = 0;
@@ -1386,6 +1390,9 @@ void tnx_build(void) {
 
         if (speed < 1.0f) speed = 1.0f;
 
+        if (speed > g_shot_speed[k]) g_shot_speed[k] = speed;
+        if (g_shot_speed[k] > 1.0f) speed = g_shot_speed[k];
+
         if (g_spd_min < 1.0f || speed < g_spd_min) g_spd_min = speed;
         if (speed > g_spd_max) g_spd_max = speed;
 
@@ -1394,14 +1401,52 @@ void tnx_build(void) {
         if (rem > TNX_DEFAULT_RANGE) rem = TNX_DEFAULT_RANGE;
         if (rem < 1.0f) rem = 1.0f;
 
-        if (g_dodge_have) {
+        {
             float nx = vx / len;
             float ny = vy / len;
-            float toOwn = (g_dodge_px - (float)p->x) * nx + (g_dodge_py - (float)p->y) * ny;
+            float px0 = g_dodge_have ? g_dodge_px : (float)g_own_x;
+            float py0 = g_dodge_have ? g_dodge_py : (float)g_own_y;
+            float rx = (float)p->x - px0;
+            float ry = (float)p->y - py0;
+            float rate = rx * vx + ry * vy;
+            float denom = len * len;
+            float tStar = (denom > 0.5f) ? (-rate / denom) : 0.0f;
+            float cx = rx + vx * tStar;
+            float cy = ry + vy * tStar;
+            float miss = sqrtf(cx * cx + cy * cy);
+            float reach = TNX_PLAYER_RADIUS + TNX_PROJ_RADIUS + TNX_INFLATE;
+            float dist2own = sqrtf(rx * rx + ry * ry);
+            float flightTicks = rem / (speed / 60.0f);
+            float ix = (float)p->x + nx * speed / 60.0f * tStar;
+            float iy = (float)p->y + ny * speed / 60.0f * tStar;
+            int hits = (tStar >= 0.0f && tStar <= flightTicks && miss <= reach) ? 1 : 0;
+            int inView = (dist2own <= TNX_VIEW_RANGE) ? 1 : 0;
+            int keep = (hits || inView) ? 1 : 0;
 
-            if (toOwn < 0.0f) continue;
-            if (toOwn - TNX_OVERSHOOT > rem) continue;
-            if (rem > toOwn + TNX_OVERSHOOT) rem = toOwn + TNX_OVERSHOOT;
+            if (g_shot_logs < TNX_SHOT_LOGS) {
+                g_shot_logs++;
+
+                TNX_LOGX("shot gid=%d dir=(%.2f,%.2f) speed=%.0f eta=%.0fms miss=%.0f hits=%d inView=%d "
+                         "impact=(%.0f,%.0f) own=(%.0f,%.0f) age=%llu - eta is the time from now to the "
+                         "closest approach of this flight to own, miss how far off own that approach "
+                         "passes, impact the world point where that happens, so hits means the line "
+                         "crosses own body while the shot still has flight left, and inView keeps a "
+                         "shot that has already gone past on the books while it is still inside the "
+                         "view range, which is what lets the dodge keep leading a live bullet "
+                         "instead of forgetting it the frame it passes",
+                         p->gid, (double)nx, (double)ny, (double)speed,
+                         (double)(tStar * 1000.0f / 60.0f), (double)miss, hits, inView,
+                         (double)ix, (double)iy, (double)px0, (double)py0,
+                         (unsigned long long)(p->qtick > p->ptick ? p->qtick - p->ptick : 0));
+            }
+
+            if (g_dodge_have) {
+                float toOwn = (px0 - (float)p->x) * nx + (py0 - (float)p->y) * ny;
+
+                if (toOwn < 0.0f && !keep) continue;
+                if (toOwn - TNX_OVERSHOOT > rem) continue;
+                if (toOwn > 0.0f && rem > toOwn + TNX_OVERSHOOT) rem = toOwn + TNX_OVERSHOOT;
+            }
         }
 
         if (TNX_REJECT) {

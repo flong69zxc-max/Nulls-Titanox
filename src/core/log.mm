@@ -7,30 +7,27 @@ FILE *tnx_log_handle(void) {
             NSString *logPath = [paths[0] stringByAppendingPathComponent:@"Titanox.log"];
             g_log = fopen(logPath.UTF8String, "a");
         }
+
+        if (g_log) g_battle_capture = YES;
     }
 
     return g_log;
 }
 
-const char *g_log_drop[67] = {
-    "players", "walk", "hopdump", "teamdump", "container",
-    "membership", "man ", "gid", "coords", "coord", "off",
-    "dodge", "hb", "clip", "ownscan", "chain", "player[",
-    "element", "classdump", "trail", "state", "modeslot", "hooks",
-    "scene", "heap", "fields", "write", "slot", "setprediction",
-    "scan", "route", "modesig", "hop", "battle", "named",
-    "offsets",
-    "", "", "", "", "", "", "", "", "", "",
-    "", "", "", "", "", "", "", "", "", "",
-    "", "", "",
-    "", "", "", "", "", "", "",
+const char *g_log_drop[34] = {
+    "players", "walk", "hopdump", "teamdump", "membership",
+    "man ", "gid", "coords", "coord", "off",
+    "clip", "ownscan", "chain", "player[", "element",
+    "classdump", "trail", "state", "modeslot", "hooks",
+    "scene", "heap", "fields", "write", "slot",
+    "setprediction", "scan", "route", "modesig", "hop",
+    "battle", "named", "offsets",
     NULL
 };
 
-const char *g_log_keep[19] = {
-    "=== ", "plan v", "slot ", "", "hook", "live", "census", "",
-    "publish", "", "", "", "", "", "", "", "",
-    "",
+const char *g_log_keep[8] = {
+    "=== ", "plan v", "slot ", "hook",
+    "live", "census", "publish",
     NULL
 };
 
@@ -49,6 +46,7 @@ int tnx_keep_line(const char *text) {
     if (!text) return 0;
 
     for (i = 0; g_log_keep[i]; i++) {
+        if (!g_log_keep[i][0]) continue;
         if (strncmp(text, g_log_keep[i], strlen(g_log_keep[i])) == 0) {
             g_kept_3++;
 
@@ -57,6 +55,7 @@ int tnx_keep_line(const char *text) {
     }
 
     for (i = 0; g_log_drop[i] && i < 64; i++) {
+        if (!g_log_drop[i][0]) continue;
         if (strncmp(text, g_log_drop[i], strlen(g_log_drop[i])) == 0) {
             g_drop_counts[i]++;
             g_dropped++;
@@ -95,7 +94,7 @@ void tnx_log_roll(void) {
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     NSDateFormatter *df = NULL;
     NSString *ts = nil;
-    NSString *fmt = @"[%@] === v190 log rolled over #%llu, the earlier window is dropped here ===\n";
+    NSString *fmt = @"[%@] === drop=19 log rolled over #%llu, the earlier window is dropped here ===\n";
     NSString *marker = nil;
 
     if (g_log) {
@@ -333,7 +332,7 @@ void tnx_log_heartbeat(void) {
 
     tnx_logf("hb tick=%llu battle=%d reason=%s slot=%p state=%d objFired=%llu "
              "modesigHits=%d sigLast=%d chainHits=%d classesPass=%d g_mode=%p src=%s mgr=%p "
-             "count=%d fb=%d liveObjs=%d liveTeams=%d parked=%d drop=16 ctrlPick=%d "
+             "count=%d fb=%d liveObjs=%d liveTeams=%d parked=%d drop=19 ctrlPick=%d "
              "clampMax=(%d,%d) enqOk=%llu enqBlocked=%llu predCalls=%llu",
              (unsigned long long)g_ticks_4,
              g_battle_active, g_battle_reason, (void *)g_site, g_state_2,

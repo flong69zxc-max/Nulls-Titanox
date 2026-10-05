@@ -392,4 +392,6 @@
 #define TNX_FLOAT_MAX 10000.0f
 #define TNX_TEAM_MAX 8
 
+#define TNX_HOOK_DIAG 0
+
 #endif

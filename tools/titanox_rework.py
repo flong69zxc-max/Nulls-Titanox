@@ -5,16 +5,19 @@ import argparse, csv, io, json, os, re, subprocess, sys, urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, "tools", "data")
-ASSET = "https://raw.githubusercontent.com/tailsjs/brawl-stars-assets/master/%s/csv_logic/%s"
+ASSET = "https://raw.githubusercontent.com/tailsjs/brawl-stars-assets/master/%s/%s/%s"
+
+SUBDIR = {"texts.csv": "localization"}
 VERSION = "69.230"
 
 TABLES = {
     "characters.csv": 400,
     "skills.csv": 600,
     "projectiles_logic.csv": 600,
+    "texts.csv": 5000,
 }
 
-REPORT = {"stage": [], "changed": [], "removed_symbols": [], "removed_defines": [], "candidates": [],
+REPORT = {"stage": [], "changed": [], "removed_symbols": [], "removed_defines": [], "kept_defines": [], "candidates": [],
           "skipped": [], "generated": [], "checks": []}
 
 
@@ -58,7 +61,7 @@ def fetch_tables(apply):
     for name, minrows in TABLES.items():
         p = os.path.join(DATA, name)
         if not os.path.exists(p) or os.path.getsize(p) < 1000:
-            url = ASSET % (VERSION, name)
+            url = ASSET % (VERSION, SUBDIR.get(name, "csv_logic"), name)
             say("data", "fetching %s" % url)
             with urllib.request.urlopen(url, timeout=60) as r:
                 body = r.read()
@@ -96,6 +99,12 @@ def flag(v):
 
 
 def build_heroes():
+    TITLES = {}
+    for r in csv.DictReader(io.open(os.path.join(DATA, "texts.csv"), encoding="utf-8", errors="replace")):
+        k = (r.get("TID") or "").strip()
+        if k:
+            TITLES[k] = (r.get("EN") or "").strip()
+
     P = {r["Name"]: r for r in rows("projectiles_logic.csv")}
     S = {r["Name"]: r for r in rows("skills.csv")}
     CH = rows("characters.csv")
@@ -132,7 +141,9 @@ def build_heroes():
         wp = p or {}
         upp = up or {}
         out.append({
-            "name": h["Name"], "hp": num(h.get("Hitpoints")), "speed": num(h.get("Speed")),
+            "name": h["Name"],
+            "title": (TITLES.get((h.get("TID") or "").strip(), "") or h["Name"]).replace(chr(34), chr(39)).replace(chr(92), "/")[:40],
+            "hp": num(h.get("Hitpoints")), "speed": num(h.get("Speed")),
             "radius": num(h.get("CollisionRadius")),
             "wSpeed": wp.get("speed", -1), "wRadius": wp.get("radius", -1),
             "wCast": (w or {}).get("cast", -1), "wBullets": (w or {}).get("bullets", -1),
@@ -190,6 +201,7 @@ CHARS_H = """#ifndef TNX_CHARS_DATA_H
 
 typedef struct {
     const char *name;
+    const char *title;
     int hp;
     int speed;
     int radius;
@@ -244,11 +256,11 @@ int tnx_hero_melee(int index);
 void tnx_own_identify(int hp_max, int speed_units);
 
 void tnx_hero_report(void);
-
-#endif
 """
 
 CHARS_MM_HEAD = """#include "titanox.h"
+
+#include "data/chars_data.h"
 
 const int g_hero_count = TNX_HERO_COUNT;
 
@@ -379,7 +391,7 @@ void tnx_own_identify(int hp_max, int speed_units) {
              "many characters share that health, so a candidate count of one is an identification "
              "and a large count means health alone cannot tell them apart and the observed speed is "
              "needed to break the tie",
-             hp_max, cand, g_heroes[picked].name,
+             hp_max, cand, g_heroes[picked].title,
              (speed_units > 0) ? speed_units : g_heroes[picked].speed);
 }
 
@@ -422,8 +434,8 @@ def gen_chars(heroes, apply):
         vals = [h[k] for k in ("hp", "speed", "radius", "wSpeed", "wRadius", "wCast", "wBullets",
                               "wBetween", "wSpread", "wCd", "wRecharge", "wCharge", "uSpeed",
                               "uRadius", "uBullets", "uSpread", "uRecharge", "flags")]
-        f = '    { "%s", ' + ", ".join(["%d"] * len(vals)) + " },"
-        body.append(f % tuple([h["name"]] + vals))
+        f = '    { "%s", "%s", ' + ", ".join(["%d"] * len(vals)) + " },"
+        body.append(f % tuple([h["name"], h["title"]] + vals))
     body += ["};", "",
              "#define TNX_HERO_COUNT ((int)(sizeof(g_heroes) / sizeof(g_heroes[0])))", "", "#endif", ""]
     write("src/data/chars_data.h", CHARS_H + "\n".join(body), apply)
@@ -530,24 +542,43 @@ def dead_remove(roots, apply):
             removed.append((path, s))
             write(path, t, apply)
             texts[path] = t
-    return removed
+    return removed, texts
 
 
-def strip_defines(names, apply):
-    got = []
-    for path in [p for p in mm_files() if p.endswith(".h")]:
-        t = read(path)
-        lines = t.split("\n")
-        out = []
-        for line in lines:
-            m = re.match(r"^#define\s+(TNX_[A-Z0-9_]+)", line)
-            if m and m.group(1) in names:
-                got.append("%s (%s)" % (m.group(1), path))
+def macro_refs(texts, name):
+    pat = re.compile(r"\\b" + re.escape(name) + r"\\b")
+    n = 0
+    for path, t in texts.items():
+        for line in t.split("\\n"):
+            if re.match(r"^#define\\s+" + re.escape(name) + r"\\b", line):
                 continue
-            out.append(line)
-        if len(out) != len(lines):
-            write(path, "\n".join(out), apply)
+            n += len(pat.findall(line))
+    return n
+
+
+def strip_defines(names, texts, apply):
+    got = []
+    kept = []
+    for path in sorted(q for q in texts if q.endswith(".h")):
+        t = texts[path]
+        keep = []
+        changed = False
+        for line in t.split("\\n"):
+            m = re.match(r"^#define\\s+(TNX_[A-Z0-9_]+)", line)
+            if m and m.group(1) in names:
+                left = macro_refs(texts, m.group(1))
+                if left > 0:
+                    kept.append("%s (%s, %d references left)" % (m.group(1), path, left))
+                    keep.append(line)
+                    continue
+                got.append("%s (%s)" % (m.group(1), path))
+                changed = True
+                continue
+            keep.append(line)
+        if changed:
+            write(path, "\\n".join(keep), apply)
     REPORT["removed_defines"] = got
+    REPORT["kept_defines"] = kept
     return got
 
 
@@ -586,14 +617,14 @@ COMMON_INCLUDES_ANCHOR = "COMMON_INCLUDES = \\\n\t-Isrc \\"
 
 WIRE = {
     "src/features/autododge.mm": [
-        ('#include "titanox.h"', '#include "titanox.h"\n#include "data/chars.h"'),
+        ('#include "titanox.h"', '#include "titanox.h"\n#include "data/chars_data.h"'),
         ("dirX * TNX_PLAYER_SPEED", "dirX * (float)tnx_own_speed()"),
         ("dirY * TNX_PLAYER_SPEED", "dirY * (float)tnx_own_speed()"),
         ("travel / TNX_PLAYER_SPEED", "travel / (float)tnx_own_speed()"),
         ("float speed = TNX_PLAYER_SPEED;", "float speed = (float)tnx_own_speed();"),
     ],
     "src/features/report.mm": [
-        ('#include "titanox.h"', '#include "titanox.h"\n#include "data/chars.h"'),
+        ('#include "titanox.h"', '#include "titanox.h"\n#include "data/chars_data.h"'),
         ("    if (hpmax <= 0) return;\n", "    if (hpmax <= 0) return;\n\n    tnx_own_identify(hpmax, 0);\n"),
     ],
 }
@@ -636,17 +667,29 @@ def main():
     cand = sorted(set(roots) - EXPLICIT)
     REPORT["candidates"] = cand
 
-    removed = dead_remove(roots, a.apply)
+    removed, texts = dead_remove(roots, a.apply)
     say("deadcode", "removed %d definitions" % len(removed))
     strip_defines(set(["TNX_TEST_ENABLE", "TNX_TEST_X", "TNX_TEST_Y", "TNX_ACT_SETTER", "TNX_ACT_ELEM",
                        "TNX_ACT_LOGS", "TNX_PROBE_LOGS", "TNX_DRAG_MAG", "TNX_ENGAGE_2", "TNX_LOGS_7",
-                       "TNX_MAX_LIFETIME_MS", "TNX_RAW_SWAP", "TNX_STAGE_MAX"]), a.apply)
+                       "TNX_MAX_LIFETIME_MS", "TNX_RAW_SWAP", "TNX_STAGE_MAX"]), texts, a.apply)
+
+    gi = os.path.join(ROOT, ".gitignore")
+    if a.apply:
+        cur = io.open(gi, encoding="utf-8").read() if os.path.exists(gi) else ""
+        add = ""
+        for pat in ("tools/rework_report.md", "tools/rework_report.json"):
+            if pat not in cur:
+                add += pat + "\n"
+        if add:
+            with io.open(gi, "a", encoding="utf-8") as f:
+                f.write(add)
+            REPORT["changed"].append(".gitignore (report files are not committed)")
 
     with io.open(os.path.join(ROOT, "tools", "rework_report.json"), "w", encoding="utf-8") as f:
         f.write(json.dumps(REPORT, ensure_ascii=False, indent=1))
     with io.open(os.path.join(ROOT, "tools", "rework_report.md"), "w", encoding="utf-8") as f:
         f.write("# Titanox rework report\n\n")
-        for k in ("stage", "generated", "removed_symbols", "removed_defines", "candidates", "changed", "skipped", "checks"):
+        for k in ("stage", "generated", "removed_symbols", "removed_defines", "kept_defines", "candidates", "changed", "skipped", "checks"):
             f.write("## %s\n\n" % k)
             for x in REPORT[k]:
                 f.write("- %s\n" % x)

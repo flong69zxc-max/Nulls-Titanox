@@ -8,6 +8,44 @@
 #define TNX_HIT_MARGIN 60.0f
 #endif
 
+#ifndef TNX_DODGE_CLEAR_R
+#define TNX_DODGE_CLEAR_R 300.0f
+#endif
+
+#ifndef TNX_PROJ_LIFE_MS
+#define TNX_PROJ_LIFE_MS 1200.0f
+#endif
+
+#ifndef TNX_OVERSHOOT
+#define TNX_OVERSHOOT 220.0f
+#endif
+
+#ifndef TNX_FREEST_RADII
+#define TNX_FREEST_RADII 3
+#endif
+
+#ifndef TNX_FREEST_LOGS
+#define TNX_FREEST_LOGS 6
+#endif
+
+#ifndef TNX_BODY_GAIN
+#define TNX_BODY_GAIN 0.20f
+#endif
+
+#ifndef TNX_ETA_PENALTY
+#define TNX_ETA_PENALTY 100000.0f
+#endif
+
+#ifndef TNX_JS_NOPREDICT
+#define TNX_JS_NOPREDICT 1
+#endif
+
+static float g_dodge_px = 0.0f;
+static float g_dodge_py = 0.0f;
+static int g_dodge_have = 0;
+static uint64_t g_freest_bullet = 0;
+static int g_freest_logs = 0;
+
 static int tnx_dodge_is_proj(uintptr_t obj) {
     void *vt = NULL;
     intptr_t cls = 0;
@@ -762,7 +800,7 @@ int tnx_drive(void) {
         g_queue_skips++;
     }
 
-    if (!TNX_STICK_ONLY) {
+    if (!TNX_STICK_ONLY && !TNX_JS_NOPREDICT) {
         tnx_predict(tx, ty);
     }
 
@@ -1317,10 +1355,20 @@ void tnx_build(void) {
         if (g_spd_min < 1.0f || speed < g_spd_min) g_spd_min = speed;
         if (speed > g_spd_max) g_spd_max = speed;
 
-        rem = speed * ((float)TNX_MAX_LIFETIME_MS / 1000.0f);
+        rem = speed * (TNX_PROJ_LIFE_MS / 1000.0f);
 
         if (rem > TNX_DEFAULT_RANGE) rem = TNX_DEFAULT_RANGE;
         if (rem < 1.0f) rem = 1.0f;
+
+        if (g_dodge_have) {
+            float nx = vx / len;
+            float ny = vy / len;
+            float toOwn = (g_dodge_px - (float)p->x) * nx + (g_dodge_py - (float)p->y) * ny;
+
+            if (toOwn < 0.0f) continue;
+            if (toOwn - TNX_OVERSHOOT > rem) continue;
+            if (rem > toOwn + TNX_OVERSHOOT) rem = toOwn + TNX_OVERSHOOT;
+        }
 
         if (TNX_REJECT) {
             int rule = 0;
@@ -1362,7 +1410,7 @@ void tnx_build(void) {
         s->by = s->ay + s->dirY * rem;
         s->speed = speed;
         s->remaining = rem;
-        s->inflatedR = TNX_PROJ_RADIUS + TNX_PLAYER_RADIUS + TNX_SAFETY_MARGIN;
+        s->inflatedR = TNX_DODGE_CLEAR_R;
     }
 
     if (g_seg_test > 0) g_seg_frac = (g_seg_clip * 100) / g_seg_test;
@@ -1979,6 +2027,12 @@ int tnx_best(float px, float py, float *tx, float *ty) {
 
             if (tnx_threatened(cx, cy)) continue;
 
+            if (tnx_walk_into_bullet(px, py, dx, dy, d)) {
+                g_freest_bullet++;
+
+                break;
+            }
+
             clear = tnx_clearance_2(cx, cy);
 
             if (!found || d < bestDist || (d == bestDist && clear > bestClear)) {
@@ -2022,43 +2076,79 @@ int tnx_write(float dirX, float dirY) {
 }
 
 int tnx_freest(float px, float py, float *tx, float *ty) {
+    float mult[TNX_FREEST_RADII];
     int pass = 0;
+    int r = 0;
     int i = 0;
     int bestOk = 0;
-    float bestRoom = -1.0f;
+    float nowEta = tnx_eta_ms(px, py);
+    float bestScore = 0.0f;
+    float bestEta = 0.0f;
+    float bestRoom = 0.0f;
     float bestX = 0.0f;
     float bestY = 0.0f;
 
+    mult[0] = 1.0f;
+    if (TNX_FREEST_RADII > 1) mult[1] = 2.0f;
+    if (TNX_FREEST_RADII > 2) mult[2] = 3.5f;
+
     for (pass = 0; pass < 2; pass++) {
-        for (i = 0; i < TNX_FREEST_ANGLES; i++) {
-            float rad = (2.0f * 3.14159265358979f * (float)i) / (float)TNX_FREEST_ANGLES;
-            float ex = px + cosf(rad) * TNX_STEP_2;
-            float ey = py + sinf(rad) * TNX_STEP_2;
-            float room = 1000000.0f;
-            int32_t cxi = (int32_t)ex;
-            int32_t cyi = (int32_t)ey;
-            int k = 0;
+        bestOk = 0;
+        bestScore = -1.0e18f;
 
-            tnx_clamp(&cxi, &cyi);
+        for (r = 0; r < TNX_FREEST_RADII; r++) {
+            float step = TNX_STEP_2 * mult[r];
 
-            if (cxi != (int32_t)ex || cyi != (int32_t)ey) continue;
-            if (pass == 0 && tnx_threatened(ex, ey)) continue;
+            for (i = 0; i < TNX_FREEST_ANGLES; i++) {
+                float rad = (2.0f * 3.14159265358979f * (float)i) / (float)TNX_FREEST_ANGLES;
+                float ex = px + cosf(rad) * step;
+                float ey = py + sinf(rad) * step;
+                float eta = 0.0f;
+                float room = 1000000.0f;
+                float score = 0.0f;
+                int32_t cxi = (int32_t)ex;
+                int32_t cyi = (int32_t)ey;
+                int k = 0;
 
-            for (k = 0; k < g_pl_n; k++) {
-                float d = 0.0f;
+                tnx_clamp(&cxi, &cyi);
 
-                if (g_pl_mine[k]) continue;
+                if (cxi != (int32_t)ex || cyi != (int32_t)ey) continue;
+                if (pass == 0 && tnx_threatened(ex, ey)) continue;
 
-                d = tnx_seg_dist(px, py, ex, ey, (float)g_pl_x[k], (float)g_pl_y[k]);
+                if (tnx_walk_into_bullet(px, py, (ex - px) / step, (ey - py) / step, step)) {
+                    g_freest_bullet++;
 
-                if (d < room) room = d;
-            }
+                    continue;
+                }
 
-            if (room > bestRoom) {
-                bestRoom = room;
-                bestX = ex;
-                bestY = ey;
-                bestOk = 1;
+                eta = tnx_eta_ms(ex, ey);
+
+                if (eta > 1.0e8f) eta = 1.0e8f;
+
+                for (k = 0; k < g_pl_n; k++) {
+                    float d = 0.0f;
+
+                    if (g_pl_mine[k]) continue;
+
+                    d = tnx_seg_dist(px, py, ex, ey, (float)g_pl_x[k], (float)g_pl_y[k]);
+
+                    if (d < room) room = d;
+                }
+
+                if (room > TNX_BODY_CLEAR) room = TNX_BODY_CLEAR;
+
+                score = eta + room * TNX_BODY_GAIN;
+
+                if (nowEta > 0.0f && eta <= nowEta) score = -TNX_ETA_PENALTY;
+
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestEta = eta;
+                    bestRoom = room;
+                    bestX = ex;
+                    bestY = ey;
+                    bestOk = 1;
+                }
             }
         }
 
@@ -2071,6 +2161,18 @@ int tnx_freest(float px, float py, float *tx, float *ty) {
     *tx = bestX;
     *ty = bestY;
     g_freest_used++;
+
+    if (g_freest_logs < TNX_FREEST_LOGS) {
+        g_freest_logs++;
+
+        tnx_logf("freest own=(%.0f,%.0f) pick=(%.0f,%.0f) eta=%.0f nowEta=%.0f room=%.0f segs=%d "
+                 "bullets=%llu - the pick is the point with the largest time to impact, so the body "
+                 "steps out of the corridor instead of along it; bullets counts the headings refused "
+                 "because walking them would put the body in front of a shot",
+                 (double)px, (double)py, (double)bestX, (double)bestY, (double)bestEta,
+                 (double)nowEta, (double)bestRoom, g_seg_count,
+                 (unsigned long long)g_freest_bullet);
+    }
 
     return 1;
 }
@@ -2088,6 +2190,10 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
 
     tnx_arm(px, py);
     tnx_stats();
+
+    g_dodge_px = px;
+    g_dodge_py = py;
+    g_dodge_have = 1;
 
     tnx_build();
 

@@ -1,7 +1,7 @@
 #include "titanox.h"
 
 int tnx_clip_walk(int32_t ax, int32_t ay, int32_t bx, int32_t by, int32_t cell,
-                             const uint8_t *solid, int gw, int gh, int32_t *outX, int32_t *outY) {
+                  const uint8_t *solid, int gw, int gh, int32_t *outX, int32_t *outY) {
     int32_t cx = 0;
     int32_t cy = 0;
     int32_t stepX = 0;
@@ -112,6 +112,17 @@ int g_logs_10 = 0;
 
 uint64_t g_built = 0;
 
+uintptr_t tnx_map_object(void) {
+    void *client = NULL;
+    void *map = NULL;
+
+    if (!g_scene_object) return 0;
+    if (!tnx_read_ptr((uintptr_t)g_scene_object + TNX_MAP_BASE_OFF, &client) || !client) return 0;
+    if (!tnx_read_ptr((uintptr_t)client + TNX_MODE_TILEMAP_OFF, &map) || !map) return 0;
+
+    return (uintptr_t)map;
+}
+
 void tnx_log_grid(int force) {
     char mask[16];
     int ix = 0;
@@ -134,20 +145,11 @@ void tnx_log_grid(int force) {
     mask[n] = 0;
 
     tnx_logf("grid w=%d h=%d cells=%d proj=%d move=%d img=%d own=(%d,%d) ownProj=%d ownMove=%d "
-             "mask=%s passes=%d armed=%d live=%d fail=%d tested=%d clipped=%d frac=%d - the tile map is "
-             "read the way the reference reads it: the array at +%#llx holds %d pointers indexed width*y+x, "
-             "the type is the pointer at tile+0, and its packed pair is movement at +%#llx and projectiles "
-             "at +%#llx, which the two one instruction getters in this image confirm. ownProj must read 0 "
-             "because a character cannot stand inside a wall, and proj above %d percent or a clip fraction "
-             "above %d percent means the layout or the tile scale is wrong, so the clip stays off and this "
-             "line names the gate that held it off",
+             "mask=%s passes=%d armed=%d live=%d fail=%d tested=%d clipped=%d frac=%d",
              g_w, g_h, g_cells, g_solid, g_move, g_img,
              g_own_tx, g_own_ty, g_own_proj, g_own_move, mask,
              g_passes, g_armed, g_live, g_fail,
-             g_seg_test, g_seg_clip, g_seg_frac,
-             (unsigned long long)TNX_TILES_OFF, g_cells,
-             (unsigned long long)TNX_TYPE_MOVE_OFF, (unsigned long long)TNX_TYPE_PROJ_OFF,
-             TNX_MAX_SOLID_PCT, TNX_MAX_CLIP_PCT);
+             g_seg_test, g_seg_clip, g_seg_frac);
 }
 
 int tnx_cell(int tx, int ty, int *proj, int *move) {
@@ -193,6 +195,7 @@ void tnx_tile_of(float x, float y, int *tx, int *ty) {
 }
 
 int tnx_build_2(void) {
+    void *client = NULL;
     void *tileMap = NULL;
     void *tiles = NULL;
     int32_t w = 0;
@@ -213,7 +216,8 @@ int tnx_build_2(void) {
     g_img = 0;
 
     if (!g_scene_object) return 0;
-    if (!tnx_read_ptr(g_scene_object + TNX_MODE_TILEMAP_OFF, &tileMap) || !tileMap) return 0;
+    if (!tnx_read_ptr((uintptr_t)g_scene_object + TNX_MAP_BASE_OFF, &client) || !client) return 0;
+    if (!tnx_read_ptr((uintptr_t)client + TNX_MODE_TILEMAP_OFF, &tileMap) || !tileMap) return 0;
     if (!tnx_read_i32((uintptr_t)tileMap + TNX_TILEMAP_WIDTH_OFF, &w)) return 0;
     if (!tnx_read_i32((uintptr_t)tileMap + TNX_TILEMAP_HEIGHT_OFF, &h)) return 0;
     if (w < TNX_MAP_MIN || h < TNX_MAP_MIN) return 0;
@@ -268,7 +272,7 @@ float tnx_clip_range(float ax, float ay, float dx, float dy, float rem) {
     g_seg_test++;
 
     if (!tnx_clip_walk((int32_t)ax, (int32_t)ay, (int32_t)(ax + dx * rem), (int32_t)(ay + dy * rem),
-                           (int32_t)TNX_TILE_SIZE, g_grid, g_w, g_h, &ox, &oy)) {
+                       (int32_t)TNX_TILE_SIZE, g_grid, g_w, g_h, &ox, &oy)) {
         return rem;
     }
 

@@ -4,7 +4,7 @@
 #include "core/types.h"
 
 #ifndef TNX_VERBOSE_DEFAULT
-#define TNX_VERBOSE_DEFAULT 0
+#define TNX_VERBOSE_DEFAULT 1
 #endif
 
 extern int g_tnx_verbose;

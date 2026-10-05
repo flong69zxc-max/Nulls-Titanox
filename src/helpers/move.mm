@@ -1,5 +1,9 @@
 #include "titanox.h"
 
+#ifndef TNX_DRAG_ARM
+#define TNX_DRAG_ARM 1
+#endif
+
 #ifndef TNX_JS_STICK
 #define TNX_JS_STICK 1
 #endif
@@ -443,6 +447,11 @@ int tnx_enqueue(int x, int y) {
             tnx_write_bytes(ctrl + TNX_CTRL_APPLIED_Y_OFF, &vy, sizeof(vy));
             tnx_write_bytes(ctrl + TNX_CTRL_LATCH_OFF, &latch, sizeof(latch));
             tnx_write_bytes(ctrl + TNX_CTRL_DIRTY_OFF, &dirty, sizeof(dirty));
+
+            if (TNX_DRAG_ARM) {
+                tnx_write_bytes(ctrl + TNX_DRAG_GATE_ON_OFF, &latch, sizeof(latch));
+                tnx_write_bytes(ctrl + TNX_DRAG_BRANCH_OFF, &latch, sizeof(latch));
+            }
 
             g_app_x = vx;
             g_app_y = vy;

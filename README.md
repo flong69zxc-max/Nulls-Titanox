@@ -10,7 +10,7 @@ Tweak for **Nulls Brawl v69.225** (iOS)
 
 1. LiveContainer → **Tweaks** → **Add** → `Titanox.dylib`
 2. Sign it with the button at the top of that screen — unsigned, it won't load
-3. Restart the game
+3. Launch the game
 
 ## Build
 

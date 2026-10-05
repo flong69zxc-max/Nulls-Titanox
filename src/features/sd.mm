@@ -50,7 +50,7 @@ void tnx_sd_log(void) {
 
     g_sd_logs++;
 
-    tnx_logf("sd mgr=%p en=%d cd=%g m10=%d m14=%d ack=%d client48=%d qNow=%d "
+    TNX_LOGX("sd mgr=%p en=%d cd=%g m10=%d m14=%d ack=%d client48=%d qNow=%d "
              "noMgr=%llu noEn=%llu noCd=%llu ackEq=%llu",
              mgr, (int)enabled, (double)cooldown, seqA, seqB, ack, clientAck, qNow,
              (unsigned long long)g_sd_no_mgr, (unsigned long long)g_sd_no_enable,

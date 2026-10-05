@@ -1,5 +1,12 @@
 #include "core/offsets.h"
+#include "core/config.h"
 #include "hook.h"
+
+#ifndef TNX_HOOK_DIAG
+#define TNX_HOOK_DIAG 0
+#endif
+
+#define TNX_HOOKLOG(...) do { if (TNX_HOOK_DIAG) brk_diag_log(__VA_ARGS__); } while (0)
 
 #include <mach/mach.h>
 #include <mach-o/dyld.h>
@@ -271,7 +278,7 @@ static std::vector<uintptr_t> function_starts(const Image &img)
 {
     std::vector<uintptr_t> result;
 
-    brk_diag_log(
+    TNX_HOOKLOG(
         "function_starts hasStarts=%d dataoff=0x%llx datasize=0x%llx",
         img.hasStarts ? 1 : 0,
         (unsigned long long)img.starts.dataoff,
@@ -288,16 +295,16 @@ static std::vector<uintptr_t> function_starts(const Image &img)
             img.starts.dataoff,
             img.starts.datasize,
             address)) {
-        brk_diag_log("function_starts linkedit_address_failed");
+        TNX_HOOKLOG("function_starts linkedit_address_failed");
         return result;
     }
 
-    brk_diag_log("function_starts linkedit=%p", (void *)address);
+    TNX_HOOKLOG("function_starts linkedit=%p", (void *)address);
 
     std::vector<uint8_t> bytes(img.starts.datasize);
 
     if (!read_memory(address, bytes.data(), bytes.size())) {
-        brk_diag_log("function_starts read_memory_failed size=%zu", bytes.size());
+        TNX_HOOKLOG("function_starts read_memory_failed size=%zu", bytes.size());
         return result;
     }
 
@@ -309,7 +316,7 @@ static std::vector<uintptr_t> function_starts(const Image &img)
         uint64_t delta = 0;
 
         if (!read_uleb(bytes, offset, delta)) {
-            brk_diag_log("function_starts uleb_failed offset=%zu", offset);
+            TNX_HOOKLOG("function_starts uleb_failed offset=%zu", offset);
             return {};
         }
 
@@ -326,7 +333,7 @@ static std::vector<uintptr_t> function_starts(const Image &img)
         uintptr_t pc = img.text + (uintptr_t)cumulative;
 
         if (!code_address(img, pc)) {
-            brk_diag_log(
+            TNX_HOOKLOG(
                 "function_starts code_address_failed pc=%p",
                 (void *)pc
             );
@@ -336,7 +343,7 @@ static std::vector<uintptr_t> function_starts(const Image &img)
         result.push_back(pc);
     }
 
-    brk_diag_log(
+    TNX_HOOKLOG(
         "function_starts parsed=%zu terminated=%d",
         result.size(),
         terminated
@@ -674,7 +681,7 @@ extern "C" uintptr_t rt_resolve_method(
     Image img;
 
     if (!load_image(ref, img)) {
-        brk_diag_log("resolve image_invalid");
+        TNX_HOOKLOG("resolve image_invalid");
         return 0;
     }
 
@@ -684,7 +691,7 @@ extern "C" uintptr_t rt_resolve_method(
     if (symbols.size() == 1) {
         uintptr_t pc = *symbols.begin();
 
-        brk_diag_log(
+        TNX_HOOKLOG(
             "resolve name=%s source=symtab pc=%p",
             wanted.c_str(),
             (void *)pc
@@ -695,7 +702,7 @@ extern "C" uintptr_t rt_resolve_method(
 
     if (symbols.size() > 1) {
         for (uintptr_t pc : symbols) {
-            brk_diag_log(
+            TNX_HOOKLOG(
                 "resolve name=%s ambiguous_symbol=%p",
                 wanted.c_str(),
                 (void *)pc
@@ -708,7 +715,7 @@ extern "C" uintptr_t rt_resolve_method(
     auto strings = string_addresses(img, wanted);
 
     if (strings.empty()) {
-        brk_diag_log(
+        TNX_HOOKLOG(
             "resolve name=%s strings=0",
             wanted.c_str()
         );
@@ -734,7 +741,7 @@ extern "C" uintptr_t rt_resolve_method(
         starts = function_starts(img);
     }
 
-    brk_diag_log(
+    TNX_HOOKLOG(
         "resolve name=%s strings=%zu xrefs=%zu starts=%zu",
         wanted.c_str(),
         strings.size(),
@@ -757,7 +764,7 @@ extern "C" uintptr_t rt_resolve_method(
             start = find_prologue_backward(img, reference);
         }
 
-        brk_diag_log(
+        TNX_HOOKLOG(
             "resolve name=%s xref=%p containing_function=%p source=%s",
             wanted.c_str(),
             (void *)reference,
@@ -792,7 +799,7 @@ extern "C" uintptr_t rt_resolve_method(
             }
         }
 
-        brk_diag_log(
+        TNX_HOOKLOG(
             "resolve name=%s ambiguous=%zu chosen=%p xref_count=%zu",
             wanted.c_str(),
             candidates.size(),
@@ -826,7 +833,7 @@ extern "C" void rt_dump_image(image_ref_t ref)
     Image img;
 
     if (!load_image(ref, img)) {
-        brk_diag_log("image invalid base=%p", (void *)ref.base);
+        TNX_HOOKLOG("image invalid base=%p", (void *)ref.base);
         return;
     }
 
@@ -838,7 +845,7 @@ extern "C" void rt_dump_image(image_ref_t ref)
         }
     }
 
-    brk_diag_log(
+    TNX_HOOKLOG(
         "image base=%p slide=0x%llx text=%p uuid=%s starts=%d symtab=%d",
         (void *)ref.base,
         (unsigned long long)(uintptr_t)img.slide,
@@ -852,7 +859,7 @@ extern "C" void rt_dump_image(image_ref_t ref)
         uintptr_t runtime = 0;
         add_slide(sg.vmaddr, img.slide, runtime);
 
-        brk_diag_log(
+        TNX_HOOKLOG(
             "segment name=%.16s runtime=%p vmaddr=0x%llx size=0x%llx prot=%x",
             sg.segname,
             (void *)runtime,
@@ -870,7 +877,7 @@ extern "C" void rt_dump_target(const char *name, uintptr_t target)
     uint32_t words[8]{};
 
     if (!read_memory(target, words, sizeof(words))) {
-        brk_diag_log(
+        TNX_HOOKLOG(
             "target name=%s pc=%p unreadable",
             name ? name : "?",
             (void *)target
@@ -882,7 +889,7 @@ extern "C" void rt_dump_target(const char *name, uintptr_t target)
     Dl_info info{};
     dladdr((void *)target, &info);
 
-    brk_diag_log(
+    TNX_HOOKLOG(
         "target name=%s pc=%p image=%s symbol=%s symbol_start=%p",
         name ? name : "?",
         (void *)target,
@@ -891,7 +898,7 @@ extern "C" void rt_dump_target(const char *name, uintptr_t target)
         info.dli_saddr
     );
 
-    brk_diag_log(
+    TNX_HOOKLOG(
         "opcodes %08x %08x %08x %08x %08x %08x %08x %08x",
         words[0], words[1], words[2], words[3],
         words[4], words[5], words[6], words[7]

@@ -1,5 +1,27 @@
 #include "titanox.h"
 
+#ifndef TNX_DODGE_PROJ_ONLY
+#define TNX_DODGE_PROJ_ONLY 1
+#endif
+
+static int tnx_dodge_is_proj(void *obj) {
+    void *vt = NULL;
+    intptr_t cls = 0;
+
+    if (!obj) return 0;
+    if (!tnx_read_ptr((uintptr_t)obj, &vt) || !vt) return 0;
+
+    cls = (intptr_t)((uintptr_t)vt - g_base);
+
+#if TNX_DODGE_PROJ_ONLY
+    return (cls == (intptr_t)TNX_CLASS_PROJ_RVA) ? 1 : 0;
+#else
+    (void)cls;
+
+    return 1;
+#endif
+}
+
 uint64_t g_drop_slow = 0;
 
 uint64_t g_drop_fast = 0;
@@ -2644,13 +2666,13 @@ void tnx_autododge_v48(void) {
 
         threatsAlive++;
 
-        if ((objects[i].activeFlag & 1) == 0) continue;
+        if (tnx_dodge_is_proj(objects[i].object) == 0) continue;
 
         dx = (float)(ownX - objects[i].x);
         dy = (float)(ownY - objects[i].y);
         distance = dx * dx + dy * dy;
 
-        if (distance > DODGE_RANGE_SQ || distance < 1.0f) continue;
+        if (distance < 1.0f) continue;
 
         weight = 1.0f / (sqrtf(distance) + 1.0f);
         escapeX += dx * weight;

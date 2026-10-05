@@ -1,4 +1,4 @@
-#include "offsets.h"
+#include "core/offsets.h"
 #include "hook.h"
 
 #include <mach/mach.h>

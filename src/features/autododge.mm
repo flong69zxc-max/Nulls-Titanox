@@ -9,7 +9,19 @@
 #endif
 
 #ifndef TNX_DODGE_CLEAR_R
-#define TNX_DODGE_CLEAR_R 240.0f
+#define TNX_DODGE_CLEAR_R 96.0f
+#endif
+
+#ifndef TNX_RAGE_FORCE
+#define TNX_RAGE_FORCE 0
+#endif
+
+#ifndef TNX_LOOKAHEAD_MAX
+#define TNX_LOOKAHEAD_MAX 400.0f
+#endif
+
+#ifndef TNX_ENGAGE_NEAR
+#define TNX_ENGAGE_NEAR 24.0f
 #endif
 
 #ifndef TNX_JS_DODGE
@@ -1534,9 +1546,10 @@ float tnx_eta_ms(float x, float y) {
 }
 
 int tnx_imminent(float x, float y) {
-    float look = TNX_RAGE ? (TNX_MODE_TUNE ? tnx_look_ms() : TNX_LOOKAHEAD_MS_2)
+    float look = TNX_RAGE_FORCE ? (TNX_MODE_TUNE ? tnx_look_ms() : TNX_LOOKAHEAD_MS_2)
                                : TNX_LOOKAHEAD_MS;
 
+    if (look > TNX_LOOKAHEAD_MAX) look = TNX_LOOKAHEAD_MAX;
     if (look <= 0.0f) return 0;
     if (g_seg_count <= 0) return 0;
 
@@ -2269,12 +2282,12 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
 
     threatened = tnx_threatened(px, py);
 
-    if (g_seg_count > 0 && tnx_clearance_2(px, py) < TNX_ENGAGE_2) {
+    if (g_seg_count > 0 && tnx_clearance_2(px, py) < TNX_ENGAGE_NEAR) {
         threatened = 1;
         g_engage++;
     }
 
-    if (TNX_RAGE && g_seg_count > 0) {
+    if (TNX_RAGE_FORCE && g_seg_count > 0) {
         if (!TNX_HIT_ONLY || tnx_imminent(px, py)) {
             threatened = 1;
             g_rage_frames++;

@@ -73,12 +73,26 @@ for p in ALL:
         if s.startswith("//") or s.startswith("/*"):
             fail("%s:%d carries a comment" % (p, i))
             break
+for p in ALL:
+    t = read(p)
+    op = len(re.findall(r"^\s*#\s*(?:if|ifdef|ifndef)\b", t, re.M))
+    cl = len(re.findall(r"^\s*#\s*endif\b", t, re.M))
+    if op != cl:
+        fail("%s has %d #if and %d #endif, the preprocessor nesting does not close" % (p, op, cl))
 ok("no comment lines")
+
+for p in ALL:
+    t = read(p)
+    for tagname in ("TNX_CHARS_DATA_H",):
+        if t.startswith("#ifndef " + tagname) and t.rstrip().count("#endif") != 1:
+            fail("%s opens a guard and closes it %d times, the table would sit outside the include guard" % (p, t.rstrip().count("#endif")))
+ok("include guards close exactly once")
 
 for p in ALL:
     for m in re.finditer(r'#include\s+"([^"]+)"', read(p)):
         inc = m.group(1)
-        cands = [os.path.join(ROOT, "src", inc), os.path.join(ROOT, "include", inc),
+        cands = [os.path.join(os.path.dirname(os.path.join(ROOT, p)), inc),
+                 os.path.join(ROOT, "src", inc), os.path.join(ROOT, "include", inc),
                  os.path.join(ROOT, "src", "data", inc), os.path.join(ROOT, inc)]
         if not any(os.path.exists(c) for c in cands) and "deps/" not in inc:
             warn("%s includes %s, which is not in src/ - it must come from the theos include path" % (p, inc))
@@ -104,7 +118,13 @@ else:
     rows = [l for l in t.split("\n") if l.startswith('    { "')]
     if len(rows) < 100:
         fail("hero table has only %d rows" % len(rows))
-    bad = [l for l in rows if l.count(",") != 20]
+    m = re.search(r"typedef struct \{(.*?)\} tnx_hero_t;", t, re.S)
+    fields = 0
+    if m:
+        fields = len([x for x in m.group(1).split("\n") if x.strip() and x.strip().endswith(";")])
+    if fields <= 0:
+        fail("tnx_hero_t struct not found, cannot check the row shape")
+    bad = [l for l in rows if l.count(",") != fields]
     if bad:
         fail("hero table has %d rows with a wrong field count, first: %s" % (len(bad), bad[0][:60]))
     names = re.findall(r'\{\s*"([^"]+)"', t)
@@ -120,7 +140,7 @@ if not re.search(r"drop=\d+", log):
 else:
     ok("drop stamp present: %s" % re.search(r"drop=\d+", log).group(0))
 
-rep = os.path.join(ROOT, "tools", "titanox_rework_1_report.json")
+rep = os.path.join(ROOT, "tools", "rework_report.json")
 if os.path.exists(rep):
     r = json.load(io.open(rep, encoding="utf-8"))
     gone = [x.split(" ")[0] for x in r.get("removed_symbols", [])]

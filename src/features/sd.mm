@@ -11,9 +11,9 @@ uint64_t g_sd_no_cooldown = 0;
 uint64_t g_sd_ack_eq_seq = 0;
 
 void tnx_sd_log(void) {
-    uintptr_t mgr = 0;
-    uintptr_t client = 0;
-    uintptr_t queue = 0;
+    void *mgr = NULL;
+    void *client = NULL;
+    void *queue = NULL;
     uint8_t enabled = 0;
     float cooldown = 0.0f;
     int32_t seqA = 0;
@@ -23,35 +23,36 @@ void tnx_sd_log(void) {
     int32_t qNow = 0;
 
     if (!g_scene_object) return;
+
     if (!tnx_read_ptr((uintptr_t)g_scene_object + TNX_MGR_OFF, &mgr) || !mgr) {
         g_sd_no_mgr++;
 
         return;
     }
 
-    tnx_read_bytes(mgr + TNX_MGR_ENABLE_OFF, &enabled, sizeof(enabled));
-    tnx_read_bytes(mgr + TNX_MGR_COOLDOWN_OFF, &cooldown, sizeof(cooldown));
-    tnx_read_bytes(mgr + TNX_MGR_SEQ_A_OFF, &seqA, sizeof(seqA));
-    tnx_read_bytes(mgr + TNX_MGR_SEQ_B_OFF, &seqB, sizeof(seqB));
-    tnx_read_bytes(mgr + TNX_MGR_ACK_OFF, &ack, sizeof(ack));
+    tnx_read_bytes((uintptr_t)mgr + TNX_MGR_ENABLE_OFF, &enabled, sizeof(enabled));
+    tnx_read_bytes((uintptr_t)mgr + TNX_MGR_COOLDOWN_OFF, &cooldown, sizeof(cooldown));
+    tnx_read_bytes((uintptr_t)mgr + TNX_MGR_SEQ_A_OFF, &seqA, sizeof(seqA));
+    tnx_read_bytes((uintptr_t)mgr + TNX_MGR_SEQ_B_OFF, &seqB, sizeof(seqB));
+    tnx_read_bytes((uintptr_t)mgr + TNX_MGR_ACK_OFF, &ack, sizeof(ack));
 
     if (tnx_read_ptr((uintptr_t)g_scene_object + TNX_CLIENT_HOP_OFF, &client) && client) {
         tnx_read_bytes((uintptr_t)client + TNX_CLIENT_ACK_SRC_OFF, &clientAck, sizeof(clientAck));
     }
 
-    if (tnx_read_ptr(mgr + TNX_MGR_QUEUE_OFF, &queue) && queue) {
-        tnx_read_bytes(queue + TNX_MGR_COUNT_OFF, &qNow, sizeof(qNow));
+    if (tnx_read_ptr((uintptr_t)mgr + TNX_MGR_QUEUE_OFF, &queue) && queue) {
+        tnx_read_bytes((uintptr_t)queue + TNX_MGR_COUNT_OFF, &qNow, sizeof(qNow));
     }
 
     if (enabled != 1) g_sd_no_enable++;
-    if (cooldown > (float)TNX_MGR_COOLDOWN_MIN) g_sd_no_cooldown++;
+    if (cooldown > TNX_MGR_COOLDOWN_MIN) g_sd_no_cooldown++;
     if (ack == seqB) g_sd_ack_eq_seq++;
 
     g_sd_logs++;
 
     tnx_logf("sd mgr=%p en=%d cd=%g m10=%d m14=%d ack=%d client48=%d qNow=%d "
              "noMgr=%llu noEn=%llu noCd=%llu ackEq=%llu",
-             (void *)mgr, (int)enabled, (double)cooldown, seqA, seqB, ack, clientAck, qNow,
+             mgr, (int)enabled, (double)cooldown, seqA, seqB, ack, clientAck, qNow,
              (unsigned long long)g_sd_no_mgr, (unsigned long long)g_sd_no_enable,
              (unsigned long long)g_sd_no_cooldown, (unsigned long long)g_sd_ack_eq_seq);
 }

@@ -1,0 +1,179 @@
+name: dodge fix
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: macos-14
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install tools
+        run: |
+          set -euo pipefail
+          brew list ldid >/dev/null 2>&1 || brew install ldid
+          brew list make >/dev/null 2>&1 || brew install make
+          echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
+
+      - uses: actions/cache@v4
+        with:
+          path: theos
+          key: theos-${{ runner.os }}-dodge-fix-v1
+
+      - name: Setup Theos
+        run: |
+          set -euo pipefail
+          if [ ! -d theos/.git ]; then
+            git clone --recursive --depth 1 --shallow-submodules \
+              https://github.com/theos/theos.git theos
+          fi
+          git -C theos submodule update --init --recursive
+          echo "THEOS=$PWD/theos" >> "$GITHUB_ENV"
+          echo "$PWD/theos/bin" >> "$GITHUB_PATH"
+
+      - name: Get Titanox
+        run: |
+          set -euo pipefail
+          mkdir -p deps
+          git clone --depth 1 https://github.com/flong69zxc-max/Titanox.git deps/Titanox
+
+      - name: Apply the fix
+        run: |
+          set -euo pipefail
+          cat > /tmp/tnx_dodge_fix.py <<'PY'
+          import os
+          import re
+          import sys
+
+          ROOT = os.environ.get('FIX_ROOT', '.')
+
+          CFG = os.path.join(ROOT, 'src/core/config.h')
+          MOV = os.path.join(ROOT, 'src/helpers/move.mm')
+
+          FLAG = 'TNX_V245_STICK'
+
+          FLIPS = (
+              (r'^#define (?:TNX_V167_TEAM_FILTER|TNX_TEAM_FILTER) 1$', ' 0',
+               'the threat list no longer drops a shot whose team byte reads the same as ours'),
+              (r'^#define (?:TNX_V243_DRAG|TNX_DRAG) 1$', ' 0',
+               'the controller drag pair is never written'),
+          )
+
+          STICK = re.compile(r'^void (?:tnx_v174_stick|tnx_stick)\(int engaged, float dirX, float dirY\) \{$')
+
+          GUARD = '    if (!%s) return;' % FLAG
+
+
+          def read(path):
+              with open(path) as f:
+                  return f.read()
+
+
+          def flip(text, pattern, value):
+              out = []
+              hit = 0
+              for line in text.split('\n'):
+                  if hit == 0 and re.match(pattern, line):
+                      out.append(line[:-2] + value)
+                      hit = 1
+                      continue
+                  out.append(line)
+              return '\n'.join(out), hit
+
+
+          def add_flag(text):
+              if re.search(r'^#define (?:TNX_V245_STICK|TNX_STICK|TNX_STICK_WRITE) ', text, re.M):
+                  return text, 0
+              for name in ('TNX_V243_DRAG 0', 'TNX_DRAG 0'):
+                  line = '#define ' + name
+                  if line in text:
+                      return text.replace(line, line + '\n#define %s 0' % FLAG, 1), 1
+              return text, 0
+
+
+          def add_guard(text):
+              if GUARD in text:
+                  return text, 0
+              lines = text.split('\n')
+              for i, line in enumerate(lines):
+                  if STICK.match(line):
+                      lines.insert(i + 1, GUARD)
+                      return '\n'.join(lines), 1
+              return text, 0
+
+
+          def main():
+              cfg = read(CFG)
+              mov = read(MOV)
+              done = 0
+
+              for pattern, value, note in FLIPS:
+                  cfg, hit = flip(cfg, pattern, value)
+                  done += hit
+                  if hit:
+                      print('config.h: %s' % note)
+
+              cfg, hit = add_flag(cfg)
+              done += hit
+              if hit:
+                  print('config.h: %s 0 gates every controller write' % FLAG)
+
+              mov, hit = add_guard(mov)
+              done += hit
+              if hit:
+                  print('move.mm: the stick writer returns before it touches the controller')
+
+              if done:
+                  open(CFG, 'w').write(cfg)
+                  open(MOV, 'w').write(mov)
+
+              print('edits applied:', done)
+              print('gate in config.h :', bool(re.search(r'^#define (?:TNX_V245_STICK|TNX_STICK|TNX_STICK_WRITE) 0$', cfg, re.M)))
+              print('guard in move.mm :', GUARD in mov)
+              return 0
+
+
+          if __name__ == '__main__':
+              sys.exit(main())
+          PY
+          FIX_ROOT=. python3 /tmp/tnx_dodge_fix.py
+
+      - name: Show the change
+        run: |
+          set -euo pipefail
+          git diff --stat
+          git diff | head -n 80
+
+      - name: Build the fixed tree
+        run: |
+          set -euo pipefail
+          gmake clean
+          gmake -j"$(sysctl -n hw.ncpu)" ARCHS=arm64 DEBUG=0 FINALPACKAGE=1
+          dylib="$(find .theos -type f -name Titanox.dylib ! -path '*.dSYM/*' | sort | head -n 1)"
+          test -n "$dylib"
+          test -s "$dylib"
+          cp "$dylib" /tmp/Titanox.dylib
+          xcrun lipo -info /tmp/Titanox.dylib
+          shasum -a 256 /tmp/Titanox.dylib
+
+      - name: Commit the fix
+        run: |
+          set -euo pipefail
+          git add -A
+          if git diff --cached --quiet; then
+            echo "the tree already carries the fix, nothing to commit"
+            exit 0
+          fi
+          git status --short
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git commit -q -m "stop writing the controller and stop dropping hostile shots"
+          git push

@@ -19,10 +19,21 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-          persist-credentials: false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "https://github.com/${REPO}.git"
+          if ! git fetch -q --depth 1 \
+            "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "${REF}"; then
+            git fetch -q --depth 1 origin "${REF}"
+          fi
+          git checkout -q --force FETCH_HEAD
+          git rev-parse --short HEAD
+          test -f Makefile
 
       - name: Restore Theos
         uses: actions/cache@v4

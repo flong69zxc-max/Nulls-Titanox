@@ -349,12 +349,16 @@ int tnx_pending(int want, uint64_t *mask) {
 static int g_pred_ok = 0;
 
 static int tnx_pred_ok(uintptr_t pred) {
+    void *vtRaw = NULL;
     uintptr_t vt = 0;
 
     if (!pred) return 0;
     if ((pred & 7) != 0) return 0;
     if (!tnx_addr_readable(pred, 0x120)) return 0;
-    if (!tnx_read_ptr(pred, &vt)) return 0;
+    if (!tnx_read_ptr(pred, &vtRaw)) return 0;
+
+    vt = (uintptr_t)vtRaw;
+
     if (!vt) return 0;
 
     return 1;

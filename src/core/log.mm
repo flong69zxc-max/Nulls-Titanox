@@ -815,8 +815,8 @@ int tnx_object_detail(uintptr_t manager, int limit) {
         if (!tnx_read_ptr((uintptr_t)element, &vtable)) continue;
 
         tnx_read_ptr((uintptr_t)vtable + TNX_SLOT_OWNER_OFF, &slotOwner);
-        tnx_read_ptr((uintptr_t)vtable + 0x28, &slotAlive);
-        tnx_read_ptr((uintptr_t)vtable + 0x48, &slotKind);
+        tnx_read_ptr((uintptr_t)vtable + TNX_SLOT_ALIVE_OFF, &slotAlive);
+        tnx_read_ptr((uintptr_t)vtable + TNX_SLOT_KIND_OFF, &slotKind);
 
         tnx_read_i32((uintptr_t)element + TNX_OBJ_GLOBALID_OFF, &globalId);
         tnx_read_i32((uintptr_t)element + TNX_OBJ_TEAM_OFF, &team);
@@ -889,7 +889,7 @@ void tnx_frame(void) {
                 int32_t e0 = -1;
 
                 if (g_scene_object) {
-                    tnx_read_i32((uintptr_t)g_scene_object + 0xe0, &e0);
+                    tnx_read_i32((uintptr_t)g_scene_object + TNX_SCENE_E0_OFF, &e0);
                 }
 
                 tnx_logf("mode change tick=%llu frames=%llu mode: %lld -> %d e0=%d from=unavail - "

@@ -1061,7 +1061,7 @@ BOOL tnx_valid_header(uintptr_t base) {
     if (header.ncmds == 0 || header.ncmds > 4096) return NO;
     if (header.sizeofcmds == 0) return NO;
     if (header.sizeofcmds > (4u * 1024u * 1024u)) return NO;
-    if (!tnx_image_text_contains(base, base + 0x4000)) return NO;
+    if (!tnx_image_text_contains(base, base + TNX_IMAGE_TEXT_WINDOW)) return NO;
 
     return YES;
 }

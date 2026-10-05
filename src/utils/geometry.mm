@@ -623,6 +623,7 @@ uintptr_t tnx_bounds_obj(uintptr_t receiver) {
     uintptr_t out = 0;
 
     if (!receiver) return 0;
+    if (!tnx_pointer_plausible(receiver)) return 0;
     if (!tnx_callable(TNX_BOUNDS_RVA)) return 0;
 
     out = ((uintptr_t (*)(uintptr_t))(g_base + TNX_BOUNDS_RVA))(receiver);

@@ -2917,6 +2917,16 @@ void tnx_autododge_v48(void) {
 
         tnx_roster(g_own_elem_2, ownIndex, (int)ownTeam, objects, usable);
 
+        if (ownIndex < 0 || ownIndex >= usable || ownIndex >= TNX_OBJECT_MAX) {
+            TNX_LOGX("sidestep aborted: ownIndex=%d usable=%d max=%d", ownIndex, usable,
+                     TNX_OBJECT_MAX);
+
+            return;
+        }
+
+        TNX_LOGX("sidestep own=%p index=%d usable=%d projCount=%d",
+                 (void *)objects[ownIndex].object, ownIndex, usable, projCount);
+
         if (tnx_life(objects[ownIndex].object, ownX, ownY)) return;
 
         tnx_proj_scan(g_manager, projCount);

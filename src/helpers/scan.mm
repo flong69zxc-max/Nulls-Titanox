@@ -3289,6 +3289,7 @@ int tnx_ctrl_bounds(uintptr_t base, int32_t *wOut, int32_t *hOut) {
     hop = tnx_hop(base, NULL);
 
     if (!hop) return 0;
+    if (!tnx_pointer_plausible(hop)) return 0;
     if (!tnx_addr_readable(hop, 0x100)) return 0;
 
     bounds = ((uintptr_t (*)(uintptr_t))(g_base + TNX_BOUNDS_RVA))(hop);
@@ -3322,6 +3323,7 @@ uintptr_t tnx_controller(void) {
     obj = ((void *(*)(void))battleFn)();
 
     if (!obj) return 0;
+    if (!tnx_pointer_plausible((uintptr_t)obj)) return 0;
     if (((uintptr_t)obj & 7) != 0) return 0;
     if (!tnx_addr_readable((uintptr_t)obj, 0x1000)) return 0;
 

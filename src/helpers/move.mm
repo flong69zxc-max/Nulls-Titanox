@@ -50,24 +50,6 @@ uint64_t g_stuck_3 = 0;
 
 uint64_t g_mask_before = 0;
 
-#ifndef TNX_CTRL_ON_CLIENT
-#define TNX_CTRL_ON_CLIENT 1
-#endif
-
-uintptr_t tnx_client(void) {
-    void *c = NULL;
-
-    if (!g_scene_object) return 0;
-
-    if (TNX_CTRL_ON_CLIENT) {
-        if (tnx_read_ptr((uintptr_t)g_scene_object + TNX_MODE_MANAGER_OFF, &c) && c) {
-            return (uintptr_t)c;
-        }
-    }
-
-    return (uintptr_t)g_scene_object;
-}
-
 int tnx_ctrl_ok(uintptr_t ctrl) {
     int32_t rawX = 0;
     int32_t rawY = 0;

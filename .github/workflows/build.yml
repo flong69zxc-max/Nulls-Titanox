@@ -1,709 +1,85 @@
-name: lay out
+name: Titanox
 
 on:
-  workflow_dispatch:
   push:
-    paths:
-      - 'src/Titanox.mm'
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  lay-out:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: macos-14
+    timeout-minutes: 20
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: write the cutter
+      - name: Install tools
         run: |
           set -euo pipefail
-          cat > /tmp/cut.py <<'PY'
-          import os
-          import re
-          import sys
+          brew list ldid >/dev/null 2>&1 || brew install ldid
+          brew list make >/dev/null 2>&1 || brew install make
+          echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
 
-          SRC = os.environ.get('SPLIT_SRC', 'src/Titanox.mm')
-          OUT = os.environ.get('SPLIT_OUT', 'split')
-          SUFFIX = os.environ.get('SPLIT_SUFFIX', '_1')
+      - uses: actions/cache@v4
+        with:
+          path: theos
+          key: theos-${{ runner.os }}-diagnostics-v2
 
-          MODULES = {
-              'core/memory': ['v56', 'v59', 'v60', 'v72', 'v201', 'v245'],
-              'core/log': ['v63', 'v116', 'v190'],
-              'core/crash': ['v146'],
-              'core/hooks': ['v77', 'v78', 'v79', 'v80', 'v101', 'v117', 'v118', 'v129', 'v142',
-                             'v145', 'v148', 'v99'],
-              'utils/strings': ['v50', 'v52', 'v75'],
-              'utils/geometry': ['v48', 'v95', 'v162', 'v177', 'v213'],
-              'helpers/scan': ['v44', 'v47', 'v57', 'v64', 'v68', 'v71', 'v76', 'v81', 'v82', 'v86',
-                               'v90', 'v91', 'v92', 'v93', 'v102', 'v103', 'v105', 'v106', 'v112',
-                               'v115', 'v127', 'v134', 'v135', 'v140', 'v144', 'v150', 'v163', 'v167',
-                               'v169', 'v173', 'v178', 'v179', 'v183', 'v198', 'v204', 'v231', 'v239'],
-              'helpers/move': ['v113', 'v126', 'v128', 'v171', 'v174', 'v192', 'v205', 'v220', 'v221',
-                               'v225', 'v243'],
-              'features/autododge': ['v160', 'v172', 'v187', 'v188', 'v189', 'v191', 'v193', 'v195',
-                                     'v196', 'v197', 'v200', 'v206', 'v207', 'v209', 'v212', 'v214',
-                                     'v216', 'v218', 'v222', 'v226', 'v227', 'v228', 'v230', 'v233',
-                                     'v234', 'v235', 'v236', 'v237', 'v238', 'v240'],
-              'features/walls': ['v98', 'v242'],
-              'features/report': ['v181', 'v211', 'v246'],
-          }
-
-          NAME_RULES = {
-              'core/memory': ['tnx_verified_vtable', 'tnx_addr_writable', 'tnx_read_bytes', 'tnx_read_u8',
-                              'tnx_read_i32', 'tnx_read_f32', 'tnx_read_ptr', 'tnx_read_global_ptr',
-                              'tnx_write_bytes', 'tnx_write_f32', 'tnx_write_i32', 'tnx_pointer_plausible',
-                              'tnx_callable', 'tnx_copy', 'tnx_segment_range', 'tnx_image_contains',
-                              'tnx_image_span_refresh', 'tnx_in_image_span', 'tnx_image_segment_name',
-                              'tnx_heap_regions_refresh', 'tnx_heap_window_shaped', 'tnx_heap_contains',
-                              'tnx_vtable_shaped', 'tnx_heap_resident', 'tnx_owner_is_heap',
-                              'tnx_gameobject_shape', 'tnx_instance_shaped', 'tnx_manager_shape',
-                              'tnx_vtable_rva', 'tnx_valid_header', 'tnx_battle_write', 'tnx_pick',
-                              'tnx_text_section', 'tnx_strip_imp'],
-              'core/log': ['tnx_log_handle', 'tnx_write_line', 'tlog', 'tnx_logf', 'tnx_slot_note',
-                           'tnx_slot_fired_report', 'tnx_diag_report', 'tnx_slot_diag',
-                           'tnx_report_mode_hit', 'tnx_report_manager', 'tnx_trail_dump',
-                           'tnx_slot_table_dump', 'tnx_object_detail', 'tnx_vtcensus_top',
-                           'tnx_manager_live_count'],
-              'core/hooks': ['tnx_slot_install_one', 'tnx_slot_hooks_install', 'tnx_slot_pump', 'start',
-                             'setup', 'poll_for_game', 'find_game_image', 'tnx_load_function_starts',
-                             'tnx_start_word', 'tnx_start_boundary', 'tnx_start_index', 'tnx_prologue_rule',
-                             'tnx_looks_like_start', 'tnx_start_timer', 'tnx_run_workload',
-                             'tnx_run_autododge', 'tnx_run_autoaim', 'tnx_overlay_attach',
-                             'tnx_overlay_update', 'tnx_alert_battle_check', 'tnx_render_watermark',
-                             'tnx_objc_find', 'tnx_objc_targets', 'tnx_objc_arm', 'tnx_objc_arg_types',
-                             'tnx_class_owns_method', 'tnx_owner_class', 'tnx_sc_string',
-                             'tnx_skip_compound', 'tnx_objc_rep0', 'tnx_objc_rep1', 'tnx_objc_rep1b',
-                             'tnx_objc_rep2'],
-              'helpers/scan': ['tnx_mode_score', 'tnx_is_mode_vtable', 'tnx_locate_battle_mode',
-                               'tnx_candidate_is_stable', 'tnx_trail_beats_slot', 'tnx_trail_qualifies',
-                               'tnx_trail_ranked', 'tnx_trail_rebest', 'tnx_resolve_addresses'],
-              'features/autododge': ['tnx_autododge_v48', 'tnx_dodge_plan', 'tnx_dodge_all_teams'],
-          }
-
-          HEADER_OWNER = {
-              'core': 'core',
-              'utils': 'utils',
-              'helpers': 'helpers',
-              'features': 'features',
-          }
-
-          MODULE_HEADER = {
-              'core/memory': 'memory.h',
-              'core/log': 'log.h',
-              'core/crash': 'crash.h',
-              'core/hooks': 'hooks.h',
-              'utils/strings': 'strings.h',
-              'utils/geometry': 'geometry.h',
-              'helpers/scan': 'scan.h',
-              'helpers/move': 'move.h',
-              'features/autododge': 'autododge.h',
-              'features/walls': 'walls.h',
-              'features/report': 'report.h',
-          }
-
-          FAMILY_NAMES = {}
-          for module, fams in MODULES.items():
-              for f in fams:
-                  FAMILY_NAMES[f] = module
-
-
-          def strip_literals(line):
-              out = []
-              i = 0
-              n = len(line)
-              while i < n:
-                  c = line[i]
-                  if c == '"' or c == "'":
-                      q = c
-                      i += 1
-                      while i < n:
-                          if line[i] == '\\':
-                              i += 2
-                              continue
-                          if line[i] == q:
-                              i += 1
-                              break
-                          i += 1
-                      out.append('""')
-                      continue
-                  out.append(c)
-                  i += 1
-              return ''.join(out)
-
-
-          def family_of(text):
-              m = re.search(r'\b(tnx_v(\d+)_[a-z0-9_]+)', text)
-              if m:
-                  return 'v' + m.group(2), m.group(1)
-              return None, None
-
-
-          def classify(name, text):
-              for module, names in NAME_RULES.items():
-                  if name in names:
-                      return module
-              fam, _ = family_of(text)
-              if fam is not None:
-                  module = FAMILY_NAMES.get(fam)
-                  if module is not None:
-                      return module
-                  return 'helpers/scan'
-              if name.startswith('g_'):
-                  m = re.match(r'g_v(\d+)_', name)
-                  if m:
-                      module = FAMILY_NAMES.get('v' + m.group(1))
-                      if module is not None:
-                          return module
-                  return 'core/memory'
-              return 'core/memory'
-
-
-          def parse(lines):
-              blocks = []
-              i = 0
-              total = len(lines)
-              while i < total:
-                  raw = lines[i]
-                  s = raw.rstrip()
-                  if s.startswith('#define'):
-                      j = i
-                      while j < total and lines[j].rstrip().endswith('\\'):
-                          j += 1
-                      blocks.append(['define', i, j, lines[i:j + 1]])
-                      i = j + 1
-                      continue
-                  if s.startswith('#import') or s.startswith('#include'):
-                      blocks.append(['import', i, i, [raw]])
-                      i += 1
-                      continue
-                  if s.startswith('#if'):
-                      depth = 0
-                      j = i
-                      while j < total:
-                          t = lines[j].strip()
-                          if t.startswith('#if'):
-                              depth += 1
-                          elif t.startswith('#endif'):
-                              depth -= 1
-                              if depth == 0:
-                                  break
-                          j += 1
-                      blocks.append(['cond', i, j, lines[i:j + 1]])
-                      i = j + 1
-                      continue
-                  if s.startswith('typedef'):
-                      j = i
-                      while j < total and not lines[j].rstrip().endswith(';'):
-                          j += 1
-                      blocks.append(['typedef', i, j, lines[i:j + 1]])
-                      i = j + 1
-                      continue
-                  if s.startswith('static ') or s.startswith('const ') or s.startswith('extern '):
-                      j = i
-                      depth = 0
-                      started = False
-                      while j < total:
-                          clean = strip_literals(lines[j])
-                          depth += clean.count('{') - clean.count('}')
-                          if '{' in clean:
-                              started = True
-                          if started and depth == 0:
-                              break
-                          if not started and lines[j].rstrip().endswith(';'):
-                              break
-                          j += 1
-                      head = strip_literals(' '.join(lines[i:j + 1]))
-                      kind = 'global'
-                      if started:
-                          before = strip_literals('\n'.join(lines[i:j + 1]))
-                          before = before[:before.index('{')].rstrip()
-                          kind = 'func' if before.endswith(')') else 'global'
-                      elif head.rstrip().endswith(';'):
-                          paren = head.rindex('(') if '(' in head else -1
-                          close = head.rindex(')') if ')' in head else -1
-                          kind = 'proto' if (paren >= 0 and close > paren) else 'global'
-                      blocks.append([kind, i, j, lines[i:j + 1]])
-                      i = j + 1
-                      continue
-                  if s == '':
-                      blocks.append(['other', i, i, [raw]])
-                      i += 1
-                      continue
-                  j = i
-                  depth = 0
-                  started = False
-                  while j < total:
-                      clean = strip_literals(lines[j])
-                      depth += clean.count('{') - clean.count('}')
-                      if '{' in clean:
-                          started = True
-                      if started and depth == 0:
-                          if not lines[j].rstrip().endswith(';') and j + 1 < total and lines[j + 1].strip() == ';':
-                              j += 1
-                          break
-                      if not started and lines[j].rstrip().endswith(';'):
-                          break
-                      j += 1
-                  if s.startswith('struct') or s.startswith('union') or s.startswith('enum'):
-                      blocks.append(['typedef', i, j, lines[i:j + 1]])
-                  else:
-                      blocks.append(['func' if started else 'global', i, j, lines[i:j + 1]])
-                  i = j + 1
-              return blocks
-
-
-          def signature_of(text):
-              clean = strip_literals(text)
-              cut = clean.index('{')
-              return text[:cut].rstrip()
-
-
-          def prototype_of(block_text):
-              sig = signature_of(block_text)
-              sig = re.sub(r'^static\s+', '', sig)
-              sig = re.sub(r'\s+', ' ', sig).strip()
-              return sig + ';'
-
-
-          def extern_of(block_text):
-              body = block_text
-              eq = None
-              depth = 0
-              for i, c in enumerate(strip_literals(body)):
-                  if c == '{':
-                      depth += 1
-                  elif c == '}':
-                      depth -= 1
-                  elif c == '=' and depth == 0:
-                      eq = i
-                      break
-              if eq is not None:
-                  body = body[:eq]
-              body = re.sub(r'^static\s+', '', body)
-              body = re.sub(r'\s+', ' ', body).strip()
-              if body.endswith(';'):
-                  body = body[:-1].rstrip()
-              return 'extern ' + body + ';'
-
-
-          def main():
-              text = open(SRC).read()
-              lines = text.split('\n')
-              if lines and lines[-1] == '':
-                  lines = lines[:-1]
-              blocks = parse(lines)
-
-              defs = {m: [] for m in MODULES}
-              protos = {m: [] for m in MODULES}
-              externs = {m: [] for m in MODULES}
-              config = []
-              types = []
-              prelude = []
-              dropped = []
-              used = set()
-
-              for kind, i, j, body in blocks:
-                  joined = '\n'.join(body)
-                  if kind == 'define':
-                      config.append(joined)
-                      used.update(range(i, j + 1))
-                      continue
-                  if kind == 'typedef':
-                      types.append(joined)
-                      used.update(range(i, j + 1))
-                      continue
-                  if kind == 'import' or kind == 'cond':
-                      prelude.append(joined)
-                      used.update(range(i, j + 1))
-                      continue
-                  if kind == 'other':
-                      if body[0].strip() == '':
-                          used.update(range(i, j + 1))
-                          continue
-                      dropped.append((i + 1, body[0]))
-                      used.update(range(i, j + 1))
-                      continue
-                  if kind == 'proto':
-                      dropped.append((i + 1, body[0]))
-                      used.update(range(i, j + 1))
-                      continue
-                  if kind == 'func':
-                      m = re.search(r'\b(tnx_\w+)\s*\(', joined)
-                      name = m.group(1) if m else '?'
-                      module = classify(name, joined)
-                      body2 = list(body)
-                      for n in range(len(body2)):
-                          if body2[n].startswith('static '):
-                              body2[n] = body2[n][len('static '):]
-                              break
-                      defs[module].append('\n'.join(body2))
-                      protos[module].append(prototype_of(joined))
-                      used.update(range(i, j + 1))
-                      continue
-                  if kind == 'global':
-                      m = re.search(r'\b(g_\w+)\b', joined)
-                      name = m.group(1) if m else '?'
-                      module = classify(name, joined)
-                      body2 = list(body)
-                      for n in range(len(body2)):
-                          if body2[n].startswith('static '):
-                              body2[n] = body2[n][len('static '):]
-                              break
-                      defs[module].append('\n'.join(body2))
-                      externs[module].append(extern_of(joined))
-                      used.update(range(i, j + 1))
-                      continue
-                  raise SystemExit('unhandled block kind ' + kind)
-
-              os.makedirs(OUT, exist_ok=True)
-              written = []
-
-              def emit(rel, content):
-                  path = os.path.join(OUT, rel)
-                  os.makedirs(os.path.dirname(path), exist_ok=True)
-                  with open(path, 'w') as handle:
-                      handle.write(content)
-                  written.append((rel, content.count('\n') + 1, len(content)))
-
-              emit('src/core/imports' + SUFFIX + '.h',
-                   '#ifndef TITANOX_IMPORTS_H\n#define TITANOX_IMPORTS_H\n\n'
-                   + '\n'.join(prelude) + '\n\n#endif\n')
-
-              config_text = '\n'.join(config) + '\n'
-              emit('src/core/config' + SUFFIX + '.h',
-                   '#ifndef TITANOX_CONFIG_H\n#define TITANOX_CONFIG_H\n\n#include "core/imports.h"\n\n'
-                   + config_text + '\n#endif\n')
-
-              types_text = '\n\n'.join(types) + '\n'
-              emit('src/core/types' + SUFFIX + '.h',
-                   '#ifndef TITANOX_TYPES_H\n#define TITANOX_TYPES_H\n\n#include "config.h"\n\n'
-                   + types_text + '\n#endif\n')
-
-              group_headers = {}
-              for module in sorted(MODULES):
-                  group = module.split('/')[0]
-                  header = MODULE_HEADER[module]
-                  decls = []
-                  if externs[module]:
-                      decls.append('\n'.join(externs[module]))
-                  if protos[module]:
-                      decls.append('\n'.join(protos[module]))
-                  guard = 'TITANOX_' + module.replace('/', '_').upper() + '_H'
-                  body = '\n\n'.join(decls) + '\n'
-                  emit('src/' + module.split('/')[0] + '/' + header[:-2] + SUFFIX + '.h',
-                       '#ifndef ' + guard + '\n#define ' + guard + '\n\n#include "core/types.h"\n\n' + body + '\n#endif\n')
-                  group_headers.setdefault(group, []).append((module.split('/')[1], header))
-
-              includes = ['#include "core/config.h"', '#include "core/types.h"']
-              for group in ('core', 'utils', 'helpers', 'features'):
-                  for part, header in sorted(group_headers.get(group, [])):
-                      includes.append('#include "' + group + '/' + header + '"')
-              emit('src/titanox' + SUFFIX + '.h',
-                   '#ifndef TITANOX_H\n#define TITANOX_H\n\n' + '\n'.join(includes) + '\n\n#endif\n')
-
-              for module in sorted(MODULES):
-                  chunks = ['#include "titanox.h"', '']
-                  if defs[module]:
-                      chunks.append('\n\n'.join(defs[module]))
-                  content = '\n'.join(chunks).rstrip('\n') + '\n'
-                  emit('src/' + module + SUFFIX + '.mm', content)
-
-              lost = []
-              for i, line in enumerate(lines):
-                  if i in used:
-                      continue
-                  lost.append((i + 1, line))
-
-              emitted = {}
-              for module in sorted(MODULES):
-                  for text in defs[module]:
-                      emitted[text] = emitted.get(text, 0) + 1
-              seen_text = {}
-              for module in sorted(MODULES):
-                  for text in defs[module]:
-                      seen_text[text] = seen_text.get(text, 0) + 1
-              dupes = []
-
-              statics = []
-              for module in sorted(MODULES):
-                  path = os.path.join(OUT, 'src', module + SUFFIX + '.mm')
-                  for n, line in enumerate(open(path).read().split('\n'), 1):
-                      if line.startswith('static '):
-                          statics.append((module, n, line[:80]))
-
-              header_names = set()
-              for root, dirs, files in os.walk(os.path.join(OUT, 'src')):
-                  for name in files:
-                      if not name.endswith(SUFFIX + '.h'):
-                          continue
-                      for line in open(os.path.join(root, name)).read().split('\n'):
-                          line = line.strip()
-                          m = re.match(r'extern\s+.*?\b(g_\w+)\b', line)
-                          if m:
-                              header_names.add(m.group(1))
-                          m = re.match(r'.*?\b(tnx_\w+)\s*\(', line)
-                          if m and line.endswith(';'):
-                              header_names.add(m.group(1))
-
-              missing = []
-              for module in sorted(MODULES):
-                  path = os.path.join(OUT, 'src', module + SUFFIX + '.mm')
-                  text = open(path).read()
-                  for m in re.finditer(r'^(?:[A-Za-z_][\w:*&<> ,]*?)\b(g_\w+)\b', text, re.M):
-                      if m.group(1) not in header_names:
-                          missing.append((module, m.group(1)))
-                  for m in re.finditer(r'^[A-Za-z_][\w:*&<> ,]*?\b(tnx_\w+)\s*\([^;]*\)\s*\{', text, re.M):
-                      if m.group(1) not in header_names:
-                          missing.append((module, m.group(1)))
-
-              print('duplicate bodies:', len(dupes))
-              print('static left in modules:', len(statics))
-              for row in statics[:5]:
-                  print('   ', row)
-              print('names missing from headers:', len(missing))
-              for row in missing[:8]:
-                  print('   ', row)
-              print('header symbol count:', len(header_names))
-              print('blocks:', len(blocks))
-              print('defines:', len(config), 'typedefs:', len(types))
-              total_defs = 0
-              total_externs = 0
-              total_protos = 0
-              for module in sorted(MODULES):
-                  print('  %-20s funcs+globals=%-4d externs=%-4d protos=%-4d'
-                        % (module, len(defs[module]), len(externs[module]), len(protos[module])))
-                  total_defs += len(defs[module])
-                  total_externs += len(externs[module])
-                  total_protos += len(protos[module])
-              print('module bodies:', total_defs, 'externs:', total_externs, 'prototypes:', total_protos)
-              print('dropped:', len(dropped), '(prototype lines re-emitted in headers)')
-              odd = [(ln, t) for ln, t in dropped if not re.match(r'^\s*static\s+.*\(', t)]
-              print('dropped non-prototype lines:', len(odd))
-              for ln, t in odd[:10]:
-                  print('   L%d: %s' % (ln, t[:100]))
-              print('prelude lines kept:', sum(c.count('\n') + 1 for c in prelude))
-              print('unaccounted lines:', len(lost))
-              for ln, line in lost[:10]:
-                  print('  L%d: %s' % (ln, line[:100]))
-              for rel, count, size in written:
-                  print('  wrote %-32s %5d lines %7d bytes' % (rel, count, size))
-              bad = len(lost) + len(odd) + len(statics) + len(missing)
-              print('total written bytes:', sum(s for _, _, s in written))
-              print('source bytes:', len(open(SRC).read()))
-              print('gates:', 'PASS' if bad == 0 else 'FAIL')
-              return 1 if bad else 0
-
-
-          if __name__ == '__main__':
-              sys.exit(main())
-          PY
-          python3 -c "import ast; ast.parse(open('/tmp/cut.py').read())"
-          echo "cutter ready"
-
-      - name: cut the source into modules
+      - name: Setup Theos
         run: |
           set -euo pipefail
-          echo "layout v4"
-          echo "files before: $(find src -type f | wc -l)"
-          if [ ! -f src/Titanox.mm ]; then
-            if [ -s src/titanox.h ]; then
-              echo "src/Titanox.mm is not here and the tree is already cut, nothing to do"
-              exit 0
-            fi
-            echo "src/Titanox.mm is not here and the modules are not here either"
-            echo "put the source at src/Titanox.mm and run again"
-            exit 1
+          if [ ! -d theos/.git ]; then
+            git clone --recursive --depth 1 --shallow-submodules \
+              https://github.com/theos/theos.git theos
           fi
-          SPLIT_OUT=. SPLIT_SUFFIX='' python3 /tmp/cut.py
-          for f in src/titanox.h src/core/imports.h src/core/config.h src/core/types.h \
-                   src/core/memory.mm src/core/log.mm src/core/crash.mm src/core/hooks.mm \
-                   src/utils/strings.mm src/utils/geometry.mm src/helpers/scan.mm \
-                   src/helpers/move.mm src/features/autododge.mm src/features/walls.mm \
-                   src/features/report.mm; do
-            if [ ! -s "$f" ]; then
-              echo "missing or empty: $f"
-              exit 1
-            fi
-          done
-          rm -f src/Titanox.mm
-          echo "files after: $(find src -type f | wc -l)"
+          git -C theos submodule update --init --recursive
+          echo "THEOS=$PWD/theos" >> "$GITHUB_ENV"
+          echo "$PWD/theos/bin" >> "$GITHUB_PATH"
+          git -C theos rev-parse HEAD
 
-      - name: fix the makefile
+      - name: Get Titanox
         run: |
           set -euo pipefail
-          missing=""
-          grep -q -- '-Isrc' Makefile || missing="$missing -Isrc"
-          if grep -q 'src/Titanox.mm' Makefile; then
-            missing="$missing src/Titanox.mm"
-          fi
-          for f in src/core/memory.mm src/core/log.mm src/core/crash.mm src/core/hooks.mm \
-                   src/utils/strings.mm src/utils/geometry.mm src/helpers/scan.mm \
-                   src/helpers/move.mm src/features/autododge.mm src/features/walls.mm \
-                   src/features/report.mm; do
-            grep -q "$f" Makefile || missing="$missing $f"
-          done
-          if [ -z "$missing" ]; then
-            echo "the Makefile already lists every module and -Isrc"
-            exit 0
-          fi
-          echo "the Makefile needs:$missing"
-          if [ -f Makefile ] && [ ! -f Makefile.before-split ]; then
-            cp Makefile Makefile.before-split
-            echo "the old one is kept at Makefile.before-split"
-          fi
-          cat > Makefile <<'MF'
-          TARGET := iphone:clang:latest:15.0
-          ARCHS := arm64
+          mkdir -p deps
+          git clone --depth 1 \
+            https://github.com/flong69zxc-max/Titanox.git deps/Titanox
+          git rev-parse HEAD
+          git -C deps/Titanox rev-parse HEAD
 
-          TITANOX := deps/Titanox/libtitanox
-
-          include $(THEOS)/makefiles/common.mk
-
-          TWEAK_NAME = Titanox
-
-          Titanox_FILES = src/core/memory.mm
-          Titanox_FILES += src/core/log.mm
-          Titanox_FILES += src/core/crash.mm
-          Titanox_FILES += src/core/hooks.mm
-          Titanox_FILES += src/utils/strings.mm
-          Titanox_FILES += src/utils/geometry.mm
-          Titanox_FILES += src/helpers/scan.mm
-          Titanox_FILES += src/helpers/move.mm
-          Titanox_FILES += src/features/autododge.mm
-          Titanox_FILES += src/features/walls.mm
-          Titanox_FILES += src/features/report.mm
-          Titanox_FILES += src/resolve_targets.mm
-          Titanox_FILES += $(TITANOX)/brk_hook/Hook/hook.c
-          Titanox_FILES += $(TITANOX)/brk_hook/Hook/mach_excServer.c
-
-          COMMON_INCLUDES = \
-          	-Isrc \
-          	-Iinclude \
-          	-I$(TITANOX) \
-          	-I$(TITANOX)/libtitanox \
-          	-I$(TITANOX)/brk_hook \
-          	-I$(TITANOX)/brk_hook/Hook
-
-          Titanox_CFLAGS = -Iinclude -Isrc -I$(TITANOX)/brk_hook/Hook
-
-          Titanox_OBJCFLAGS = -fobjc-arc -std=c++17 $(COMMON_INCLUDES) \
-          	-Wno-unused-function -Wno-unused-variable -Wno-unused-parameter \
-          	-Wno-everything
-
-          Titanox_LDFLAGS = -Wl,-undefined,dynamic_lookup
-
-          Titanox_FRAMEWORKS = Foundation UIKit
-
-          include $(THEOS_MAKE_PATH)/tweak.mk
-          MF
-          echo "the Makefile is written"
-
-      - name: write the license
+      - name: Build
         run: |
           set -euo pipefail
-          if [ -f LICENSE ]; then
-            echo "LICENSE is already there, left alone"
-            exit 0
-          fi
-          year="$(date +%Y)"
-          cat > LICENSE <<EOF
-          MIT License
+          gmake clean
+          gmake -j"$(sysctl -n hw.ncpu)" \
+            ARCHS=arm64 DEBUG=0 FINALPACKAGE=1
 
-          Copyright (c) $year flong69zxc-max
-
-          Permission is hereby granted, free of charge, to any person obtaining a copy
-          of this software and associated documentation files (the "Software"), to deal
-          in the Software without restriction, including without limitation the rights
-          to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-          copies of the Software, and to permit persons to whom the Software is
-          furnished to do so, subject to the following conditions:
-
-          The above copyright notice and this permission notice shall be included in all
-          copies or substantial portions of the Software.
-
-          THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-          IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-          FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-          AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-          LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-          OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-          SOFTWARE.
-          EOF
-          echo "LICENSE written"
-
-      - name: write the readme
+      - name: Collect artifact
         run: |
           set -euo pipefail
-          if [ -f README.md ]; then
-            echo "README.md is already there, left alone"
-            exit 0
-          fi
-          cat > README.md <<'EOF'
-          # Titanox
+          mkdir -p out
+          dylib="$(find .theos -type f \
+            -name Titanox.dylib \
+            ! -path '*.dSYM/*' \
+            | sort | head -n 1)"
+          test -n "$dylib"
+          cp "$dylib" out/Titanox.dylib
+          xcrun lipo -info out/Titanox.dylib
+          xcrun otool -L out/Titanox.dylib
+          shasum -a 256 out/Titanox.dylib
+          {
+            printf 'Nulls-Titanox '
+            git rev-parse HEAD
+            printf 'Titanox '
+            git -C deps/Titanox rev-parse HEAD
+          } > out/build-commits.txt
 
-          A tweak for Nulls Brawl on iOS. It walks the character out of incoming fire
-          and writes down what it did.
-
-          It is built against one specific Nulls Brawl arm64 build. The addresses in
-          src/offsets.h and src/lc_detect.h belong to that build, so a game update
-          breaks the tweak and those two files have to be redone.
-
-          ## Layout
-
-          src/core holds the image bounds, the safe readers and writers, the log, the
-          crash handler and the hook slots. src/utils is the small stuff: strings,
-          floats, coordinate clamping. src/helpers finds the game objects and drives the
-          movement. src/features is the dodge, the tile grid it reads and the stats line.
-
-          Everything the modules share lives in src/titanox.h, which pulls in the config,
-          the types and then one header per module. Nothing is static, so a symbol used
-          across modules is declared in the header of the module that defines it.
-
-          ## Build
-
-              make package
-              make install
-
-          theos and the iOS sdk are the only requirements. arm64 only.
-
-          ## Log
-
-          On device the log is at /var/mobile/Documents/Titanox.log. Every line carries a
-          version tag, so a change can be read back with a grep on the tag:
-
-              grep 'v246 dodge' Titanox.log
-
-          The lines worth knowing:
-
-              v244 drag     what the stick was told to do, and whether the engine kept it
-              v246 dodge    health before and after a threat, and whether the dodge was moving
-              v242 grid     the tile map as the engine sees it, with a mask around the player
-              v211 state    one line per tick with every counter
-
-          ## Notes
-
-          The dodge reads the same tile map the game reads and drives the game's own touch
-          drag instead of poking a movement field, so the movement it asks for is the kind
-          the engine already knows how to follow. It does not aim and it does not shoot.
-
-          Writes go through a guard that refuses an address the process cannot write to,
-          and every write is kept in a small ring. If the game does abort anyway, the
-          [CRASH] line in the log is followed by the last writes with their address, size
-          and the phase they happened in, which is usually enough to name the culprit.
-          EOF
-          echo "README.md written"
-
-      - name: commit
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions"
-          git config user.email "github-actions@users.noreply.github.com"
-          git add -A
-          if git diff --cached --quiet; then
-            echo "nothing changed"
-            exit 0
-          fi
-          git commit -q -m "lay out sources into modules"
-          git push
-          echo "pushed"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Titanox
+          path: |
+            out/Titanox.dylib
+            out/build-commits.txt
+          if-no-files-found: error

@@ -400,4 +400,17 @@
 #define TNX_VIEW_RANGE 3400.0f
 #define TNX_SHOT_LOGS 16
 
+#define TNX_COMMIT_MS 80.0f
+#define TNX_COMMIT_GROW 0.25f
+#define TNX_DODGE_DIST 400.0f
+#define TNX_DIST_FACTOR 0.6f
+#define TNX_MULTI_THREAT 2
+#define TNX_SIDE_W_PRIME 0.4f
+#define TNX_SIDE_W_OTHER 0.2f
+#define TNX_SIDE_W_OWN 0.05f
+#define TNX_STAT_SEC 5.0f
+#define TNX_ADV_BUCKETS 8
+#define TNX_ADV_STEP 50.0f
+#define TNX_ADV_MIN 4
+
 #endif

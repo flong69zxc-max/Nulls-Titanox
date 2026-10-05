@@ -424,3 +424,7 @@ int rt_is_code(image_ref_t img, uintptr_t target);
 #define TNX_STR_TEXTFIELD_RVA 0x00e804a2ULL
 #define TNX_FNV_OFFSET 0x811c9dc5UL
 #define TNX_FNV_PRIME 0x01000193UL
+
+#define TNX_DRAG_GATE_ON_OFF 0xf9eULL
+#define TNX_DRAG_BRANCH_OFF 0xf78ULL
+#define TNX_TOUCH_ONLY_OFF 0xf7fULL

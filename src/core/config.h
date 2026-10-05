@@ -219,7 +219,8 @@
 #define TNX_BASES 5
 #define TNX_MAX_LINES 4
 #define TNX_BUCKET_TICKS 60
-#define TNX_RAW_STICK 0
+#define TNX_RAW_STICK 1
+#define TNX_RAW_SWAP 0
 #define TNX_LOGS_3 12
 #define TNX_PLAYER_GID 1000000
 #define TNX_SHOT_GID 2000000

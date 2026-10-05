@@ -116,6 +116,42 @@
 #define TNX_CONTACT_LOGS 8
 #endif
 
+#ifndef TNX_SNAP
+#define TNX_SNAP 1
+#endif
+
+#ifndef TNX_SNAP_MAG
+#define TNX_SNAP_MAG 600.0f
+#endif
+
+#ifndef TNX_SNAP_LOGS
+#define TNX_SNAP_LOGS 8
+#endif
+
+#ifndef TNX_SIDE_FLIP
+#define TNX_SIDE_FLIP 1
+#endif
+
+#ifndef TNX_SIDE_STALE
+#define TNX_SIDE_STALE 45
+#endif
+
+#ifndef TNX_CAL_TICKS
+#define TNX_CAL_TICKS 6
+#endif
+
+#ifndef TNX_CAL_MISS
+#define TNX_CAL_MISS 40
+#endif
+
+#ifndef TNX_WALL_LOGS
+#define TNX_WALL_LOGS 8
+#endif
+
+#ifndef TNX_TEAM_LOGS
+#define TNX_TEAM_LOGS 6
+#endif
+
 static float g_dodge_px = 0.0f;
 static float g_dodge_py = 0.0f;
 static int g_dodge_have = 0;
@@ -384,6 +420,28 @@ void tnx_roster(uintptr_t ownElem, int ownIndex, int ownTeam,
 
                 if (sqrtf(dx * dx + dy * dy) <= TNX_CLUSTER) g_mates++;
                 else g_enemies++;
+            }
+        }
+
+        {
+            int same = 1;
+
+            for (k = 1; k < g_pl_n; k++) {
+                if (g_pl_team[k] != g_pl_team[0]) same = 0;
+            }
+
+            if (g_pl_n > 1 && same && g_team_trust) {
+                g_team_trust = 0;
+
+                if (g_roster_logs < TNX_TEAM_LOGS) {
+                    TNX_LOGX("teambyte players=%d value=%d same=%d trust=%d - every player carries "
+                             "the same team byte, so that field holds no side information in this "
+                             "mode and one player being read as a mate is not evidence of anything; "
+                             "the byte is dropped and the side is taken from the spawn cluster "
+                             "instead, which is the same rule the byte-only path uses when it "
+                             "already distrusts itself",
+                             g_pl_n, g_pl_team[0], same, g_team_trust);
+                }
             }
         }
 
@@ -1516,6 +1574,36 @@ static int tnx_blacklisted(float speed, float radius) {
     return 0;
 }
 
+int g_rad_bad = 0;
+
+int g_cal_miss = 0;
+
+int g_cal_off_seen = -1;
+
+float g_cal_rad_seen = 0.0f;
+
+int g_cal_n = 0;
+
+int g_snap_calls = 0;
+
+int g_snap_live = 0;
+
+int g_snap_logs = 0;
+
+int g_side_tick = 0;
+
+int g_side_flips = 0;
+
+int g_side_picks = 0;
+
+uint64_t g_wall_stops = 0;
+
+int tnx_ok(float v, float lo, float hi) {
+    if (!(v >= lo && v <= hi)) return 0;
+
+    return 1;
+}
+
 int g_rad_off = -1;
 
 int g_rad_n = 0;
@@ -1547,8 +1635,7 @@ void tnx_contact_note(float dist, float projR) {
     float r = dist - projR;
 
     if (!TNX_GEOM) return;
-    if (r < 10.0f) return;
-    if (r > TNX_RADIUS_MAX) return;
+    if (!tnx_ok(r, 10.0f, TNX_RADIUS_MAX)) return;
 
     if (g_own_r_n == 0) g_own_r = r;
     else g_own_r = g_own_r * 0.75f + r * 0.25f;
@@ -1579,15 +1666,14 @@ float tnx_proj_radius(const tnx_proj_t *p, float speed) {
     if (g_rad_off >= 0) {
         float r = 0.0f;
 
-        if (base && tnx_read_f32(base + (uintptr_t)g_rad_off, &r)) {
-            if (r >= TNX_RADIUS_MIN && r <= TNX_RADIUS_MAX) {
-                g_rad_est = r;
+        if (base && tnx_read_f32(base + (uintptr_t)g_rad_off, &r) &&
+            tnx_ok(r, TNX_RADIUS_MIN, TNX_RADIUS_MAX)) {
+            g_rad_est = r;
 
-                return r;
-            }
+            return r;
         }
 
-        return g_rad_est;
+        return tnx_ok(g_rad_est, TNX_RADIUS_MIN, TNX_RADIUS_MAX) ? g_rad_est : 0.0f;
     }
 
     if (!base) return 0.0f;
@@ -1600,14 +1686,24 @@ float tnx_proj_radius(const tnx_proj_t *p, float speed) {
         g_rad_test++;
 
         if (!tnx_read_f32(base + (uintptr_t)off, &v)) continue;
-        if (v < 1.0f) continue;
+        if (!tnx_ok(v, 1.0f, 1.0e6f)) continue;
 
         d = v - speed;
         if (d < 0.0f) d = -d;
         if (d > speed * TNX_CAL_TOL) continue;
 
         if (!tnx_read_f32(base + (uintptr_t)off + 4, &r)) continue;
-        if (r < TNX_RADIUS_MIN || r > TNX_RADIUS_MAX) continue;
+        if (!tnx_ok(r, TNX_RADIUS_MIN, TNX_RADIUS_MAX)) continue;
+
+        if (g_cal_off_seen == off && tnx_ok(g_cal_rad_seen - r, -1.0f, 1.0f)) {
+            g_cal_n++;
+        } else {
+            g_cal_off_seen = off;
+            g_cal_rad_seen = r;
+            g_cal_n = 1;
+        }
+
+        if (g_cal_n < TNX_CAL_TICKS) return 0.0f;
 
         g_rad_off = off + 4;
         g_rad_n++;
@@ -1616,19 +1712,69 @@ float tnx_proj_radius(const tnx_proj_t *p, float speed) {
         if (g_rad_logs < TNX_GEOM_LOGS) {
             g_rad_logs++;
 
-            TNX_LOGX("geom speedOff=%#x radOff=%#x r=%.0f speed=%.0f tol=%.0f%% tests=%llu - the "
+            TNX_LOGX("geom speedOff=%#x radOff=%#x r=%.0f speed=%.0f tol=%.0f%% held=%d tests=%llu - the "
                      "field holding a value within tolerance of the speed measured from the "
                      "position delta is the speed field, so the radius is the float right after "
                      "it; tests is how many offsets were read before the match, and once locked "
                      "every shot is read through that offset instead of the config constant",
                      off, off + 4, (double)r, (double)speed, (double)(TNX_CAL_TOL * 100.0f),
-                     (unsigned long long)g_rad_test);
+                     g_cal_n, (unsigned long long)g_rad_test);
         }
 
         return r;
     }
 
+    g_cal_miss++;
+
+    if (g_cal_miss == TNX_CAL_MISS && g_rad_logs < TNX_GEOM_LOGS) {
+        g_rad_logs++;
+
+        TNX_LOGX("geom no speed=%.0f tests=%llu range=%#x..%#x step=%d - no offset in that range "
+                 "held a value within tolerance of the measured speed for %d frames running, so no "
+                 "radius was taken and the hit test stays on the configured value; the counter only "
+                 "prints once because forty misses already say the search does not apply to this "
+                 "build, and a repeated line would be noise",
+                 (double)speed, (unsigned long long)g_rad_test, TNX_CAL_OFF_LO, TNX_CAL_OFF_HI,
+                 TNX_CAL_STEP, (int)TNX_CAL_TICKS);
+    }
+
     return 0.0f;
+}
+
+int tnx_snap(float dx, float dy) {
+    uintptr_t fn = tnx_entry_2(TNX_SETPRED4_RVA);
+    uintptr_t own = tnx_own_obj();
+    float len = sqrtf(dx * dx + dy * dy);
+    int32_t vx = 0;
+    int32_t vy = 0;
+
+    g_snap_live = 0;
+
+    if (!TNX_SNAP) return 0;
+    if (!fn || !own) return 0;
+    if (!tnx_ok(len, 0.001f, 1.0e9f)) return 0;
+
+    vx = (int32_t)((double)dx / (double)len * (double)TNX_SNAP_MAG);
+    vy = (int32_t)((double)dy / (double)len * (double)TNX_SNAP_MAG);
+
+    ((void (*)(void *, int, int, int))fn)((void *)own, vx, vy, TNX_SETFLAG);
+
+    g_snap_calls++;
+    g_snap_live = 1;
+
+    if (g_snap_logs < TNX_SNAP_LOGS || (g_ticks_3 % 180) == 0) {
+        g_snap_logs++;
+
+        TNX_LOGX("snap own=%p pair=(%d,%d) dir=(%.0f,%.0f) len=%.0f mag=%.0f fn=%#llx flag=%d - "
+                 "this is the same call the engine makes for itself, so the direction is applied in "
+                 "the frame it was chosen: the stick is not written and the input queue is not used, "
+                 "which is why the move keeps meaning what the pick computed and why there is no "
+                 "queue hop between the decision and the motion",
+                 (void *)own, vx, vy, (double)dx, (double)dy, (double)len,
+                 (double)TNX_SNAP_MAG, (unsigned long long)TNX_SETPRED4_RVA, (int)TNX_SETFLAG);
+    }
+
+    return 1;
 }
 
 void tnx_build(void) {
@@ -1799,7 +1945,18 @@ void tnx_build(void) {
         s->remaining = rem;
         {
             float pr = tnx_proj_radius(p, speed);
-            float ir = pr + tnx_own_radius() + TNX_RADIUS_MARGIN;
+            float orr = tnx_own_radius();
+            float ir = pr + orr + TNX_RADIUS_MARGIN;
+
+            if (!tnx_ok(pr, 0.0f, TNX_RADIUS_MAX)) pr = 0.0f;
+            if (!tnx_ok(orr, 0.0f, TNX_RADIUS_MAX)) orr = 0.0f;
+
+            ir = pr + orr + TNX_RADIUS_MARGIN;
+
+            if (!tnx_ok(ir, 1.0f, TNX_RADIUS_MAX * 4.0f)) {
+                ir = TNX_DODGE_CLEAR_R;
+                g_rad_bad++;
+            }
 
             if (ir < TNX_DODGE_CLEAR_R) ir = TNX_DODGE_CLEAR_R;
 
@@ -2808,8 +2965,22 @@ static int tnx_side_pick(float px, float py, float *outX, float *outY) {
         sa += TNX_LEARN_W * (tnx_learn_rate(c, t, 0) - 0.5f);
         sb += TNX_LEARN_W * (tnx_learn_rate(c, t, 1) - 0.5f);
 
-        if (g_side_last == 0 && sa > -1.0e8f) sa += TNX_LEARN_W * TNX_SIDE_MARGIN;
-        if (g_side_last == 1 && sb > -1.0e8f) sb += TNX_LEARN_W * TNX_SIDE_MARGIN;
+        {
+            int stale = 0;
+
+            if (TNX_SIDE_FLIP && g_side_tick != 0 &&
+                (g_ticks_3 - (uint64_t)g_side_tick) > (uint64_t)TNX_SIDE_STALE) stale = 1;
+
+            if (stale) {
+                g_side_flips++;
+
+                if (g_side_last == 0 && sb > -1.0e8f) sb += TNX_LEARN_W * TNX_SIDE_MARGIN;
+                if (g_side_last == 1 && sa > -1.0e8f) sa += TNX_LEARN_W * TNX_SIDE_MARGIN;
+            } else {
+                if (g_side_last == 0 && sa > -1.0e8f) sa += TNX_LEARN_W * TNX_SIDE_MARGIN;
+                if (g_side_last == 1 && sb > -1.0e8f) sb += TNX_LEARN_W * TNX_SIDE_MARGIN;
+            }
+        }
 
         if (sa < -1.0e8f && sb < -1.0e8f) return 0;
 
@@ -2822,6 +2993,9 @@ static int tnx_side_pick(float px, float py, float *outX, float *outY) {
             *outY = by;
             g_side_last = 1;
         }
+
+        g_side_tick = (int)g_ticks_3;
+        g_side_picks++;
 
         g_pick_key_c = c;
         g_pick_key_t = t;
@@ -3060,6 +3234,24 @@ static void tnx_stat_report(void) {
         }
     }
 
+    TNX_LOGX("act snap=%d live=%d flip=%d sidePicks=%d wallStop=%llu radBad=%llu calMiss=%llu "
+             "calOff=%#x ownR=%.0f geomOff=%#x geomR=%.0f - snap is how many calls to the engine "
+             "movement apply went out, live says the last decision was applied that way, flip counts "
+             "how often a stale side was turned around, wallStop is how many walks ended because a "
+             "wall clipped the target, radBad is how many segments fell back to the configured band "
+             "because the radii were not finite, calMiss is how many calibration sweeps ended with "
+             "no offset, and calOff and geomOff being -1 means no radius was ever taken from data",
+             g_snap_calls, g_snap_live, g_side_flips, g_side_picks,
+             (unsigned long long)g_wall_stops, (unsigned long long)g_rad_bad,
+             (unsigned long long)g_cal_miss, (unsigned int)g_cal_off_seen, (double)g_own_r,
+             (unsigned int)g_rad_off, (double)g_rad_est);
+
+    g_snap_calls = 0;
+    g_side_flips = 0;
+    g_side_picks = 0;
+    g_rad_bad = 0;
+    g_cal_miss = 0;
+
     if (best >= 0) {
         TNX_LOGX("advise distance=%.0f absorbed=%.2f over=%llu dodgeDist=%d commit=%d - the bucketed "
                  "scoreboard names the step that ate the fewest shots, so when that number differs "
@@ -3105,6 +3297,27 @@ static void tnx_state_tick(float px, float py) {
     if (g_seg_count > 0) {
         g_no_threat_since = 0;
         g_released = 0;
+
+        return;
+    }
+
+    if (g_moving && tnx_wall_blocked(px, py, g_tx_2, g_ty_2) == 1) {
+        tnx_state_reset();
+
+        g_released = 1;
+        g_wall_stops++;
+
+        tnx_enqueue((int32_t)px, (int32_t)py);
+
+        if (g_wall_stops <= TNX_WALL_LOGS) {
+            TNX_LOGX("wallstop own=(%.0f,%.0f) target=(%.0f,%.0f) segs=%d stops=%llu - the tilemap "
+                     "clips the run to the target that is still being walked, so the target is "
+                     "replaced by own position in that frame instead of waiting for the no threat "
+                     "timer: without this the character keeps pushing along the last heading and "
+                     "stands in the wall until something else changes the target",
+                     (double)px, (double)py, (double)g_tx_2, (double)g_ty_2, g_seg_count,
+                     (unsigned long long)g_wall_stops);
+        }
 
         return;
     }
@@ -3269,16 +3482,21 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
     if (g_logs_4 < 24 && (g_ticks_3 % 60) == 0) {
         g_logs_4++;
 
-        TNX_LOGX("dodge segs=%d threatened=%d picked=%d target=(%.0f,%.0f) dist=%.0f stick=%d "
-                 "angle=%.1f write=%d moving=%d - the threat segments start where each shot is NOW "
-                 "and run along its own flight, so a shot that already passed is behind the segment "
-                 "and not a reason to run; the directions are walked outward from the stick angle so "
-                 "a safe heading near the one the player holds wins; every write is off in this build",
+        TNX_LOGX("dodge segs=%d threatened=%d picked=%d target=(%.0f,%.0f) dist=%.0f way=%.0f "
+                 "stick=%d angle=%.1f joyw=%d snap=%d moving=%d - the threat segments start where "
+                 "each shot is NOW and run along its own flight, so a shot that already passed is "
+                 "behind the segment and not a reason to run; the directions are walked outward from "
+                 "the stick angle so a safe heading near the one the player holds wins; way is the "
+                 "heading actually written towards in degrees, counted from the positive x axis, so "
+                 "two consecutive lines with the same way is the character holding one direction",
                  g_seg_count, threatened, picked, (double)g_tx_2, (double)g_ty_2,
                  (double)sqrtf((g_tx_2 - px) * (g_tx_2 - px) +
                                (g_ty_2 - py) * (g_ty_2 - py)),
-                 stick, (double)desiredDeg, TNX_JOY_WRITE, g_moving);
+                 (double)(atan2f(g_ty_2 - py, g_tx_2 - px) * 180.0f / 3.14159265358979f),
+                 stick, (double)desiredDeg, TNX_JOY_WRITE, g_snap_live, g_moving);
     }
+
+    if (g_moving) tnx_snap(g_tx_2 - px, g_ty_2 - py);
 
     tnx_predict_2(ownX, ownY, g_tx_2, g_ty_2);
 

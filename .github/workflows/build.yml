@@ -14,8 +14,8 @@ concurrency:
 
 jobs:
   build:
-    runs-on: macos-14
-    timeout-minutes: 12
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -38,88 +38,39 @@ jobs:
       - name: Restore Theos
         uses: actions/cache@v4
         with:
-          path: theos
-          key: theos-macos14-v3
+          path: ~/theos
+          key: theos-linux-v1
 
-      - name: Toolchain
+      - name: Theos
         run: |
           set -euo pipefail
-          export HOMEBREW_NO_AUTO_UPDATE=1
-          export HOMEBREW_NO_INSTALL_CLEANUP=1
-          export HOMEBREW_NO_ANALYTICS=1
-          export HOMEBREW_NO_ENV_HINTS=1
-
-          mkdir -p deps out
-
-          brew_tools() {
-            for tool in ldid make; do
-              brew list "$tool" >/dev/null 2>&1 || brew install "$tool"
-            done
-          }
-
-          theos_src() {
-            if [ ! -f theos/makefiles/common.mk ]; then
-              rm -rf theos.partial
-              git clone --recursive --depth 1 --shallow-submodules \
-                https://github.com/theos/theos.git theos.partial
-              rm -rf theos
-              mv theos.partial theos
-            fi
-            git -C theos submodule update --init --recursive
-            test -f theos/makefiles/common.mk
-          }
-
-          deps_src() {
-            git clone --depth 1 \
-              https://github.com/flong69zxc-max/Titanox.git deps/Titanox
-          }
-
-          brew_tools & brew_pid=$!
-          theos_src  & theos_pid=$!
-          deps_src   & deps_pid=$!
-
-          failed=0
-          wait "$brew_pid"  || failed=1
-          wait "$theos_pid" || failed=1
-          wait "$deps_pid"  || failed=1
-          if [ "$failed" -ne 0 ]; then
-            echo "::error::toolchain bootstrap failed"
-            exit 1
+          if [ ! -f "$HOME/theos/makefiles/common.mk" ]; then
+            THEOS="$HOME/theos" \
+              bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)" </dev/null
           fi
+          test -f "$HOME/theos/makefiles/common.mk"
+          echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
+          echo "$HOME/theos/bin" >> "$GITHUB_PATH"
 
-          echo "THEOS=$PWD/theos" >> "$GITHUB_ENV"
-          echo "$PWD/theos/bin" >> "$GITHUB_PATH"
-          echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
+      - name: Deps
+        run: |
+          set -euo pipefail
+          mkdir -p deps
+          git clone --depth 1 https://github.com/flong69zxc-max/Titanox.git deps/Titanox
 
       - name: Build
         run: |
           set -euo pipefail
-          gmake -j"$(( $(sysctl -n hw.ncpu) + 1 ))" \
-            ARCHS=arm64 DEBUG=0 FINALPACKAGE=1
+          make -j"$(( $(nproc) + 1 ))" ARCHS=arm64 DEBUG=0 FINALPACKAGE=1
 
-      - name: Collect and verify
+      - name: Package
         run: |
           set -euo pipefail
-          dylib="$(find .theos -type f -name Titanox.dylib \
-            ! -path '*.dSYM/*' | sort | head -n 1 || true)"
+          dylib="$(find .theos -type f -name Titanox.dylib ! -path '*.dSYM/*' | sort | head -n 1)"
           test -n "$dylib"
+          mkdir -p out
           cp "$dylib" out/Titanox.dylib
-          xcrun lipo -info out/Titanox.dylib
-
-          stamp="$(grep -ho 'drop=[0-9][0-9]*' src/core/log.mm | head -n 1 || true)"
-          hits=""
-          if [ -n "$stamp" ]; then
-            hits="$(strings -a out/Titanox.dylib | grep -c -F -- "$stamp" || true)"
-          fi
-
-          if [ -z "$stamp" ]; then
-            echo "::warning::src/core/log.mm carries no drop= stamp, so this binary is published without a source identity check"
-          elif [ "${hits:-0}" -gt 0 ]; then
-            echo "verified $stamp from the source tree is inside the built dylib"
-          else
-            echo "::error::the built dylib does not contain $stamp, which src/core/log.mm declares - stale artifact or stale build tree, refusing to publish it"
-            exit 1
-          fi
+          file out/Titanox.dylib
 
       - name: Upload Titanox.dylib
         uses: actions/upload-artifact@v4

@@ -694,6 +694,9 @@ uint64_t tnx_slot_repl_33(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
     return r;
 }
 
+uint64_t tnx_slot_repl_34(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
+                         uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7);
+
 const struct tnx_t_g_slot_specs g_slot_specs[TNX_SLOT_COUNT] = {
 
     { "A1/vt1002548+10/ad4ed0", "A1", 0x00ad4ed0ULL, 0x01002598ULL, tnx_slot_repl_0, 0 },
@@ -740,6 +743,7 @@ const struct tnx_t_g_slot_specs g_slot_specs[TNX_SLOT_COUNT] = {
       tnx_slot_repl_32, 0 },
     { "U2/BattleScreen::updateMovement", "U2", RVA_BATTLESCREEN__UPDATEMOVEMENT, 0,
       tnx_slot_repl_33, 0 },
+    { "A0/BattleScreen::update @7a03a0", "A0", TNX_RVA_BATTLESCREEN_UPDATE, TNX_SLOT_BATTLESCREEN_UPDATE, tnx_slot_repl_34, 1 },
 };
 
 int g_ag_installed = -1;
@@ -1619,4 +1623,62 @@ void poll_for_game(int tick) {
                    dispatch_get_main_queue(), ^{
         poll_for_game(tick + 1);
     });
+}
+
+uintptr_t g_actuator = 0;
+int g_act_on = 0;
+int32_t g_act_tx = 0;
+int32_t g_act_ty = 0;
+
+uintptr_t tnx_actuator(void) {
+    return g_actuator;
+}
+
+void tnx_actuator_publish(int on, int32_t tx, int32_t ty) {
+    g_act_on = on;
+    g_act_tx = tx;
+    g_act_ty = ty;
+}
+
+void tnx_actuator_stick(void *bs, void *moveState) {
+    int32_t px = 0;
+    int32_t py = 0;
+    int32_t rawX = 0;
+    int32_t rawY = 0;
+    int32_t tx = 0;
+    int32_t ty = 0;
+    uint8_t latch = 1;
+    int32_t dirty = 0;
+
+    if (!bs || !g_act_on) return;
+
+    tx = g_act_tx;
+    ty = g_act_ty;
+
+    if (!tnx_read_i32((uintptr_t)moveState + TNX_MS_POSX_OFF, &px)) return;
+    if (!tnx_read_i32((uintptr_t)moveState + TNX_MS_POSY_OFF, &py)) return;
+
+    rawX = tx - px;
+    rawY = ty - py;
+
+    tnx_write_bytes((uintptr_t)bs + TNX_CTRL_RAW_X_OFF, &rawX, sizeof(rawX));
+    tnx_write_bytes((uintptr_t)bs + TNX_CTRL_RAW_Y_OFF, &rawY, sizeof(rawY));
+    tnx_write_bytes((uintptr_t)bs + TNX_CTRL_APPLIED_X_OFF, &tx, sizeof(tx));
+    tnx_write_bytes((uintptr_t)bs + TNX_CTRL_APPLIED_Y_OFF, &ty, sizeof(ty));
+    tnx_write_bytes((uintptr_t)bs + TNX_CTRL_LATCH_OFF, &latch, sizeof(latch));
+    tnx_write_bytes((uintptr_t)bs + TNX_CTRL_DIRTY_OFF, &dirty, sizeof(dirty));
+
+    g_joystick_writes++;
+}
+
+uint64_t tnx_slot_repl_34(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
+                         uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
+    tnx_slot_note(34, a0, a1);
+
+    g_actuator = (uintptr_t)a0;
+    tnx_actuator_stick(a0, (void *)a1);
+
+    if (g_slot_orig[34]) return g_slot_orig[34](a0, a1, a2, a3, a4, a5, a6, a7);
+
+    return 0;
 }

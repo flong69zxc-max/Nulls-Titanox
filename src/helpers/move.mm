@@ -335,6 +335,8 @@ int tnx_pending(int want, uint64_t *mask) {
 
     if (mask) *mask = 0;
 
+    tnx_actuator_publish(1, vx, vy);
+
     mgr = tnx_manager();
 
     if (!mgr) return 0;

@@ -229,6 +229,8 @@ int tnx_own_scan(void);
 int tnx_resolve_own_2(const tnx_obj_t *objects, int usable, int *indexOut, const char **fromOut);
 void tnx_gate_report(int slotHit);
 int tnx_proj_scan(uintptr_t manager, int32_t count);
+extern int g_ctrl_pick;
+
 uintptr_t tnx_controller(void);
 void tnx_watch(int32_t ownX, int32_t ownY);
 void tnx_death_signals(uintptr_t ownElem, int32_t ownX, int32_t ownY);

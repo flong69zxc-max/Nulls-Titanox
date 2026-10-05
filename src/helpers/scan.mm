@@ -1384,9 +1384,12 @@ void tnx_read_map(uintptr_t mode) {
     g_map_w = 0;
     g_map_h = 0;
 
-    if (!tnx_read_ptr(mode + TNX_MODE_TILEMAP_OFF, &tileMap) || !tileMap) return;
-    if (!tnx_read_i32((uintptr_t)tileMap + TNX_TILEMAP_WIDTH_OFF, &width)) return;
-    if (!tnx_read_i32((uintptr_t)tileMap + TNX_TILEMAP_HEIGHT_OFF, &height)) return;
+    if (!mode) return;
+
+    tileMap = (void *)tnx_map_object();
+    if (!tileMap) return;
+    if (!tnx_read_i32((uintptr_t)tileMap + TNX_MAP_WIDTH_OFF, &width)) return;
+    if (!tnx_read_i32((uintptr_t)tileMap + TNX_MAP_HEIGHT_OFF, &height)) return;
 
     g_map_w = width;
     g_map_h = height;

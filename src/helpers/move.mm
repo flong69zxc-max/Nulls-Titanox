@@ -8,6 +8,12 @@
 #define TNX_JS_HOLD 2
 #endif
 
+#ifndef TNX_STICK_RAW_WRITE
+#define TNX_STICK_RAW_WRITE 0
+#endif
+
+uint32_t g_token_2 = 0;
+
 uint64_t g_diag_us = 0;
 
 uint64_t g_diag_max_us = 0;
@@ -377,6 +383,35 @@ int tnx_enqueue(int x, int y) {
     tnx_write_bytes((uintptr_t)msg + TNX_X_OFF, &vx, sizeof(vx));
     tnx_write_bytes((uintptr_t)msg + TNX_Y_OFF, &vy, sizeof(vy));
 
+    {
+        uintptr_t battleFn = tnx_entry_2(TNX_GETBATTLE_RVA);
+        uintptr_t ctrl = tnx_controller();
+        int32_t ownX = 0;
+        int32_t ownY = 0;
+
+        g_token_2 = 0;
+        g_raw_x = 0;
+        g_raw_y = 0;
+
+        if (ctrl && tnx_own(&ownX, &ownY)) {
+            int32_t rawX = vx - ownX;
+            int32_t rawY = vy - ownY;
+
+            if (tnx_write_bytes(ctrl + TNX_CTRL_RAW_X_OFF, &rawX, sizeof(rawX))) {
+                tnx_write_bytes(ctrl + TNX_CTRL_RAW_Y_OFF, &rawY, sizeof(rawY));
+            }
+
+            g_raw_x = rawX;
+            g_raw_y = rawY;
+        }
+
+        if (battleFn) {
+            void *battle = ((void *(*)(void))battleFn)();
+
+            if (battle) g_token_2 = tnx_ci_sign(msg, battle);
+        }
+    }
+
     mgr = tnx_manager();
 
     if (!mgr) {
@@ -397,6 +432,23 @@ int tnx_enqueue(int x, int y) {
     }
 
     ((void (*)(void *, void *))inputFn)(mgr, msg);
+
+    {
+        uintptr_t ctrl = tnx_controller();
+        uint8_t latch = TNX_CTRL_LATCH_VAL;
+        int32_t dirty = TNX_CTRL_DIRTY_VAL;
+
+        if (ctrl) {
+            tnx_write_bytes(ctrl + TNX_CTRL_APPLIED_X_OFF, &vx, sizeof(vx));
+            tnx_write_bytes(ctrl + TNX_CTRL_APPLIED_Y_OFF, &vy, sizeof(vy));
+            tnx_write_bytes(ctrl + TNX_CTRL_LATCH_OFF, &latch, sizeof(latch));
+            tnx_write_bytes(ctrl + TNX_CTRL_DIRTY_OFF, &dirty, sizeof(dirty));
+
+            g_app_x = vx;
+            g_app_y = vy;
+            g_applied_writes++;
+        }
+    }
 
     g_seq_after = -1;
     tnx_read_i32((uintptr_t)mgr + TNX_MGR_SEQ_OFF, &g_seq_after);
@@ -1702,7 +1754,7 @@ void tnx_stick(int engaged, float dirX, float dirY) {
     g_stick_x = wx;
     g_stick_y = wy;
 
-    if (!(TNX_RETIRE && g_accepted && !TNX_JS_STICK)) {
+    if (TNX_STICK_RAW_WRITE && !(TNX_RETIRE && g_accepted && !TNX_JS_STICK)) {
         if (!tnx_write_bytes(ctrl + TNX_CTRL_RAW_X_OFF, &wx, sizeof(wx))) return;
 
         tnx_write_bytes(ctrl + TNX_CTRL_RAW_Y_OFF, &wy, sizeof(wy));

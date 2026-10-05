@@ -117,7 +117,15 @@
 #endif
 
 #ifndef TNX_SNAP
-#define TNX_SNAP 0
+#define TNX_SNAP 1
+#endif
+
+#ifndef TNX_SNAP_DELTA
+#define TNX_SNAP_DELTA 0
+#endif
+
+#ifndef TNX_SNAP_HARD_OFF
+#define TNX_SNAP_HARD_OFF 1
 #endif
 
 #ifndef TNX_SNAP_MAG
@@ -1746,9 +1754,33 @@ float tnx_proj_radius(const tnx_proj_t *p, float speed) {
 }
 
 int tnx_snap(float dx, float dy) {
+    static int off_logs = 0;
+
+#if TNX_SNAP_HARD_OFF
+    if (off_logs < 4) {
+        off_logs++;
+
+        TNX_LOGX("snap off v36 dir=(%.0f,%.0f) - the call is not made at all in this build and no pair "
+                 "leaves it: the crash address was exactly the pair this function handed the engine, "
+                 "with pc and lr both inside the game, so the engine stored our vector in a slot of the "
+                 "container element and its own code later read that slot back as a pointer; the move "
+                 "is carried by the prediction call on the logic client and by the input message, which "
+                 "run on the same frame, and the flag sits at the top of the function so a define from "
+                 "outside cannot turn it back on",
+                 (double)dx, (double)dy);
+    }
+
+    (void)dx;
+    (void)dy;
+
+    return 0;
+#else
     uintptr_t fn = tnx_entry_2(TNX_SETPRED4_RVA);
     uintptr_t own = tnx_own_obj();
+    uintptr_t dst = tnx_controller();
     float len = sqrtf(dx * dx + dy * dy);
+    int32_t ownX = 0;
+    int32_t ownY = 0;
     int32_t vx = 0;
     int32_t vy = 0;
 
@@ -1771,13 +1803,21 @@ int tnx_snap(float dx, float dy) {
         return 0;
     }
 
-    if (!fn || !own) return 0;
+    if (!fn || !dst || !own) return 0;
     if (!tnx_ok(len, 0.001f, 1.0e9f)) return 0;
+    if (!tnx_own(&ownX, &ownY)) return 0;
 
+#if TNX_SNAP_DELTA
     vx = (int32_t)((double)dx / (double)len * (double)TNX_SNAP_MAG);
     vy = (int32_t)((double)dy / (double)len * (double)TNX_SNAP_MAG);
+#else
+    vx = ownX + (int32_t)((double)dx / (double)len * (double)tnx_step());
+    vy = ownY + (int32_t)((double)dy / (double)len * (double)tnx_step());
+#endif
 
-    ((void (*)(void *, int, int, int))fn)((void *)own, vx, vy, TNX_SETFLAG);
+    if (!tnx_valid_point((float)vx, (float)vy)) return 0;
+
+    ((void (*)(uintptr_t, int, int, int))fn)(dst, vx, vy, TNX_SETFLAG);
 
     g_snap_calls++;
     g_snap_live = 1;
@@ -1785,16 +1825,20 @@ int tnx_snap(float dx, float dy) {
     if (g_snap_logs < TNX_SNAP_LOGS || (g_ticks_3 % 180) == 0) {
         g_snap_logs++;
 
-        TNX_LOGX("snap own=%p pair=(%d,%d) dir=(%.0f,%.0f) len=%.0f mag=%.0f fn=%#llx flag=%d - "
-                 "this is the same call the engine makes for itself, so the direction is applied in "
-                 "the frame it was chosen: the stick is not written and the input queue is not used, "
-                 "which is why the move keeps meaning what the pick computed and why there is no "
-                 "queue hop between the decision and the motion",
-                 (void *)own, vx, vy, (double)dx, (double)dy, (double)len,
-                 (double)TNX_SNAP_MAG, (unsigned long long)TNX_SETPRED4_RVA, (int)TNX_SETFLAG);
+        TNX_LOGX("snap dst=%p sent=(%d,%d) own=(%d,%d) dir=(%.0f,%.0f) len=%.0f step=%.0f delta=%d "
+                 "elem=%p mag=%.0f - the receiver is the logic client the prediction call uses and the "
+                 "argument is a destination in the same units as the pick, while the previous form "
+                 "handed the same function the container element and a %.0f unit delta: the crash "
+                 "address was exactly that pair with pc and lr both inside the game, so the engine "
+                 "wrote our vector into a slot of the element and its own code read that slot back as "
+                 "a pointer, which is what the receiver change removes; delta=1 restores the old form",
+                 (void *)dst, vx, vy, ownX, ownY, (double)dx, (double)dy, (double)len,
+                 (double)tnx_step(), (int)TNX_SNAP_DELTA, (void *)own, (double)TNX_SNAP_MAG,
+                 (double)TNX_SNAP_MAG);
     }
 
     return 1;
+#endif
 }
 
 void tnx_build(void) {
@@ -3533,15 +3577,16 @@ void tnx_autododge_v48(void) {
     if (!tagOnce) {
         tagOnce = 1;
 
-        TNX_LOGX("build v34 snap=%d rawStick=%d joyMag=%.0f snapMag=%.0f reach=%.0f dodgeStep=%.0f - "
-                 "the build tag together with the state of every writer that could hand the engine a "
-                 "direction scaled by a few hundred: with snap=%d the only call that passed a %.0f unit "
-                 "vector to the move function is dead and rawStick=%d kills the raw stick pair, so a "
-                 "crash address carrying that magnitude cannot come out of this binary, and the absence "
-                 "of this line means the binary is older than the drop that added it",
-                 (int)TNX_SNAP, (int)TNX_RAW_STICK, (double)TNX_JOY_MAG, (double)TNX_SNAP_MAG,
-                 (double)TNX_REACH, (double)DODGE_STEP, (int)TNX_SNAP, (double)TNX_SNAP_MAG,
-                 (int)TNX_RAW_STICK);
+        TNX_LOGX("build v36 snap=%d delta=%d hardOff=%d rawStick=%d joyMag=%.0f snapMag=%.0f reach=%.0f "
+                 "dodgeStep=%.0f - the build tag and the state of every move writer: hardOff=%d means "
+                 "the pair call is not made at all, so no vector of a few hundred units can leave this "
+                 "binary, while delta=%d means the call would go to the logic client with a destination "
+                 "instead of the element with a vector; the move itself comes from predSet on the client "
+                 "and from the input message on the same frame; when this line is absent the binary is "
+                 "older than the drop that added it",
+                 (int)TNX_SNAP, (int)TNX_SNAP_DELTA, (int)TNX_SNAP_HARD_OFF, (int)TNX_RAW_STICK,
+                 (double)TNX_JOY_MAG, (double)TNX_SNAP_MAG, (double)TNX_REACH, (double)DODGE_STEP,
+                 (int)TNX_SNAP_HARD_OFF, (int)TNX_SNAP_DELTA);
     }
 
     tnx_input_release();

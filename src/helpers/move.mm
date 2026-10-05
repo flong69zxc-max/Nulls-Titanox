@@ -50,6 +50,24 @@ uint64_t g_stuck_3 = 0;
 
 uint64_t g_mask_before = 0;
 
+#ifndef TNX_CTRL_ON_CLIENT
+#define TNX_CTRL_ON_CLIENT 1
+#endif
+
+uintptr_t tnx_client(void) {
+    void *c = NULL;
+
+    if (!g_scene_object) return 0;
+
+    if (TNX_CTRL_ON_CLIENT) {
+        if (tnx_read_ptr((uintptr_t)g_scene_object + TNX_MODE_MANAGER_OFF, &c) && c) {
+            return (uintptr_t)c;
+        }
+    }
+
+    return (uintptr_t)g_scene_object;
+}
+
 int tnx_ctrl_ok(uintptr_t ctrl) {
     int32_t rawX = 0;
     int32_t rawY = 0;
@@ -566,7 +584,7 @@ int tnx_witness(int32_t *x, int32_t *y) {
 }
 
 void tnx_probe(void) {
-    uintptr_t ctrl = (uintptr_t)g_scene_object;
+    uintptr_t ctrl = tnx_client();
     uintptr_t own = tnx_own_obj();
     void *container = NULL;
     void *hop = NULL;
@@ -764,7 +782,7 @@ void tnx_actuate(void) {
     uintptr_t own = tnx_own_obj();
     uintptr_t ownVt = 0;
     uintptr_t ownCls = 0;
-    uintptr_t ctrl = (uintptr_t)g_scene_object;
+    uintptr_t ctrl = tnx_client();
     uintptr_t fn = tnx_entry_2(TNX_SETPRED4_RVA);
     int32_t raw_x = TNX_DX;
     int32_t raw_y = TNX_DY;
@@ -906,7 +924,7 @@ void tnx_witness_line(int plus) {
     int32_t app_y = -1;
     int32_t raw_x = 0;
     int32_t raw_y = 0;
-    uintptr_t ctrl = (uintptr_t)g_scene_object;
+    uintptr_t ctrl = tnx_client();
     int moved = 0;
     int elemMoved = 0;
 
@@ -1000,8 +1018,8 @@ void tnx_frame_window(void) {
     g_frame_logs++;
 
     if (g_scene_object) {
-        tnx_read_i32((uintptr_t)g_scene_object + TNX_INPUT_X_OFF, &inX);
-        tnx_read_i32((uintptr_t)g_scene_object + TNX_INPUT_Y_OFF, &inY);
+        tnx_read_i32(tnx_client() + TNX_INPUT_X_OFF, &inX);
+        tnx_read_i32(tnx_client() + TNX_INPUT_Y_OFF, &inY);
     }
 
     {
@@ -1015,7 +1033,7 @@ void tnx_frame_window(void) {
             tnx_read_i32(client + TNX_CLIENT_POS_Y_OFF, &cy);
         }
 
-        tnx_read_i32((uintptr_t)g_scene_object + TNX_INPUT_K_OFF, &ck);
+        tnx_read_i32(tnx_client() + TNX_INPUT_K_OFF, &ck);
 
         TNX_LOGX("frame tick=%llu frame=+%llu qcount=%d mode=%d gate=%d inner=%d in10c=%d(%s) "
                  "in110=%d(%s) in114=%d client80=%d client84=%d - the window carries the mode id because "
@@ -1044,9 +1062,9 @@ void tnx_window(int plus) {
     g_window_logs++;
 
     if (g_scene_object) {
-        tnx_read_i32((uintptr_t)g_scene_object + TNX_INPUT_X_OFF, &inX);
-        tnx_read_i32((uintptr_t)g_scene_object + TNX_INPUT_Y_OFF, &inY);
-        tnx_read_i32((uintptr_t)g_scene_object + TNX_INPUT_K_OFF, &inK);
+        tnx_read_i32(tnx_client() + TNX_INPUT_X_OFF, &inX);
+        tnx_read_i32(tnx_client() + TNX_INPUT_Y_OFF, &inY);
+        tnx_read_i32(tnx_client() + TNX_INPUT_K_OFF, &inK);
     }
 
     TNX_LOGX("window tick=+%d qcount=%d in10c=%d in110=%d in114=%d want=(%d,%d) match=%d - the "
@@ -1144,8 +1162,8 @@ void tnx_test(const tnx_obj_t *objects, int usable, int ownIndex) {
         g_scene_before_y = 0;
 
         if (g_scene_object) {
-            tnx_read_i32((uintptr_t)g_scene_object + TNX_INPUT_X_OFF, &g_scene_before_x);
-            tnx_read_i32((uintptr_t)g_scene_object + TNX_INPUT_Y_OFF, &g_scene_before_y);
+            tnx_read_i32(tnx_client() + TNX_INPUT_X_OFF, &g_scene_before_x);
+            tnx_read_i32(tnx_client() + TNX_INPUT_Y_OFF, &g_scene_before_y);
         }
 
         g_watch_from = 0;
@@ -1315,9 +1333,9 @@ void tnx_queue_line(void) {
     }
 
     if (g_scene_object) {
-        tnx_read_i32((uintptr_t)g_scene_object + TNX_INPUT_X_OFF, &inX);
-        tnx_read_i32((uintptr_t)g_scene_object + TNX_INPUT_Y_OFF, &inY);
-        tnx_read_i32((uintptr_t)g_scene_object + TNX_INPUT_K_OFF, &inK);
+        tnx_read_i32(tnx_client() + TNX_INPUT_X_OFF, &inX);
+        tnx_read_i32(tnx_client() + TNX_INPUT_Y_OFF, &inY);
+        tnx_read_i32(tnx_client() + TNX_INPUT_K_OFF, &inK);
     }
 
     TNX_LOGX("queue tick=%llu count=%d mode=%d gate=%d mgr=%p sceneState=%d flags=%llu ac=%d "

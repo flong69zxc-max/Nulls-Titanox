@@ -388,10 +388,13 @@ static int tnx_pred_ok(uintptr_t pred) {
 
 int tnx_pred_set(int x, int y) {
     uintptr_t setFn = 0;
-    uintptr_t base = 0;
-    uintptr_t pred = 0;
+    uintptr_t ctrl = 0;
     void *battle = NULL;
+    uintptr_t cand[4] = { 0, 0, 0, 0 };
     int why = -1;
+    int pick = -1;
+    int32_t backX = 0;
+    int32_t backY = 0;
 
     if (!TNX_PRED_SET) return 0;
 
@@ -399,51 +402,60 @@ int tnx_pred_set(int x, int y) {
 
     if (!setFn) return 0;
 
-    base = tnx_controller();
+    ctrl = tnx_controller();
 
-    if (base) pred = tnx_hop(base, &why);
+    if (ctrl) cand[0] = tnx_hop(ctrl, &why);
 
-    if (!tnx_pred_ok(pred) && g_base) {
-        if (tnx_read_ptr(g_base + TNX_BATTLE_RVA, &battle) && battle) {
-            base = (uintptr_t)battle;
-            pred = tnx_hop(base, &why);
+    cand[1] = ctrl;
+
+    if (g_base && tnx_read_ptr(g_base + TNX_BATTLE_RVA, &battle) && battle) {
+        cand[2] = tnx_hop((uintptr_t)battle, &why);
+        cand[3] = (uintptr_t)battle;
+    }
+
+    for (int i = 0; i < 4; i++) {
+        if (tnx_pred_ok(cand[i])) {
+            pick = i;
+
+            break;
         }
     }
 
-    if (!tnx_pred_ok(pred)) {
+    if (pick < 0) {
         if (g_pred_ok < 4) {
-            int alignOk = 0;
-            int readOk = 0;
-            int writeOk = 0;
-            int vtOk = 0;
-            vm_prot_t prot = 0;
-            mach_vm_size_t regionSize = 0;
-            uintptr_t regionStart = 0;
+            int alignOk[4] = { 0, 0, 0, 0 };
+            int readOk[4] = { 0, 0, 0, 0 };
+            int writeOk[4] = { 0, 0, 0, 0 };
+            int vtOk[4] = { 0, 0, 0, 0 };
 
-            tnx_pred_probe(pred, &alignOk, &readOk, &writeOk, &vtOk);
-            tnx_query_region(pred, &prot, NULL, &regionSize, &regionStart);
+            for (int i = 0; i < 4; i++) {
+                tnx_pred_probe(cand[i], &alignOk[i], &readOk[i], &writeOk[i], &vtOk[i]);
+            }
 
-            TNX_LOGX("predMiss base=%p why=%d pred=%p align=%d readable=%d writable=%d vt=%d "
-                     "region=%p size=%llu prot=%d span=%#llx - why is tnx_hop's own code and stays 0 "
-                     "when the hop itself resolved, so nothing failed before the object was reached; "
-                     "readable walks the region table in lc_detect, writable walks the one in "
-                     "memory.mm, and until drop 20 that second walk refused any region larger than "
-                     "0x10000000, so a chunk inside a bigger arena read fine and failed writable, "
-                     "which is what silently retired setClientPredictionMoveTo",
-                     (void *)base, why, (void *)pred, alignOk, readOk, writeOk, vtOk,
-                     (void *)regionStart, (unsigned long long)regionSize, (int)prot,
-                     (unsigned long long)TNX_PRED_SPAN);
+            TNX_LOGX("predMiss ctrl=%p battle=%p why=%d c0=%p a%d r%d w%d v%d c1=%p a%d r%d w%d v%d "
+                     "c2=%p a%d r%d w%d v%d c3=%p a%d r%d w%d v%d",
+                     (void *)ctrl, (void *)battle, why,
+                     (void *)cand[0], alignOk[0], readOk[0], writeOk[0], vtOk[0],
+                     (void *)cand[1], alignOk[1], readOk[1], writeOk[1], vtOk[1],
+                     (void *)cand[2], alignOk[2], readOk[2], writeOk[2], vtOk[2],
+                     (void *)cand[3], alignOk[3], readOk[3], writeOk[3], vtOk[3]);
             g_pred_ok++;
         }
 
         return 0;
     }
 
-    ((void (*)(uintptr_t, int, int, int))setFn)(pred, x, y, TNX_PRED_FLAG);
+    ((void (*)(uintptr_t, int, int, int))setFn)(cand[pick], x, y, TNX_PRED_FLAG);
+
+    tnx_read_i32(cand[pick] + TNX_INPUT_X_OFF, &backX);
+    tnx_read_i32(cand[pick] + TNX_INPUT_Y_OFF, &backY);
 
     if (g_pred_ok < 4) {
-        TNX_LOGX("predSet base=%p pred=%p why=%d x=%d y=%d flag=%d", (void *)base,
-                 (void *)pred, why, x, y, (int)TNX_PRED_FLAG);
+        TNX_LOGX("predSet pick=%d base=%p x=%d y=%d flag=%d back=(%d,%d) - picks are "
+                 "hop(controller), controller, hop(battleGlobal), battleGlobal, and back is the "
+                 "readback of the two fields setClientPredictionMoveTo writes, so back equal to "
+                 "the sent target is the write landing on the object the engine itself hands it",
+                 pick, (void *)cand[pick], x, y, (int)TNX_PRED_FLAG, backX, backY);
         g_pred_ok++;
     }
 

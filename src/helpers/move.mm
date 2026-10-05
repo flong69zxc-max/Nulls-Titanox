@@ -1,5 +1,9 @@
 #include "titanox.h"
 
+#ifndef TNX_JS_STICK
+#define TNX_JS_STICK 1
+#endif
+
 uint64_t g_diag_us = 0;
 
 uint64_t g_diag_max_us = 0;
@@ -1630,7 +1634,7 @@ void tnx_drag(int engaged, int haveOwn, int32_t ownX, int32_t ownY, float dirX, 
 }
 
 void tnx_stick(int engaged, float dirX, float dirY) {
-    if (!TNX_V245_STICK) return;
+    if (!TNX_V245_STICK && !TNX_JS_STICK) return;
     uintptr_t ctrl = tnx_controller();
     int32_t wx = 0;
     int32_t wy = 0;
@@ -1652,7 +1656,7 @@ void tnx_stick(int engaged, float dirX, float dirY) {
         if (len >= 0.0001f) {
             want = 1;
 
-            if (TNX_PAIR_RAW) {
+            if (TNX_PAIR_RAW && !TNX_JS_STICK) {
                 double scale = 1.0;
 
                 if ((double)len > (double)TNX_PAIR_MAX) {
@@ -1693,7 +1697,7 @@ void tnx_stick(int engaged, float dirX, float dirY) {
     g_stick_x = wx;
     g_stick_y = wy;
 
-    if (!(TNX_RETIRE && g_accepted)) {
+    if (!(TNX_RETIRE && g_accepted && !TNX_JS_STICK)) {
         if (!tnx_write_bytes(ctrl + TNX_CTRL_RAW_X_OFF, &wx, sizeof(wx))) return;
 
         tnx_write_bytes(ctrl + TNX_CTRL_RAW_Y_OFF, &wy, sizeof(wy));

@@ -3275,6 +3275,8 @@ int tnx_proj_scan(uintptr_t manager, int32_t count) {
 
 static int g_ctrl_logs = 0;
 
+int g_ctrl_pick = 0;
+
 int tnx_ctrl_bounds(uintptr_t base, int32_t *wOut, int32_t *hOut) {
     uintptr_t hop = 0;
     uintptr_t bounds = 0;
@@ -3340,8 +3342,19 @@ uintptr_t tnx_controller(void) {
                  okClient, cw, ch, okScene ? "scene" : (okClient ? "client" : "client-fallback"));
     }
 
-    if (okScene) return scene;
-    if (okClient) return client;
+    if (okScene) {
+        g_ctrl_pick = 1;
+
+        return scene;
+    }
+
+    if (okClient) {
+        g_ctrl_pick = 2;
+
+        return client;
+    }
+
+    g_ctrl_pick = 0;
 
     return client ? client : scene;
 }

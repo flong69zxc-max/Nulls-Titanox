@@ -670,6 +670,38 @@ float g_shot_speed[TNX_PROJ_MAX];
 
 uint64_t g_shot_logs = 0;
 
+uint64_t g_commit_until = 0;
+
+uint64_t g_stat_picks = 0;
+
+uint64_t g_stat_side = 0;
+
+uint64_t g_stat_commit = 0;
+
+uint64_t g_stat_absorbed = 0;
+
+uint64_t g_stat_dodged = 0;
+
+uint64_t g_react_n = 0;
+
+uint64_t g_react_sum = 0;
+
+uint64_t g_react_min = 0;
+
+uint64_t g_react_max = 0;
+
+uint64_t g_last_stat = 0;
+
+int g_track_gid[TNX_SEG_MAX];
+
+int g_track_hit[TNX_SEG_MAX];
+
+uint64_t g_bucket_abs[TNX_ADV_BUCKETS];
+
+uint64_t g_bucket_n[TNX_ADV_BUCKETS];
+
+float g_last_dist = 0.0f;
+
 int g_tti_logs = 0;
 
 uint64_t g_engage = 0;
@@ -2362,6 +2394,229 @@ int tnx_freest(float px, float py, float *tx, float *ty) {
     return 1;
 }
 
+static float tnx_clear_at(float px, float py, int i) {
+    return tnx_seg_dist(px, py, g_seg[i].ax, g_seg[i].ay, g_seg[i].bx, g_seg[i].by) - g_seg[i].inflatedR;
+}
+
+static int tnx_point_clear(float px, float py, float x, float y) {
+    int i = 0;
+    float mx = (px + x) * 0.5f;
+    float my = (py + y) * 0.5f;
+
+    if (!tnx_valid_point(x, y)) return 0;
+
+    for (i = 0; i < g_seg_count; i++) {
+        if (tnx_clear_at(px, py, i) < 0.0f) return 0;
+        if (tnx_clear_at(x, y, i) < 0.0f) return 0;
+        if (tnx_clear_at(mx, my, i) < 0.0f) return 0;
+    }
+
+    return 1;
+}
+
+static int tnx_side_near(float px, float py) {
+    int i = 0;
+    int near = -1;
+    float nd = 1.0e9f;
+
+    for (i = 0; i < g_seg_count; i++) {
+        float c = tnx_clear_at(px, py, i);
+
+        if (c < nd) {
+            nd = c;
+            near = i;
+        }
+    }
+
+    return near;
+}
+
+static float tnx_side_score(float px, float py, float x, float y, int near) {
+    int i = 0;
+    float s = 0.0f;
+    float own = sqrtf((x - px) * (x - px) + (y - py) * (y - py));
+
+    for (i = 0; i < g_seg_count; i++) {
+        float c = tnx_clear_at(x, y, i);
+
+        if (c < 0.0f) c = c * 4.0f;
+
+        s += ((i == near) ? TNX_SIDE_W_PRIME : TNX_SIDE_W_OTHER) * c;
+    }
+
+    s += TNX_SIDE_W_OWN * own;
+
+    return s;
+}
+
+static int tnx_side_pick(float px, float py, float *outX, float *outY) {
+    int near = tnx_side_near(px, py);
+    float nx = 0.0f;
+    float ny = 0.0f;
+    float dx = 0.0f;
+    float dy = 0.0f;
+    float dl = 0.0f;
+    float dist = TNX_DODGE_DIST;
+    float ax = 0.0f;
+    float ay = 0.0f;
+    float bx = 0.0f;
+    float by = 0.0f;
+    float sa = 0.0f;
+    float sb = 0.0f;
+    float toShot = 0.0f;
+    float adaptive = 0.0f;
+
+    if (near < 0) return 0;
+
+    nx = g_seg[near].ax;
+    ny = g_seg[near].ay;
+    dx = g_seg[near].bx - nx;
+    dy = g_seg[near].by - ny;
+    dl = sqrtf(dx * dx + dy * dy);
+
+    if (dl < 1.0f) return 0;
+
+    dx /= dl;
+    dy /= dl;
+
+    toShot = sqrtf((nx - px) * (nx - px) + (ny - py) * (ny - py));
+    adaptive = toShot * TNX_DIST_FACTOR;
+
+    if (adaptive > 1.0f && adaptive < dist) dist = adaptive;
+    if (dist < TNX_STEP) dist = TNX_STEP;
+
+    ax = px - dy * dist;
+    ay = py + dx * dist;
+    bx = px + dy * dist;
+    by = py - dx * dist;
+
+    sa = tnx_valid_point(ax, ay) ? tnx_side_score(px, py, ax, ay, near) : -1.0e9f;
+    sb = tnx_valid_point(bx, by) ? tnx_side_score(px, py, bx, by, near) : -1.0e9f;
+
+    if (sa < -1.0e8f && sb < -1.0e8f) return 0;
+
+    if (sa >= sb) {
+        *outX = ax;
+        *outY = ay;
+    } else {
+        *outX = bx;
+        *outY = by;
+    }
+
+    g_stat_side++;
+
+    return 1;
+}
+
+static void tnx_stat_tick(float px, float py) {
+    int i = 0;
+    int j = 0;
+    int k = 0;
+
+    for (i = 0; i < TNX_SEG_MAX; i++) {
+        int gid = g_track_gid[i];
+        int live = 0;
+
+        if (gid == 0) continue;
+
+        for (j = 0; j < g_seg_count; j++) {
+            if (g_seg[j].gid != gid) continue;
+
+            live = 1;
+
+            if (tnx_clear_at(px, py, j) <= 0.0f) g_track_hit[i] = 1;
+        }
+
+        if (live) continue;
+
+        if (g_track_hit[i]) {
+            g_stat_absorbed++;
+        } else {
+            g_stat_dodged++;
+        }
+
+        k = (int)(g_last_dist / TNX_ADV_STEP);
+
+        if (k < 0) k = 0;
+        if (k >= TNX_ADV_BUCKETS) k = TNX_ADV_BUCKETS - 1;
+
+        g_bucket_n[k]++;
+
+        if (g_track_hit[i]) g_bucket_abs[k]++;
+
+        g_track_gid[i] = 0;
+        g_track_hit[i] = 0;
+    }
+
+    for (i = 0; i < g_seg_count; i++) {
+        int gid = g_seg[i].gid;
+        int have = 0;
+
+        if (gid == 0) continue;
+
+        for (k = 0; k < TNX_SEG_MAX; k++) {
+            if (g_track_gid[k] == gid) {
+                have = 1;
+
+                break;
+            }
+        }
+
+        if (have) continue;
+
+        for (k = 0; k < TNX_SEG_MAX; k++) {
+            if (g_track_gid[k] != 0) continue;
+
+            g_track_gid[k] = gid;
+            g_track_hit[k] = 0;
+
+            break;
+        }
+    }
+}
+
+static void tnx_stat_report(void) {
+    int b = 0;
+    int best = -1;
+    float bestRate = 2.0f;
+
+    if (g_last_stat != 0 && (g_ticks_3 - g_last_stat) < (uint64_t)(TNX_STAT_SEC * 60.0f)) return;
+
+    g_last_stat = g_ticks_3;
+
+    TNX_LOGX("stat picks=%llu side=%llu commit=%llu absorbed=%llu dodged=%llu reactMin=%llu "
+             "reactAvg=%llu reactMax=%llu segs=%d - absorbed counts a shot that came inside own "
+             "body while it was alive and dodged counts one that passed without ever doing so, so "
+             "that pair is the only scoreboard that matters, and react is the ticks between the "
+             "threat set changing and the pick that answered it",
+             (unsigned long long)g_stat_picks, (unsigned long long)g_stat_side,
+             (unsigned long long)g_stat_commit, (unsigned long long)g_stat_absorbed,
+             (unsigned long long)g_stat_dodged, (unsigned long long)g_react_min,
+             (unsigned long long)(g_react_n ? (g_react_sum / g_react_n) : 0),
+             (unsigned long long)g_react_max, g_seg_count);
+
+    for (b = 0; b < TNX_ADV_BUCKETS; b++) {
+        float rate = 0.0f;
+
+        if (g_bucket_n[b] < TNX_ADV_MIN) continue;
+
+        rate = (float)g_bucket_abs[b] / (float)g_bucket_n[b];
+
+        if (rate < bestRate) {
+            bestRate = rate;
+            best = b;
+        }
+    }
+
+    if (best >= 0) {
+        TNX_LOGX("advise distance=%.0f absorbed=%.2f over=%llu dodgeDist=%d commit=%d - the bucketed "
+                 "scoreboard names the step that ate the fewest shots, so when that number differs "
+                 "from the one in the config this is what TNX_DODGE_DIST should be set to",
+                 (double)((float)best * TNX_ADV_STEP), (double)bestRate,
+                 (unsigned long long)g_bucket_n[best], (int)TNX_DODGE_DIST, (int)TNX_COMMIT_MS);
+    }
+}
+
 int tnx_decide(int32_t ownX, int32_t ownY) {
     float px = (float)ownX;
     float py = (float)ownY;
@@ -2390,6 +2645,8 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
     }
 
     tnx_crit_probe(px, py);
+
+    tnx_stat_tick(px, py);
 
     threatened = tnx_threatened(px, py);
 
@@ -2426,9 +2683,33 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
         if (!picked && TNX_FLEE) picked = tnx_flee(px, py, &tx, &ty);
 
         if (picked) {
+            float sx = tx;
+            float sy = ty;
+            int commit = 0;
+
+            if (g_seg_count >= (int)TNX_MULTI_THREAT && tnx_side_pick(px, py, &sx, &sy)) {
+                commit = 1;
+            } else if (g_commit_until > g_ticks_3 && g_moving && tnx_point_clear(px, py, g_tx_2, g_ty_2)) {
+                sx = g_tx_2;
+                sy = g_ty_2;
+                commit = 1;
+                g_stat_commit++;
+            }
+
+            tx = sx;
+            ty = sy;
+
             if ((tx - px) * (tx - px) + (ty - py) * (ty - py) < 1.0f &&
                 tnx_flee(px, py, &tx, &ty)) {
                 g_dead_replaced++;
+            }
+
+            g_last_dist = sqrtf((tx - px) * (tx - px) + (ty - py) * (ty - py));
+
+            if (!commit || tx != g_tx_2 || ty != g_ty_2) {
+                float hold = TNX_COMMIT_MS * (1.0f + TNX_COMMIT_GROW * (float)(g_seg_count - 1));
+
+                g_commit_until = g_ticks_3 + (uint64_t)(hold * 60.0f / 1000.0f);
             }
 
             g_tx_2 = tx;
@@ -2437,7 +2718,16 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
             g_start_x = px;
             g_start_y = py;
             g_picks++;
+            g_stat_picks++;
 
+            if (g_new_tick >= 0) {
+                uint64_t react = g_ticks_3 - (uint64_t)g_new_tick;
+
+                g_react_n++;
+                g_react_sum += react;
+                if (g_react_min == 0 || react < g_react_min) g_react_min = react;
+                if (react > g_react_max) g_react_max = react;
+            }
         }
     } else if (g_moving && tnx_passed(px, py)) {
         g_moving = 0;
@@ -2476,6 +2766,8 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
     }
 
     tnx_predict_2(ownX, ownY, g_tx_2, g_ty_2);
+
+    tnx_stat_report();
 
     return picked;
 }

@@ -14,7 +14,7 @@ FILE *tnx_log_handle(void) {
     return g_log;
 }
 
-const char *g_log_drop[34] = {
+const char *g_log_drop[64] = {
     "players", "walk", "hopdump", "teamdump", "membership",
     "man ", "gid", "coords", "coord", "off",
     "clip", "ownscan", "chain", "player[", "element",
@@ -25,9 +25,16 @@ const char *g_log_drop[34] = {
     NULL
 };
 
-const char *g_log_keep[8] = {
-    "=== ", "plan v", "slot ", "hook",
-    "live", "census", "publish",
+#ifndef TNX_LOG_WHITELIST
+#define TNX_LOG_WHITELIST 1
+#endif
+
+const char *g_log_keep[64] = {
+    "=== ", "plan v", "slot ", "logfilter",
+    "hb ", "publish", "live ", "hook",
+    "census", "roster", "render", "dodge ",
+    "drive ", "engage running", "controller ", "predSet",
+    "predMiss", "clamp ",
     NULL
 };
 
@@ -52,6 +59,12 @@ int tnx_keep_line(const char *text) {
 
             return 1;
         }
+    }
+
+    if (TNX_LOG_WHITELIST) {
+        g_dropped++;
+
+        return 0;
     }
 
     for (i = 0; g_log_drop[i] && i < 64; i++) {
@@ -94,7 +107,7 @@ void tnx_log_roll(void) {
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     NSDateFormatter *df = NULL;
     NSString *ts = nil;
-    NSString *fmt = @"[%@] === drop=22 log rolled over #%llu, the earlier window is dropped here ===\n";
+    NSString *fmt = @"[%@] === drop=23 log rolled over #%llu, the earlier window is dropped here ===\n";
     NSString *marker = nil;
 
     if (g_log) {
@@ -332,7 +345,7 @@ void tnx_log_heartbeat(void) {
 
     tnx_logf("hb tick=%llu battle=%d reason=%s slot=%p state=%d objFired=%llu "
              "modesigHits=%d sigLast=%d chainHits=%d classesPass=%d g_mode=%p src=%s mgr=%p "
-             "count=%d fb=%d liveObjs=%d liveTeams=%d parked=%d drop=22 ctrlPick=%d "
+             "count=%d fb=%d liveObjs=%d liveTeams=%d parked=%d drop=23 ctrlPick=%d "
              "clampMax=(%d,%d) enqOk=%llu enqBlocked=%llu predCalls=%llu",
              (unsigned long long)g_ticks_4,
              g_battle_active, g_battle_reason, (void *)g_site, g_state_2,

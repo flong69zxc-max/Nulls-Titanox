@@ -95,6 +95,7 @@ static inline BOOL tnx_region_flags(uintptr_t address, vm_prot_t *outFlags) {
     }
 
     if (kr != KERN_SUCCESS || size == 0) return NO;
+    if ((uintptr_t)region > address) return NO;
     if ((uintptr_t)region + (uintptr_t)size <= address) return NO;
 
     if (outFlags) *outFlags = info.protection;

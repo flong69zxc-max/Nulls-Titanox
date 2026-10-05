@@ -58,8 +58,8 @@
 #define TNX_WALK_MAX 60.0f
 #define TNX_WALK_EMA 0.12f
 #define TNX_ENGAGE_2 40.0f
-#define TNX_MOMENTUM 120.0f
-#define TNX_KEEP_BAND_2 60.0f
+#define TNX_MOMENTUM 100.0f
+#define TNX_KEEP_BAND_2 120.0f
 #define TNX_HORIZON 1.0f
 #define TNX_BODY_W 1.0f
 #define TNX_SEL_MAX 8
@@ -161,7 +161,7 @@
 #define TNX_JOURNAL 24
 #define TNX_JOURNAL_LINES 8
 #define TNX_STALE_SIGHT 1
-#define TNX_QUIET 1
+#define TNX_QUIET 0
 #define TNX_HUMAN 1
 #define TNX_EPS 1.0f
 #define TNX_LOGS_7 8
@@ -258,8 +258,8 @@
 #define TNX_REACH 600.0f
 #define TNX_ENGAGE 900.0f
 #define TNX_KEEP_BAND 0.0f
-#define TNX_LOCK_MS 0
-#define TNX_RELEASE_MS 0
+#define TNX_LOCK_MS 130
+#define TNX_RELEASE_MS 120
 #define TNX_SPEED 720.0f
 #define TNX_PUSH_LOGS 12
 #define TNX_INFLATE 350.0f

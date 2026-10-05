@@ -2378,8 +2378,6 @@ int tnx_gate(void) {
 uintptr_t tnx_client(void) {
     void *client = NULL;
 
-    if (g_actuator) return g_actuator;
-
     if (!g_scene_object) return 0;
     if (!tnx_read_ptr((uintptr_t)g_scene_object + TNX_CLIENT_OFF, &client)) return 0;
 

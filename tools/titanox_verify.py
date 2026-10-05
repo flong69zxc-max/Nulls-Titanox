@@ -114,11 +114,11 @@ cd = os.path.join(ROOT, "src", "data", "chars_data.h")
 if not os.path.exists(cd):
     fail("src/data/chars_data.h is missing")
 else:
-    t = read("src/data/chars_data.h")
+    t = read("src/data/chars.mm")
     rows = [l for l in t.split("\n") if l.startswith('    { "')]
     if len(rows) < 100:
         fail("hero table has only %d rows" % len(rows))
-    m = re.search(r"typedef struct \{(.*?)\} tnx_hero_t;", t, re.S)
+    m = re.search(r"typedef struct \{(.*?)\} tnx_hero_t;", read("src/data/chars_data.h"), re.S)
     fields = 0
     if m:
         fields = len([x for x in m.group(1).split("\n") if x.strip() and x.strip().endswith(";")])
@@ -130,11 +130,11 @@ else:
     names = re.findall(r'\{\s*"([^"]+)"', t)
     if len(names) != len(set(names)):
         fail("hero table has duplicate names")
-    if "TNX_HERO_COUNT" not in t:
-        fail("hero table has no TNX_HERO_COUNT")
+    if "g_hero_count" not in read("src/data/chars.mm"):
+        fail("chars.mm does not define g_hero_count")
     ok("hero table: %d rows" % len(rows))
 
-cd_t = read("src/data/chars_data.h")
+cd_t = read("src/data/chars.mm")
 declared = set(re.findall(r"\b(tnx_[a-z0-9_]+)\s*\(", cd_t))
 declared |= set(re.findall(r"#define\s+(TNX_[A-Z0-9_]+)", cd_t))
 declared |= set(re.findall(r"extern\s+(?:const\s+)?[A-Za-z_][A-Za-z0-9_ ]*?\b(g_[a-z0-9_]+)\s*\[", cd_t))

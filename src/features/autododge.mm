@@ -565,7 +565,7 @@ float g_start_y = 0.0f;
 int g_picks = 0;
 
 uintptr_t tnx_bs(void) {
-    return (uintptr_t)g_scene_object;
+    return tnx_client();
 }
 
 int tnx_joy_read(uintptr_t bs, float *ax, float *ay, float *bx, float *by,
@@ -1732,6 +1732,30 @@ void tnx_precision(int32_t ownX, int32_t ownY, float dirX, float dirY, int escap
     }
 
     if (g_build_tick >= 0) lag = (int)((int64_t)g_ticks_3 - (int64_t)g_build_tick);
+
+    {
+        uintptr_t wrap = (uintptr_t)g_scene_object;
+        uintptr_t cli = tnx_client();
+        int32_t wAx = 0;
+        int32_t wAy = 0;
+        int32_t cAx = 0;
+        int32_t cAy = 0;
+
+        if (wrap) {
+            tnx_read_i32(wrap + TNX_CTRL_APPLIED_X_OFF, &wAx);
+            tnx_read_i32(wrap + TNX_CTRL_APPLIED_Y_OFF, &wAy);
+        }
+
+        if (cli) {
+            tnx_read_i32(cli + TNX_CTRL_APPLIED_X_OFF, &cAx);
+            tnx_read_i32(cli + TNX_CTRL_APPLIED_Y_OFF, &cAy);
+        }
+
+        TNX_LOGX("ctrlsrc wrap=%p wrapApplied=(%d,%d) client=%p clientApplied=(%d,%d) - drag the joystick "
+                 "by hand while this prints: the engine writes applied into whichever of the two is the real "
+                 "battle screen, so the pair that moves is the object this build has to write into",
+                 (void *)wrap, wAx, wAy, (void *)cli, cAx, cAy);
+    }
 
     TNX_LOGX("precision tick=%llu own=(%d,%d) dir=(%.0f,%.0f) escape=%d pair=(%d,%d) "
              "applied=(%d,%d) mode=%d joy=%p threats=%d eta=%.0fms buildLag=%d pred=(%d,%d) "

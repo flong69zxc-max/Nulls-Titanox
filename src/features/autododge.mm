@@ -1399,6 +1399,59 @@ void tnx_probe_2(void) {
     }
 }
 
+static int tnx_key_c(int n) {
+    if (n <= 1) return 0;
+    if (n <= 2) return 1;
+
+    return 2;
+}
+
+static int tnx_key_t(float tti) {
+    if (tti < 300.0f) return 0;
+    if (tti < 700.0f) return 1;
+
+    return 2;
+}
+
+static float tnx_learn_rate(int c, int t, int side) {
+    uint64_t w = g_learn_win[c][t][side];
+    uint64_t l = g_learn_loss[c][t][side];
+
+    if (w + l == 0) return 0.5f;
+
+    return (float)w / (float)(w + l);
+}
+
+static int tnx_blacklisted(float speed, float radius) {
+    static const float bl[][2] = {
+        { 3100.0f, 0.0f },
+        { 4130.0f, 50.0f },
+        { 3261.0f, 150.0f },
+        { 5000.0f, 150.0f },
+        { 6000.0f, 250.0f },
+        { 1500.0f, 200.0f },
+        { 4000.0f, 250.0f },
+        { 3500.0f, 300.0f },
+        { 840.0f, 0.0f },
+        { 2853.0f, 0.0f }
+    };
+    int i = 0;
+
+    if (!TNX_SKIP_UNSAFE) return 0;
+
+    for (i = 0; i < 10; i++) {
+        float ds = speed - bl[i][0];
+        float dr = radius - bl[i][1];
+
+        if (ds < 0.0f) ds = -ds;
+        if (dr < 0.0f) dr = -dr;
+
+        if (ds <= TNX_BLACK_SPEED_TOL && dr <= TNX_BLACK_RADIUS_TOL) return 1;
+    }
+
+    return 0;
+}
+
 void tnx_build(void) {
     int k;
 
@@ -1446,6 +1499,18 @@ void tnx_build(void) {
 
         if (speed > g_shot_speed[k]) g_shot_speed[k] = speed;
         if (g_shot_speed[k] > 1.0f) speed = g_shot_speed[k];
+
+        if (tnx_blacklisted(speed, 0.0f)) {
+            if (g_stat_skip < 4) {
+                g_stat_skip++;
+
+                TNX_LOGX("skip speed=%.0f gid=%d - this projectile is on the do not dodge list, so it "
+                         "is not counted as a threat and no commit is spent on it",
+                         (double)speed, p->gid);
+            }
+
+            continue;
+        }
 
         if (g_spd_min < 1.0f || speed < g_spd_min) g_spd_min = speed;
         if (speed > g_spd_max) g_spd_max = speed;
@@ -2416,6 +2481,7 @@ int tnx_freest(float px, float py, float *tx, float *ty) {
     return 1;
 }
 
+
 static float tnx_clear_at(float px, float py, int i) {
     return tnx_seg_dist(px, py, g_seg[i].ax, g_seg[i].ay, g_seg[i].bx, g_seg[i].by) - g_seg[i].inflatedR;
 }
@@ -2711,58 +2777,6 @@ static void tnx_stat_report(void) {
     }
 }
 
-static int tnx_key_c(int n) {
-    if (n <= 1) return 0;
-    if (n <= 2) return 1;
-
-    return 2;
-}
-
-static int tnx_key_t(float tti) {
-    if (tti < 300.0f) return 0;
-    if (tti < 700.0f) return 1;
-
-    return 2;
-}
-
-static float tnx_learn_rate(int c, int t, int side) {
-    uint64_t w = g_learn_win[c][t][side];
-    uint64_t l = g_learn_loss[c][t][side];
-
-    if (w + l == 0) return 0.5f;
-
-    return (float)w / (float)(w + l);
-}
-
-static int tnx_blacklisted(float speed, float radius) {
-    static const float bl[][2] = {
-        { 3100.0f, 0.0f },
-        { 4130.0f, 50.0f },
-        { 3261.0f, 150.0f },
-        { 5000.0f, 150.0f },
-        { 6000.0f, 250.0f },
-        { 1500.0f, 200.0f },
-        { 4000.0f, 250.0f },
-        { 3500.0f, 300.0f },
-        { 840.0f, 0.0f },
-        { 2853.0f, 0.0f }
-    };
-    int i = 0;
-
-    if (!TNX_SKIP_UNSAFE) return 0;
-
-    for (i = 0; i < 10; i++) {
-        float ds = speed - bl[i][0];
-        float dr = radius - bl[i][1];
-
-        if (ds < 0.0f) ds = -ds;
-        if (dr < 0.0f) dr = -dr;
-
-        if (ds <= TNX_BLACK_SPEED_TOL && dr <= TNX_BLACK_RADIUS_TOL) return 1;
-    }
-
-    return 0;
-}
 
 static void tnx_state_reset(void) {
     g_commit_until = 0;

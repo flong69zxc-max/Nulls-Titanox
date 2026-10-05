@@ -887,6 +887,7 @@ int tnx_drive(void) {
     uintptr_t ctrl = tnx_controller();
 
     tnx_measure();
+    tnx_snapshot_3();
     int32_t ownX = 0;
     int32_t ownY = 0;
     float dx = 0.0f;
@@ -3805,6 +3806,7 @@ void tnx_autododge_v48(void) {
 
             if (resolved) {
                 int loud = (changed || managerChanged || !g_probe_done_2);
+                    tnx_probe_3((uintptr_t)resolved, g_scene_object, loud);
 
 
                 if (loud) tnx_discriminate((uintptr_t)resolved);
@@ -4270,6 +4272,7 @@ void tnx_autododge_v48(void) {
         }
 
         tnx_phase("mode-write");
+        tnx_watch(ownX, ownY);
 
 
         if (!g_active_2) {

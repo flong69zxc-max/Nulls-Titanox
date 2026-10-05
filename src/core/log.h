@@ -3,8 +3,8 @@
 
 #include "core/types.h"
 
-extern const char *g_v190_log_drop[];
-extern const char *g_v190_log_keep[];
+extern const char *g_v190_log_drop[67];
+extern const char *g_v190_log_keep[19];
 extern uint64_t g_v190_drop_counts[64];
 extern uint64_t g_v190_dropped;
 extern uint64_t g_v190_kept;

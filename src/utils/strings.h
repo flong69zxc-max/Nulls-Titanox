@@ -12,13 +12,10 @@ extern uint32_t g_v50_never_dispatched_mask;
 extern uint64_t g_v50_ticks;
 extern int g_v75_ascii_refused;
 extern int g_v75_best_wait_logs;
-extern } tnx_v75_measure_t;
-extern } tnx_v50_facts_t;
 extern int g_v50_alert_streak;
 extern uintptr_t g_v50_alert_streak_ptr;
 extern uint64_t g_v50_alert_calls;
 extern int g_v50_alert_withheld_logs;
-extern } tnx_v50_reject_t;
 extern tnx_v50_reject_t g_v50_reject;
 extern int g_v50_setpred_blocked_logs;
 

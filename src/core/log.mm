@@ -12,7 +12,7 @@ FILE *tnx_log_handle(void) {
     return g_log;
 }
 
-const char *g_v190_log_drop[] = {
+const char *g_v190_log_drop[67] = {
     "v100 players", "v100 walk", "v100 hopdump", "v100 teamdump", "v100 container",
     "v100 membership", "v100 man ", "v100 gid", "v100 coords", "v100 coord", "v100 off",
     "v100 dodge", "v100 hb", "v100 clip", "v100 ownscan", "v100 chain", "v100 player[",
@@ -27,7 +27,7 @@ const char *g_v190_log_drop[] = {
     NULL
 };
 
-const char *g_v190_log_keep[] = {
+const char *g_v190_log_keep[19] = {
     "=== ", "plan v", "slot ", "v47 ", "v100 hook", "v100 live", "v100 census", "v126 ",
     "v142 publish", "v146 ", "v172 ", "v179 ", "v181 ", "v189 ", "v190 ", "v191 ", "v192 ",
     "v193 ",

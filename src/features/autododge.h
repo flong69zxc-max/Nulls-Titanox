@@ -75,7 +75,6 @@ extern uint64_t g_v160_last_danger;
 extern int32_t g_v160_tx;
 extern int32_t g_v160_ty;
 extern int g_v160_active;
-extern } tnx_v172_seg_t;
 extern tnx_v172_seg_t g_v172_seg[TNX_V172_SEG_MAX];
 extern int g_v172_seg_count;
 extern int g_v172_build_tick;

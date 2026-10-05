@@ -150,8 +150,6 @@ uint64_t g_v93_test_writes = 0;
 
 int g_v93_class_dumps = 0;
 
-} tnx_v96_slot_t;
-
 const char *g_v91_own_from = "none";
 
 int g_v81_players_dumps = 0;
@@ -1383,8 +1381,6 @@ void tnx_trail_rebest(void) {
     }
 }
 
-} tnx_v47_obj_t;
-
 uintptr_t g_v47_setpred = 0;
 
 int g_v47_setpred_state = -1;
@@ -1400,6 +1396,8 @@ int g_v47_coord_ok = 0;
 int g_v47_coord_usable = 0;
 
 int g_v47_coord_distinct = 0;
+
+int g_v47_team_off = (int)TNX_OBJ_TEAM_OFF;
 
 int g_v47_map_w = 0;
 
@@ -3078,8 +3076,6 @@ void tnx_v90_gate_report(int slotHit) {
              (unsigned long long)g_v93_test_writes, (unsigned long long)g_v47_writes);
 }
 
-} tnx_v140_proj_t;
-
 tnx_v140_proj_t g_v140_projs[TNX_V140_PROJ_MAX];
 
 int g_v140_side_hits = 0;
@@ -3509,8 +3505,6 @@ void tnx_v231_measure(void) {
 }
 
 const char *const g_v173_names[TNX_V173_BASES] = { "scene", "mgr", "ctrl", "char", "enemy" };
-
-} tnx_v173_win_t;
 
 tnx_v173_win_t g_v173_win[TNX_V173_BASES];
 

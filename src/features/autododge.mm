@@ -424,8 +424,6 @@ int32_t g_v160_ty = 0;
 
 int g_v160_active = 0;
 
-} tnx_v172_seg_t;
-
 tnx_v172_seg_t g_v172_seg[TNX_V172_SEG_MAX];
 
 int g_v172_seg_count = 0;

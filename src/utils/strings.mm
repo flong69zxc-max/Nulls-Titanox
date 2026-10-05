@@ -18,10 +18,6 @@ int g_v75_ascii_refused = 0;
 
 int g_v75_best_wait_logs = 0;
 
-} tnx_v75_measure_t;
-
-} tnx_v50_facts_t;
-
 int g_v50_alert_streak = 0;
 
 uintptr_t g_v50_alert_streak_ptr = 0;
@@ -181,8 +177,6 @@ int tnx_v75_trail_verdict(const tnx_trail_t *entry, char *buf, size_t size) {
 
     return 0;
 }
-
-} tnx_v50_reject_t;
 
 tnx_v50_reject_t g_v50_reject;
 

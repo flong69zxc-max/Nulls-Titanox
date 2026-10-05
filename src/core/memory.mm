@@ -1,17 +1,13 @@
 #include "titanox.h"
 
-    uintptr_t rva;
-
-} tnx_rva_entry_t;
-
-const char *g_image_names[] = {
+const char *g_image_names[4] = {
     "Nulls Brawl",
     "Laser",
     "NB.app",
     NULL
 };
 
-const tnx_rva_entry_t g_rvas[] = {
+const tnx_rva_entry_t g_rvas[32] = {
     { "RVA_BATTLEMODE_GETINSTANCE", RVA_BATTLEMODE_GETINSTANCE },
     { "RVA_BATTLESCREEN__BATTLESCREEN", RVA_BATTLESCREEN__BATTLESCREEN },
     { "RVA_BATTLESCREEN__UPDATEMOVEMENT", RVA_BATTLESCREEN__UPDATEMOVEMENT },
@@ -46,26 +42,6 @@ const tnx_rva_entry_t g_rvas[] = {
     { NULL, 0 }
 };
 
-    __unsafe_unretained Class wanted[WANTED_MAX];
-
-    int wantedCount;
-
-    SEL sel;
-
-    IMP original;
-
-    IMP replacement;
-
-    const char *selName;
-
-    const char *signature;
-
-    int hits;
-
-    BOOL used;
-
-} tnx_objc_hook_t;
-
 uintptr_t g_base = 0;
 
 uintptr_t *g_starts = NULL;
@@ -96,7 +72,7 @@ int g_v138_dump_np = 0;
 
 uintptr_t g_v138_prev_scene = 0;
 
-const uintptr_t g_mode_vtables_verified[] = { 0x1002548, 0xff5720, 0 };
+const uintptr_t g_mode_vtables_verified[3] = { 0x1002548, 0xff5720, 0 };
 
 int tnx_verified_vtable(uintptr_t vtable) {
     if (!g_base || vtable <= g_base) return -1;
@@ -176,22 +152,6 @@ int g_objvote_best_teamcount = 0;
 
 int g_objvote_best_gids_full = 0;
 
-    uintptr_t vt;
-
-    uintptr_t owner;
-
-    int32_t gid;
-
-    int32_t team;
-
-    int32_t ownerIdx;
-
-    int dead;
-
-    int ownerClass;
-
-} tnx_objhit_t;
-
 tnx_objhit_t g_objhits[TNX_OBJ_HIT_DUMP_MAX];
 
 int g_objhit_count = 0;
@@ -203,22 +163,6 @@ unsigned long long g_objvote_owner_above_win = 0;
 int g_objvote_max_votes = 0;
 
 unsigned long long g_objvote_shaped = 0;
-
-    int seg;
-
-    unsigned long long count;
-
-    unsigned long long shaped;
-
-    unsigned long long ownerEqVt;
-
-    uintptr_t first;
-
-    uintptr_t inst[TNX_VTCENSUS_INST];
-
-    int instCount;
-
-} tnx_vtcensus_t;
 
 tnx_vtcensus_t g_vtcensus[TNX_VTCENSUS_MAX];
 
@@ -440,25 +384,11 @@ int g_v89_walk_count = -1;
 
 int g_v89_coord_fixed_logged = 0;
 
-    int used;
-
-    int have;
-
-    uint32_t prev[TNX_V99_FLOATS];
-
 int g_v62_class_pass = 0;
 
 int g_v62_alerts_off = 0;
 
 const char *g_v62_mode_source = "none";
-
-    int ascii;
-
-    int noVt;
-
-    int teamDistinct;
-
-    int posDistinct;
 
 uint64_t g_v224_t0 = 0;
 
@@ -779,14 +709,7 @@ uint64_t tnx_slot_repl_33(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
     return r;
 }
 
-const struct {
-    const char *tag;
-    const char *shortTag;
-    uintptr_t rva;
-    uintptr_t slotRva;
-    tnx_slot_fn_t replacement;
-    int control;
-} g_slot_specs[TNX_SLOT_COUNT] = {
+const struct tnx_t_g_slot_specs g_slot_specs[TNX_SLOT_COUNT] = {
 
     { "A1/vt1002548+10/ad4ed0", "A1", 0x00ad4ed0ULL, 0x01002598ULL, tnx_slot_repl_0, 0 },
     { "A2/vt1002548+07/ad521c", "A2", 0x00ad521cULL, 0x01002580ULL, tnx_slot_repl_1, 0 },
@@ -1237,16 +1160,6 @@ uintptr_t g_v110_owner = 0;
 
 int g_v110_wired = 0;
 
-    int live;
-
-    int teamCount;
-
-    int distinctGids;
-
-    int deadOk;
-
-    uintptr_t vt0;
-
 dispatch_source_t g_scan_timer = NULL;
 
 BOOL tnx_segment_range(const char *name, uintptr_t *lo, uintptr_t *hi) {
@@ -1407,10 +1320,6 @@ const char *tnx_image_segment_name(uintptr_t value) {
 
     return NULL;
 }
-
-    uintptr_t high;
-
-} tnx_region_t;
 
 tnx_region_t g_heap_regions[TNX_HEAP_REGION_MAX];
 
@@ -1610,7 +1519,7 @@ BOOL tnx_manager_shape(uintptr_t manager) {
     return YES;
 }
 
-const uintptr_t g_mode_vtables[] = {
+const uintptr_t g_mode_vtables[36] = {
     0x10012c8, 0x1001318, 0x1001368, 0x10013b8,
     0x1001408, 0x1001458, 0x10014a8, 0x10014f8, 0x1001548, 0x1001598, 0x10015e8, 0x10016e0,
     0x10017d8, 0x10018c0, 0x1001908, 0x10019d0, 0x1001ac8, 0x1001bc0, 0x1001cb8, 0x1001d80,
@@ -1630,45 +1539,11 @@ uintptr_t tnx_vtable_rva(void *object) {
     return (uintptr_t)vtable - g_base;
 }
 
-    int32_t count;
-
-    int32_t capacity;
-
-    int live;
-
-    int nonEmpty;
-
-    int stable;
-
-    int rawOk;
-
-    char rawSeg;
-
-    int ascii;
-
-    int sampled;
-
-    int noVt;
-
-    int teamDistinct;
-
-    int posDistinct;
-
-    int refused;
-
-} tnx_trail_t;
-
 tnx_trail_t g_trail[TNX_TRAIL_MAX];
 
 int g_trail_count = 0;
 
 uint64_t g_trail_total = 0;
-
-    int32_t count;
-
-    int pass;
-
-} tnx_seen_t;
 
 tnx_seen_t g_seen[TNX_SEEN_MAX];
 
@@ -1769,53 +1644,11 @@ ranked:
     tnx_trail_rebest();
 }
 
-    const char *value;
-
-    const char *provenance;
-
-} tnx_fact_t;
-
-    int32_t   gid;
-
-    int32_t   x;
-
-    int32_t   y;
-
-    int32_t   ownerIndex;
-
-    int32_t   teamOld;
-
-    int32_t   teamNew;
-
-    int32_t   typeWord;
-
-    uint8_t   dead;
-
-    uint8_t   activeFlag;
-
 int g_v176_gate_last = -1;
 
 int g_v176_gate_logs = 0;
 
 int g_dodge_probe_usable = 0;
-
-    int rejNull;
-
-    int rejUnreadable;
-
-    int rejAscii;
-
-    int rejNoVt;
-
-    int rejGidZero;
-
-    int rejNonPlayer;
-
-    int rejOutOfRange;
-
-    int rejTeamMissing;
-
-    int deadSeen;
 
 int g_v170_step_logs = 0;
 
@@ -1855,51 +1688,9 @@ uint64_t g_v121_win_reloads = 0;
 
 int g_v121_win_stage = 0;
 
-    uintptr_t classRva;
-
-    int32_t x;
-
-    int32_t y;
-
-    int32_t px;
-
-    int32_t py;
-
-    int32_t team;
-
-    int32_t spawnX;
-
-    int32_t spawnY;
-
-    int32_t gid;
-
-    uint64_t ptick;
-
-    uint64_t qtick;
-
-    int hasPrev;
-
 float g_v165_dir_x = 0.0f;
 
 float g_v165_dir_y = 0.0f;
-
-    float ay;
-
-    float bx;
-
-    float by;
-
-    float speed;
-
-    float dirX;
-
-    float dirY;
-
-    float inflatedR;
-
-    float remaining;
-
-    int32_t gid;
 
 int g_v244_human = 0;
 
@@ -1926,12 +1717,6 @@ int32_t g_v180_tx = 0;
 int32_t g_v180_ty = 0;
 
 uint64_t g_v180_hold = 0;
-
-    int have;
-
-    uint32_t prev[TNX_V173_WORDS];
-
-    uint16_t hot[TNX_V173_WORDS];
 
 BOOL tnx_v56_vtable_in_image(uintptr_t vtable) {
     uintptr_t lo = 0;

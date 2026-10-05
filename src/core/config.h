@@ -397,4 +397,7 @@
 #define TNX_DIR_COUNT 64
 #define TNX_SEG_TTI_LOGS 8
 
+#define TNX_VIEW_RANGE 3400.0f
+#define TNX_SHOT_LOGS 16
+
 #endif

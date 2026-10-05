@@ -335,8 +335,6 @@ int tnx_pending(int want, uint64_t *mask) {
 
     if (mask) *mask = 0;
 
-    tnx_actuator_publish(1, vx, vy);
-
     mgr = tnx_manager();
 
     if (!mgr) return 0;
@@ -436,6 +434,8 @@ int tnx_enqueue(int x, int y) {
     if (tnx_pending(TNX_TYPE_MOVE, &g_mask_before)) {
         g_stuck_3++;
     }
+
+    tnx_actuator_publish(1, vx, vy);
 
     ((void (*)(void *, void *))inputFn)(mgr, msg);
 

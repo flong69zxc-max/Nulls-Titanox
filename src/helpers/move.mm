@@ -365,38 +365,43 @@ static int tnx_pred_ok(uintptr_t pred) {
 }
 
 int tnx_pred_set(int x, int y) {
-    uintptr_t hopFn = 0;
     uintptr_t setFn = 0;
     uintptr_t base = 0;
     uintptr_t pred = 0;
     void *battle = NULL;
+    int why = -1;
 
     if (!TNX_PRED_SET) return 0;
 
-    hopFn = tnx_entry_2(TNX_HOP_RVA);
     setFn = tnx_entry_2(TNX_SETINPUT_RVA);
 
-    if (!hopFn) return 0;
     if (!setFn) return 0;
 
     base = tnx_controller();
 
-    if (base) pred = ((uintptr_t (*)(uintptr_t))hopFn)(base);
+    if (base) pred = tnx_hop(base, &why);
 
     if (!tnx_pred_ok(pred) && g_base) {
         if (tnx_read_ptr(g_base + TNX_BATTLE_RVA, &battle) && battle) {
             base = (uintptr_t)battle;
-            pred = ((uintptr_t (*)(uintptr_t))hopFn)(base);
+            pred = tnx_hop(base, &why);
         }
     }
 
-    if (!tnx_pred_ok(pred)) return 0;
+    if (!tnx_pred_ok(pred)) {
+        if (g_pred_ok < 4) {
+            TNX_LOGX("predMiss base=%p why=%d", (void *)base, why);
+            g_pred_ok++;
+        }
+
+        return 0;
+    }
 
     ((void (*)(uintptr_t, int, int, int))setFn)(pred, x, y, TNX_PRED_FLAG);
 
     if (g_pred_ok < 4) {
-        TNX_LOGX("predSet base=%p pred=%p x=%d y=%d flag=%d", (void *)base, (void *)pred,
-                 x, y, (int)TNX_PRED_FLAG);
+        TNX_LOGX("predSet base=%p pred=%p why=%d x=%d y=%d flag=%d", (void *)base,
+                 (void *)pred, why, x, y, (int)TNX_PRED_FLAG);
         g_pred_ok++;
     }
 

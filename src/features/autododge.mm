@@ -1040,22 +1040,6 @@ void tnx_respawn_event(int32_t x, int32_t y, int32_t px, int32_t py) {
     g_state = TNX_STATE_RESPAWN;
     g_respawn_tick = (int)g_ticks_3;
 
-    {
-        uintptr_t ctrl = tnx_controller();
-        int32_t pairX = 0;
-        int32_t pairY = 0;
-
-        if (ctrl && g_stick_hold &&
-            tnx_read_i32(ctrl + TNX_CTRL_RAW_X_OFF, &pairX) &&
-            tnx_read_i32(ctrl + TNX_CTRL_RAW_Y_OFF, &pairY) &&
-            pairX == g_stick_x && pairY == g_stick_y) {
-            int32_t zero = 0;
-
-            tnx_write_bytes(ctrl + TNX_CTRL_RAW_X_OFF, &zero, sizeof(zero));
-            tnx_write_bytes(ctrl + TNX_CTRL_RAW_Y_OFF, &zero, sizeof(zero));
-        }
-    }
-
     tnx_clear_life();
 
     g_pending = 1;

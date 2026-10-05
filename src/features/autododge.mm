@@ -9,7 +9,31 @@
 #endif
 
 #ifndef TNX_DODGE_CLEAR_R
-#define TNX_DODGE_CLEAR_R 300.0f
+#define TNX_DODGE_CLEAR_R 240.0f
+#endif
+
+#ifndef TNX_JS_DODGE
+#define TNX_JS_DODGE 1
+#endif
+
+#ifndef TNX_DIR_COUNT
+#define TNX_DIR_COUNT 48
+#endif
+
+#ifndef TNX_HORIZON_S
+#define TNX_HORIZON_S 1.0f
+#endif
+
+#ifndef TNX_MOMENTUM
+#define TNX_MOMENTUM 100.0f
+#endif
+
+#ifndef TNX_WALL_PENALTY
+#define TNX_WALL_PENALTY 9000.0f
+#endif
+
+#ifndef TNX_JS_CLEAR_STEPS
+#define TNX_JS_CLEAR_STEPS 4
 #endif
 
 #ifndef TNX_PROJ_LIFE_MS
@@ -29,7 +53,7 @@
 #endif
 
 #ifndef TNX_BODY_GAIN
-#define TNX_BODY_GAIN 0.20f
+#define TNX_BODY_GAIN 0.0f
 #endif
 
 #ifndef TNX_ETA_PENALTY
@@ -37,7 +61,7 @@
 #endif
 
 #ifndef TNX_JS_NOPREDICT
-#define TNX_JS_NOPREDICT 1
+#define TNX_JS_NOPREDICT 0
 #endif
 
 static float g_dodge_px = 0.0f;
@@ -45,6 +69,10 @@ static float g_dodge_py = 0.0f;
 static int g_dodge_have = 0;
 static uint64_t g_freest_bullet = 0;
 static int g_freest_logs = 0;
+static float g_freest_hx = 0.0f;
+static float g_freest_hy = 0.0f;
+static int g_freest_have = 0;
+static uint64_t g_freest_hold = 0;
 
 static int tnx_dodge_is_proj(uintptr_t obj) {
     void *vt = NULL;
@@ -1516,6 +1544,7 @@ int tnx_imminent(float x, float y) {
 }
 
 int tnx_flee(float px, float py, float *tx, float *ty) {
+    if (TNX_JS_DODGE) return 0;
     int i = 0;
     int best = -1;
     float bestMs = 1.0e9f;
@@ -1987,6 +2016,9 @@ int tnx_passed(float px, float py) {
 
 int tnx_best(float px, float py, float *tx, float *ty) {
     const float tau = 2.0f * 3.14159265358979f;
+
+    if (TNX_JS_DODGE) return 0;
+
     float bestDist = 0.0f;
     float bestClear = 0.0f;
     float minSafe = 1000000.0f;
@@ -2075,87 +2107,118 @@ int tnx_write(float dirX, float dirY) {
     return 1;
 }
 
-int tnx_freest(float px, float py, float *tx, float *ty) {
-    float mult[TNX_FREEST_RADII];
-    int pass = 0;
-    int r = 0;
+static float tnx_js_clear(float px, float py, float mvx, float mvy) {
+    float best = 1.0e9f;
     int i = 0;
-    int bestOk = 0;
-    float nowEta = tnx_eta_ms(px, py);
-    float bestScore = 0.0f;
+    int s = 0;
+
+    for (i = 0; i < g_seg_count; i++) {
+        const tnx_seg_t *sg = &g_seg[i];
+        float maxT = TNX_HORIZON_S;
+
+        if (sg->speed > 1.0f) {
+            float life = sg->remaining / sg->speed;
+
+            if (life > 0.0f && life < maxT) maxT = life;
+        }
+
+        for (s = 0; s <= TNX_JS_CLEAR_STEPS; s++) {
+            float ts = maxT * (float)s / (float)TNX_JS_CLEAR_STEPS;
+            float d = tnx_seg_dist(px + mvx * ts, py + mvy * ts, sg->ax, sg->ay, sg->bx, sg->by) -
+                      sg->inflatedR;
+
+            if (d < best) best = d;
+        }
+    }
+
+    return best;
+}
+
+int tnx_freest(float px, float py, float *tx, float *ty) {
+    int i = 0;
+    int n = TNX_JS_DODGE ? TNX_DIR_COUNT : TNX_FREEST_ANGLES;
+    float radius = TNX_JS_DODGE ? TNX_REACH : TNX_STEP_2;
+    float speed = TNX_PLAYER_SPEED;
+    float nowClear = tnx_js_clear(px, py, 0.0f, 0.0f);
+    float bestScore = -1.0e18f;
     float bestEta = 0.0f;
     float bestRoom = 0.0f;
     float bestX = 0.0f;
     float bestY = 0.0f;
+    int bestOk = 0;
 
-    mult[0] = 1.0f;
-    if (TNX_FREEST_RADII > 1) mult[1] = 2.0f;
-    if (TNX_FREEST_RADII > 2) mult[2] = 3.5f;
+    if (radius < 1.0f) radius = TNX_STEP_2;
+    if (g_walk_step > 0.01f) speed = g_walk_step * 60.0f;
+    if (speed < 120.0f) speed = 120.0f;
+    if (speed > 1200.0f) speed = 1200.0f;
 
-    for (pass = 0; pass < 2; pass++) {
-        bestOk = 0;
-        bestScore = -1.0e18f;
+    for (i = 0; i < n; i++) {
+        float rad = (2.0f * 3.14159265358979f * (float)i) / (float)n;
+        float ux = cosf(rad);
+        float uy = sinf(rad);
+        float ex = px + ux * radius;
+        float ey = py + uy * radius;
+        float eta = 0.0f;
+        float room = 1000000.0f;
+        float score = 0.0f;
+        int32_t cxi = (int32_t)ex;
+        int32_t cyi = (int32_t)ey;
+        int k = 0;
 
-        for (r = 0; r < TNX_FREEST_RADII; r++) {
-            float step = TNX_STEP_2 * mult[r];
+        tnx_clamp(&cxi, &cyi);
 
-            for (i = 0; i < TNX_FREEST_ANGLES; i++) {
-                float rad = (2.0f * 3.14159265358979f * (float)i) / (float)TNX_FREEST_ANGLES;
-                float ex = px + cosf(rad) * step;
-                float ey = py + sinf(rad) * step;
-                float eta = 0.0f;
-                float room = 1000000.0f;
-                float score = 0.0f;
-                int32_t cxi = (int32_t)ex;
-                int32_t cyi = (int32_t)ey;
-                int k = 0;
+        if (tnx_walk_into_bullet(px, py, ux, uy, speed * TNX_HORIZON_S)) {
+            g_freest_bullet++;
 
-                tnx_clamp(&cxi, &cyi);
-
-                if (cxi != (int32_t)ex || cyi != (int32_t)ey) continue;
-                if (pass == 0 && tnx_threatened(ex, ey)) continue;
-
-                if (tnx_walk_into_bullet(px, py, (ex - px) / step, (ey - py) / step, step)) {
-                    g_freest_bullet++;
-
-                    continue;
-                }
-
-                eta = tnx_eta_ms(ex, ey);
-
-                if (eta > 1.0e8f) eta = 1.0e8f;
-
-                for (k = 0; k < g_pl_n; k++) {
-                    float d = 0.0f;
-
-                    if (g_pl_mine[k]) continue;
-
-                    d = tnx_seg_dist(px, py, ex, ey, (float)g_pl_x[k], (float)g_pl_y[k]);
-
-                    if (d < room) room = d;
-                }
-
-                if (room > TNX_BODY_CLEAR) room = TNX_BODY_CLEAR;
-
-                score = eta + room * TNX_BODY_GAIN;
-
-                if (nowEta > 0.0f && eta <= nowEta) score = -TNX_ETA_PENALTY;
-
-                if (score > bestScore) {
-                    bestScore = score;
-                    bestEta = eta;
-                    bestRoom = room;
-                    bestX = ex;
-                    bestY = ey;
-                    bestOk = 1;
-                }
-            }
+            continue;
         }
 
-        if (bestOk) break;
+        score = tnx_js_clear(px, py, ux * speed, uy * speed);
+
+        if (g_freest_have) score += TNX_MOMENTUM * (ux * g_freest_hx + uy * g_freest_hy);
+        if (tnx_clip_range(px, py, ux, uy, radius) < radius - 1.0f) score -= TNX_WALL_PENALTY;
+
+        for (k = 0; k < g_pl_n; k++) {
+            float d = 0.0f;
+
+            if (g_pl_mine[k]) continue;
+
+            d = tnx_seg_dist(px, py, ex, ey, (float)g_pl_x[k], (float)g_pl_y[k]);
+
+            if (d < room) room = d;
+        }
+
+        if (room > TNX_BODY_CLEAR) room = TNX_BODY_CLEAR;
+
+        score = score + room * TNX_BODY_GAIN;
+        eta = tnx_eta_ms(ex, ey);
+
+        if (eta > 1.0e8f) eta = 1.0e8f;
+
+        if (score > bestScore) {
+            bestScore = score;
+            bestEta = eta;
+            bestRoom = room;
+            bestX = ex;
+            bestY = ey;
+            bestOk = 1;
+        }
     }
 
     if (!bestOk) return 0;
+
+    if (TNX_JS_DODGE) {
+        g_freest_hx = (bestX - px) / radius;
+        g_freest_hy = (bestY - py) / radius;
+        g_freest_have = 1;
+
+        if (bestScore <= nowClear) {
+            g_freest_hold++;
+
+            return 0;
+        }
+    }
+
     if (!TNX_ESCAPE && bestRoom < TNX_FREEST_MIN) return 0;
 
     *tx = bestX;
@@ -2166,12 +2229,14 @@ int tnx_freest(float px, float py, float *tx, float *ty) {
         g_freest_logs++;
 
         tnx_logf("freest own=(%.0f,%.0f) pick=(%.0f,%.0f) eta=%.0f nowEta=%.0f room=%.0f segs=%d "
-                 "bullets=%llu - the pick is the point with the largest time to impact, so the body "
-                 "steps out of the corridor instead of along it; bullets counts the headings refused "
-                 "because walking them would put the body in front of a shot",
+                 "score=%.0f nowClear=%.0f bullets=%llu hold=%llu - the pick is the direction with the "
+                 "largest clearance along the path it would walk in one second, and the body stays put "
+                 "when no direction beats standing still; bullets counts the headings refused because "
+                 "walking them would put the body in front of a shot",
                  (double)px, (double)py, (double)bestX, (double)bestY, (double)bestEta,
-                 (double)nowEta, (double)bestRoom, g_seg_count,
-                 (unsigned long long)g_freest_bullet);
+                 (double)nowClear, (double)bestRoom, g_seg_count,
+                 (double)bestScore, (double)nowClear,
+                 (unsigned long long)g_freest_bullet, (unsigned long long)g_freest_hold);
     }
 
     return 1;

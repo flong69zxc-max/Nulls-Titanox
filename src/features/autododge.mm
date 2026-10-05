@@ -76,6 +76,46 @@
 #define TNX_JS_NOPREDICT 0
 #endif
 
+#ifndef TNX_GEOM
+#define TNX_GEOM 1
+#endif
+
+#ifndef TNX_GEOM_LOGS
+#define TNX_GEOM_LOGS 6
+#endif
+
+#ifndef TNX_RADIUS_MIN
+#define TNX_RADIUS_MIN 0.0f
+#endif
+
+#ifndef TNX_RADIUS_MAX
+#define TNX_RADIUS_MAX 600.0f
+#endif
+
+#ifndef TNX_RADIUS_MARGIN
+#define TNX_RADIUS_MARGIN 8.0f
+#endif
+
+#ifndef TNX_CAL_OFF_LO
+#define TNX_CAL_OFF_LO 0x20
+#endif
+
+#ifndef TNX_CAL_OFF_HI
+#define TNX_CAL_OFF_HI 0x120
+#endif
+
+#ifndef TNX_CAL_STEP
+#define TNX_CAL_STEP 4
+#endif
+
+#ifndef TNX_CAL_TOL
+#define TNX_CAL_TOL 0.06f
+#endif
+
+#ifndef TNX_CONTACT_LOGS
+#define TNX_CONTACT_LOGS 8
+#endif
+
 static float g_dodge_px = 0.0f;
 static float g_dodge_py = 0.0f;
 static int g_dodge_have = 0;
@@ -701,6 +741,30 @@ uint64_t g_bucket_abs[TNX_ADV_BUCKETS];
 uint64_t g_bucket_n[TNX_ADV_BUCKETS];
 
 float g_last_dist = 0.0f;
+
+int g_released = 0;
+
+float g_own_vx = 0.0f;
+
+float g_own_vy = 0.0f;
+
+float g_prev_own_x = 0.0f;
+
+float g_prev_own_y = 0.0f;
+
+uint64_t g_prev_own_tick = 0;
+
+float g_track_min[TNX_SEG_MAX];
+
+int g_track_pside[TNX_SEG_MAX];
+
+float g_track_ux[TNX_SEG_MAX];
+
+float g_track_uy[TNX_SEG_MAX];
+
+float g_track_rad[TNX_SEG_MAX];
+
+uint64_t g_howto_logs = 0;
 
 int g_side_last = -1;
 
@@ -1452,6 +1516,121 @@ static int tnx_blacklisted(float speed, float radius) {
     return 0;
 }
 
+int g_rad_off = -1;
+
+int g_rad_n = 0;
+
+int g_rad_logs = 0;
+
+float g_rad_est = 0.0f;
+
+uint64_t g_rad_test = 0;
+
+float g_own_r = 0.0f;
+
+int g_own_r_n = 0;
+
+int g_own_r_logs = 0;
+
+int g_clip_win = 0;
+
+int g_clip_test_win = 0;
+
+float tnx_own_radius(void) {
+    if (!TNX_GEOM) return 0.0f;
+    if (g_own_r > 1.0f) return g_own_r;
+
+    return 0.0f;
+}
+
+void tnx_contact_note(float dist, float projR) {
+    float r = dist - projR;
+
+    if (!TNX_GEOM) return;
+    if (r < 10.0f) return;
+    if (r > TNX_RADIUS_MAX) return;
+
+    if (g_own_r_n == 0) g_own_r = r;
+    else g_own_r = g_own_r * 0.75f + r * 0.25f;
+
+    g_own_r_n++;
+
+    if (g_own_r_logs < TNX_CONTACT_LOGS) {
+        g_own_r_logs++;
+
+        TNX_LOGX("contact dist=%.0f projR=%.0f ownR=%.0f n=%d - own took a body while the nearest "
+                 "live shot was this far from its centre, so subtracting the projectile radius "
+                 "read out of that shot leaves own collision radius: the value kept is an average "
+                 "over every contact seen and it is what the hit test inflates with from now on",
+                 (double)dist, (double)projR, (double)g_own_r, g_own_r_n);
+    }
+}
+
+float tnx_proj_radius(const tnx_proj_t *p, float speed) {
+    uintptr_t base = 0;
+    int off = 0;
+
+    if (!TNX_GEOM) return 0.0f;
+    if (!p) return 0.0f;
+    if (speed < 1.0f) return 0.0f;
+
+    base = p->elem;
+
+    if (g_rad_off >= 0) {
+        float r = 0.0f;
+
+        if (base && tnx_read_f32(base + (uintptr_t)g_rad_off, &r)) {
+            if (r >= TNX_RADIUS_MIN && r <= TNX_RADIUS_MAX) {
+                g_rad_est = r;
+
+                return r;
+            }
+        }
+
+        return g_rad_est;
+    }
+
+    if (!base) return 0.0f;
+
+    for (off = TNX_CAL_OFF_LO; off <= TNX_CAL_OFF_HI; off += TNX_CAL_STEP) {
+        float v = 0.0f;
+        float r = 0.0f;
+        float d = 0.0f;
+
+        g_rad_test++;
+
+        if (!tnx_read_f32(base + (uintptr_t)off, &v)) continue;
+        if (v < 1.0f) continue;
+
+        d = v - speed;
+        if (d < 0.0f) d = -d;
+        if (d > speed * TNX_CAL_TOL) continue;
+
+        if (!tnx_read_f32(base + (uintptr_t)off + 4, &r)) continue;
+        if (r < TNX_RADIUS_MIN || r > TNX_RADIUS_MAX) continue;
+
+        g_rad_off = off + 4;
+        g_rad_n++;
+        g_rad_est = r;
+
+        if (g_rad_logs < TNX_GEOM_LOGS) {
+            g_rad_logs++;
+
+            TNX_LOGX("geom speedOff=%#x radOff=%#x r=%.0f speed=%.0f tol=%.0f%% tests=%llu - the "
+                     "field holding a value within tolerance of the speed measured from the "
+                     "position delta is the speed field, so the radius is the float right after "
+                     "it; tests is how many offsets were read before the match, and once locked "
+                     "every shot is read through that offset instead of the config constant",
+                     off, off + 4, (double)r, (double)speed, (double)(TNX_CAL_TOL * 100.0f),
+                     (unsigned long long)g_rad_test);
+        }
+
+        return r;
+    }
+
+    return 0.0f;
+}
+
 void tnx_build(void) {
     int k;
 
@@ -1527,11 +1706,13 @@ void tnx_build(void) {
             float py0 = g_dodge_have ? g_dodge_py : (float)g_own_y;
             float rx = (float)p->x - px0;
             float ry = (float)p->y - py0;
-            float rate = rx * vx + ry * vy;
-            float denom = len * len;
+            float rvx = vx - g_own_vx;
+            float rvy = vy - g_own_vy;
+            float rate = rx * rvx + ry * rvy;
+            float denom = rvx * rvx + rvy * rvy;
             float tStar = (denom > 0.5f) ? (-rate / denom) : 0.0f;
-            float cx = rx + vx * tStar;
-            float cy = ry + vy * tStar;
+            float cx = rx + rvx * tStar;
+            float cy = ry + rvy * tStar;
             float miss = sqrtf(cx * cx + cy * cy);
             float reach = TNX_PLAYER_RADIUS + TNX_PROJ_RADIUS + TNX_INFLATE;
             float dist2own = sqrtf(rx * rx + ry * ry);
@@ -1596,7 +1777,15 @@ void tnx_build(void) {
             }
         }
 
-        rem = tnx_clip_range((float)p->x, (float)p->y, vx / len, vy / len, rem);
+        {
+            float rem0 = rem;
+
+            rem = tnx_clip_range((float)p->x, (float)p->y, vx / len, vy / len, rem);
+
+            g_clip_test_win++;
+
+            if (rem < rem0 - 0.5f) g_clip_win++;
+        }
 
         s = &g_seg[g_seg_count++];
         s->gid = p->gid;
@@ -1608,7 +1797,14 @@ void tnx_build(void) {
         s->by = s->ay + s->dirY * rem;
         s->speed = speed;
         s->remaining = rem;
-        s->inflatedR = TNX_DODGE_CLEAR_R;
+        {
+            float pr = tnx_proj_radius(p, speed);
+            float ir = pr + tnx_own_radius() + TNX_RADIUS_MARGIN;
+
+            if (ir < TNX_DODGE_CLEAR_R) ir = TNX_DODGE_CLEAR_R;
+
+            s->inflatedR = ir;
+        }
     }
 
     if (g_seg_test > 0) g_seg_frac = (g_seg_clip * 100) / g_seg_test;
@@ -2486,6 +2682,30 @@ static float tnx_clear_at(float px, float py, int i) {
     return tnx_seg_dist(px, py, g_seg[i].ax, g_seg[i].ay, g_seg[i].bx, g_seg[i].by) - g_seg[i].inflatedR;
 }
 
+static float tnx_all_clear(float x, float y) {
+    int k = 0;
+    float best = 1.0e9f;
+
+    for (k = 0; k < g_seg_count; k++) {
+        float c = tnx_clear_at(x, y, k);
+
+        if (c < best) best = c;
+    }
+
+    return best;
+}
+
+static int tnx_wall_blocked(float x0, float y0, float x1, float y1) {
+    int32_t ox = (int32_t)x1;
+    int32_t oy = (int32_t)y1;
+
+    if (!g_live || !g_armed) return -1;
+    if (g_w <= 0 || g_h <= 0) return -1;
+
+    return tnx_clip_walk((int32_t)x0, (int32_t)y0, (int32_t)x1, (int32_t)y1,
+                         (int32_t)TNX_TILE_SIZE, g_grid, g_w, g_h, &ox, &oy);
+}
+
 static int tnx_point_clear(float px, float py, float x, float y) {
     int i = 0;
     float mx = (px + x) * 0.5f;
@@ -2629,9 +2849,30 @@ static void tnx_stat_tick(float px, float py) {
 
             {
                 float c = tnx_clear_at(px, py, j);
+                float dx = g_seg[j].bx - g_seg[j].ax;
+                float dy = g_seg[j].by - g_seg[j].ay;
+                float cross = dx * (py - g_seg[j].ay) - dy * (px - g_seg[j].ax);
 
                 if (c <= 0.0f) g_track_hit[i] = 1;
                 if (c <= g_seg[j].inflatedR * (TNX_NEAR_MULT - 1.0f)) g_stat_near++;
+                if (c < g_track_min[i]) g_track_min[i] = c;
+
+                if (cross > 0.0f) {
+                    g_track_pside[i] = 0;
+                } else {
+                    g_track_pside[i] = 1;
+                }
+
+                {
+                    float dl = sqrtf(dx * dx + dy * dy);
+
+                    g_track_rad[i] = g_seg[j].inflatedR;
+
+                    if (dl > 0.001f) {
+                        g_track_ux[i] = dx / dl;
+                        g_track_uy[i] = dy / dl;
+                    }
+                }
             }
         }
 
@@ -2639,6 +2880,47 @@ static void tnx_stat_tick(float px, float py) {
 
         if (g_track_hit[i]) {
             g_stat_absorbed++;
+
+            if (g_howto_logs < TNX_HOWTO_LOGS) {
+                float need = 0.0f - g_track_min[i];
+                float ownSpd = TNX_PLAYER_SPEED / 60.0f;
+                float frames = (ownSpd > 0.5f) ? (need / ownSpd) : 0.0f;
+                float ux = g_track_ux[i];
+                float uy = g_track_uy[i];
+                float dist = TNX_DODGE_DIST;
+                float ax0 = px - uy * dist;
+                float ay0 = py + ux * dist;
+                float ax1 = px + uy * dist;
+                float ay1 = py - ux * dist;
+                float c0 = tnx_all_clear(ax0, ay0);
+                float c1 = tnx_all_clear(ax1, ay1);
+                int w0 = tnx_wall_blocked(px, py, ax0, ay0);
+                int w1 = tnx_wall_blocked(px, py, ax1, ay1);
+                int alt = 0;
+
+                if (w0 < 0 || w1 < 0) alt = g_track_pside[i];
+                else if (w1 != 0 && w0 == 0) alt = 0;
+                else if (w0 != 0 && w1 == 0) alt = 1;
+                else if (c1 > c0) alt = 1;
+                else alt = 0;
+
+                g_howto_logs++;
+
+                TNX_LOGX("howto side=%d alt=%d need=%.0f units frames=%.0f ownSpd=%.0f "
+                         "minClear=%.0f clear0=%.0f clear1=%.0f wall0=%d wall1=%d radius=%.0f - "
+                         "the closest approach on this shot stayed %.0f units inside the contact "
+                         "boundary, so clearing it needed %.0f units of lateral movement, and at "
+                         "%.0f units a frame that is %.0f frames: those frames are what says "
+                         "whether the miss was scheduling or arithmetically impossible. clear0 and "
+                         "clear1 are the room left on each perpendicular of the shot against every "
+                         "other live flight, wall0 and wall1 say whether the tilemap clips the run "
+                         "to that point on each side, and alt is the side this arithmetic says "
+                         "should have been taken",
+                         g_track_pside[i], alt, (double)need, (double)frames, (double)ownSpd,
+                         (double)g_track_min[i], (double)c0, (double)c1, w0, w1,
+                         (double)g_track_rad[i], (double)need, (double)need, (double)ownSpd,
+                         (double)frames);
+            }
         } else {
             g_stat_dodged++;
         }
@@ -2691,6 +2973,8 @@ static void tnx_stat_tick(float px, float py) {
 
             g_track_gid[k] = gid;
             g_track_hit[k] = 0;
+            g_track_min[k] = 1.0e9f;
+            g_track_pside[k] = 0;
             g_shot_key[k] = (g_pick_key_c << 2) | (g_pick_key_t << 1) | (g_side_last < 0 ? 0 : g_side_last);
 
             break;
@@ -2708,16 +2992,24 @@ static void tnx_stat_report(void) {
     g_last_stat = g_ticks_3;
 
     TNX_LOGX("stat picks=%llu side=%llu commit=%llu absorbed=%llu dodged=%llu reactMin=%llu "
-             "reactAvg=%llu reactMax=%llu near=%d resets=%llu segs=%d - absorbed counts a shot that came "
-             "body while it was alive and dodged counts one that passed without ever doing so, so "
-             "that pair is the only scoreboard that matters, and react is the ticks between the "
-             "threat set changing and the pick that answered it",
+             "reactAvg=%llu reactMax=%llu near=%d resets=%llu segs=%d ownR=%.0f projR=%.0f "
+             "radOff=%d clip=%d/%d - absorbed counts a shot that came body while it was alive and "
+             "dodged counts one that passed without ever doing so, so that pair is the only "
+             "scoreboard that matters, and react is the ticks between the threat set changing and "
+             "the pick that answered it; ownR is the collision radius learned from contacts, projR "
+             "is the radius read out of the shot data with radOff the offset it was found at, and "
+             "clip is how many flights the tilemap shortened out of every flight tested, so clip at "
+             "zero over a large test count means the wall pass is not running",
              (unsigned long long)g_stat_picks, (unsigned long long)g_stat_side,
              (unsigned long long)g_stat_commit, (unsigned long long)g_stat_absorbed,
              (unsigned long long)g_stat_dodged, (unsigned long long)g_react_min,
              (unsigned long long)(g_react_n ? (g_react_sum / g_react_n) : 0),
              (unsigned long long)g_react_max, g_stat_near, (unsigned long long)g_stat_reset,
-             g_seg_count);
+             g_seg_count, (double)g_own_r, (double)g_rad_est, g_rad_off,
+             g_clip_win, g_clip_test_win);
+
+    g_clip_win = 0;
+    g_clip_test_win = 0;
 
     for (b = 0; b < TNX_ADV_BUCKETS; b++) {
         float rate = 0.0f;
@@ -2787,26 +3079,37 @@ static void tnx_state_reset(void) {
 }
 
 static void tnx_state_tick(float px, float py) {
-    int i = 0;
     uintptr_t own = tnx_own_obj();
+
+    if (g_prev_own_tick != 0 && g_ticks_3 > g_prev_own_tick) {
+        float dt = (float)(g_ticks_3 - g_prev_own_tick);
+
+        g_own_vx = (px - g_prev_own_x) / dt;
+        g_own_vy = (py - g_prev_own_y) / dt;
+    }
+
+    g_prev_own_x = px;
+    g_prev_own_y = py;
+    g_prev_own_tick = g_ticks_3;
 
     if (own != g_own_obj_last) {
         if (g_own_obj_last != 0) tnx_state_reset();
 
         g_own_obj_last = own;
+        g_no_threat_since = 0;
+        g_released = 0;
+
+        return;
     }
 
     if (g_seg_count > 0) {
         g_no_threat_since = 0;
-
-        if (g_moving) {
-            float d = sqrtf((g_tx_2 - px) * (g_tx_2 - px) + (g_ty_2 - py) * (g_ty_2 - py));
-
-            if (d < TNX_STEP) tnx_state_reset();
-        }
+        g_released = 0;
 
         return;
     }
+
+    if (g_released) return;
 
     if (g_no_threat_since == 0) {
         g_no_threat_since = g_ticks_3;
@@ -2814,9 +3117,17 @@ static void tnx_state_tick(float px, float py) {
         return;
     }
 
-    if ((g_ticks_3 - g_no_threat_since) >= (uint64_t)TNX_NO_THREAT_TICKS) tnx_state_reset();
+    if ((g_ticks_3 - g_no_threat_since) < (uint64_t)TNX_NO_THREAT_TICKS) return;
 
-    for (i = 0; i < TNX_SEG_MAX; i++) g_shot_key[i] = -1;
+    tnx_state_reset();
+    g_released = 1;
+
+    tnx_enqueue((int32_t)px, (int32_t)py);
+
+    TNX_LOGX("release own=(%.0f,%.0f) - with no threat left the engine would keep walking to the "
+             "last target written, so the target is set to own position, which is what stops the "
+             "character instead of leaving it to run on into whatever was in front of it",
+             (double)px, (double)py);
 }
 
 int tnx_decide(int32_t ownX, int32_t ownY) {

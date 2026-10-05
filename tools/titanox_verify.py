@@ -104,7 +104,7 @@ else:
     rows = [l for l in t.split("\n") if l.startswith('    { "')]
     if len(rows) < 100:
         fail("hero table has only %d rows" % len(rows))
-    bad = [l for l in rows if l.count(",") != 19]
+    bad = [l for l in rows if l.count(",") != 20]
     if bad:
         fail("hero table has %d rows with a wrong field count, first: %s" % (len(bad), bad[0][:60]))
     names = re.findall(r'\{\s*"([^"]+)"', t)
@@ -120,7 +120,7 @@ if not re.search(r"drop=\d+", log):
 else:
     ok("drop stamp present: %s" % re.search(r"drop=\d+", log).group(0))
 
-rep = os.path.join(ROOT, "tools", "rework_report.json")
+rep = os.path.join(ROOT, "tools", "titanox_rework_1_report.json")
 if os.path.exists(rep):
     r = json.load(io.open(rep, encoding="utf-8"))
     gone = [x.split(" ")[0] for x in r.get("removed_symbols", [])]

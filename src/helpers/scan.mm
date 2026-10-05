@@ -2994,7 +2994,7 @@ void tnx_gate_report(int slotHit) {
         reason = "noInputMgr";
     } else if (strcmp(reason, "none") == 0 && !ownFound) {
         reason = "noOwn";
-    } else if (strcmp(reason, "none") == 0 && !g_tested) {
+    } else if (strcmp(reason, "none") == 0 && !g_tested_2) {
         reason = "actuatorNotTested";
     } else if (strcmp(reason, "none") == 0 && !targetFound) {
         reason = "noTarget";

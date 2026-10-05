@@ -54,16 +54,11 @@ int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) 
             g_walk_aborts++;
 
             if (g_walk_aborts <= TNX_WALK_ABORT_FULL) {
-                tnx_logf("walk aborted at i=%d n=%d arr=%p g_arr=%p g_n=%d aborts=%llu - the "
-                         "published tuple moved during the pass, so the rest of this list is "
-                         "whatever the engine put there next and the pass stops instead of "
-                         "dereferencing it",
+                tnx_logf("walk aborted at i=%d n=%d arr=%p g_arr=%p g_n=%d aborts=%llu",
                          i, count, (void *)(uintptr_t)data, (void *)g_pub_array,
                          g_pub_count, (unsigned long long)g_walk_aborts);
             } else if ((g_walk_aborts % TNX_WALK_ABORT_EVERY) == 0) {
-                tnx_logf("walk aborts=%llu at i=%d n=%d - the full text is printed for the "
-                         "first %d only, because a reallocation burst would otherwise drown the "
-                         "log the way the census did in v135",
+                tnx_logf("walk aborts=%llu at i=%d n=%d",
                          (unsigned long long)g_walk_aborts, i, count,
                          TNX_WALK_ABORT_FULL);
             }
@@ -164,13 +159,7 @@ int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) 
                 if (!tnx_read_f32(entry.object + TNX_OFF, &npF70)) npF70 = 0.0f;
                 if (!tnx_read_f32(entry.object + TNX_OFF + 4ULL, &npF74)) npF74 = 0.0f;
 
-                tnx_logf("nonplayer elem=%p classRva=%#llx gid=%d team=%d x+%#llx=%d y+%#llx=%d "
-                         "+%#llx=%d +%#llx=%d f32x=%g f32y=%g f32%#llx=%g f32%#llx=%g ptr+%#llx=%p - an "
-                         "element outside the player id window "
-                         "is named once with the fields a projectile would need, because the claim "
-                         "that this class is a projectile was an analogy from its id range and not a "
-                         "measurement, and a position that changes while the element exists and then "
-                         "disappears is what would settle it",
+                tnx_logf("nonplayer elem=%p classRva=%#llx gid=%d team=%d x+%#llx=%d y+%#llx=%d +%#llx=%d +%#llx=%d f32x=%g f32y=%g f32%#llx=%g f32%#llx=%g ptr+%#llx=%p",
                          (void *)entry.object, (unsigned long long)npRva, entry.gid, entry.teamOld,
                          (unsigned long long)TNX_OBJ_X_OFF, npX, (unsigned long long)TNX_OBJ_Y_OFF, npY,
                          (unsigned long long)TNX_OFF, np70,
@@ -200,11 +189,7 @@ int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) 
 
                 if (tnx_read_ptr(entry.object, &tvtable) && tvtable) tvtRva = (uintptr_t)tvtable - g_base;
 
-                tnx_logf("coord suspect elem=%p vtRva=%#llx +%#llx=%d +%#llx=%d gid=%d - this class "
-                         "carries neither its id nor its coordinates where the walk looks for them, so "
-                         "the row is dropped as rejOutOfRange and usable stays below two; turn "
-                         "TNX_COORD_SOFT on to let it through and let the per entry coord gate "
-                         "downstream decide",
+                tnx_logf("coord suspect elem=%p vtRva=%#llx +%#llx=%d +%#llx=%d gid=%d",
                          (void *)entry.object, (unsigned long long)tvtRva,
                          (unsigned long long)TNX_OBJ_X_OFF, entry.x,
                          (unsigned long long)TNX_OBJ_Y_OFF, entry.y, entry.gid);
@@ -352,8 +337,7 @@ void tnx_discriminate(uintptr_t manager) {
     }
 
     if (teamOff == (int)TNX_OBJ_X_OFF || teamOff == (int)TNX_OBJ_Y_OFF) {
-        tnx_logf("walk error: teamOff=+0x%x equals the repository coordinate offset, so the "
-                 "walk hit strings and not objects - the team offset is refused and left unset",
+        tnx_logf("walk error: teamOff=+0x%x equals the repository coordinate offset, so the walk hit strings and not objects",
                  teamOff);
 
         teamOff = -1;
@@ -460,11 +444,7 @@ void tnx_discriminate(uintptr_t manager) {
     if (!g_coord_fixed_logged) {
         g_coord_fixed_logged = 1;
 
-        tnx_logf("walk coord fixed +%#llx/+%#llx (was auto) - the walk reads x and y at those "
-                  "two int32 and nowhere else; this block measured pair=+0x%x and single=+0x%x "
-                  "and neither is applied any more, because the v88 run had the walk land on "
-                  "+0x3c/+0x40 in the second battle while the same block printed +0x30/+0x34, "
-                  "and that battle's pos= then read (owner index, team) as coordinates",
+        tnx_logf("walk coord fixed +%#llx/+%#llx (was auto)",
                  (unsigned long long)TNX_OBJ_X_OFF, (unsigned long long)TNX_OBJ_Y_OFF,
                  intPairOff >= 0 ? intPairOff : 0, coordOff >= 0 ? coordOff : 0);
     }
@@ -493,9 +473,7 @@ void tnx_probe_3(uintptr_t manager, uintptr_t mode, int verbose) {
         if (v142_walk_logs < 12 || (v142_walk_logs % 128) == 0) {
             v142_walk_logs++;
 
-            tnx_logf("walk enter arr=%p n=%d g_arr=%p g_n=%d tick_arr=%p tick_n=%d manager=%p "
-                     "- the walk reads the tuple the tick snapshot handed it, so this line and "
-                     "the score line must print the same arr and n", (void *)g_tick_array,
+            tnx_logf("walk enter arr=%p n=%d g_arr=%p g_n=%d tick_arr=%p tick_n=%d manager=%p", (void *)g_tick_array,
                      g_tick_count, (void *)g_players_array, g_players_count,
                      (void *)g_tick_array, g_tick_count, (void *)manager);
         }
@@ -509,10 +487,7 @@ void tnx_probe_3(uintptr_t manager, uintptr_t mode, int verbose) {
         if (v142_leave_logs < 12 || (v142_leave_logs % 128) == 0) {
             v142_leave_logs++;
 
-            tnx_logf("walk leave arr=%p n=%d g_arr=%p g_n=%d aborted=%d abortI=%d usable=%d "
-                     "rejected=%d - aborted=1 names the pass that stopped because the published "
-                     "tuple moved under it, which is the case that walked a list the engine had "
-                     "already replaced", (void *)g_walk_arr, g_walk_n,
+            tnx_logf("walk leave arr=%p n=%d g_arr=%p g_n=%d aborted=%d abortI=%d usable=%d rejected=%d", (void *)g_walk_arr, g_walk_n,
                      (void *)g_pub_array, g_pub_count, g_walk_aborted,
                      g_walk_abort_i, usable, rejected);
         }
@@ -555,14 +530,10 @@ void tnx_probe_3(uintptr_t manager, uintptr_t mode, int verbose) {
                  g_map_h, inRange, distinct, distinctOld, distinctNew, g_team_off);
     }
 
-    tnx_logf("walk team reverted to +0x%x with distinct(+0x40)=%d distinct(+0x4c)=%d - the "
-             "teamdump settled it: +0x40 is 1,1,0,0 on four elements while +0x4c reads 0,2,"
-             "29535,0 and 29535 is the pair 0x5f 0x73, so +0x4c is an inline std::string and not a "
-             "side; a distinct count above one is not proof, only the byte dump is",
+    tnx_logf("walk team reverted to +0x%x with distinct(+0x40)=%d distinct(+0x4c)=%d",
              g_team_off, distinctOld, distinctNew);
 
-    tnx_logf("walk offsets team=+0x%x distinctOld=%d distinctNew=%d coord=+0x%llx/+0x%llx "
-             "usable=%d distinct=%d inRange=%d - both fixed constants, not chosen from a sample",
+    tnx_logf("walk offsets team=+0x%x distinctOld=%d distinctNew=%d coord=+0x%llx/+0x%llx usable=%d distinct=%d inRange=%d",
              g_team_off, distinctOld, distinctNew,
              (unsigned long long)tnx_coord_x_off(), (unsigned long long)tnx_coord_y_off(),
              usable, distinct, inRange);
@@ -580,9 +551,7 @@ void tnx_probe_3(uintptr_t manager, uintptr_t mode, int verbose) {
                  TNX_MODE_TILEMAP_OFF, TNX_TILEMAP_WIDTH_OFF);
 
         for (int i = 0; i < usable && i < 16; i++) {
-            tnx_logf("player[%02d] at=%p gid=%d pos=(%d,%d) team40=%d own=%d dead=%d active=%d "
-                     "- pos is x and y read at +%#llx/+%#llx as int32, team40 is the side read at "
-                     "+%#llx; neither is selected by a heuristic any more",
+            tnx_logf("player[%02d] at=%p gid=%d pos=(%d,%d) team40=%d own=%d dead=%d active=%d",
                      i, (void *)objects[i].object, objects[i].gid, objects[i].x, objects[i].y,
                      objects[i].teamOld, objects[i].ownerIndex, objects[i].dead,
                      objects[i].activeFlag & 1, (unsigned long long)TNX_OBJ_X_OFF,
@@ -609,8 +578,7 @@ void tnx_probe_3(uintptr_t manager, uintptr_t mode, int verbose) {
             if (!seen) unique++;
         }
 
-        tnx_logf("gid unique=%d of usable=%d distinct=%d - below usable means the container "
-                 "carries duplicate ids and anything grouped by gid groups the wrong elements",
+        tnx_logf("gid unique=%d of usable=%d distinct=%d",
                  unique, usable, distinct);
     }
 
@@ -638,9 +606,7 @@ void tnx_probe_3(uintptr_t manager, uintptr_t mode, int verbose) {
             if ((uintptr_t)backPtr == manager) back++;
         }
 
-        tnx_logf("membership manager=%p usable=%d back=%d read=%d - [elem+%#llx] is the "
-                 "membership test now: an element whose word there names the container belongs to "
-                 "it, and the owner chain through owner+0 and owner+%#llx is no longer consulted",
+        tnx_logf("membership manager=%p usable=%d back=%d read=%d",
                  (void *)manager, usable, back, backRead,
                  (unsigned long long)TNX_ELEM_BACK_OFF,
                  (unsigned long long)TNX_MODE_MANAGER_OFF);
@@ -693,9 +659,7 @@ int tnx_clamp(int32_t *x, int32_t *y) {
         if (g_logs_2 < TNX_LOGS_2) {
             g_logs_2++;
 
-            tnx_logf("clamp skipped max=(%d,%d) receiver=%p bounds=%p - the bounds were read but "
-                     "are not a playable extent, so the target is sent unchanged rather than clamped "
-                     "to a wrong box", maxX, maxY, (void *)receiver, (void *)bounds);
+            tnx_logf("clamp skipped max=(%d,%d) receiver=%p bounds=%p", maxX, maxY, (void *)receiver, (void *)bounds);
         }
 
         return 0;
@@ -714,10 +678,7 @@ int tnx_clamp(int32_t *x, int32_t *y) {
     if (g_logs_2 < TNX_LOGS_2) {
         g_logs_2++;
 
-        tnx_logf("clamp max=(%d,%d) target=(%d,%d)->(%d,%d) receiver=%p bounds=%p - the bounds "
-                 "come from the engine accessor at %#llx on the actuator receiver read at +%#llx and "
-                 "+%#llx, and the clamp applies the same rule the input path applies before it queues "
-                 "the move, so a destination outside the arena is never sent",
+        tnx_logf("clamp max=(%d,%d) target=(%d,%d)->(%d,%d) receiver=%p bounds=%p",
                  maxX, maxY, ox, oy, *x, *y, (void *)receiver, (void *)bounds,
                  (unsigned long long)TNX_BOUNDS_RVA,
                  (unsigned long long)TNX_BOUNDS_X_OFF,
@@ -757,10 +718,15 @@ int32_t g_last_x_2 = 0;
 int32_t g_last_y_2 = 0;
 
 static uintptr_t tnx_pair_base(void) {
+    void *battleRaw = NULL;
     uintptr_t battle = 0;
     uintptr_t alt = tnx_controller();
 
-    if (g_base && tnx_read_ptr(g_base + TNX_BATTLE_RVA, &battle) && battle) {
+    if (g_base && tnx_read_ptr(g_base + TNX_BATTLE_RVA, &battleRaw)) {
+        battle = (uintptr_t)battleRaw;
+    }
+
+    if (battle) {
         if (tnx_hop(battle, NULL)) return battle;
     }
 
@@ -809,14 +775,8 @@ void tnx_paircal(void) {
     angPair = atan2f((float)py, (float)px) * 57.2958f;
     angMove = atan2f((float)dy, (float)dx) * 57.2958f;
 
-    tnx_logf("paircal pair=(%d,%d) len=%.0f move=(%d,%d) len=%.0f dot=%+.2f angPair=%.1f "
-             "angMove=%.1f angDelta=%.1f own=(%d,%d) - the engine writes the pair at ctrl+%#llx itself "
-             "when the player drags, so this line pairs its vector with the heading the character "
-             "really travelled in the same second; angDelta is the rotation between the screen space "
-             "the pair lives in and the world space the character moves in, and a handful of samples "
-             "in different directions is enough to write the pair for a chosen world heading, which is "
-             "what the walk cycle needs",
+    tnx_logf("paircal pair=(%d,%d) len=%.0f move=(%d,%d) len=%.0f dot=%+.2f angPair=%.1f angMove=%.1f angDelta=%.1f own=(%d,%d)",
              px, py, (double)pLen, dx, dy, (double)mLen, (double)dot, (double)angPair, (double)angMove,
              (double)(angMove - angPair), ownX, ownY,
              (unsigned long long)TNX_CTRL_RAW_X_OFF);
-}\n
+}

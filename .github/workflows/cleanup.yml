@@ -843,8 +843,8 @@ jobs:
           set -euo pipefail
           files() { find src -type f \( -name '*.mm' -o -name '*.h' \) | sort; }
           before_lines=$(cat $(files) | wc -l)
-          before_tags=$(grep -rhoE '\b(TNX_V|tnx_v|g_v)[0-9]+_[A-Za-z_]' src | wc -l)
-          before_dead=$(grep -rc '^#define' src/core/config.h)
+          before_tags=$({ grep -rhoE '\b(TNX_V|tnx_v|g_v)[0-9]+_[A-Za-z_]' src || true; } | wc -l)
+          before_dead=$({ grep -rc '^#define' src/core/config.h || true; })
           echo "before: $(files | wc -l) files, $before_lines lines, $before_tags version tagged references"
           CLEAN_ROOT=. \
           CLEAN_DEVERSION=1 \
@@ -853,8 +853,8 @@ jobs:
           CLEAN_TAG=Titanox \
             python3 /tmp/tnx_clean.py
           after_lines=$(cat $(files) | wc -l)
-          after_tags=$(grep -rhoE '\b(TNX_V|tnx_v|g_v)[0-9]+_[A-Za-z_]' src | wc -l)
-          after_dead=$(grep -rc '^#define' src/core/config.h)
+          after_tags=$({ grep -rhoE '\b(TNX_V|tnx_v|g_v)[0-9]+_[A-Za-z_]' src || true; } | wc -l)
+          after_dead=$({ grep -rc '^#define' src/core/config.h || true; })
           echo "after : $after_lines lines, $after_tags version tagged references"
           echo "config.h: $before_dead defines -> $after_dead defines"
           echo "$((before_lines - after_lines)) lines gone"

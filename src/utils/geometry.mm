@@ -635,8 +635,14 @@ uintptr_t tnx_bounds_obj(uintptr_t receiver) {
 }
 
 int tnx_clamp(int32_t *x, int32_t *y) {
-    uintptr_t receiver = tnx_hop(tnx_controller(), NULL);
+    uintptr_t base = tnx_controller();
+    uintptr_t receiver = base;
     uintptr_t bounds = tnx_bounds_obj(receiver);
+
+    if (!bounds) {
+        receiver = tnx_hop(base, NULL);
+        bounds = tnx_bounds_obj(receiver);
+    }
     int32_t maxX = 0;
     int32_t maxY = 0;
     int32_t ox = *x;

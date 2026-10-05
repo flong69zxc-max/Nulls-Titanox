@@ -225,6 +225,53 @@ jobs:
               return total - 1
 
 
+          def depth0_eq(text):
+              depth = 0
+              for i, c in enumerate(strip_literals(text)):
+                  if c == '{':
+                      depth += 1
+                  elif c == '}':
+                      depth -= 1
+                  elif c == '=' and depth == 0 and (i + 1 >= len(text) or text[i + 1] != '='):
+                      return i
+              return None
+
+
+          def hoist_anonymous(text):
+              eq = depth0_eq(text)
+              if eq is None:
+                  return text, []
+              rolled = strip_literals(text)
+              eq_rolled = depth0_eq(rolled)
+              declarator = text[:eq_rolled]
+              rest = text[eq_rolled:]
+              m = re.search(r'\b(struct|union|enum)\s*\{', declarator)
+              if not m:
+                  return text, []
+              keyword = m.group(1)
+              start = m.end() - 1
+              depth = 0
+              end = None
+              for idx in range(start, len(declarator)):
+                  if declarator[idx] == '{':
+                      depth += 1
+                  elif declarator[idx] == '}':
+                      depth -= 1
+                      if depth == 0:
+                          end = idx
+                          break
+              if end is None:
+                  return text, []
+              body = declarator[start + 1:end]
+              vm = re.search(r'\b(g_\w+)\b', declarator[end + 1:])
+              if not vm:
+                  return text, []
+              tname = 'tnx_t_' + vm.group(1)
+              hoisted = '%s %s {%s};' % (keyword, tname, body)
+              new_declarator = declarator[:m.start()] + keyword + ' ' + tname + declarator[end + 1:]
+              return new_declarator + rest, [hoisted]
+
+
           def parse(lines):
               blocks = []
               i = 0
@@ -335,6 +382,7 @@ jobs:
               blocks = parse(lines)
 
               defs = {m: [] for m in MODULES}
+              hoisted = {m: [] for m in MODULES}
               protos = {m: [] for m in MODULES}
               externs = {m: [] for m in MODULES}
               config = []
@@ -385,13 +433,16 @@ jobs:
                       m = re.search(r'\b(g_\w+)\b', joined)
                       name = m.group(1) if m else '?'
                       module = classify(name, joined)
-                      body2 = list(body)
+                      rewritten, raised = hoist_anonymous(joined)
+                      if raised:
+                          hoisted[module].extend(raised)
+                      body2 = list(rewritten.split('\n'))
                       for n in range(len(body2)):
                           if body2[n].startswith('static '):
                               body2[n] = body2[n][len('static '):]
                               break
                       defs[module].append('\n'.join(body2))
-                      externs[module].append(extern_of(joined))
+                      externs[module].append(extern_of(rewritten))
                       used.update(range(i, j + 1))
                       continue
                   raise SystemExit('unhandled block kind ' + kind)
@@ -425,6 +476,8 @@ jobs:
                   group = module.split('/')[0]
                   header = MODULE_HEADER[module]
                   decls = []
+                  if hoisted[module]:
+                      decls.append('\n'.join(hoisted[module]))
                   if externs[module]:
                       decls.append('\n'.join(externs[module]))
                   if protos[module]:
@@ -546,7 +599,23 @@ jobs:
               print('files with unbalanced braces:', len(unbalanced))
               for path, n, why, depth in unbalanced[:8]:
                   print('   %s line %d %s depth=%d' % (path, n, why, depth))
-              bad = len(lost) + len(odd) + len(statics) + len(missing) + len(unbalanced)
+              mistyped = []
+              for module in sorted(MODULES):
+                  for text in defs[module]:
+                      eq = depth0_eq(text)
+                      if eq is None:
+                          continue
+                      type_def = ' '.join(strip_literals(text[:eq]).split())
+                      vm = re.search(r'\b(g_\w+)\b', text[:eq])
+                      if not vm:
+                          continue
+                      expected = ' '.join(strip_literals(extern_of(text)).split())
+                      if vm.group(1) not in expected:
+                          mistyped.append((module, vm.group(1)))
+              print('declarations whose type does not match the definition:', len(mistyped))
+              for module, name in mistyped[:6]:
+                  print('   %s %s' % (module, name))
+              bad = len(lost) + len(odd) + len(statics) + len(missing) + len(unbalanced) + len(mistyped)
               print('total written bytes:', sum(s for _, _, s in written))
               print('source bytes:', len(open(SRC).read()))
               print('gates:', 'PASS' if bad == 0 else 'FAIL')

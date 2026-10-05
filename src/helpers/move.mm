@@ -1,9 +1,5 @@
 #include "titanox.h"
 
-#ifndef TNX_DRAG_ARM
-#define TNX_DRAG_ARM 1
-#endif
-
 #ifndef TNX_JS_STICK
 #define TNX_JS_STICK 1
 #endif
@@ -357,6 +353,7 @@ int tnx_pending(int want, uint64_t *mask) {
 }
 
 int tnx_enqueue(int x, int y) {
+    /* plain ClientInput x/y at +0xc/+0x10, then addInput - the engine does the rest */
     uintptr_t ctorFn = tnx_entry_2(TNX_MSGCTOR_RVA);
     uintptr_t inputFn = tnx_entry_2(TNX_ADDINPUT_RVA);
     int32_t vx = x;
@@ -389,25 +386,10 @@ int tnx_enqueue(int x, int y) {
 
     {
         uintptr_t battleFn = tnx_entry_2(TNX_GETBATTLE_RVA);
-        uintptr_t ctrl = tnx_controller();
-        int32_t ownX = 0;
-        int32_t ownY = 0;
 
         g_token_2 = 0;
         g_raw_x = 0;
         g_raw_y = 0;
-
-        if (ctrl && tnx_own(&ownX, &ownY)) {
-            int32_t rawX = vx - ownX;
-            int32_t rawY = vy - ownY;
-
-            if (tnx_write_bytes(ctrl + TNX_CTRL_RAW_X_OFF, &rawX, sizeof(rawX))) {
-                tnx_write_bytes(ctrl + TNX_CTRL_RAW_Y_OFF, &rawY, sizeof(rawY));
-            }
-
-            g_raw_x = rawX;
-            g_raw_y = rawY;
-        }
 
         if (battleFn) {
             void *battle = ((void *(*)(void))battleFn)();
@@ -435,31 +417,7 @@ int tnx_enqueue(int x, int y) {
         g_stuck_3++;
     }
 
-    tnx_actuator_publish(1, vx, vy);
-
     ((void (*)(void *, void *))inputFn)(mgr, msg);
-
-    {
-        uintptr_t ctrl = tnx_controller();
-        uint8_t latch = TNX_CTRL_LATCH_VAL;
-        int32_t dirty = TNX_CTRL_DIRTY_VAL;
-
-        if (ctrl) {
-            tnx_write_bytes(ctrl + TNX_CTRL_APPLIED_X_OFF, &vx, sizeof(vx));
-            tnx_write_bytes(ctrl + TNX_CTRL_APPLIED_Y_OFF, &vy, sizeof(vy));
-            tnx_write_bytes(ctrl + TNX_CTRL_LATCH_OFF, &latch, sizeof(latch));
-            tnx_write_bytes(ctrl + TNX_CTRL_DIRTY_OFF, &dirty, sizeof(dirty));
-
-            if (TNX_DRAG_ARM) {
-                tnx_write_bytes(ctrl + TNX_DRAG_GATE_ON_OFF, &latch, sizeof(latch));
-                tnx_write_bytes(ctrl + TNX_DRAG_BRANCH_OFF, &latch, sizeof(latch));
-            }
-
-            g_app_x = vx;
-            g_app_y = vy;
-            g_applied_writes++;
-        }
-    }
 
     g_seq_after = -1;
     tnx_read_i32((uintptr_t)mgr + TNX_MGR_SEQ_OFF, &g_seq_after);

@@ -2943,7 +2943,7 @@ void tnx_gate_report(int slotHit) {
 #if TNX_PROJ_ACTIVE_BYPASS
                     if (isProj) {
                         actPass++;
-                    } else if ((objects[i].activeFlag & 1) == 0) {
+                    } else if (objects[i].dead) {
                         actFail++;
 
                         continue;

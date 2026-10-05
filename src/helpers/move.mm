@@ -346,6 +346,40 @@ int tnx_pending(int want, uint64_t *mask) {
     return found;
 }
 
+static int g_pred_ok = 0;
+
+int tnx_pred_set(int x, int y) {
+    uintptr_t ctrl = tnx_controller();
+    uintptr_t hopFn = 0;
+    uintptr_t setFn = 0;
+    uintptr_t pred = 0;
+
+    if (!TNX_PRED_SET) return 0;
+    if (!ctrl) return 0;
+
+    hopFn = tnx_entry_2(TNX_HOP_RVA);
+    setFn = tnx_entry_2(TNX_SETINPUT_RVA);
+
+    if (!hopFn) return 0;
+    if (!setFn) return 0;
+
+    pred = ((uintptr_t (*)(uintptr_t))hopFn)(ctrl);
+
+    if (!pred) return 0;
+    if ((pred & 7) != 0) return 0;
+    if (!tnx_addr_readable(pred, 0x40)) return 0;
+
+    ((void (*)(uintptr_t, int, int, int))setFn)(pred, x, y, TNX_PRED_FLAG);
+
+    if (g_pred_ok < 4) {
+        TNX_LOGX("predSet ctrl=%p hop=%p pred=%p x=%d y=%d flag=%d", (void *)ctrl,
+                 (void *)hopFn, (void *)pred, x, y, (int)TNX_PRED_FLAG);
+        g_pred_ok++;
+    }
+
+    return 1;
+}
+
 int tnx_enqueue(int x, int y) {
 
     uintptr_t ctorFn = tnx_entry_2(TNX_MSGCTOR_RVA);
@@ -408,6 +442,8 @@ int tnx_enqueue(int x, int y) {
     if (tnx_pending(TNX_TYPE_MOVE, &g_mask_before)) {
         g_stuck_3++;
     }
+
+    (void)tnx_pred_set(x, y);
 
     ((void (*)(void *, void *))inputFn)(mgr, msg);
 
@@ -1494,17 +1530,12 @@ void tnx_stick(int engaged, float dirX, float dirY) {
     int want = 0;
     int haveOwn = 0;
     float len = 0.0f;
-    uintptr_t rawXOff = 0;
-    uintptr_t rawYOff = 0;
 
     haveOwn = tnx_own(&ownX, &ownY);
     tnx_drag(engaged, haveOwn, ownX, ownY, dirX, dirY);
 
     if (!TNX_RAW_STICK) return;
     if (!tnx_ctrl_ok(ctrl)) return;
-
-    rawXOff = TNX_RAW_SWAP ? TNX_CTRL_RAW_Y_OFF : TNX_CTRL_RAW_X_OFF;
-    rawYOff = TNX_RAW_SWAP ? TNX_CTRL_RAW_X_OFF : TNX_CTRL_RAW_Y_OFF;
 
     if (engaged) {
         len = sqrtf(dirX * dirX + dirY * dirY);
@@ -1545,8 +1576,8 @@ void tnx_stick(int engaged, float dirX, float dirY) {
 
         g_stick_hold = 0;
 
-        if (relCtrl && tnx_read_i32(relCtrl + rawXOff, &relX) &&
-            tnx_read_i32(relCtrl + rawYOff, &relY)) {
+        if (relCtrl && tnx_read_i32(relCtrl + TNX_CTRL_RAW_X_OFF, &relX) &&
+            tnx_read_i32(relCtrl + TNX_CTRL_RAW_Y_OFF, &relY)) {
             if (relX != g_stick_x || relY != g_stick_y) return;
         }
     }
@@ -1555,9 +1586,9 @@ void tnx_stick(int engaged, float dirX, float dirY) {
     g_stick_y = wy;
 
     if (TNX_STICK_RAW_WRITE && !(TNX_RETIRE && g_accepted && !TNX_JS_STICK)) {
-        if (!tnx_write_bytes(ctrl + rawXOff, &wx, sizeof(wx))) return;
+        if (!tnx_write_bytes(ctrl + TNX_CTRL_RAW_X_OFF, &wx, sizeof(wx))) return;
 
-        tnx_write_bytes(ctrl + rawYOff, &wy, sizeof(wy));
+        tnx_write_bytes(ctrl + TNX_CTRL_RAW_Y_OFF, &wy, sizeof(wy));
     }
 
     {
@@ -1569,8 +1600,8 @@ void tnx_stick(int engaged, float dirX, float dirY) {
 
             stickLogs++;
 
-            tnx_read_i32(ctrl + rawXOff, &backX);
-            tnx_read_i32(ctrl + rawYOff, &backY);
+            tnx_read_i32(ctrl + TNX_CTRL_RAW_X_OFF, &backX);
+            tnx_read_i32(ctrl + TNX_CTRL_RAW_Y_OFF, &backY);
 
             TNX_LOGX("stick write #%d ctrl=%p want=(%d,%d) back=(%d,%d) kept=%d engaged=%d",
                      stickLogs, (void *)ctrl, wx, wy, backX, backY,

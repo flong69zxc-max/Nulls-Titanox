@@ -3273,9 +3273,47 @@ int tnx_proj_scan(uintptr_t manager, int32_t count) {
     return found;
 }
 
+static int g_ctrl_logs = 0;
+
+int tnx_ctrl_bounds(uintptr_t base, int32_t *wOut, int32_t *hOut) {
+    uintptr_t hop = 0;
+    uintptr_t bounds = 0;
+    int32_t w = 0;
+    int32_t h = 0;
+
+    if (!base) return 0;
+    if (!tnx_callable(TNX_BOUNDS_RVA)) return 0;
+
+    hop = tnx_hop(base, NULL);
+
+    if (!hop) return 0;
+    if (!tnx_addr_readable(hop, 0x100)) return 0;
+
+    bounds = ((uintptr_t (*)(uintptr_t))(g_base + TNX_BOUNDS_RVA))(hop);
+
+    if (!bounds || (bounds & 7)) return 0;
+    if (!tnx_addr_readable(bounds, 0x100)) return 0;
+    if (!tnx_read_i32(bounds + TNX_BOUNDS_X_OFF, &w)) return 0;
+    if (!tnx_read_i32(bounds + TNX_BOUNDS_Y_OFF, &h)) return 0;
+    if (w <= 3 || h <= 3 || w > 200000 || h > 200000) return 0;
+
+    if (wOut) *wOut = w;
+    if (hOut) *hOut = h;
+
+    return 1;
+}
+
 uintptr_t tnx_controller(void) {
     uintptr_t battleFn = tnx_entry_2(TNX_GETBATTLE_RVA);
     void *obj = NULL;
+    uintptr_t scene = 0;
+    uintptr_t client = 0;
+    int32_t sw = 0;
+    int32_t sh = 0;
+    int32_t cw = 0;
+    int32_t ch = 0;
+    int okScene = 0;
+    int okClient = 0;
 
     if (!battleFn) return 0;
 
@@ -3285,9 +3323,27 @@ uintptr_t tnx_controller(void) {
     if (((uintptr_t)obj & 7) != 0) return 0;
     if (!tnx_addr_readable((uintptr_t)obj, 0x1000)) return 0;
 
-    (void)obj;
+    scene = (uintptr_t)obj;
+    client = tnx_client();
 
-    return tnx_client();
+    okScene = tnx_ctrl_bounds(scene, &sw, &sh);
+    okClient = client ? tnx_ctrl_bounds(client, &cw, &ch) : 0;
+
+    if (!g_ctrl_logs) {
+        g_ctrl_logs = 1;
+
+        TNX_LOGX("controller scene=%p sceneBounds=%d (%d,%d) client=%p clientBounds=%d (%d,%d) "
+                 "pick=%s - the engine reads its input mirror, hops the same object and only "
+                 "then clamps the target to the map, so the object whose hop resolves to the "
+                 "map accessor is the controller and the other one is only what the engine "
+                 "hands the tile map accessor", (void *)scene, okScene, sw, sh, (void *)client,
+                 okClient, cw, ch, okScene ? "scene" : (okClient ? "client" : "client-fallback"));
+    }
+
+    if (okScene) return scene;
+    if (okClient) return client;
+
+    return client ? client : scene;
 }
 
 void tnx_watch(int32_t ownX, int32_t ownY) {

@@ -222,8 +222,6 @@ typedef struct {
     int flags;
 } tnx_hero_t;
 
-#define TNX_HERO_MAGIC 0x544e5833
-
 #define TNX_HF_MELEE 1
 #define TNX_HF_BEAM 2
 #define TNX_HF_PIERCE_CHAR 4
@@ -253,16 +251,18 @@ int tnx_hero_inflated(int projectile_radius, int fallback);
 
 int tnx_hero_melee(int index);
 
+void tnx_hero_own(int index);
+
 void tnx_hero_identify(int hp_max, int speed_units);
 
 void tnx_hero_report(void);
+
+#endif
 """
 
 CHARS_MM_HEAD = """#include "titanox.h"
 
 #include "data/chars_data.h"
-
-const int g_hero_count = TNX_HERO_COUNT;
 
 static int g_own_row = -1;
 
@@ -284,7 +284,7 @@ int tnx_hero_find(const char *name) {
 
     if (!name || !name[0]) return -1;
 
-    for (i = 0; i < TNX_HERO_COUNT; i++) {
+    for (i = 0; i < g_hero_count; i++) {
         if (strcmp(g_heroes[i].name, name) == 0) return i;
     }
 
@@ -292,7 +292,7 @@ int tnx_hero_find(const char *name) {
 }
 
 const tnx_hero_t *tnx_hero_row(int index) {
-    if (index < 0 || index >= TNX_HERO_COUNT) return NULL;
+    if (index < 0 || index >= g_hero_count) return NULL;
 
     return &g_heroes[index];
 }
@@ -300,7 +300,7 @@ const tnx_hero_t *tnx_hero_row(int index) {
 const tnx_hero_t *tnx_hero_by_hash(uint32_t hash) {
     int i = 0;
 
-    for (i = 0; i < TNX_HERO_COUNT; i++) {
+    for (i = 0; i < g_hero_count; i++) {
         if (tnx_hero_hash32(g_heroes[i].name) == hash) return &g_heroes[i];
     }
 
@@ -308,7 +308,7 @@ const tnx_hero_t *tnx_hero_by_hash(uint32_t hash) {
 }
 
 void tnx_hero_own(int index) {
-    if (index < 0 || index >= TNX_HERO_COUNT) return;
+    if (index < 0 || index >= g_hero_count) return;
 
     if (g_own_row == index) return;
 
@@ -355,7 +355,7 @@ int tnx_hero_inflated(int projectile_radius, int fallback) {
 }
 
 int tnx_hero_melee(int index) {
-    if (index < 0 || index >= TNX_HERO_COUNT) return 0;
+    if (index < 0 || index >= g_hero_count) return 0;
 
     return (g_heroes[index].flags & TNX_HF_MELEE) ? 1 : 0;
 }
@@ -371,7 +371,7 @@ void tnx_hero_identify(int hp_max, int speed_units) {
     if (g_own_row >= 0) return;
     if (hp_max <= 0) return;
 
-    for (i = 0; i < TNX_HERO_COUNT; i++) {
+    for (i = 0; i < g_hero_count; i++) {
         if (g_heroes[i].hp != hp_max) continue;
 
         cand++;
@@ -402,7 +402,7 @@ void tnx_hero_report(void) {
     int counts[8];
     int n = 0;
 
-    for (i = 0; i < TNX_HERO_COUNT; i++) {
+    for (i = 0; i < g_hero_count; i++) {
         int k = 0;
         int seen = -1;
 
@@ -423,29 +423,29 @@ void tnx_hero_report(void) {
     TNX_LOGX("hero table rows=%d melee=%d own=%d - rows is how many character records the table "
              "carries and melee is how many of them have no projectile at all, which is the group "
              "the shot model cannot see and that has to be dodged by body distance instead",
-             TNX_HERO_COUNT, melee, g_own_row);
+             g_hero_count, melee, g_own_row);
 }
 """
 
 
 def gen_chars(heroes, apply):
-    body = ["", "const tnx_hero_t g_heroes[] = {"]
+    rows = []
     for h in heroes:
         vals = [h[k] for k in ("hp", "speed", "radius", "wSpeed", "wRadius", "wCast", "wBullets",
-                              "wBetween", "wSpread", "wCd", "wRecharge", "wCharge", "uSpeed",
-                              "uRadius", "uBullets", "uSpread", "uRecharge", "flags")]
-        f = '    { "%s", "%s", ' + ", ".join(["%d"] * len(vals)) + " },"
-        body.append(f % tuple([h["name"], h["title"]] + vals))
-    body += ["};", "",
-             "#define TNX_HERO_COUNT ((int)(sizeof(g_heroes) / sizeof(g_heroes[0])))", "", "#endif", ""]
-    write("src/data/chars_data.h", CHARS_H + "\n".join(body), apply)
-    write("src/data/chars.mm", CHARS_MM_HEAD, apply)
-    REPORT["generated"].append("src/data/chars_data.h rows=%d" % len(heroes))
-    REPORT["generated"].append("src/data/chars.mm")
-    say("chars", "generated table with %d rows" % len(heroes))
+                               "wBetween", "wSpread", "wCd", "wRecharge", "wCharge", "uSpeed",
+                               "uRadius", "uBullets", "uSpread", "uRecharge", "flags")]
+        fmt = '    { "%s", "%s", ' + ", ".join(["%d"] * len(vals)) + " },"
+        rows.append(fmt % tuple([h["name"], h["title"]] + vals))
+    body = ["", "const tnx_hero_t g_heroes[] = {"] + rows + ["};", "",
+            "const int g_hero_count = (int)(sizeof(g_heroes) / sizeof(g_heroes[0]));", ""]
+    write("src/data/chars_data.h", CHARS_H, apply)
+    write("src/data/chars.mm", CHARS_MM_HEAD + "\n".join(body), apply)
+    REPORT["generated"].append("src/data/chars_data.h declarations only")
+    REPORT["generated"].append("src/data/chars.mm table with %d rows" % len(heroes))
+    say("chars", "declarations in the header, %d rows in chars.mm" % len(heroes))
 
 
-# ---------------------------------------------------------------- dead code
+
 DEF_RE = re.compile(r"^(?:static\s+)?(?:const\s+)?[A-Za-z_][A-Za-z0-9_]*[ \*]*\b(tnx_[a-z0-9_]+)\s*\(")
 
 

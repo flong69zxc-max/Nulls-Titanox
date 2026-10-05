@@ -4,6 +4,10 @@
 #define TNX_JS_STICK 1
 #endif
 
+#ifndef TNX_JS_HOLD
+#define TNX_JS_HOLD 2
+#endif
+
 uint64_t g_diag_us = 0;
 
 uint64_t g_diag_max_us = 0;
@@ -1684,6 +1688,7 @@ void tnx_stick(int engaged, float dirX, float dirY) {
         int32_t relY = 0;
 
         if (!g_stick_hold) return;
+        if (TNX_JS_STICK && g_ticks_3 < g_stick_tick + TNX_JS_HOLD) return;
         if (!TNX_RAGE && g_stick_tick + TNX_STICK_TTL > g_ticks_3) return;
 
         g_stick_hold = 0;

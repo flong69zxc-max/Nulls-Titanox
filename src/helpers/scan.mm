@@ -1,5 +1,13 @@
 #include "titanox.h"
 
+#ifndef TNX_DODGE_PROJ_ONLY
+#define TNX_DODGE_PROJ_ONLY 1
+#endif
+
+#ifndef TNX_CLASS_PLAYER2_RVA
+#define TNX_CLASS_PLAYER2_RVA 0x000ff54a0ULL
+#endif
+
 #ifndef TNX_PROJ_ACTIVE_BYPASS
 #define TNX_PROJ_ACTIVE_BYPASS 1
 #endif
@@ -2799,6 +2807,9 @@ void tnx_gate_report(int slotHit) {
     int contributors = 0;
     int actPass = 0;
     int actFail = 0;
+    int clsProj = 0;
+    int clsPlayer = 0;
+    int clsOther = 0;
     int modeReal = 0;
     int predictZero = 0;
     int vectorZero = 0;
@@ -2963,11 +2974,28 @@ void tnx_gate_report(int slotHit) {
 #endif
                 }
 
+                {
+                    void *cvt = NULL;
+                    intptr_t cls = 0;
+
+                    if (tnx_read_ptr((uintptr_t)objects[i].object, &cvt) && cvt) {
+                        cls = (intptr_t)((uintptr_t)cvt - g_base);
+                    }
+
+                    if (cls == (intptr_t)TNX_CLASS_PROJ_RVA) clsProj++;
+                    else if (cls == (intptr_t)TNX_CLASS_PLAYER_RVA || cls == (intptr_t)TNX_CLASS_PLAYER2_RVA) clsPlayer++;
+                    else clsOther++;
+
+#if TNX_DODGE_PROJ_ONLY
+                    if (cls != (intptr_t)TNX_CLASS_PROJ_RVA) continue;
+#endif
+                }
+
                 fdx = (float)(ownX - objects[i].x);
                 fdy = (float)(ownY - objects[i].y);
                 fd = fdx * fdx + fdy * fdy;
 
-                if (fd > DODGE_RANGE_SQ || fd < 1.0f) continue;
+                if (fd < 1.0f) continue;
 
                 escapeX += fdx / (sqrtf(fd) + 1.0f);
                 escapeY += fdy / (sqrtf(fd) + 1.0f);
@@ -3014,10 +3042,29 @@ void tnx_gate_report(int slotHit) {
         reason = "ready";
     }
 
+    {
+        void *mgr = NULL;
+        void *arr = NULL;
+        void *firstE = NULL;
+        void *tm = NULL;
+
+        if (tnx_read_ptr((uintptr_t)g_scene_object + TNX_MGR_OFF, &mgr) && mgr) {
+            if (tnx_read_ptr((uintptr_t)mgr + TNX_MGR_ARRAY_OFF, &arr) && arr) {
+                tnx_read_ptr((uintptr_t)arr, &firstE);
+            }
+
+            tnx_read_ptr((uintptr_t)mgr + TNX_MODE_TILEMAP_OFF, &tm);
+        }
+
+        tnx_logf("own check: elem=%p latched=%p elem1=%p tilemap=%p mgr=%p",
+                 (void *)(ownFound ? objects[ownIndex].object : 0), (void *)g_own_ptr_2, firstE, tm, mgr);
+    }
+
     tnx_logf("dodge gates: ownFound=%d own=%p ownFrom=%s ownOff=%#llx ownTeam=%d "
              "targetFound=%d target=%p selfPos=(%d,%d) targetPos=(%d,%d) vector=(%d,%d) "
              "clamped=(%d,%d) actuatorReached=%d reason=%s usable=%d rejected=%d threats=%d "
-             "contributors=%d actPass=%d actFail=%d inRange=%d distinct=%d degenerate=%d slotHit=%d hop=%d "
+             "contributors=%d actPass=%d actFail=%d clsProj=%d clsPlayer=%d clsOther=%d "
+             "inRange=%d distinct=%d degenerate=%d slotHit=%d hop=%d "
              "modeReal=%d modeVt=%#llx modeChain=%p modeInner=%p deadF=%d teamOff=%#llx "
              "testWrites=%llu writes=%llu - the reason is assigned in the order own, target, "
              "guard, coords, actuator, prediction, so a writes=0 names the first gate that is "
@@ -3027,7 +3074,8 @@ void tnx_gate_report(int slotHit) {
              (unsigned long long)g_own_off, ownTeam, targetFound,
              (void *)(targetFound ? objects[targetIndex].object : 0), ownX, ownY, targetX, targetY,
              vectorX, vectorY, stepX, stepY, g_setpred_state == 1 ? 1 : 0, reason, usable,
-             rejected, threats, contributors, actPass, actFail, inRange, distinct,
+             rejected, threats, contributors, actPass, actFail, clsProj, clsPlayer, clsOther,
+             inRange, distinct,
              degenerate, slotHit,
              g_hop_chosen, modeReal, (unsigned long long)modeVt, (void *)modeChain,
              (void *)modeInner, TNX_DEAD_FILTER, (unsigned long long)g_team_off,

@@ -663,6 +663,8 @@ float g_start_y = 0.0f;
 
 int g_picks = 0;
 
+int g_scene_skip = 0;
+
 uintptr_t tnx_bs(void) {
     return tnx_client();
 }
@@ -4144,6 +4146,25 @@ void tnx_autododge_v48(void) {
             uintptr_t thisVt = 0;
             uintptr_t thisChain = 0;
             uintptr_t thisInner = 0;
+
+            if (TNX_QUEUE_GUARD && (!tnx_instance_shaped((uintptr_t)g_scene_object) ||
+                                    !tnx_instance_shaped((uintptr_t)g_own_elem))) {
+                if (g_scene_skip < TNX_QGUARD_LOGS) {
+                    g_scene_skip++;
+
+                    TNX_LOGX("modeSkip scene=%p sceneShaped=%d elem=%p elemShaped=%d tick=%llu - the "
+                             "object this frame is about to receive the mode pair is not a live "
+                             "object any more, so nothing is written; the page guard cannot see "
+                             "this because a freed block stays readable and writable",
+                             (void *)g_scene_object,
+                             (int)tnx_instance_shaped((uintptr_t)g_scene_object),
+                             (void *)g_own_elem,
+                             (int)tnx_instance_shaped((uintptr_t)g_own_elem),
+                             (unsigned long long)g_ticks_3);
+                }
+
+                return;
+            }
 
             if (!tnx_mode_real((uintptr_t)g_scene_object, &thisVt, &thisChain, &thisInner)) {
                 if (g_setpred_blocked_logs < 6) {

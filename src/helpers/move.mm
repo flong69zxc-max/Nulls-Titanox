@@ -349,21 +349,41 @@ int tnx_pending(int want, uint64_t *mask) {
 
 static int g_pred_ok = 0;
 
-static int tnx_pred_ok(uintptr_t pred) {
+static int tnx_pred_probe(uintptr_t pred, int *alignOut, int *readOut, int *writeOut, int *vtOut) {
     void *vtRaw = NULL;
     uintptr_t vt = 0;
 
+    if (alignOut) *alignOut = 0;
+    if (readOut) *readOut = 0;
+    if (writeOut) *writeOut = 0;
+    if (vtOut) *vtOut = 0;
+
     if (!pred) return 0;
     if ((pred & 7) != 0) return 0;
+
+    if (alignOut) *alignOut = 1;
+
     if (!tnx_addr_readable(pred, TNX_PRED_SPAN)) return 0;
+
+    if (readOut) *readOut = 1;
+
     if (!tnx_addr_writable(pred, TNX_PRED_SPAN)) return 0;
+
+    if (writeOut) *writeOut = 1;
+
     if (!tnx_read_ptr(pred, &vtRaw)) return 0;
 
     vt = (uintptr_t)vtRaw;
 
     if (!vt) return 0;
 
+    if (vtOut) *vtOut = 1;
+
     return 1;
+}
+
+static int tnx_pred_ok(uintptr_t pred) {
+    return tnx_pred_probe(pred, NULL, NULL, NULL, NULL);
 }
 
 int tnx_pred_set(int x, int y) {
@@ -392,7 +412,27 @@ int tnx_pred_set(int x, int y) {
 
     if (!tnx_pred_ok(pred)) {
         if (g_pred_ok < 4) {
-            TNX_LOGX("predMiss base=%p why=%d", (void *)base, why);
+            int alignOk = 0;
+            int readOk = 0;
+            int writeOk = 0;
+            int vtOk = 0;
+            vm_prot_t prot = 0;
+            mach_vm_size_t regionSize = 0;
+            uintptr_t regionStart = 0;
+
+            tnx_pred_probe(pred, &alignOk, &readOk, &writeOk, &vtOk);
+            tnx_query_region(pred, &prot, NULL, &regionSize, &regionStart);
+
+            TNX_LOGX("predMiss base=%p why=%d pred=%p align=%d readable=%d writable=%d vt=%d "
+                     "region=%p size=%llu prot=%d span=%#llx - why is tnx_hop's own code and stays 0 "
+                     "when the hop itself resolved, so nothing failed before the object was reached; "
+                     "readable walks the region table in lc_detect, writable walks the one in "
+                     "memory.mm, and until drop 20 that second walk refused any region larger than "
+                     "0x10000000, so a chunk inside a bigger arena read fine and failed writable, "
+                     "which is what silently retired setClientPredictionMoveTo",
+                     (void *)base, why, (void *)pred, alignOk, readOk, writeOk, vtOk,
+                     (void *)regionStart, (unsigned long long)regionSize, (int)prot,
+                     (unsigned long long)TNX_PRED_SPAN);
             g_pred_ok++;
         }
 

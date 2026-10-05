@@ -421,4 +421,23 @@
 #define TNX_NEAR_MULT 1.5f
 #define TNX_NO_THREAT_TICKS 30
 
+#define TNX_HOWTO_LOGS 12
+
+#define TNX_GEOM 1
+#define TNX_GEOM_LOGS 6
+#define TNX_RADIUS_MIN 0.0f
+#define TNX_RADIUS_MAX 600.0f
+#define TNX_RADIUS_MARGIN 8.0f
+#define TNX_CAL_OFF_LO 0x20
+#define TNX_CAL_OFF_HI 0x120
+#define TNX_CAL_STEP 4
+#define TNX_CAL_TOL 0.06f
+#define TNX_CONTACT_LOGS 8
+#define TNX_HP_AUTO 1
+#define TNX_HP_MAX 200000
+#define TNX_HP_BAD_MAX 5
+#define TNX_HP_TICKS 30
+#define TNX_HP_LOGS 8
+#define TNX_HP_CAND 12
+
 #endif

@@ -1,8 +1,8 @@
 Package: com.null.titanox
-Name: Titanox Diagnostics
+Name: Titanox Tweak
 Version: 0.2.0
 Architecture: iphoneos-arm64
-Description: Hardware breakpoint diagnostics for Nulls Brawl
-Maintainer: null
-Author: null
+Description: Nulls Brawl Engine
+Maintainer: @eurogoth
+Author: @eurogoth
 Section: Tweaks

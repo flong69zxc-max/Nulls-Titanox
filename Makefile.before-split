@@ -7,30 +7,19 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = Titanox
 
-Titanox_FILES = src/core/memory.mm
-Titanox_FILES += src/core/log.mm
-Titanox_FILES += src/core/crash.mm
-Titanox_FILES += src/core/hooks.mm
-Titanox_FILES += src/utils/strings.mm
-Titanox_FILES += src/utils/geometry.mm
-Titanox_FILES += src/helpers/scan.mm
-Titanox_FILES += src/helpers/move.mm
-Titanox_FILES += src/features/autododge.mm
-Titanox_FILES += src/features/walls.mm
-Titanox_FILES += src/features/report.mm
+Titanox_FILES = src/Titanox.mm
 Titanox_FILES += src/resolve_targets.mm
 Titanox_FILES += $(TITANOX)/brk_hook/Hook/hook.c
 Titanox_FILES += $(TITANOX)/brk_hook/Hook/mach_excServer.c
 
 COMMON_INCLUDES = \
-	-Isrc \
 	-Iinclude \
 	-I$(TITANOX) \
 	-I$(TITANOX)/libtitanox \
 	-I$(TITANOX)/brk_hook \
 	-I$(TITANOX)/brk_hook/Hook
 
-Titanox_CFLAGS = -Iinclude -Isrc -I$(TITANOX)/brk_hook/Hook
+Titanox_CFLAGS = -Iinclude -I$(TITANOX)/brk_hook/Hook
 
 Titanox_OBJCFLAGS = -fobjc-arc -std=c++17 $(COMMON_INCLUDES) \
 	-Wno-unused-function -Wno-unused-variable -Wno-unused-parameter \

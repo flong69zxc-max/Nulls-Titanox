@@ -1,5 +1,9 @@
 #include "titanox.h"
 
+#ifndef TNX_LOG_PLANS
+#define TNX_LOG_PLANS 0
+#endif
+
 uintptr_t g_own_ptr = 0;
 
 int g_own_index = -1;
@@ -2188,7 +2192,8 @@ void setup(void) {
              TNX_HEAP_SCAN_BUDGET / (1024ull * 1024ull),
              TNX_HEAP_SCAN_BUDGET_MAX / (1024ull * 1024ull));
 
-    tnx_logf("plan v49: (1) the left-hand panel is REMOVED -- the overlay draws nothing now -- "
+    if (TNX_LOG_PLANS) {
+tnx_logf("plan v49: (1) the left-hand panel is REMOVED -- the overlay draws nothing now -- "
              "and replaced by a UIAlertController shown once per battle; (2) the dodge also "
              "takes the scan's best trail candidate as its source, which is the one it was "
              "missing: v48 printed manager=0x0 in both runs while a candidate with live objects "
@@ -3448,6 +3453,7 @@ void setup(void) {
              "render hook, and that is the next thing to move if the read backs come back empty",
              TNX_BS_AX, TNX_BS_AY, TNX_BS_BX, TNX_BS_BY, TNX_BS_MODE,
              (unsigned long long)TNX_MGR_OFF);
+    }
 
     tnx_start_timer();
 

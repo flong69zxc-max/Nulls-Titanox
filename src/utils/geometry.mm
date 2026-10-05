@@ -450,6 +450,169 @@ void tnx_discriminate(uintptr_t manager) {
     }
 }
 
+void tnx_probe_3(uintptr_t manager, uintptr_t mode, int verbose) {
+    tnx_obj_t objects[TNX_OBJECT_MAX];
+    int rejected = 0;
+    int usable = 0;
+    int inRange = 0;
+    int distinct = 0;
+    int teamsOld[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+    int teamsNew[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+    int distinctOld = 0;
+    int distinctNew = 0;
+
+    memset(objects, 0, sizeof(objects));
+
+    g_probe_done_2 = 1;
+
+    if (mode) tnx_read_map(mode);
+
+    {
+        static int v142_walk_logs = 0;
+
+        if (v142_walk_logs < 12 || (v142_walk_logs % 128) == 0) {
+            v142_walk_logs++;
+
+            tnx_logf("walk enter arr=%p n=%d g_arr=%p g_n=%d tick_arr=%p tick_n=%d manager=%p", (void *)g_tick_array,
+                     g_tick_count, (void *)g_players_array, g_players_count,
+                     (void *)g_tick_array, g_tick_count, (void *)manager);
+        }
+    }
+
+    usable = tnx_collect(manager, objects, TNX_OBJECT_MAX, &rejected);
+
+    {
+        static int v142_leave_logs = 0;
+
+        if (v142_leave_logs < 12 || (v142_leave_logs % 128) == 0) {
+            v142_leave_logs++;
+
+            tnx_logf("walk leave arr=%p n=%d g_arr=%p g_n=%d aborted=%d abortI=%d usable=%d rejected=%d", (void *)g_walk_arr, g_walk_n,
+                     (void *)g_pub_array, g_pub_count, g_walk_aborted,
+                     g_walk_abort_i, usable, rejected);
+        }
+    }
+
+    for (int i = 0; i < usable; i++) {
+        if (objects[i].x > -TNX_COORD_ABS_MAX && objects[i].x < TNX_COORD_ABS_MAX &&
+            objects[i].y > -TNX_COORD_ABS_MAX && objects[i].y < TNX_COORD_ABS_MAX) {
+            inRange++;
+        }
+
+        if (objects[i].teamOld >= 0 && objects[i].teamOld < 8) teamsOld[objects[i].teamOld] = 1;
+        if (objects[i].teamNew >= 0 && objects[i].teamNew < 8) teamsNew[objects[i].teamNew] = 1;
+
+        {
+            int seen = 0;
+
+            for (int j = 0; j < i; j++) {
+                if (objects[j].x == objects[i].x && objects[j].y == objects[i].y) { seen = 1; break; }
+            }
+
+            if (!seen) distinct++;
+        }
+    }
+
+    for (int i = 0; i < 8; i++) {
+        if (teamsOld[i]) distinctOld++;
+        if (teamsNew[i]) distinctNew++;
+    }
+
+    g_team_off = (int)TNX_OBJ_TEAM_OFF;
+
+    {
+        char reasons[320];
+
+        tnx_logf("man walk mode=%p manager=%p usable=%d rejected=%d (%s) mapOk=%d mapW=%d "
+                 "mapH=%d inRange=%d distinct=%d teamsOld=%d teamsNew=%d teamOff=0x%x",
+                 (void *)mode, (void *)manager, usable, rejected,
+                 tnx_reject_text(reasons, sizeof(reasons)), g_map_ok, g_map_w,
+                 g_map_h, inRange, distinct, distinctOld, distinctNew, g_team_off);
+    }
+
+    tnx_logf("walk team reverted to +0x%x with distinct(+0x40)=%d distinct(+0x4c)=%d",
+             g_team_off, distinctOld, distinctNew);
+
+    tnx_logf("walk offsets team=+0x%x distinctOld=%d distinctNew=%d coord=+0x%llx/+0x%llx usable=%d distinct=%d inRange=%d",
+             g_team_off, distinctOld, distinctNew,
+             (unsigned long long)tnx_coord_x_off(), (unsigned long long)tnx_coord_y_off(),
+             usable, distinct, inRange);
+
+    if (!TNX_DEAD_ONCE || !g_dead_probe_done) {
+        g_dead_probe_done = 1;
+    }
+
+    if (verbose) {
+        tnx_logf("offsets obj off=0x%llx/0x%llx x=0x%llx y=0x%llx teamOld=0x%llx teamNew=0x%llx "
+                 "owner=0x%llx dead=0x%llx active=0x%llx tilemap=0x%llx w=0x%llx",
+                 TNX_MGR_ARRAY_OFF, TNX_MGR_COUNT_OFF, TNX_OBJ_X_OFF, TNX_OBJ_Y_OFF,
+                 TNX_OBJ_TEAM_OFF, TNX_OBJ_TEAMENGINE_OFF, TNX_OBJ_OWNERINDEX_OFF,
+                 TNX_OBJ_DEADFLAG_OFF, TNX_OBJ_ACTIVEFLAG_OFF,
+                 TNX_MODE_TILEMAP_OFF, TNX_TILEMAP_WIDTH_OFF);
+
+        for (int i = 0; i < usable && i < 16; i++) {
+            tnx_logf("player[%02d] at=%p gid=%d pos=(%d,%d) team40=%d own=%d dead=%d active=%d",
+                     i, (void *)objects[i].object, objects[i].gid, objects[i].x, objects[i].y,
+                     objects[i].teamOld, objects[i].ownerIndex, objects[i].dead,
+                     objects[i].activeFlag & 1, (unsigned long long)TNX_OBJ_X_OFF,
+                     (unsigned long long)TNX_OBJ_Y_OFF, (unsigned long long)TNX_OBJ_TEAM_OFF);
+        }
+    }
+
+    g_coord_usable = usable;
+    g_coord_distinct = distinct;
+
+    {
+        int unique = 0;
+
+        for (int i = 0; i < usable; i++) {
+            int seen = 0;
+
+            for (int j = 0; j < i; j++) {
+                if (objects[j].gid == objects[i].gid) {
+                    seen = 1;
+                    break;
+                }
+            }
+
+            if (!seen) unique++;
+        }
+
+        tnx_logf("gid unique=%d of usable=%d distinct=%d",
+                 unique, usable, distinct);
+    }
+
+    tnx_team_dump(objects, usable);
+    tnx_class_dump(objects, usable);
+
+    g_coord_ok = (usable >= 2 && inRange == usable && distinct >= 2 &&
+                      (distinctOld >= 2 || distinctNew >= 2)) ? 1 : 0;
+
+    tnx_logf("coords ok=%d (need >=2 objects, all in range, >=2 distinct positions, "
+             "and a team field that splits them)",
+             g_coord_ok);
+
+    {
+        int back = 0;
+        int backRead = 0;
+
+        for (int i = 0; i < usable; i++) {
+            void *backPtr = NULL;
+
+            if (!tnx_read_ptr(objects[i].object + TNX_ELEM_BACK_OFF, &backPtr)) continue;
+
+            backRead++;
+
+            if ((uintptr_t)backPtr == manager) back++;
+        }
+
+        tnx_logf("membership manager=%p usable=%d back=%d read=%d",
+                 (void *)manager, usable, back, backRead,
+                 (unsigned long long)TNX_ELEM_BACK_OFF,
+                 (unsigned long long)TNX_MODE_MANAGER_OFF);
+    }
+}
+
 int g_logs_2 = 0;
 
 int32_t g_max_x = 0;

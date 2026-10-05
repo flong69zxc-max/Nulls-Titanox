@@ -9,10 +9,13 @@
 #include "core/memory.h"
 #include "utils/geometry.h"
 #include "utils/strings.h"
+#include "utils/crypto.h"
 #include "helpers/move.h"
 #include "helpers/scan.h"
 #include "features/autododge.h"
 #include "features/report.h"
 #include "features/walls.h"
+#include "features/sign.h"
+#include "features/sd.h"
 
 #endif

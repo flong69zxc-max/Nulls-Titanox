@@ -658,6 +658,16 @@ int g_last_ok = 0;
 
 uint64_t g_keeps = 0;
 
+float g_mom_live = 0.0f;
+
+int g_crit_reaction = 0;
+
+float g_tti_min = 0.0f;
+
+uint64_t g_crit_took = 0;
+
+int g_tti_logs = 0;
+
 uint64_t g_engage = 0;
 
 uint64_t g_hseed = 0;
@@ -714,7 +724,7 @@ int tnx_drive(void) {
         g_ty_3 = g_ty;
         g_hold = g_ticks_3;
         held = 1;
-    } else if (g_hold && (g_ticks_3 - g_hold) <= TNX_HOLD_TICKS) {
+    } else if (!g_crit_reaction && g_hold && (g_ticks_3 - g_hold) <= TNX_HOLD_TICKS) {
         held = 1;
     }
 
@@ -2155,6 +2165,46 @@ static float tnx_js_clear(float px, float py, float mvx, float mvy) {
     return best;
 }
 
+void tnx_crit_probe(float px, float py) {
+    float best = 1.0e9f;
+    int i = 0;
+
+    g_crit_reaction = 0;
+    g_tti_min = best;
+
+    for (i = 0; i < g_seg_count; i++) {
+        const tnx_seg_t *s = &g_seg[i];
+        float d = 0.0f;
+        float ms = 0.0f;
+
+        if (s->speed <= 1.0f) continue;
+
+        d = tnx_seg_dist(px, py, s->ax, s->ay, s->bx, s->by) - s->inflatedR;
+
+        if (d < 0.0f) d = 0.0f;
+
+        ms = d / s->speed * 1000.0f;
+
+        if (ms < best) best = ms;
+    }
+
+    g_tti_min = best;
+
+    if (TNX_REACT_CRIT && best < TNX_CRITICAL_MS) g_crit_reaction = 1;
+
+    g_mom_live = g_crit_reaction ? 0.0f : TNX_MOMENTUM;
+
+    if (g_crit_reaction && g_tti_logs < TNX_SEG_TTI_LOGS) {
+        g_tti_logs++;
+
+        TNX_LOGX("crit tti=%.0fms segs=%d own=(%.0f,%.0f) - an impact inside %dms drops the "
+                 "momentum term and takes the best heading even when it does not beat standing "
+                 "still, because on these frames the point is leaving the line now rather than "
+                 "holding a heading that is already the wrong one",
+                 (double)best, g_seg_count, (double)px, (double)py, (int)TNX_CRITICAL_MS);
+    }
+}
+
 int tnx_freest(float px, float py, float *tx, float *ty) {
     int i = 0;
     int n = TNX_JS_DODGE ? TNX_DIR_COUNT : TNX_FREEST_ANGLES;
@@ -2196,7 +2246,7 @@ int tnx_freest(float px, float py, float *tx, float *ty) {
 
         score = tnx_js_clear(px, py, ux * speed, uy * speed);
 
-        if (g_freest_have) score += TNX_MOMENTUM * (ux * g_freest_hx + uy * g_freest_hy);
+        if (g_freest_have) score += g_mom_live * (ux * g_freest_hx + uy * g_freest_hy);
         if (tnx_clip_range(px, py, ux, uy, radius) < radius - 1.0f) score -= TNX_WALL_PENALTY;
 
         for (k = 0; k < g_pl_n; k++) {
@@ -2234,9 +2284,13 @@ int tnx_freest(float px, float py, float *tx, float *ty) {
         g_freest_have = 1;
 
         if (bestScore <= nowClear) {
-            g_freest_hold++;
+            if (!g_crit_reaction) {
+                g_freest_hold++;
 
-            return 0;
+                return 0;
+            }
+
+            g_crit_took++;
         }
     }
 
@@ -2286,7 +2340,11 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
     if (g_seg_count != g_prev_seg) {
         g_new_tick = (int)g_ticks_3;
         g_prev_seg = g_seg_count;
+
+        if (TNX_REACT_CRIT) g_crit_reaction = 1;
     }
+
+    tnx_crit_probe(px, py);
 
     threatened = tnx_threatened(px, py);
 
@@ -2967,10 +3025,13 @@ void tnx_autododge_v48(void) {
                      "against a point moving at the character speed along that direction, the score "
                      "carries a momentum term toward the previous direction, and the chosen heading "
                      "is locked for %d ms inside a band of %.0f, which is what stops the character "
-                     "sliding between two nearly equal directions",
+                     "sliding between two nearly equal directions, and crit is set when the impact "
+                     "of the nearest live segment is inside %d ms or the threat set changed on this "
+                     "frame: tti=%.0fms crit=%d criticalPicks=%llu",
                      ownX, ownY, g_tx, g_ty, g_side_projs, g_live_threats,
                      g_prev_idx, (double)TNX_REACH, (double)TNX_ENGAGE, TNX_DIRS,
-                     TNX_LOCK_MS, (double)TNX_KEEP_BAND);
+                     TNX_LOCK_MS, (double)TNX_KEEP_BAND, (int)TNX_CRITICAL_MS,
+                     (double)g_tti_min, g_crit_reaction, (unsigned long long)g_crit_took);
         }
     }
 

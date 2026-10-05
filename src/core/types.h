@@ -70,8 +70,8 @@ typedef struct {
     uintptr_t base;
     int used;
     int have;
-    uint32_t prev[TNX_V99_FLOATS];
-} tnx_v96_slot_t;
+    uint32_t prev[TNX_FLOATS];
+} tnx_slot_t;
 
 typedef struct {
     int sampled;
@@ -79,7 +79,7 @@ typedef struct {
     int noVt;
     int teamDistinct;
     int posDistinct;
-} tnx_v75_measure_t;
+} tnx_measure_t;
 
 typedef struct {
     int elements;
@@ -88,7 +88,7 @@ typedef struct {
     int distinctGids;
     int deadOk;
     uintptr_t vt0;
-} tnx_v50_facts_t;
+} tnx_facts_t;
 
 typedef struct {
     uintptr_t low;
@@ -124,7 +124,7 @@ typedef struct {
     const char *provenance;
 } tnx_fact_t;
 
-typedef void (*tnx_v47_setpred_t)(void *self, int x, int y);
+typedef void (*tnx_setpred_t)(void *self, int x, int y);
 
 typedef struct {
     uintptr_t object;
@@ -137,7 +137,7 @@ typedef struct {
     int32_t   typeWord;
     uint8_t   dead;
     uint8_t   activeFlag;
-} tnx_v47_obj_t;
+} tnx_obj_t;
 
 typedef struct {
     int elementsRead;
@@ -150,7 +150,7 @@ typedef struct {
     int rejOutOfRange;
     int rejTeamMissing;
     int deadSeen;
-} tnx_v50_reject_t;
+} tnx_reject_t;
 
 typedef struct {
     uintptr_t elem;
@@ -166,7 +166,7 @@ typedef struct {
     uint64_t ptick;
     uint64_t qtick;
     int hasPrev;
-} tnx_v140_proj_t;
+} tnx_proj_t;
 
 typedef struct {
     float ax;
@@ -179,13 +179,13 @@ typedef struct {
     float inflatedR;
     float remaining;
     int32_t gid;
-} tnx_v172_seg_t;
+} tnx_seg_t;
 
 typedef struct {
     uintptr_t base;
     int have;
-    uint32_t prev[TNX_V173_WORDS];
-    uint16_t hot[TNX_V173_WORDS];
-} tnx_v173_win_t;
+    uint32_t prev[TNX_WORDS];
+    uint16_t hot[TNX_WORDS];
+} tnx_win_t;
 
 #endif

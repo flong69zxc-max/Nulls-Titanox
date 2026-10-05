@@ -12,86 +12,86 @@ FILE *tnx_log_handle(void) {
     return g_log;
 }
 
-const char *g_v190_log_drop[67] = {
-    "v100 players", "v100 walk", "v100 hopdump", "v100 teamdump", "v100 container",
-    "v100 membership", "v100 man ", "v100 gid", "v100 coords", "v100 coord", "v100 off",
-    "v100 dodge", "v100 hb", "v100 clip", "v100 ownscan", "v100 chain", "v100 player[",
-    "v100 element", "v100 classdump", "v100 trail", "v100 state", "v100 modeslot", "v100 hooks",
-    "v100 scene", "v100 heap", "v100 fields", "v100 write", "v100 slot", "v100 setprediction",
-    "v100 scan", "v100 route", "v100 modesig", "v100 hop", "v100 battle", "v100 named",
-    "v100 offsets",
-    "v173 ", "v115 ", "v140 ", "v142 ", "v102 ", "v138 ", "v106 ", "v135 ", "v116 ", "v162 ",
-    "v145 ", "v101 ", "v129 ", "v141 ", "v128 ", "v144 ", "v148 ", "v105 ", "v112 ", "v92 ",
-    "v160 ", "v127 ", "v152 ",
-    "v174 ", "v117 ", "v119 ", "v134 ", "v169 ", "v126 ", "v129 ",
+const char *g_log_drop[67] = {
+    "players", "walk", "hopdump", "teamdump", "container",
+    "membership", "man ", "gid", "coords", "coord", "off",
+    "dodge", "hb", "clip", "ownscan", "chain", "player[",
+    "element", "classdump", "trail", "state", "modeslot", "hooks",
+    "scene", "heap", "fields", "write", "slot", "setprediction",
+    "scan", "route", "modesig", "hop", "battle", "named",
+    "offsets",
+    "", "", "", "", "", "", "", "", "", "",
+    "", "", "", "", "", "", "", "", "", "",
+    "", "", "",
+    "", "", "", "", "", "", "",
     NULL
 };
 
-const char *g_v190_log_keep[19] = {
-    "=== ", "plan v", "slot ", "v47 ", "v100 hook", "v100 live", "v100 census", "v126 ",
-    "v142 publish", "v146 ", "v172 ", "v179 ", "v181 ", "v189 ", "v190 ", "v191 ", "v192 ",
-    "v193 ",
+const char *g_log_keep[19] = {
+    "=== ", "plan v", "slot ", "", "hook", "live", "census", "",
+    "publish", "", "", "", "", "", "", "", "",
+    "",
     NULL
 };
 
-uint64_t g_v190_drop_counts[64];
+uint64_t g_drop_counts[64];
 
-uint64_t g_v190_dropped = 0;
+uint64_t g_dropped = 0;
 
-uint64_t g_v190_kept = 0;
+uint64_t g_kept_3 = 0;
 
-uint64_t g_v190_log_rolls = 0;
+uint64_t g_log_rolls = 0;
 
-int tnx_v190_keep_line(const char *text) {
+int tnx_keep_line(const char *text) {
     int i = 0;
 
-    if (!TNX_V190_LOG_FILTER) return 1;
+    if (!TNX_LOG_FILTER) return 1;
     if (!text) return 0;
 
-    for (i = 0; g_v190_log_keep[i]; i++) {
-        if (strncmp(text, g_v190_log_keep[i], strlen(g_v190_log_keep[i])) == 0) {
-            g_v190_kept++;
+    for (i = 0; g_log_keep[i]; i++) {
+        if (strncmp(text, g_log_keep[i], strlen(g_log_keep[i])) == 0) {
+            g_kept_3++;
 
             return 1;
         }
     }
 
-    for (i = 0; g_v190_log_drop[i] && i < 64; i++) {
-        if (strncmp(text, g_v190_log_drop[i], strlen(g_v190_log_drop[i])) == 0) {
-            g_v190_drop_counts[i]++;
-            g_v190_dropped++;
+    for (i = 0; g_log_drop[i] && i < 64; i++) {
+        if (strncmp(text, g_log_drop[i], strlen(g_log_drop[i])) == 0) {
+            g_drop_counts[i]++;
+            g_dropped++;
 
             return 0;
         }
     }
 
-    g_v190_kept++;
+    g_kept_3++;
 
     return 1;
 }
 
-void tnx_v190_log_census(void) {
+void tnx_log_census(void) {
     const char *worst = NULL;
     uint64_t worstN = 0;
     int i = 0;
 
-    for (i = 0; g_v190_log_drop[i] && i < 64; i++) {
-        if (g_v190_drop_counts[i] > worstN) {
-            worstN = g_v190_drop_counts[i];
-            worst = g_v190_log_drop[i];
+    for (i = 0; g_log_drop[i] && i < 64; i++) {
+        if (g_drop_counts[i] > worstN) {
+            worstN = g_drop_counts[i];
+            worst = g_log_drop[i];
         }
     }
 
-    tnx_logf("v190 logfilter kept=%llu dropped=%llu rolls=%llu worst=%s:%llu - a line is written "
+    tnx_logf("logfilter kept=%llu dropped=%llu rolls=%llu worst=%s:%llu - a line is written "
              "unless its start matches the drop list, so anything unlisted, including every line "
              "added after this build, is kept by default; a dropped prefix that should not be here "
              "is removed from the list and comes back without a rebuild",
-             (unsigned long long)g_v190_kept, (unsigned long long)g_v190_dropped,
-             (unsigned long long)g_v190_log_rolls, worst ? worst : "-",
+             (unsigned long long)g_kept_3, (unsigned long long)g_dropped,
+             (unsigned long long)g_log_rolls, worst ? worst : "-",
              (unsigned long long)worstN);
 }
 
-void tnx_v190_log_roll(void) {
+void tnx_log_roll(void) {
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     NSDateFormatter *df = NULL;
     NSString *ts = nil;
@@ -110,12 +110,12 @@ void tnx_v190_log_roll(void) {
     if (!g_log) return;
 
     g_log_written = 0;
-    g_v190_log_rolls++;
+    g_log_rolls++;
 
     df = [[NSDateFormatter alloc] init];
     [df setDateFormat:@"yyyy-MM-dd HH:mm:ss.SSS"];
     ts = [df stringFromDate:[NSDate date]];
-    marker = [NSString stringWithFormat:fmt, ts, (unsigned long long)g_v190_log_rolls];
+    marker = [NSString stringWithFormat:fmt, ts, (unsigned long long)g_log_rolls];
     g_log_written += (long)fwrite(marker.UTF8String, 1, strlen(marker.UTF8String), g_log);
     fflush(g_log);
 }
@@ -124,12 +124,12 @@ void tnx_write_line(const char *text) {
     FILE *handle = NULL;
 
     if (!text) return;
-    if (!tnx_v190_keep_line(text)) return;
+    if (!tnx_keep_line(text)) return;
 
     if (g_log_written >= LOG_MAX_BYTES) {
-        if (!TNX_V190_LOG_ROLL) return;
+        if (!TNX_LOG_ROLL) return;
 
-        tnx_v190_log_roll();
+        tnx_log_roll();
     }
 
     handle = tnx_log_handle();
@@ -172,27 +172,25 @@ void tnx_logf(const char *format, ...) {
     tnx_write_line(buffer);
 }
 
-int g_v63_hb_sig_prev = 0;
+int g_hb_sig_prev = 0;
 
-int g_v63_image_count = 0;
+int g_image_count = 0;
 
-uintptr_t g_v63_image_top_mgr = 0;
+uintptr_t g_image_top_mgr = 0;
 
-int32_t g_v63_image_top_count = 0;
+int32_t g_image_top_count = 0;
 
-int g_v63_image_first = 0;
+int g_chain_vtchanged = 0;
 
-int g_v63_chain_vtchanged = 0;
+int g_chain_stable_logged = 0;
 
-int g_v63_chain_stable_logged = 0;
+int g_stringy_logs = 0;
 
-int g_v63_stringy_logs = 0;
+int g_battle_active = 0;
 
-int g_v63_battle_active = 0;
+int g_battle_last_tick = 0;
 
-int g_v63_battle_last_tick = 0;
-
-const char *g_v63_battle_reason = "none";
+const char *g_battle_reason = "none";
 
 void tnx_slot_note(int index, void *self, uint64_t arg1) {
     uint32_t bit = 0;
@@ -201,7 +199,7 @@ void tnx_slot_note(int index, void *self, uint64_t arg1) {
 
     g_slot_hits[index]++;
 
-    if (!g_slot_first_tick[index]) g_slot_first_tick[index] = g_v50_ticks;
+    if (!g_slot_first_tick[index]) g_slot_first_tick[index] = g_ticks_4;
 
     if (!g_slot_object[index] && self) g_slot_object[index] = (uintptr_t)self;
 
@@ -231,7 +229,7 @@ void tnx_slot_fired_report(void) {
                     state = "armed-REVERTED";
                 }
             }
-        } else if (g_slot_installed[i] == TNX_V73_STATE_DROPPED) {
+        } else if (g_slot_installed[i] == TNX_STATE_DROPPED) {
             state = "dropped";
         } else if (g_slot_installed[i] == 0) {
             state = (g_slot_slots[i] > 0) ? "install-failed" : "not-found";
@@ -239,117 +237,117 @@ void tnx_slot_fired_report(void) {
 
         total += g_slot_hits[i];
 
-        tnx_logf("v100 hook %s %s armed=%d slots=%d slotRva=%#llx this=%p arg1=%p firstCallTick=%llu "
+        tnx_logf("hook %s %s armed=%d slots=%d slotRva=%#llx this=%p arg1=%p firstCallTick=%llu "
                  "hits=%llu tick=%llu",
                  g_slot_specs[i].shortTag, state, armed, g_slot_slots[i],
                  (unsigned long long)g_slot_specs[i].slotRva, (void *)g_slot_object[i],
                  (void *)g_slot_arg1[i], (unsigned long long)g_slot_first_tick[i],
-                 (unsigned long long)g_slot_hits[i], (unsigned long long)g_v50_ticks);
+                 (unsigned long long)g_slot_hits[i], (unsigned long long)g_ticks_4);
 
         if (i == 6 && g_slot_installed[i] == 1 && g_slot_slots[i] < 100) {
-            tnx_logf("v100 hook C2 weak: slots=%d where the 22:36 run had 443 - the target moved or "
+            tnx_logf("hook C2 weak: slots=%d where the 22:36 run had 443 - the target moved or "
                      "the table was rebuilt", g_slot_slots[i]);
         }
 
-        if (i == 12 && g_v52_setpred_calls) {
-            tnx_logf("v100 setprediction seen: calls=%llu this=%p target=(%.2f,%.2f)",
-                     (unsigned long long)g_v52_setpred_calls, (void *)g_v52_setpred_this,
-                     g_v52_setpred_x, g_v52_setpred_y);
+        if (i == 12 && g_setpred_calls) {
+            tnx_logf("setprediction seen: calls=%llu this=%p target=(%.2f,%.2f)",
+                     (unsigned long long)g_setpred_calls, (void *)g_setpred_this,
+                     g_setpred_x, g_setpred_y);
         }
 
-        if (g_slot_hits[i] == 0 && g_v50_ticks >= 30 && g_slot_installed[i] == 1) {
-            if (!(g_v50_never_dispatched_mask & (1u << (unsigned)i))) {
-                if (g_slot_slots[i] > TNX_V59_SLOT_WIDE && g_v50_ticks <= TNX_V59_DROP_TICKS) {
+        if (g_slot_hits[i] == 0 && g_ticks_4 >= 30 && g_slot_installed[i] == 1) {
+            if (!(g_never_dispatched_mask & (1u << (unsigned)i))) {
+                if (g_slot_slots[i] > TNX_SLOT_WIDE && g_ticks_4 <= TNX_DROP_TICKS) {
                     continue;
                 }
 
-                g_v50_never_dispatched_mask |= (1u << (unsigned)i);
+                g_never_dispatched_mask |= (1u << (unsigned)i);
 
             }
         }
     }
 
-    tnx_logf("v100 hooks total fired=%llu armed=%d of %d slots at tick=%llu", (unsigned long long)total,
-             armedCount, TNX_SLOT_COUNT, (unsigned long long)g_v50_ticks);
+    tnx_logf("hooks total fired=%llu armed=%d of %d slots at tick=%llu", (unsigned long long)total,
+             armedCount, TNX_SLOT_COUNT, (unsigned long long)g_ticks_4);
 
-    tnx_logf("v100 trail refusals: stringy=%d image-resident=%d - the two counters replace the line "
+    tnx_logf("trail refusals: stringy=%d image-resident=%d - the two counters replace the line "
              "that printed on every tenth refusal and flooded the v72 log with 964 of them; the "
              "denominator is the candidate count already printed on the trail line",
-             g_v63_stringy_logs, g_v72_trail_refusals);
+             g_stringy_logs, g_trail_refusals);
 }
 
-void tnx_v63_flush_buckets(void) {
-    if (g_v63_image_count > 0) {
-        tnx_logf("v100 image-resident: %d rejections in last %ds (top mgr=%p count=%d)",
-                 g_v63_image_count, TNX_V63_BUCKET_TICKS, (void *)g_v63_image_top_mgr,
-                 g_v63_image_top_count);
+void tnx_flush_buckets(void) {
+    if (g_image_count > 0) {
+        tnx_logf("image-resident: %d rejections in last %ds (top mgr=%p count=%d)",
+                 g_image_count, TNX_BUCKET_TICKS_2, (void *)g_image_top_mgr,
+                 g_image_top_count);
 
-        g_v63_image_count = 0;
-        g_v63_image_top_mgr = 0;
-        g_v63_image_top_count = 0;
+        g_image_count = 0;
+        g_image_top_mgr = 0;
+        g_image_top_count = 0;
     }
 
-    tnx_logf("v100 chain: hits=%d vtableChanged=%d classPass=%d", g_v59_chain_hits,
-             g_v63_chain_vtchanged, g_v62_class_pass);
+    tnx_logf("chain: hits=%d vtableChanged=%d classPass=%d", g_chain_hits,
+             g_chain_vtchanged, g_class_pass);
 
-    g_v63_chain_vtchanged = 0;
-    g_v63_chain_stable_logged = 0;
+    g_chain_vtchanged = 0;
+    g_chain_stable_logged = 0;
 }
 
-int tnx_v63_battle_gate(int scene) {
-    unsigned long long objFired = tnx_v79_object_dispatches();
-    int objGrew = objFired > g_v79_obj_prev;
-    int sigGrew = g_v64_modesig_hits > g_v63_hb_sig_prev;
+int tnx_battle_gate(int scene) {
+    unsigned long long objFired = tnx_object_dispatches();
+    int objGrew = objFired > g_obj_prev;
+    int sigGrew = g_modesig_hits > g_hb_sig_prev;
     int sceneGrew = scene ? 1 : 0;
 
-    g_v79_obj_prev = objFired;
+    g_obj_prev = objFired;
 
     if (sigGrew || objGrew || sceneGrew) {
-        g_v63_battle_last_tick = (int)g_v50_ticks;
+        g_battle_last_tick = (int)g_ticks_4;
 
-        if (!g_v63_battle_active) {
-            g_v63_battle_active = 1;
-            g_v63_battle_reason = sceneGrew ? "scene" : (objGrew ? "objslot" : "modesig");
+        if (!g_battle_active) {
+            g_battle_active = 1;
+            g_battle_reason = sceneGrew ? "scene" : (objGrew ? "objslot" : "modesig");
 
-            tnx_logf("v100 battle state: inactive -> active reason=%s state=%d objFired=%llu "
-                     "sigHits=%d", g_v63_battle_reason, g_v80_state, objFired, g_v64_modesig_hits);
+            tnx_logf("battle state: inactive -> active reason=%s state=%d objFired=%llu "
+                     "sigHits=%d", g_battle_reason, g_state_2, objFired, g_modesig_hits);
         }
-    } else if (g_v63_battle_active &&
-               ((int)g_v50_ticks - g_v63_battle_last_tick) >= TNX_V63_QUIET_SECS) {
-        g_v63_battle_active = 0;
+    } else if (g_battle_active &&
+               ((int)g_ticks_4 - g_battle_last_tick) >= TNX_QUIET_SECS) {
+        g_battle_active = 0;
 
-        tnx_logf("v100 battle state: active -> inactive reason=quiet-10s");
+        tnx_logf("battle state: active -> inactive reason=quiet-10s");
     }
 
-    return g_v63_battle_active;
+    return g_battle_active;
 }
 
-void tnx_v63_log_heartbeat(void) {
-    int sigDelta = g_v64_modesig_hits - g_v63_hb_sig_prev;
+void tnx_log_heartbeat(void) {
+    int sigDelta = g_modesig_hits - g_hb_sig_prev;
 
-    tnx_logf("v100 hb tick=%llu battle=%d reason=%s slot=%p state=%d objFired=%llu "
+    tnx_logf("hb tick=%llu battle=%d reason=%s slot=%p state=%d objFired=%llu "
              "modesigHits=%d sigLast=%d chainHits=%d classesPass=%d g_mode=%p src=%s mgr=%p "
              "count=%d fb=%d liveObjs=%d liveTeams=%d parked=%d",
-             (unsigned long long)g_v50_ticks,
-             g_v63_battle_active, g_v63_battle_reason, (void *)g_v80_site, g_v80_state,
-             (unsigned long long)tnx_v79_object_dispatches(), g_v64_modesig_hits, sigDelta,
-             g_v59_chain_hits, g_v62_class_pass,
-             (void *)g_scene_object, g_v62_mode_source, (void *)g_players_object, g_manager_count,
-             g_v77_fb_on, g_v77_live_objs, g_v77_live_teams, g_v78_idle_on);
+             (unsigned long long)g_ticks_4,
+             g_battle_active, g_battle_reason, (void *)g_site, g_state_2,
+             (unsigned long long)tnx_object_dispatches(), g_modesig_hits, sigDelta,
+             g_chain_hits, g_class_pass,
+             (void *)g_scene_object, g_mode_source_2, (void *)g_players_object, g_manager_count,
+             g_fb_on, g_live_objs, g_live_teams, g_idle_on);
 
-    tnx_v190_log_census();
+    tnx_log_census();
 
-    g_v63_hb_sig_prev = g_v64_modesig_hits;
+    g_hb_sig_prev = g_modesig_hits;
 
-    if ((g_v50_ticks % TNX_V63_BUCKET_TICKS) == 0) tnx_v63_flush_buckets();
+    if ((g_ticks_4 % TNX_BUCKET_TICKS_2) == 0) tnx_flush_buckets();
 
-    if (g_v64_modesig_hits == 0 && g_v50_ticks >= TNX_V63_D6_WAIT_SECS &&
-        !g_v64_modesig_notfound) {
-        g_v64_modesig_notfound = 1;
+    if (g_modesig_hits == 0 && g_ticks_4 >= TNX_D6_WAIT_SECS &&
+        !g_modesig_notfound) {
+        g_modesig_notfound = 1;
 
-        tnx_logf("v100 modesig not-found at t=%ds - the mode signature did not match, while the "
-                 "%d object-class slots have fired %llu times", TNX_V63_D6_WAIT_SECS,
-                 TNX_V79_OBJ_SLOTS, (unsigned long long)tnx_v79_object_dispatches());
+        tnx_logf("modesig not-found at t=%ds - the mode signature did not match, while the "
+                 "%d object-class slots have fired %llu times", TNX_D6_WAIT_SECS,
+                 TNX_OBJ_SLOTS, (unsigned long long)tnx_object_dispatches());
     }
 }
 
@@ -394,9 +392,9 @@ void tnx_report_mode_hit(const char *tag, uintptr_t slot, uintptr_t object) {
              manager, (unsigned long long)managerVtableRva,
              tnx_manager_shape((uintptr_t)manager) ? 1 : 0, array, entry, count);
 
-    if (g_v71_modehit_dump >= 8) return;
+    if (g_modehit_dump >= 8) return;
 
-    g_v71_modehit_dump++;
+    g_modehit_dump++;
 
     for (int i = 0; i < 5; i++) {
         uint32_t w4[4] = { 0, 0, 0, 0 };
@@ -414,7 +412,7 @@ void tnx_report_mode_hit(const char *tag, uintptr_t slot, uintptr_t object) {
 
         tnx_read_ptr((uintptr_t)object - 0x8ULL, &before);
 
-        if (before && tnx_v56_vtable_in_image((uintptr_t)before) &&
+        if (before && tnx_vtable_in_image((uintptr_t)before) &&
             tnx_read_ptr((uintptr_t)before, &tableHead) && tableHead) {
             if ((uintptr_t)tableHead > g_base) tableRva = (uintptr_t)tableHead - g_base;
 
@@ -468,7 +466,7 @@ int tnx_manager_live_count(uintptr_t manager) {
         if (!vtable) continue;
         if (!tnx_vtable_shaped((uintptr_t)vtable)) continue;
 
-        if (!tnx_v75_object_live((uintptr_t)element)) continue;
+        if (!tnx_object_live((uintptr_t)element)) continue;
 
         live++;
 
@@ -657,14 +655,14 @@ void tnx_diag_report(const char *why) {
 
     tnx_trail_dump();
 
-    tnx_logf("v100 chain gates: vtBad=%d vtNotDC=%d mgrBad=%d mgrNotPlausible=%d mgrNotHeap=%d "
+    tnx_logf("chain gates: vtBad=%d vtNotDC=%d mgrBad=%d mgrNotPlausible=%d mgrNotHeap=%d "
              "varBad=%d pxBad=%d pyBad=%d inputBad=%d shapeBad=%d arrayRead=%d countRead=%d "
              "arrayNull=%d countRange=%d live=%d own=%d gid=%d tested=%d logged=%d",
-             g_v55_chain_rej[0], g_v55_chain_rej[1], g_v55_chain_rej[2], g_v55_chain_rej[3],
-             g_v55_chain_rej[4], g_v55_chain_rej[5], g_v55_chain_rej[6], g_v55_chain_rej[7],
-             g_v55_chain_rej[8], g_v55_chain_rej[9], g_v55_chain_rej[10], g_v55_chain_rej[11],
-             g_v55_chain_rej[12], g_v55_chain_rej[13], g_v55_chain_rej[14], g_v55_chain_rej[15],
-             g_v55_chain_rej[16], g_chain_probes, g_v55_layout_logs);
+             g_chain_rej[0], g_chain_rej[1], g_chain_rej[2], g_chain_rej[3],
+             g_chain_rej[4], g_chain_rej[5], g_chain_rej[6], g_chain_rej[7],
+             g_chain_rej[8], g_chain_rej[9], g_chain_rej[10], g_chain_rej[11],
+             g_chain_rej[12], g_chain_rej[13], g_chain_rej[14], g_chain_rej[15],
+             g_chain_rej[16], g_chain_probes, g_layout_logs);
 
     tnx_logf("DIAG(%s) attempts=%d/%d heapPasses=%d covered=%lluMB probes=%d/%d skipped=%d "
              "capRej=%d/%d bestCount=%d bestLive=%d mgr=%p adopted=%d vfx=%d mx=%d "
@@ -678,7 +676,7 @@ void tnx_diag_report(const char *why) {
              g_manager_skipped, g_manager_cap_rejects, g_manager_saw_cap,
              g_manager_best_count, g_manager_best_live, (void *)g_players_object,
              g_mode_strong ? 1 : 0, g_mode_verified_hits, g_mode_best_objects,
-             g_chain_checks, g_chain_probes, g_v55_chain_probes_pass, g_chain_skipped,
+             g_chain_checks, g_chain_probes, g_chain_probes_pass, g_chain_skipped,
              g_seen_stable,
              g_chain_best_own, g_chain_best_gid,
              g_objvote_hits, g_objvote_skipped, g_owner_vote_count,
@@ -728,12 +726,12 @@ void tnx_trail_dump(void) {
 
     tnx_logf("trail: %llu candidates passed the array header, %d recorded, %d refused as inline "
              "text, ordered by (live, nonEmpty, count); the best needs teamDistinct>=2 and "
-             "posDistinct>=2", (unsigned long long)g_trail_total, g_trail_count, g_v75_ascii_refused);
+             "posDistinct>=2", (unsigned long long)g_trail_total, g_trail_count, g_ascii_refused);
 
     for (int k = 0; k < n; k++) {
         int i = rank[k];
         char reason[64] = { 0 };
-        int accepted = tnx_v75_trail_verdict(&g_trail[i], reason, sizeof(reason));
+        int accepted = tnx_trail_verdict(&g_trail[i], reason, sizeof(reason));
 
         tnx_logf("trail[%d] rank=%d mgr=%p count=%d cap=%d live=%d nonEmpty=%d ascii=%d/%d(%d%%) "
                  "teamDistinct=%d posDistinct=%d stable=%d raw=%c -> %s%s%s",
@@ -816,34 +814,34 @@ int tnx_object_detail(uintptr_t manager, int limit) {
     return shown;
 }
 
-uint32_t g_v116_mode_hist[TNX_V116_HIST_MODES];
+uint32_t g_mode_hist[TNX_HIST_MODES];
 
-int64_t g_v116_last_mode = -1;
+int64_t g_last_mode = -1;
 
-int32_t g_v116_interp_prev_x = 0;
+int32_t g_interp_prev_x = 0;
 
-int32_t g_v116_interp_prev_y = 0;
+int32_t g_interp_prev_y = 0;
 
-int g_v116_interp_have = 0;
+int g_interp_have = 0;
 
-uint64_t g_v116_interp_moves = 0;
+uint64_t g_interp_moves = 0;
 
-uint64_t g_v116_interp_checks = 0;
+uint64_t g_interp_checks = 0;
 
-uint64_t g_v116_interp_tick = 0;
+uint64_t g_interp_tick = 0;
 
-int g_v116_hist_logs = 0;
+int g_hist_logs = 0;
 
-int tnx_v116_interp(int32_t *x, int32_t *y) {
-    uintptr_t client = tnx_v115_client();
+int tnx_interp(int32_t *x, int32_t *y) {
+    uintptr_t client = tnx_client();
     int32_t cx = 0;
     int32_t cy = 0;
 
     if (x) *x = 0;
     if (y) *y = 0;
     if (!client) return 0;
-    if (!tnx_read_i32(client + TNX_V115_CLIENT_POS_X_OFF, &cx)) return 0;
-    if (!tnx_read_i32(client + TNX_V115_CLIENT_POS_Y_OFF, &cy)) return 0;
+    if (!tnx_read_i32(client + TNX_CLIENT_POS_X_OFF, &cx)) return 0;
+    if (!tnx_read_i32(client + TNX_CLIENT_POS_Y_OFF, &cy)) return 0;
 
     if (x) *x = cx;
     if (y) *y = cy;
@@ -851,17 +849,17 @@ int tnx_v116_interp(int32_t *x, int32_t *y) {
     return 1;
 }
 
-void tnx_v116_frame(void) {
-    int mode = tnx_v115_mode();
+void tnx_frame(void) {
+    int mode = tnx_mode();
 
-    if (mode >= 0 && mode < TNX_V116_HIST_MODES) g_v116_mode_hist[mode]++;
+    if (mode >= 0 && mode < TNX_HIST_MODES) g_mode_hist[mode]++;
 
-    if (tnx_v115_inner() == 1 && mode == TNX_V115_MODE_TARGET) g_v117_gate2_seen++;
-    if (tnx_v117_src(TNX_V117_GATE3_PTR_OFF, NULL, NULL, NULL)) g_v117_gate3_seen++;
+    if (tnx_inner() == 1 && mode == TNX_MODE_TARGET) g_gate2_seen++;
+    if (tnx_src(TNX_GATE3_PTR_OFF, NULL, NULL, NULL)) g_gate3_seen++;
 
-    if (mode != g_v116_last_mode) {
-        if (g_v116_hist_logs < TNX_V116_HIST_LOGS) {
-            g_v116_hist_logs++;
+    if (mode != g_last_mode) {
+        if (g_hist_logs < TNX_HIST_LOGS) {
+            g_hist_logs++;
 
             {
                 int32_t e0 = -1;
@@ -870,36 +868,36 @@ void tnx_v116_frame(void) {
                     tnx_read_i32((uintptr_t)g_scene_object + 0xe0, &e0);
                 }
 
-                tnx_logf("v117 mode change tick=%llu frames=%llu mode: %lld -> %d e0=%d from=unavail - "
+                tnx_logf("mode change tick=%llu frames=%llu mode: %lld -> %d e0=%d from=unavail - "
                          "this line fires the moment setMode ran, so a momentary 7 in a transition frame "
                          "is caught instead of being averaged away by mode_max; the caller cannot be "
                          "named because setMode %#llx and its two sites %#llx and %#llx have no data slot "
                          "in __DATA_CONST or __DATA, so only the +0xe0 side effect is left as a "
                          "discriminator and e0=0 right at a change points at the %#llx site",
-                         (unsigned long long)g_v103_tick, (unsigned long long)g_v48_ticks,
-                         (long long)g_v116_last_mode, mode, e0, (unsigned long long)0xac3a70ULL,
+                         (unsigned long long)g_tick_2, (unsigned long long)g_ticks_3,
+                         (long long)g_last_mode, mode, e0, (unsigned long long)0xac3a70ULL,
                          (unsigned long long)0x760cdcULL, (unsigned long long)0x764350ULL,
                          (unsigned long long)0x764350ULL);
             }
         }
 
-        g_v116_last_mode = mode;
+        g_last_mode = mode;
     }
 }
 
-void tnx_v116_interp_line(void) {
+void tnx_interp_line(void) {
     int32_t x = 0;
     int32_t y = 0;
     int moved = 0;
 
-    if (!tnx_v116_interp(&x, &y)) return;
-    if (g_v103_tick - g_v116_interp_tick < TNX_V116_INTERP_TICKS) return;
+    if (!tnx_interp(&x, &y)) return;
+    if (g_tick_2 - g_interp_tick < TNX_INTERP_TICKS) return;
 
-    g_v116_interp_tick = g_v103_tick;
-    g_v116_interp_checks++;
+    g_interp_tick = g_tick_2;
+    g_interp_checks++;
 
-    if (g_v116_interp_have) moved = (x != g_v116_interp_prev_x || y != g_v116_interp_prev_y) ? 1 : 0;
-    if (moved) g_v116_interp_moves++;
+    if (g_interp_have) moved = (x != g_interp_prev_x || y != g_interp_prev_y) ? 1 : 0;
+    if (moved) g_interp_moves++;
 
     {
         int32_t s30x = 0;
@@ -909,28 +907,28 @@ void tnx_v116_interp_line(void) {
         int32_t s38y = 0;
         int f38 = -1;
 
-        tnx_v117_src(TNX_V115_GATE_PTR_OFF, &s30x, &s30y, &f30);
-        tnx_v117_src(TNX_V117_GATE3_PTR_OFF, &s38x, &s38y, &f38);
+        tnx_src(TNX_GATE_PTR_OFF, &s30x, &s30y, &f30);
+        tnx_src(TNX_GATE3_PTR_OFF, &s38x, &s38y, &f38);
 
-        uintptr_t p30 = tnx_v118_mode_ptr(TNX_V115_GATE_PTR_OFF);
-        uintptr_t p38 = tnx_v118_mode_ptr(TNX_V117_GATE3_PTR_OFF);
+        uintptr_t p30 = tnx_mode_ptr(TNX_GATE_PTR_OFF);
+        uintptr_t p38 = tnx_mode_ptr(TNX_GATE3_PTR_OFF);
         int32_t dx = s30x - s38x;
         int32_t dy = s30y - s38y;
         int s30moved = 0;
         int s38moved = 0;
 
-        if (g_v118_src30_have) s30moved = (s30x != g_v118_src30_prev_x || s30y != g_v118_src30_prev_y) ? 1 : 0;
-        if (g_v118_src38_have) s38moved = (s38x != g_v118_src38_prev_x || s38y != g_v118_src38_prev_y) ? 1 : 0;
-        if (s30moved) g_v118_src30_moves++;
-        if (s38moved) g_v118_src38_moves++;
+        if (g_src30_have) s30moved = (s30x != g_src30_prev_x || s30y != g_src30_prev_y) ? 1 : 0;
+        if (g_src38_have) s38moved = (s38x != g_src38_prev_x || s38y != g_src38_prev_y) ? 1 : 0;
+        if (s30moved) g_src30_moves++;
+        if (s38moved) g_src38_moves++;
 
         if (dx < 0) dx = -dx;
         if (dy < 0) dy = -dy;
 
-        g_v118_w_eq_x = (dx < TNX_V119_DENOM_MIN) ? -999 : tnx_v118_weq(s30x, s38x, x, (s30x - s38x));
-        g_v118_w_eq_y = (dy < TNX_V119_DENOM_MIN) ? -999 : tnx_v118_weq(s30y, s38y, y, (s30y - s38y));
+        g_w_eq_x = (dx < TNX_DENOM_MIN) ? -999 : tnx_weq(s30x, s38x, x, (s30x - s38x));
+        g_w_eq_y = (dy < TNX_DENOM_MIN) ? -999 : tnx_weq(s30y, s38y, y, (s30y - s38y));
 
-        tnx_logf("v119 src30=(%d,%d) f30=%d src38=(%d,%d) f38=%d srcEq=%d denomX=%d denomY=%d dCX=%d dCY=%d d38X=%d "
+        tnx_logf("src30=(%d,%d) f30=%d src38=(%d,%d) f38=%d srcEq=%d denomX=%d denomY=%d dCX=%d dCY=%d d38X=%d "
                  "d38Y=%d wEqX=%d wEqY=%d "
                  "s30moved=%d s38moved=%d src30Moves=%llu src38Moves=%llu client=(%d,%d) gate2Seen=%d "
                  "gate3Seen=%d - w28 itself is a register inside the mode update and no hook can reach it "
@@ -940,77 +938,75 @@ void tnx_v116_interp_line(void) {
                  "a real 500 cannot be mistaken for rounding noise; srcEq=1 makes the lerp meaningless "
                  "because both ends are one pointer",
                  s30x, s30y, f30, s38x, s38y, f38, (p30 == p38) ? 1 : 0, dx, dy, x - s30x, y - s30y,
-                 x - s38x, y - s38y, g_v118_w_eq_x, g_v118_w_eq_y, s30moved, s38moved,
-                 (unsigned long long)g_v118_src30_moves, (unsigned long long)g_v118_src38_moves, x, y,
-                 g_v117_gate2_seen, g_v117_gate3_seen, (unsigned long long)0xa26890ULL,
-                 TNX_V119_DENOM_MIN);
+                 x - s38x, y - s38y, g_w_eq_x, g_w_eq_y, s30moved, s38moved,
+                 (unsigned long long)g_src30_moves, (unsigned long long)g_src38_moves, x, y,
+                 g_gate2_seen, g_gate3_seen, (unsigned long long)0xa26890ULL,
+                 TNX_DENOM_MIN);
 
-        g_v118_src30_prev_x = s30x;
-        g_v118_src30_prev_y = s30y;
-        g_v118_src38_prev_x = s38x;
-        g_v118_src38_prev_y = s38y;
-        g_v118_src30_have = 1;
-        g_v118_src38_have = 1;
+        g_src30_prev_x = s30x;
+        g_src30_prev_y = s30y;
+        g_src38_prev_x = s38x;
+        g_src38_prev_y = s38y;
+        g_src30_have = 1;
+        g_src38_have = 1;
     }
 
-    tnx_logf("v116 ownInterp prev=(%d,%d) now=(%d,%d) delta=%d moves=%llu checks=%llu mode=%d gate=%d - "
+    tnx_logf("ownInterp prev=(%d,%d) now=(%d,%d) delta=%d moves=%llu checks=%llu mode=%d gate=%d - "
              "the pair at client+%#llx/+%#llx is written every frame by %#llx inside the mode gate, so it "
              "is the live own position: delta=1 with no test at all already means the engine moves own and "
              "the walk pair at +%#llx/+%#llx was never the position",
-             g_v116_interp_prev_x, g_v116_interp_prev_y, x, y, moved,
-             (unsigned long long)g_v116_interp_moves, (unsigned long long)g_v116_interp_checks,
-             tnx_v115_mode(), tnx_v115_gate(), (unsigned long long)TNX_V115_CLIENT_POS_X_OFF,
-             (unsigned long long)TNX_V115_CLIENT_POS_Y_OFF, (unsigned long long)0xa26890ULL,
+             g_interp_prev_x, g_interp_prev_y, x, y, moved,
+             (unsigned long long)g_interp_moves, (unsigned long long)g_interp_checks,
+             tnx_mode(), tnx_gate(), (unsigned long long)TNX_CLIENT_POS_X_OFF,
+             (unsigned long long)TNX_CLIENT_POS_Y_OFF, (unsigned long long)0xa26890ULL,
              (unsigned long long)TNX_OBJ_X_OFF, (unsigned long long)TNX_OBJ_Y_OFF);
 
-    g_v116_interp_prev_x = x;
-    g_v116_interp_prev_y = y;
-    g_v116_interp_have = 1;
+    g_interp_prev_x = x;
+    g_interp_prev_y = y;
+    g_interp_have = 1;
 }
 
-uint64_t g_v190_engage_start = 0;
+uint64_t g_engage_start = 0;
 
-uint64_t g_v190_engage_last = 0;
+uint64_t g_engage_last = 0;
 
-uint64_t g_v190_engage_writes = 0;
+uint64_t g_engage_writes = 0;
 
-uint64_t g_v190_move_tick = 0;
+uint64_t g_move_tick = 0;
 
-uint64_t g_v190_applied_match = 0;
+uint64_t g_applied_match = 0;
 
-uint64_t g_v190_applied_miss = 0;
+uint64_t g_applied_miss = 0;
 
-int32_t g_v190_own_x = 0;
+int32_t g_own_x_2 = 0;
 
-int32_t g_v190_own_y = 0;
+int32_t g_own_y_2 = 0;
 
-int32_t g_v190_prev_x = 0;
+int32_t g_prev_x_2 = 0;
 
-int32_t g_v190_prev_y = 0;
+int32_t g_prev_y_2 = 0;
 
-int32_t g_v190_pick_x = 0;
+int32_t g_pick_x = 0;
 
-int32_t g_v190_pick_y = 0;
+int32_t g_pick_y = 0;
 
-int g_v190_engaged = 0;
+int g_engaged = 0;
 
-int g_v190_prev_valid = 0;
+int g_prev_valid_2 = 0;
 
-int g_v190_logs = 0;
+int g_logs_6 = 0;
 
-uint64_t g_v190_lifetime = 0;
+uint64_t g_lifetime = 0;
 
-uint64_t g_v190_applied_writes = 0;
+uint64_t g_applied_idle = 0;
 
-uint64_t g_v190_applied_idle = 0;
+void tnx_engage_report(const char *why) {
+    if (g_logs_6 >= TNX_DRIVE_LOGS_2) return;
+    if (g_engage_writes == 0) return;
 
-void tnx_v190_engage_report(const char *why) {
-    if (g_v190_logs >= TNX_V190_DRIVE_LOGS) return;
-    if (g_v190_engage_writes == 0) return;
+    g_logs_6++;
 
-    g_v190_logs++;
-
-    tnx_logf("v191 %s first=%llu last=%llu frames=%llu writes=%llu movedAfter=%llu maxFrame=%llu "
+    tnx_logf("%s first=%llu last=%llu frames=%llu writes=%llu movedAfter=%llu maxFrame=%llu "
              "traveled=%llu own=(%d,%d) pick=(%d,%d) - movedAfter is the delay: the frames from the "
              "first write of this run to the first frame own's position moved by at least %d units, "
              "which is a walk of 180 units a second and no longer the twenty a frame that only a "
@@ -1019,68 +1015,68 @@ void tnx_v190_engage_report(const char *why) {
              "writes at all; human=%llu counts the frames the player's own finger was on the stick, so a "
              "run with human at its maximum and traveled at a walk speed is the dodge working while "
              "the stick is held, and the prediction went out %llu times with %llu refusals", why,
-             (unsigned long long)g_v190_engage_start,
-             (unsigned long long)g_v190_engage_last,
-             (unsigned long long)(g_v190_engage_last - g_v190_engage_start),
-             (unsigned long long)g_v190_engage_writes,
-             (unsigned long long)(g_v190_move_tick ? g_v190_move_tick - g_v190_engage_start : 0),
-             (unsigned long long)g_v191_max_frame, (unsigned long long)g_v191_traveled,
-             g_v190_own_x, g_v190_own_y, g_v190_pick_x, g_v190_pick_y, TNX_V191_MOVE_MIN,
-             (unsigned long long)g_v192_human_live, (unsigned long long)g_v192_pred_calls,
-             (unsigned long long)g_v192_pred_fails);
+             (unsigned long long)g_engage_start,
+             (unsigned long long)g_engage_last,
+             (unsigned long long)(g_engage_last - g_engage_start),
+             (unsigned long long)g_engage_writes,
+             (unsigned long long)(g_move_tick ? g_move_tick - g_engage_start : 0),
+             (unsigned long long)g_max_frame, (unsigned long long)g_traveled,
+             g_own_x_2, g_own_y_2, g_pick_x, g_pick_y, TNX_MOVE_MIN,
+             (unsigned long long)g_human_live, (unsigned long long)g_pred_calls,
+             (unsigned long long)g_pred_fails);
 }
 
-void tnx_v190_drive_note(int32_t ownX, int32_t ownY, int32_t tx, int32_t ty, int32_t appX,
+void tnx_drive_note(int32_t ownX, int32_t ownY, int32_t tx, int32_t ty, int32_t appX,
                                 int32_t appY, int32_t pairX, int32_t pairY) {
     int64_t dx = 0;
     int64_t dy = 0;
 
-    if (g_v190_engaged && (g_v48_ticks - g_v190_engage_last) > 30) {
-        tnx_v190_engage_report("engage end");
+    if (g_engaged && (g_ticks_3 - g_engage_last) > 30) {
+        tnx_engage_report("engage end");
 
-        g_v190_engaged = 0;
+        g_engaged = 0;
     }
 
-    if (!g_v190_engaged) {
-        g_v190_engaged = 1;
-        g_v190_engage_start = g_v48_ticks;
-        g_v190_engage_writes = 0;
-        g_v190_move_tick = 0;
-        g_v190_applied_match = 0;
-        g_v190_applied_miss = 0;
-        g_v190_prev_valid = 0;
-        g_v190_lifetime = 0;
-        g_v191_max_frame = 0;
-        g_v191_traveled = 0;
-        g_v191_pair_dot_sum = 0.0f;
-        g_v191_pair_dot_n = 0;
-        g_v192_human_live = 0;
+    if (!g_engaged) {
+        g_engaged = 1;
+        g_engage_start = g_ticks_3;
+        g_engage_writes = 0;
+        g_move_tick = 0;
+        g_applied_match = 0;
+        g_applied_miss = 0;
+        g_prev_valid_2 = 0;
+        g_lifetime = 0;
+        g_max_frame = 0;
+        g_traveled = 0;
+        g_pair_dot_sum = 0.0f;
+        g_pair_dot_n = 0;
+        g_human_live = 0;
     }
 
-    g_v190_engage_last = g_v48_ticks;
-    g_v190_engage_writes++;
-    g_v190_lifetime++;
-    g_v190_own_x = ownX;
-    g_v190_own_y = ownY;
-    g_v190_pick_x = tx;
-    g_v190_pick_y = ty;
+    g_engage_last = g_ticks_3;
+    g_engage_writes++;
+    g_lifetime++;
+    g_own_x_2 = ownX;
+    g_own_y_2 = ownY;
+    g_pick_x = tx;
+    g_pick_y = ty;
 
-    if (g_v190_prev_valid) {
+    if (g_prev_valid_2) {
         int64_t d2 = 0;
 
-        dx = (int64_t)ownX - (int64_t)g_v190_prev_x;
-        dy = (int64_t)ownY - (int64_t)g_v190_prev_y;
+        dx = (int64_t)ownX - (int64_t)g_prev_x_2;
+        dy = (int64_t)ownY - (int64_t)g_prev_y_2;
         d2 = dx * dx + dy * dy;
 
-        if (!g_v190_move_tick && d2 >= (int64_t)(TNX_V191_MOVE_MIN * TNX_V191_MOVE_MIN)) {
-            g_v190_move_tick = g_v48_ticks;
+        if (!g_move_tick && d2 >= (int64_t)(TNX_MOVE_MIN * TNX_MOVE_MIN)) {
+            g_move_tick = g_ticks_3;
         }
 
-        if ((uint64_t)sqrtf((float)d2) > g_v191_max_frame) {
-            g_v191_max_frame = (uint64_t)sqrtf((float)d2);
+        if ((uint64_t)sqrtf((float)d2) > g_max_frame) {
+            g_max_frame = (uint64_t)sqrtf((float)d2);
         }
 
-        g_v191_traveled += (uint64_t)sqrtf((float)d2);
+        g_traveled += (uint64_t)sqrtf((float)d2);
 
         if (pairX || pairY) {
             float dot = 0.0f;
@@ -1091,38 +1087,38 @@ void tnx_v190_drive_note(int32_t ownX, int32_t ownY, int32_t tx, int32_t ty, int
                 dot = (float)(pairX * dx + pairY * dy) / (plen * mlen);
             }
 
-            g_v191_pair_dot_sum += dot;
-            g_v191_pair_dot_n++;
+            g_pair_dot_sum += dot;
+            g_pair_dot_n++;
         }
     }
 
-    g_v190_prev_x = ownX;
-    g_v190_prev_y = ownY;
-    g_v190_prev_valid = 1;
+    g_prev_x_2 = ownX;
+    g_prev_y_2 = ownY;
+    g_prev_valid_2 = 1;
 
-    if (appX == tx && appY == ty) g_v190_applied_match++;
-    else g_v190_applied_miss++;
+    if (appX == tx && appY == ty) g_applied_match++;
+    else g_applied_miss++;
 
-    if ((pairX || pairY) && !(pairX == g_v174_stick_x && pairY == g_v174_stick_y)) {
-        g_v192_human_live++;
+    if ((pairX || pairY) && !(pairX == g_stick_x && pairY == g_stick_y)) {
+        g_human_live++;
     }
 
-    if (appX == TNX_V128_APPLIED_IDLE && appY == TNX_V128_APPLIED_IDLE) g_v190_applied_idle++;
+    if (appX == TNX_APPLIED_IDLE && appY == TNX_APPLIED_IDLE) g_applied_idle++;
 
-    if ((g_v190_lifetime % 30) == 0) {
-        tnx_logf("v191 engage running frames=%llu writes=%llu movedAfter=%llu traveled=%llu pairDot=%+.2f "
+    if ((g_lifetime % 30) == 0) {
+        tnx_logf("engage running frames=%llu writes=%llu movedAfter=%llu traveled=%llu pairDot=%+.2f "
                  "sent=(%d,%d) pair=(%d,%d) own=(%d,%d) applied=(%d,%d) appliedIdle=%llu appliedWrite=%d - "
                  "pairDot is the angle between the frame's own displacement and the stick this build "
                  "wrote, so +1.00 is the body walking the way it was told and a value near zero on a "
                  "frame that moved is the slide; applied is printed beside it because the 20:46 run "
                  "walked at 1157 units a second on frames where applied was still the engine's no "
                  "touch sentinel, which is what retired that field as a lead",
-                 (unsigned long long)(g_v48_ticks - g_v190_engage_start),
-                 (unsigned long long)g_v190_engage_writes,
-                 (unsigned long long)(g_v190_move_tick ? g_v190_move_tick - g_v190_engage_start : 0),
-                 (unsigned long long)g_v191_traveled,
-                 (double)(g_v191_pair_dot_n ? g_v191_pair_dot_sum / (float)g_v191_pair_dot_n : 0.0f),
+                 (unsigned long long)(g_ticks_3 - g_engage_start),
+                 (unsigned long long)g_engage_writes,
+                 (unsigned long long)(g_move_tick ? g_move_tick - g_engage_start : 0),
+                 (unsigned long long)g_traveled,
+                 (double)(g_pair_dot_n ? g_pair_dot_sum / (float)g_pair_dot_n : 0.0f),
                  tx, ty, pairX, pairY, ownX, ownY, appX, appY,
-                 (unsigned long long)g_v190_applied_idle, TNX_V190_APPLIED);
+                 (unsigned long long)g_applied_idle, TNX_APPLIED);
     }
 }

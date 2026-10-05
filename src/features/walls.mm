@@ -144,7 +144,7 @@ void tnx_log_grid(int force) {
 
     mask[n] = 0;
 
-    tnx_logf("grid w=%d h=%d cells=%d proj=%d move=%d img=%d own=(%d,%d) ownProj=%d ownMove=%d "
+    TNX_LOGX("grid w=%d h=%d cells=%d proj=%d move=%d img=%d own=(%d,%d) ownProj=%d ownMove=%d "
              "mask=%s passes=%d armed=%d live=%d fail=%d tested=%d clipped=%d frac=%d",
              g_w, g_h, g_cells, g_solid, g_move, g_img,
              g_own_tx, g_own_ty, g_own_proj, g_own_move, mask,

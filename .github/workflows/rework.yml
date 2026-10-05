@@ -1,0 +1,173 @@
+name: Titanox rework
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "write the changes (off = dry run, nothing is modified)"
+        type: boolean
+        default: false
+      publish:
+        description: "commit and push when the build is green"
+        type: boolean
+        default: false
+      version:
+        description: "asset version for the csv_logic tables"
+        type: string
+        default: "69.230"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rework-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  rework:
+    runs-on: macos-14
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "https://github.com/${REPO}.git"
+          if ! git fetch -q --depth 1 \
+            "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "${REF}"; then
+            git fetch -q --depth 1 origin "${REF}"
+          fi
+          git checkout -q --force FETCH_HEAD
+          git rev-parse --short HEAD
+          test -f Makefile
+
+      - name: Restore Theos
+        uses: actions/cache@v4
+        with:
+          path: theos
+          key: theos-macos14-v3
+
+      - name: Toolchain
+        run: |
+          set -euo pipefail
+          export HOMEBREW_NO_AUTO_UPDATE=1
+          export HOMEBREW_NO_INSTALL_CLEANUP=1
+          export HOMEBREW_NO_ANALYTICS=1
+          export HOMEBREW_NO_ENV_HINTS=1
+
+          mkdir -p deps out
+
+          brew_tools() {
+            for tool in ldid make; do
+              brew list "$tool" >/dev/null 2>&1 || brew install "$tool"
+            done
+          }
+
+          theos_src() {
+            if [ ! -f theos/makefiles/common.mk ]; then
+              rm -rf theos.partial
+              git clone --recursive --depth 1 --shallow-submodules \
+                https://github.com/theos/theos.git theos.partial
+              rm -rf theos
+              mv theos.partial theos
+            fi
+            git -C theos submodule update --init --recursive
+            test -f theos/makefiles/common.mk
+          }
+
+          deps_src() {
+            git clone --depth 1 \
+              https://github.com/flong69zxc-max/Titanox.git deps/Titanox
+          }
+
+          brew_tools & brew_pid=$!
+          theos_src  & theos_pid=$!
+          deps_src   & deps_pid=$!
+
+          failed=0
+          wait "$brew_pid"  || failed=1
+          wait "$theos_pid" || failed=1
+          wait "$deps_pid"  || failed=1
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::toolchain bootstrap failed"
+            exit 1
+          fi
+
+          echo "THEOS=$PWD/theos" >> "$GITHUB_ENV"
+          echo "$PWD/theos/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
+
+      - name: Rework
+        env:
+          APPLY: ${{ inputs.apply }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          args="--version ${VERSION}"
+          if [ "${APPLY}" = "true" ]; then args="${args} --apply"; fi
+          python3 tools/rework.py ${args}
+          python3 tools/verify_repo.py
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          gmake -j"$(( $(sysctl -n hw.ncpu) + 1 ))" \
+            ARCHS=arm64 DEBUG=0 FINALPACKAGE=1
+
+      - name: Collect and verify
+        run: |
+          set -euo pipefail
+          dylib="$(find .theos -type f -name Titanox.dylib \
+            ! -path '*.dSYM/*' | sort | head -n 1 || true)"
+          test -n "$dylib"
+          cp "$dylib" out/Titanox.dylib
+          xcrun lipo -info out/Titanox.dylib
+
+          stamp="$(grep -ho 'drop=[0-9][0-9]*' src/core/log.mm | head -n 1 || true)"
+          hits=""
+          if [ -n "$stamp" ]; then
+            hits="$(strings -a out/Titanox.dylib | grep -c -F -- "$stamp" || true)"
+          fi
+
+          if [ -z "$stamp" ]; then
+            echo "::warning::src/core/log.mm carries no drop= stamp"
+          elif [ "${hits:-0}" -gt 0 ]; then
+            echo "verified $stamp from the source tree is inside the built dylib"
+          else
+            echo "::error::the built dylib does not contain $stamp, refusing to publish"
+            exit 1
+          fi
+
+      - name: Publish
+        if: ${{ inputs.apply && inputs.publish }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          git config user.name "titanox rework"
+          git config user.email "rework@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "nothing to commit"
+            exit 0
+          fi
+          git commit -q -m "rework: per brawler tables, dead code removal, wiring"
+          git push -q "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" \
+            HEAD:main
+
+      - name: Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rework-report
+          path: |
+            tools/rework_report.md
+            tools/rework_report.json
+          if-no-files-found: warn
+          compression-level: 1

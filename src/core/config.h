@@ -212,6 +212,14 @@
 #define TNX_PLAYER_SPEED 7200.0f
 #define TNX_JOY_SCALE 100.0f
 #define TNX_SEG_MAX 32
+#define TNX_JOY_DRIVE 1
+
+#define TNX_JOY_RADIUS 275.0f
+
+#define TNX_JOY_MODE_ON 2
+
+#define TNX_JOY_MODE_OFF 0
+
 #define TNX_BS_AX 0x9b8
 #define TNX_BS_AY 0x9bc
 #define TNX_BS_BX 0x9c0

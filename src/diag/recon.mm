@@ -104,9 +104,12 @@ void tnx_recon_calls_3(const char *tag, uintptr_t fnRva, int bytes) {
 
 void tnx_recon_seeds_3(void) {
     static const uintptr_t seeds[16] = {
-        0x807668, 0x8072c8, 0x8c6150, 0x8c7ef0, 0x8c8050, 0x8cc57c, 0x8cc6dc,
-        0x8ce3b0, 0x8cf4c4, 0x8c53fc, 0x8c7fbc, 0x8cc514, 0x8ce3f8, 0x8ce27c,
-        0x8c5130, 0x9a9dac
+        RVA_BATTLESCREEN__UPDATEAUTOSHOOT, TNX_RECON_SEED_AUTOSHOOT_PRED_RVA,
+        TNX_RECON_SEED_V2_RVA, TNX_RECON_SEED_SCREEN_A_RVA, TNX_RECON_SEED_SCREEN_B_RVA,
+        TNX_RECON_SEED_SCREEN_C_RVA, TNX_RECON_SEED_SCREEN_D_RVA, TNX_RECON_SEED_SCREEN_E_RVA,
+        TNX_RECON_SEED_SCREEN_F_RVA, TNX_RECON_SEED_CTOR_RVA, TNX_RECON_SEED_V6_RVA,
+        TNX_RECON_SEED_AUX_A_RVA, TNX_RECON_SEED_AUX_B_RVA, TNX_RECON_SEED_AUX_C_RVA,
+        TNX_RECON_SEED_AUX_D_RVA, TNX_RECON_SEED_HELPER_RVA
     };
     uintptr_t level[64];
     int levelN = 0;
@@ -115,14 +118,14 @@ void tnx_recon_seeds_3(void) {
 
     for (i = 0; i < 8; i++) {
         level[levelN++] = seeds[i];
-        tnx_recon_calls_3("seed", seeds[i], 0x200);
+        tnx_recon_calls_3("seed", seeds[i], TNX_RECON_SEED_BYTES);
     }
 
     for (k = 0; k < levelN && k < 64; k++) {
         uintptr_t fn = t_base + level[k];
         int off = 0;
 
-        for (off = 0; (off + 4) <= 0x1c0; off += 4) {
+        for (off = 0; (off + 4) <= TNX_RECON_SEED_SCAN; off += 4) {
             int32_t w = 0;
             unsigned int op = 0;
             int32_t imm = 0;
@@ -138,16 +141,16 @@ void tnx_recon_seeds_3(void) {
 
             tgt = level[k] + (uintptr_t)(imm * 4);
 
-            if (tgt == 0 || tgt > 0x2000000) continue;
+            if (tgt == 0 || tgt > TNX_RECON_CALL_RVA_MAX) continue;
             if (tnx_recon_seen_3(tgt)) continue;
-            if (levelN >= 12) break;
+            if (levelN >= TNX_RECON_LVL2_MAX) break;
 
             level[levelN++] = tgt;
         }
     }
 
     for (i = 8; i < levelN; i++) {
-        tnx_recon_calls_3("lvl2", level[i], 0x140);
+        tnx_recon_calls_3("lvl2", level[i], TNX_RECON_LVL2_BYTES);
     }
 }
 
@@ -163,19 +166,21 @@ void tnx_recon_live_3(void) {
              (unsigned long long)t_manager, 0ULL, t_manager_count,
              (unsigned long long)t_own_elem, (unsigned long long)t_scene_object);
 
-    tnx_recon_words_3("manager", t_manager, 0x0, 0x30);
-    tnx_recon_words_3("scene", t_scene_object, 0x0, 0x60);
-    tnx_recon_words_3("ctrl", tnx_controller(), 0x0, 0x60);
-    tnx_recon_words_3("joy", tnx_controller(), 0x9a0, 0xa00);
-    tnx_recon_words_3("joy2", tnx_controller(), 0xee0, 0xf00);
+    tnx_recon_words_3("manager", t_manager, TNX_RECON_OFF_MANAGER_FROM, TNX_RECON_OFF_MANAGER_TO);
+    tnx_recon_words_3("scene", t_scene_object, TNX_RECON_OFF_SCENE_FROM, TNX_RECON_OFF_SCENE_TO);
+    tnx_recon_words_3("ctrl", tnx_controller(), TNX_RECON_OFF_CTRL_FROM, TNX_RECON_OFF_CTRL_TO);
+    tnx_recon_words_3("client", tnx_client(), TNX_RECON_OFF_CLIENT_FROM, TNX_RECON_OFF_CLIENT_TO);
+    tnx_recon_words_3("client2", tnx_client(), TNX_RECON_OFF_CLIENT2_FROM, TNX_RECON_OFF_CLIENT2_TO);
+    tnx_recon_words_3("joy", tnx_controller(), TNX_RECON_OFF_JOY_FROM, TNX_RECON_OFF_JOY_TO);
+    tnx_recon_words_3("joy2", tnx_controller(), TNX_RECON_OFF_JOY2_FROM, TNX_RECON_OFF_JOY2_TO);
 
     if (t_own_elem) {
         void *data = NULL;
 
-        tnx_recon_words_3("ownElem", t_own_elem, 0x0, 0x60);
+        tnx_recon_words_3("ownElem", t_own_elem, TNX_RECON_OFF_OWN_FROM, TNX_RECON_OFF_OWN_TO);
 
         if (tnx_read_ptr(t_own_elem + (uintptr_t)TNX_ELEM_DEF_OFF, &data) && data) {
-            tnx_recon_words_3("ownData", (uintptr_t)data, 0x0, 0x240);
+            tnx_recon_words_3("ownData", (uintptr_t)data, TNX_RECON_OFF_CHARDATA_FROM, TNX_RECON_OFF_CHARDATA_TO);
         }
     }
 
@@ -201,7 +206,7 @@ void tnx_recon_live_3(void) {
         tnx_logf("recon projteam i=%d elem=%#llx t40=%d gid8=%d pteam=%d", i,
                  (unsigned long long)t_projs[i].elem, f40, f8, t_projs[i].team);
 
-        tnx_recon_words_3("projHead", t_projs[i].elem, 0x0, 0x60);
+        tnx_recon_words_3("projHead", t_projs[i].elem, TNX_RECON_OFF_HEAD_FROM, TNX_RECON_OFF_HEAD_TO);
     }
 
     memset(objects, 0, sizeof(objects));
@@ -225,12 +230,12 @@ void tnx_recon_live_3(void) {
 
         if (vtRva && !tnx_recon_seen_3(vtRva) && dumpedVt < 6) {
             dumpedVt++;
-            tnx_recon_vtable_3("live", vtRva, 12);
+            tnx_recon_vtable_3("live", vtRva, TNX_RECON_VT_SLOTS);
         }
 
         if (dumpedWords < 1) {
             dumpedWords++;
-            tnx_recon_words_3("live", objects[i].object, 0x0, 0x120);
+            tnx_recon_words_3("live", objects[i].object, TNX_RECON_OFF_ELEM_FROM, TNX_RECON_OFF_ELEM_TO);
         }
     }
 
@@ -243,10 +248,10 @@ void tnx_recon_live_3(void) {
                  i, t_projs[i].gid, t_projs[i].x, t_projs[i].y, t_projs[i].px, t_projs[i].py,
                  t_projs[i].team, t_projs[i].hasPrev, (unsigned long long)t_projs[i].ptick);
 
-        tnx_recon_words_3("proj", t_projs[i].elem, 0x0, 0x120);
+        tnx_recon_words_3("proj", t_projs[i].elem, TNX_RECON_OFF_ELEM_FROM, TNX_RECON_OFF_ELEM_TO);
 
         if (tnx_read_ptr(t_projs[i].elem + (uintptr_t)TNX_ELEM_DEF_OFF, &data) && data) {
-            tnx_recon_words_3("projData", (uintptr_t)data, 0x0, 0x240);
+            tnx_recon_words_3("projData", (uintptr_t)data, TNX_RECON_OFF_CHARDATA_FROM, TNX_RECON_OFF_CHARDATA_TO);
         }
     }
 }
@@ -261,10 +266,10 @@ void tnx_recon_3(void) {
     tnx_logf("recon begin run=%d tick=%llu base=%#llx slide=%#llx", t_recon_runs,
              (unsigned long long)t_ticks_3, (unsigned long long)t_base, 0ULL);
 
-    tnx_recon_vtable_3("mode", 0xfe9d00, 12);
-    tnx_recon_vtable_3("player", 0xf9e248, 12);
-    tnx_recon_vtable_3("player2", 0xff54a0, 12);
-    tnx_recon_vtable_3("proj", 0xff57b0, 12);
+    tnx_recon_vtable_3("mode", TNX_SCENE_CLASS_RVA, TNX_RECON_VT_SLOTS);
+    tnx_recon_vtable_3("player", TNX_CLASS_PLAYER_RVA, TNX_RECON_VT_SLOTS);
+    tnx_recon_vtable_3("player2", TNX_CLASS_PLAYER2_RVA, TNX_RECON_VT_SLOTS);
+    tnx_recon_vtable_3("proj", TNX_CLASS_PROJ_RVA, TNX_RECON_VT_SLOTS);
 
     tnx_recon_live_3();
     tnx_recon_seeds_3();

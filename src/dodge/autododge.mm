@@ -2042,6 +2042,12 @@ static int tnx_js3_decide(float px, float py, float *outX, float *outY, int *urg
     tnx_js3_collect(t_js3_ox, t_js3_oy);
 
     if ((t_ticks_3 % 5) == 0) {
+        tnx_logf("joydrive ok=%d on=%d wrote=(%.1f,%.1f) centre=(%.1f,%.1f) client=%#llx",
+                 t_joy_drive_ok, t_joy_drive_on, (double)t_joy_drive_ax, (double)t_joy_drive_ay,
+                 (double)t_joy_drive_cx, (double)t_joy_drive_cy, (unsigned long long)tnx_bs());
+    }
+
+    if ((t_ticks_3 % 5) == 0) {
         tnx_logf("dodgeSet raw=%d mate=%d foe=%d unk=%d rejTeam=%d away=%d wide=%d far=%d kept=%d myTeam=%d",
                  t_js3_mates + t_js3_foes + t_js3_unk, t_js3_mates, t_js3_foes, t_js3_unk,
                  t_js3_rej_team, t_js3_rej_dir, t_js3_rej_cone, t_js3_rej_reach, t_js3_n,
@@ -2197,6 +2203,7 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
         t_commit_until = t_ticks_3;
 
         tnx_enqueue((int32_t)tx, (int32_t)ty);
+        tnx_joy_drive_4(jsX, jsY, 1);
 
         if (t_new_tick >= 0) {
             uint64_t react = t_ticks_3 - (uint64_t)t_new_tick;
@@ -2232,6 +2239,7 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
         t_released = 1;
 
         tnx_enqueue((int32_t)px, (int32_t)py);
+        tnx_joy_drive_4(0.0f, 0.0f, 0);
     }
 
     if (t_logs_4 < 24 && (t_ticks_3 % 60) == 0) {

@@ -149,6 +149,20 @@ int tnx_own_ok(int32_t x, int32_t y);
 int tnx_enemy_blocked(float x, float y, float ownX, float ownY);
 int tnx_mate_blocked(float x, float y);
 int tnx_own_side_spawn(int32_t sx, int32_t sy);
+extern float t_joy_drive_ax;
+
+extern float t_joy_drive_ay;
+
+extern float t_joy_drive_cx;
+
+extern float t_joy_drive_cy;
+
+extern int t_joy_drive_on;
+
+extern int t_joy_drive_ok;
+
+int tnx_joy_drive_4(float dirX, float dirY, int on);
+
 uintptr_t tnx_bs(void);
 int tnx_joy_read(uintptr_t bs, float *ax, float *ay, float *bx, float *by, uint32_t *mode, float *cs, float *sn);
 int tnx_joy_angle(float *outAngle);

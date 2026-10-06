@@ -14,6 +14,20 @@ uintptr_t tnx_bs(void);
 void tnx_drag(int engaged, int haveOwn, int32_t ownX, int32_t ownY, float dirX, float dirY);
 int tnx_drive(void);
 int tnx_joy_angle(float *outAngle);
+extern float t_joy_drive_ax;
+
+extern float t_joy_drive_ay;
+
+extern float t_joy_drive_cx;
+
+extern float t_joy_drive_cy;
+
+extern int t_joy_drive_on;
+
+extern int t_joy_drive_ok;
+
+int tnx_joy_drive_4(float dirX, float dirY, int on);
+
 int tnx_joy_read(uintptr_t bs, float *ax, float *ay, float *bx, float *by, uint32_t *mode, float *cs, float *sn);
 void tnx_precision(int32_t ownX, int32_t ownY, float dirX, float dirY, int escape);
 void tnx_route(int engaged);

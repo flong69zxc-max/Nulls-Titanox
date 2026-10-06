@@ -29,6 +29,58 @@ int tnx_joy_read(uintptr_t bs, float *ax, float *ay, float *bx, float *by,
     return 1;
 }
 
+float t_joy_drive_ax = 0.0f;
+
+float t_joy_drive_ay = 0.0f;
+
+float t_joy_drive_cx = 0.0f;
+
+float t_joy_drive_cy = 0.0f;
+
+int t_joy_drive_on = 0;
+
+int t_joy_drive_ok = 0;
+
+int tnx_joy_drive_4(float dirX, float dirY, int on) {
+    uintptr_t bs = tnx_bs();
+    float ax = 0.0f;
+    float ay = 0.0f;
+    float bx = 0.0f;
+    float by = 0.0f;
+    int ok = 0;
+
+    if (!TNX_JOY_DRIVE) return 0;
+    if (!bs) return 0;
+    if (!tnx_read_f32(bs + TNX_BS_AX, &ax)) return 0;
+    if (!tnx_read_f32(bs + TNX_BS_AY, &ay)) return 0;
+    if (!tnx_read_f32(bs + TNX_BS_BX, &bx)) return 0;
+    if (!tnx_read_f32(bs + TNX_BS_BY, &by)) return 0;
+    if (!(bx > -20000.0f && bx < 20000.0f)) return 0;
+    if (!(by > -20000.0f && by < 20000.0f)) return 0;
+    if (bx == 0.0f && by == 0.0f) return 0;
+
+    if (on) {
+        ax = bx + dirX * TNX_JOY_RADIUS;
+        ay = by + dirY * TNX_JOY_RADIUS;
+    } else {
+        ax = bx;
+        ay = by;
+    }
+
+    ok = tnx_write_f32(bs + TNX_BS_AX, ax);
+    ok = ok && tnx_write_f32(bs + TNX_BS_AY, ay);
+    ok = ok && tnx_write_i32(bs + TNX_BS_MODE, on ? TNX_JOY_MODE_ON : TNX_JOY_MODE_OFF);
+
+    t_joy_drive_ax = ax;
+    t_joy_drive_ay = ay;
+    t_joy_drive_cx = bx;
+    t_joy_drive_cy = by;
+    t_joy_drive_on = on;
+    t_joy_drive_ok = ok ? 1 : 0;
+
+    return t_joy_drive_ok;
+}
+
 int tnx_joy_angle(float *outAngle) {
     float ax = 0.0f;
     float ay = 0.0f;

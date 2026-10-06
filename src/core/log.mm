@@ -33,15 +33,15 @@ FILE *tnx_log_handle(void) {
 }
 
 const char *t_log_drop[64] = {
-    "players", "walk", "hopdump", "teamdump", "membership",
-    "man ", "gid", "coords", "coord", "off",
-    "clip", "ownscan", "chain", "player[", "element",
-    "classdump", "trail", "state", "modeslot", "hooks",
-    "scene", "heap", "fields", "write", "slot",
-    "setprediction", "scan", "route", "modesig", "hop",
-    "battle", "named", "offsets",
+    "render CALLED", "queuePush", "predSet", "drive ",
+    "cage", "route ", "window ", "predict",
+    "stick ", "body ", "input ", "msgProbe",
+    "queueSkip", "enqueueStop", "predSkip", "predMiss",
+    "chain-only", "plan v", "engage running", "setter-before",
+    "setter-after", "ownscan", "clip",
     NULL
 };
+
 
 #ifndef TNX_LOG_WHITELIST
 #define TNX_LOG_WHITELIST 1

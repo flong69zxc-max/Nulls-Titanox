@@ -6,6 +6,8 @@
 #define LOG_MAX_BYTES (2048 * 1024)
 #define TNX_LOG_ROLL 1
 #define TNX_LOG_FILTER 1
+
+#define TNX_LOG_WHITELIST 0
 #define TNX_APPLIED 0
 #define TNX_DRIVE_LOGS_2 24
 #define TNX_MOVE_MIN 3

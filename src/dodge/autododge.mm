@@ -1652,14 +1652,8 @@ static void tnx_js3_collect(float px, float py) {
         if (myTeam < 0) myTeam = tnx_js3_my_team();
 
         if (p->team == 0 || p->team == 1) {
-            if (myTeam >= 0 && p->team == myTeam) {
-                t_js3_mates++;
-                t_js3_rej_team++;
-
-                continue;
-            }
-
-            t_js3_foes++;
+            if (myTeam >= 0 && p->team == myTeam) t_js3_mates++;
+            else t_js3_foes++;
         } else {
             t_js3_unk++;
         }

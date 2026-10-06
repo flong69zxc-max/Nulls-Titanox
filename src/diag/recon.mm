@@ -140,7 +140,7 @@ void tnx_recon_seeds_3(void) {
 
             if (tgt == 0 || tgt > 0x2000000) continue;
             if (tnx_recon_seen_3(tgt)) continue;
-            if (levelN >= 24) break;
+            if (levelN >= 12) break;
 
             level[levelN++] = tgt;
         }
@@ -164,10 +164,10 @@ void tnx_recon_live_3(void) {
              (unsigned long long)t_own_elem, (unsigned long long)t_scene_object);
 
     tnx_recon_words_3("manager", t_manager, 0x0, 0x30);
-    tnx_recon_words_3("scene", t_scene_object, 0x0, 0x90);
-    tnx_recon_words_3("ctrl", tnx_controller(), 0x0, 0x90);
-    tnx_recon_words_3("joy", tnx_controller(), 0x960, 0xa20);
-    tnx_recon_words_3("joy2", tnx_controller(), 0xed0, 0xf30);
+    tnx_recon_words_3("scene", t_scene_object, 0x0, 0x60);
+    tnx_recon_words_3("ctrl", tnx_controller(), 0x0, 0x60);
+    tnx_recon_words_3("joy", tnx_controller(), 0x9a0, 0xa00);
+    tnx_recon_words_3("joy2", tnx_controller(), 0xee0, 0xf00);
 
     if (t_own_elem) {
         void *data = NULL;
@@ -189,7 +189,7 @@ void tnx_recon_live_3(void) {
                  t_own_x, t_own_y, (unsigned long long)t_own_obj);
     }
 
-    for (i = 0; i < TNX_PROJ_MAX && i < 6; i++) {
+    for (i = 0; i < TNX_PROJ_MAX && i < 3; i++) {
         int32_t f40 = 0;
         int32_t f8 = 0;
 
@@ -225,16 +225,16 @@ void tnx_recon_live_3(void) {
 
         if (vtRva && !tnx_recon_seen_3(vtRva) && dumpedVt < 6) {
             dumpedVt++;
-            tnx_recon_vtable_3("live", vtRva, 24);
+            tnx_recon_vtable_3("live", vtRva, 12);
         }
 
-        if (dumpedWords < 2) {
+        if (dumpedWords < 1) {
             dumpedWords++;
             tnx_recon_words_3("live", objects[i].object, 0x0, 0x120);
         }
     }
 
-    for (i = 0; i < TNX_PROJ_MAX && i < 2; i++) {
+    for (i = 0; i < TNX_PROJ_MAX && i < 1; i++) {
         void *data = NULL;
 
         if (!t_projs[i].elem) continue;
@@ -252,19 +252,19 @@ void tnx_recon_live_3(void) {
 }
 
 void tnx_recon_3(void) {
-    if (t_recon_runs >= 2) return;
+    if (t_recon_runs >= 1) return;
     if (t_ticks_3 < 90) return;
-    if (t_recon_runs == 1 && t_ticks_3 < 600) return;
+
 
     t_recon_runs++;
 
     tnx_logf("recon begin run=%d tick=%llu base=%#llx slide=%#llx", t_recon_runs,
              (unsigned long long)t_ticks_3, (unsigned long long)t_base, 0ULL);
 
-    tnx_recon_vtable_3("mode", 0xfe9d00, 24);
-    tnx_recon_vtable_3("player", 0xf9e248, 24);
-    tnx_recon_vtable_3("player2", 0xff54a0, 24);
-    tnx_recon_vtable_3("proj", 0xff57b0, 24);
+    tnx_recon_vtable_3("mode", 0xfe9d00, 12);
+    tnx_recon_vtable_3("player", 0xf9e248, 12);
+    tnx_recon_vtable_3("player2", 0xff54a0, 12);
+    tnx_recon_vtable_3("proj", 0xff57b0, 12);
 
     tnx_recon_live_3();
     tnx_recon_seeds_3();

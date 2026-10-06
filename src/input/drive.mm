@@ -733,9 +733,14 @@ void tnx_route(int engaged) {
         else align = "unrelated";
     }
 
+    static int t_route_engaged_prev = -1;
     t_route_seeded = 1;
     t_last_own_x = ownX;
     t_last_own_y = ownY;
+
+    {
+        if (engaged != t_route_engaged_prev) {
+            t_route_engaged_prev = engaged;
 
     TNX_LOGX("route engaged=%d stick=(%d,%d) back=(%d,%d) applied=(%d,%d) own=(%d,%d) movedLastSecond=%d stickSum=(%lld,%lld) stickDir=(%.2f,%.2f) moveDir=(%.2f,%.2f) dot=%+.2f aligned=%s engagedTicks=%d queue=%d",
              engaged, t_stick_x, t_stick_y, backX, backY, appX, appY, ownX, ownY, moved,
@@ -745,6 +750,8 @@ void tnx_route(int engaged) {
              (double)(mLen > 0.5f ? (float)dx / mLen : 0.0f),
              (double)(mLen > 0.5f ? (float)dy / mLen : 0.0f),
              (double)dot, align, ours, tnx_queue_count(NULL));
+        }
+    }
 }
 
 float t_walk_step = TNX_STEP_3;

@@ -30,9 +30,6 @@ void tnx_run_workload(void) {
     tnx_phase("overlay");
     tnx_overlay_update();
 
-    tnx_phase("alert");
-    tnx_alert_battle_check();
-
     tnx_phase("tick-end");
 }
 

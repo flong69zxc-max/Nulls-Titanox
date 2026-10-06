@@ -1,0 +1,517 @@
+diff --git a/src/core/config.h b/src/core/config.h
+index a4b5395..8f179a8 100644
+--- a/src/core/config.h
++++ b/src/core/config.h
+@@ -3,7 +3,7 @@
+ 
+ #include "core/imports.h"
+ 
+-#define LOG_MAX_BYTES (4 * 1024 * 1024)
++#define LOG_MAX_BYTES (384 * 1024)
+ #define TNX_LOG_ROLL 1
+ #define TNX_LOG_FILTER 1
+ #define TNX_APPLIED 0
+diff --git a/src/core/log.mm b/src/core/log.mm
+index 38892e5..1e45de0 100644
+--- a/src/core/log.mm
++++ b/src/core/log.mm
+@@ -228,6 +228,7 @@ void tnx_slot_note(int index, void *self, uint64_t arg1) {
+ }
+ 
+ void tnx_slot_fired_report(void) {
++    static const char *last[TNX_SLOT_COUNT];
+     uint64_t total = 0;
+     int armedCount = 0;
+ 
+@@ -255,8 +256,14 @@ void tnx_slot_fired_report(void) {
+ 
+         total += t_slot_hits[i];
+ 
++        if (last[i] == state) continue;
++
++        last[i] = state;
++
+         tnx_logf("hook %s %s armed=%d slots=%d slotRva=%#llx this=%p arg1=%p firstCallTick=%llu "
+-                 "hits=%llu tick=%llu",
++                 "hits=%llu tick=%llu - printed on a state change only, the ten tick cadence "
++                 "used to write this line thirty four times over and the dump was two thirds "
++                 "of the whole file",
+                  t_slot_specs[i].shortTag, state, armed, t_slot_slots[i],
+                  (unsigned long long)t_slot_specs[i].slotRva, (void *)t_slot_object[i],
+                  (void *)t_slot_arg1[i], (unsigned long long)t_slot_first_tick[i],
+diff --git a/src/dodge/autododge.mm b/src/dodge/autododge.mm
+index 00a5680..474a051 100644
+--- a/src/dodge/autododge.mm
++++ b/src/dodge/autododge.mm
+@@ -1446,6 +1446,387 @@ static void tnx_dodge_state_tick(float px, float py) {
+              (double)px, (double)py);
+ }
+ 
++#define TNX_JS_SAFETY 28.0f
++#define TNX_JS_T_URGENT 0.9f
++#define TNX_JS_T_FIELD 1.8f
++#define TNX_JS_DIRS 64
++#define TNX_JS_PERP_W 2.4f
++#define TNX_JS_AWAY_W 1.0f
++#define TNX_JS_INTENT_W 1.2f
++#define TNX_JS_INERTIA_TICKS 24
++#define TNX_JS_CAND_MAX 192
++
++typedef struct {
++    float x;
++    float y;
++    float dx;
++    float dy;
++    float speed;
++    float radius;
++    int32_t gid;
++} tnx_js_proj_t;
++
++static int t_js_picked = 0;
++static int t_js_urgent = 0;
++static uint64_t t_js_picks = 0;
++
++static tnx_js_proj_t t_js_projs[TNX_PROJ_MAX];
++static int t_js_n = 0;
++static float t_js_last_x = 0.0f;
++static float t_js_last_y = 0.0f;
++static int t_js_have_last = 0;
++static uint64_t t_js_last_tick = 0;
++static float t_js_dir[TNX_JS_DIRS][2];
++static float t_js_urgent_dirs = 0.0f;
++static int t_js_dirs_built = 0;
++
++static void tnx_js_build_dirs(void) {
++    int i;
++
++    if (t_js_dirs_built) return;
++
++    for (i = 0; i < TNX_JS_DIRS; i++) {
++        float a = 6.28318530718f * (float)i / (float)TNX_JS_DIRS;
++
++        t_js_dir[i][0] = cosf(a);
++        t_js_dir[i][1] = sinf(a);
++    }
++
++    t_js_dirs_built = 1;
++}
++
++static int tnx_js_collect(void) {
++    int i;
++    int n = 0;
++
++    for (i = 0; i < TNX_PROJ_MAX; i++) {
++        const tnx_proj_t *p = &t_projs[i];
++        float dx;
++        float dy;
++        float len;
++        uint64_t dt;
++
++        if (!p->elem) continue;
++        if (t_own_team >= 0 && p->team == t_own_team) continue;
++        if (!p->hasPrev) continue;
++
++        dx = (float)(p->x - p->px);
++        dy = (float)(p->y - p->py);
++        len = sqrtf(dx * dx + dy * dy);
++        if (len < 6.0f) continue;
++
++        dt = (p->ptick > 0 && t_ticks_3 > p->ptick) ? (t_ticks_3 - p->ptick) : 1;
++
++        t_js_projs[n].x = (float)p->x;
++        t_js_projs[n].y = (float)p->y;
++        t_js_projs[n].dx = dx / len;
++        t_js_projs[n].dy = dy / len;
++        t_js_projs[n].speed = (len / (float)dt) * 60.0f;
++        t_js_projs[n].radius = TNX_PROJ_RADIUS;
++        t_js_projs[n].gid = p->gid;
++        n++;
++    }
++
++    t_js_n = n;
++    return n;
++}
++
++static int tnx_js_urgent(const tnx_js_proj_t *p, float mx, float my, float mr) {
++    float dx = mx - p->x;
++    float dy = my - p->y;
++    float vx = p->dx * p->speed;
++    float vy = p->dy * p->speed;
++    float c1 = dx * vx + dy * vy;
++    float c2;
++    float tHit;
++    float cx;
++    float cy;
++    float r;
++    float ddx;
++    float ddy;
++
++    if (c1 <= 0.0f) return 0;
++
++    c2 = vx * vx + vy * vy;
++    if (c2 <= 0.0f) return 0;
++
++    tHit = c1 / c2;
++    if (tHit > TNX_JS_T_URGENT) return 0;
++
++    cx = p->x + vx * tHit;
++    cy = p->y + vy * tHit;
++    r = mr + p->radius + TNX_JS_SAFETY;
++    ddx = mx - cx;
++    ddy = my - cy;
++
++    return (ddx * ddx + ddy * ddy) <= r * r;
++}
++
++static float tnx_js_score(float dirX, float dirY, float mx, float my, float mr,
++                          int haveIntent, float ix, float iy) {
++    int i;
++    float score = 0.0f;
++
++    for (i = 0; i < t_js_n; i++) {
++        const tnx_js_proj_t *p = &t_js_projs[i];
++        float r = mr + p->radius + TNX_JS_SAFETY;
++        float vx = p->dx * p->speed - dirX * TNX_SPEED;
++        float vy = p->dy * p->speed - dirY * TNX_SPEED;
++        float dx = p->x - mx;
++        float dy = p->y - my;
++        float a = vx * vx + vy * vy;
++        float b = 2.0f * (dx * vx + dy * vy);
++        float c = dx * dx + dy * dy;
++        float minD2 = c;
++        float danger;
++
++        if (a > 1e-6f) {
++            float tMin = -b / (2.0f * a);
++
++            if (tMin > 0.0f && tMin <= TNX_JS_T_FIELD) {
++                minD2 = c + b * tMin + a * tMin * tMin;
++            } else if (tMin > TNX_JS_T_FIELD) {
++                minD2 = c + b * TNX_JS_T_FIELD + a * TNX_JS_T_FIELD * TNX_JS_T_FIELD;
++            }
++        }
++
++        danger = (minD2 < r * r) ? 2500.0f : (r * r) / (minD2 > 50.0f ? minD2 : 50.0f);
++        score += danger;
++    }
++
++    if (haveIntent) score -= (dirX * ix + dirY * iy) * TNX_JS_INTENT_W * 15.0f;
++
++    if (t_js_have_last && (t_ticks_3 - t_js_last_tick) < TNX_JS_INERTIA_TICKS) {
++        score -= (dirX * t_js_last_x + dirY * t_js_last_y) * 45.0f;
++    }
++
++    return score;
++}
++
++static int tnx_js_unsafe(float dirX, float dirY, float mx, float my, float mr) {
++    int i;
++
++    for (i = 0; i < t_js_n; i++) {
++        const tnx_js_proj_t *p = &t_js_projs[i];
++        float r = mr + p->radius + TNX_JS_SAFETY;
++        float vx = p->dx * p->speed - dirX * TNX_SPEED;
++        float vy = p->dy * p->speed - dirY * TNX_SPEED;
++        float dx = p->x - mx;
++        float dy = p->y - my;
++        float a = vx * vx + vy * vy;
++        float b = 2.0f * (dx * vx + dy * vy);
++        float c = dx * dx + dy * dy - r * r;
++        float disc;
++        float t1;
++
++        if (c < 0.0f) return 1;
++        if (a <= 1e-6f) continue;
++
++        disc = b * b - 4.0f * a * c;
++        if (disc < 0.0f) continue;
++
++        t1 = (-b - sqrtf(disc)) / (2.0f * a);
++        if (t1 > 0.0f && t1 <= TNX_JS_T_FIELD) return 1;
++    }
++
++    return 0;
++}
++
++static int tnx_js_danger(float mx, float my, float mr) {
++    int i;
++
++    for (i = 0; i < t_js_n; i++) {
++        const tnx_js_proj_t *p = &t_js_projs[i];
++        float r = mr + p->radius + TNX_JS_SAFETY * 2.5f;
++        float dx = mx - p->x;
++        float dy = my - p->y;
++        float distSq = dx * dx + dy * dy;
++        float vx;
++        float vy;
++        float c1;
++
++        if (distSq <= r * r) return 1;
++
++        vx = p->dx * p->speed;
++        vy = p->dy * p->speed;
++        c1 = dx * vx + dy * vy;
++        if (c1 <= 0.0f) continue;
++
++        float c2 = vx * vx + vy * vy;
++
++        if (c2 <= 0.0f) continue;
++
++        float tHit = c1 / c2;
++
++        if (tHit <= TNX_JS_T_FIELD) {
++            float cx = p->x + vx * tHit;
++            float cy = p->y + vy * tHit;
++            float ddx = mx - cx;
++            float ddy = my - cy;
++
++            if (ddx * ddx + ddy * ddy <= r * r) return 1;
++        }
++    }
++
++    return 0;
++}
++
++static int tnx_js_pick(float mx, float my, float mr, int haveIntent, float ix, float iy,
++                       float *outX, float *outY) {
++    float cand[TNX_JS_CAND_MAX][2];
++    int n = 0;
++    int i;
++    int urgent = 0;
++    int best = -1;
++    float bestScore = 1e18f;
++
++    tnx_js_build_dirs();
++
++    for (i = 0; i < t_js_n && n + 2 < TNX_JS_CAND_MAX; i++) {
++        const tnx_js_proj_t *p = &t_js_projs[i];
++        float ax;
++        float ay;
++        float len;
++        float px1 = -p->dy;
++        float py1 = p->dx;
++        float tx;
++        float ty;
++
++        if (!tnx_js_urgent(p, mx, my, mr)) continue;
++
++        urgent++;
++
++        ax = mx - p->x;
++        ay = my - p->y;
++        len = sqrtf(ax * ax + ay * ay);
++        if (len < 1e-6f) {
++            ax = 1.0f;
++            ay = 0.0f;
++        } else {
++            ax /= len;
++            ay /= len;
++        }
++
++        tx = px1 * TNX_JS_PERP_W + ax * TNX_JS_AWAY_W + (haveIntent ? ix * 0.6f : 0.0f);
++        ty = py1 * TNX_JS_PERP_W + ay * TNX_JS_AWAY_W + (haveIntent ? iy * 0.6f : 0.0f);
++        len = sqrtf(tx * tx + ty * ty);
++        if (len < 1e-6f) {
++            tx = 1.0f;
++            ty = 0.0f;
++        } else {
++            tx /= len;
++            ty /= len;
++        }
++        cand[n][0] = tx;
++        cand[n][1] = ty;
++        n++;
++
++        tx = -px1 * TNX_JS_PERP_W + ax * TNX_JS_AWAY_W + (haveIntent ? ix * 0.6f : 0.0f);
++        ty = -py1 * TNX_JS_PERP_W + ay * TNX_JS_AWAY_W + (haveIntent ? iy * 0.6f : 0.0f);
++        len = sqrtf(tx * tx + ty * ty);
++        if (len < 1e-6f) {
++            tx = 1.0f;
++            ty = 0.0f;
++        } else {
++            tx /= len;
++            ty /= len;
++        }
++        cand[n][0] = tx;
++        cand[n][1] = ty;
++        n++;
++    }
++
++    t_js_urgent_dirs = (float)urgent;
++
++    if (urgent > 0) {
++        for (i = 0; i < 16 && n < TNX_JS_CAND_MAX; i++) {
++            float a = 6.28318530718f * (float)i / 16.0f;
++
++            cand[n][0] = cosf(a);
++            cand[n][1] = sinf(a);
++            n++;
++        }
++    } else {
++        for (i = 0; i < TNX_JS_DIRS; i++) {
++            cand[n][0] = t_js_dir[i][0];
++            cand[n][1] = t_js_dir[i][1];
++            n++;
++        }
++    }
++
++    for (i = 0; i < n; i++) {
++        float s = tnx_js_score(cand[i][0], cand[i][1], mx, my, mr, haveIntent, ix, iy);
++
++        if (s < bestScore) {
++            bestScore = s;
++            best = i;
++        }
++    }
++
++    if (best < 0) return 0;
++
++    *outX = cand[best][0];
++    *outY = cand[best][1];
++
++    if (tnx_js_unsafe(*outX, *outY, mx, my, mr)) {
++        int found = 0;
++
++        bestScore = 1e18f;
++        for (i = 0; i < TNX_JS_DIRS; i++) {
++            float s;
++
++            if (tnx_js_unsafe(t_js_dir[i][0], t_js_dir[i][1], mx, my, mr)) continue;
++            found = 1;
++            s = tnx_js_score(t_js_dir[i][0], t_js_dir[i][1], mx, my, mr, haveIntent, ix, iy);
++            if (s < bestScore) {
++                bestScore = s;
++                *outX = t_js_dir[i][0];
++                *outY = t_js_dir[i][1];
++            }
++        }
++
++        if (!found) return 2;
++    }
++
++    return 1;
++}
++
++int tnx_js_decide(float px, float py, float *outX, float *outY, int *urgentOut) {
++    int have = 0;
++    int ix = 0;
++    float iX = 0.0f;
++    float iY = 0.0f;
++    float mr;
++    int res;
++
++    tnx_js_collect();
++
++    mr = tnx_own_radius();
++
++    if (mr <= 0.0f) mr = TNX_PLAYER_RADIUS;
++
++    if (!tnx_js_danger(px, py, mr)) return 0;
++
++    if (t_have_angle) {
++        iX = cosf(t_angle);
++        iY = sinf(t_angle);
++        have = 1;
++    }
++
++    res = tnx_js_pick(px, py, mr, have, iX, iY, outX, outY);
++
++    if (res == 0) return 0;
++
++    t_js_last_x = *outX;
++    t_js_last_y = *outY;
++    t_js_have_last = 1;
++    t_js_last_tick = t_ticks_3;
++
++    *urgentOut = (t_js_urgent_dirs > 0.0f);
++
++    return 1;
++}
++
+ int tnx_decide(int32_t ownX, int32_t ownY) {
+     float px = (float)ownX;
+     float py = (float)ownY;
+@@ -1511,10 +1892,19 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
+     }
+ 
+     if (threatened) {
+-        picked = tnx_best(px, py, &tx, &ty);
++        int jsUrgent = 0;
++        float jsX = 0.0f;
++        float jsY = 0.0f;
++
++        t_js_picked = tnx_js_decide(px, py, &jsX, &jsY, &jsUrgent);
+ 
+-        if (!picked) picked = tnx_freest(px, py, &tx, &ty);
+-        if (!picked && TNX_FLEE) picked = tnx_flee(px, py, &tx, &ty);
++        if (t_js_picked) {
++            tx = px + jsX * TNX_REACH;
++            ty = py + jsY * TNX_REACH;
++            picked = 1;
++            t_js_urgent = jsUrgent;
++            t_js_picks++;
++        }
+ 
+         if (picked) {
+             float sx = tx;
+@@ -1588,14 +1978,15 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
+     if (t_logs_4 < 24 && (t_ticks_3 % 60) == 0) {
+         t_logs_4++;
+ 
+-        TNX_LOGX("dodge segs=%d threatened=%d picked=%d target=(%.0f,%.0f) dist=%.0f way=%.0f "
++        TNX_LOGX("dodge segs=%d threatened=%d picked=%d jsProj=%d jsUrgent=%d target=(%.0f,%.0f) dist=%.0f way=%.0f "
+                  "stick=%d angle=%.1f joyw=%d snap=%d moving=%d - the threat segments start where "
+                  "each shot is NOW and run along its own flight, so a shot that already passed is "
+                  "behind the segment and not a reason to run; the directions are walked outward from "
+                  "the stick angle so a safe heading near the one the player holds wins; way is the "
+                  "heading actually written towards in degrees, counted from the positive x axis, so "
+                  "two consecutive lines with the same way is the character holding one direction",
+-                 t_seg_count, threatened, picked, (double)t_tx_2, (double)t_ty_2,
++                 t_seg_count, threatened, picked, t_js_n, t_js_urgent,
++                 (double)t_tx_2, (double)t_ty_2,
+                  (double)sqrtf((t_tx_2 - px) * (t_tx_2 - px) +
+                                (t_ty_2 - py) * (t_ty_2 - py)),
+                  (double)(atan2f(t_ty_2 - py, t_tx_2 - px) * 180.0f / 3.14159265358979f),
+diff --git a/src/input/drive.mm b/src/input/drive.mm
+index 6b9ee1f..29edf7c 100644
+--- a/src/input/drive.mm
++++ b/src/input/drive.mm
+@@ -733,10 +733,15 @@ void tnx_route(int engaged) {
+         else align = "unrelated";
+     }
+ 
++    static int t_route_engaged_prev = -1;
+     t_route_seeded = 1;
+     t_last_own_x = ownX;
+     t_last_own_y = ownY;
+ 
++    {
++        if (engaged != t_route_engaged_prev) {
++            t_route_engaged_prev = engaged;
++
+     TNX_LOGX("route engaged=%d stick=(%d,%d) back=(%d,%d) applied=(%d,%d) own=(%d,%d) movedLastSecond=%d stickSum=(%lld,%lld) stickDir=(%.2f,%.2f) moveDir=(%.2f,%.2f) dot=%+.2f aligned=%s engagedTicks=%d queue=%d",
+              engaged, t_stick_x, t_stick_y, backX, backY, appX, appY, ownX, ownY, moved,
+              sumX, sumY,
+@@ -745,6 +750,8 @@ void tnx_route(int engaged) {
+              (double)(mLen > 0.5f ? (float)dx / mLen : 0.0f),
+              (double)(mLen > 0.5f ? (float)dy / mLen : 0.0f),
+              (double)dot, align, ours, tnx_queue_count(NULL));
++        }
++    }
+ }
+ 
+ float t_walk_step = TNX_STEP_3;
+diff --git a/src/runtime/scene.mm b/src/runtime/scene.mm
+index 7dab2f5..7b79699 100644
+--- a/src/runtime/scene.mm
++++ b/src/runtime/scene.mm
+@@ -30,9 +30,6 @@ void tnx_run_workload(void) {
+     tnx_phase("overlay");
+     tnx_overlay_update();
+ 
+-    tnx_phase("alert");
+-    tnx_alert_battle_check();
+-
+     tnx_phase("tick-end");
+ }
+ 

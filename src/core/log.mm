@@ -228,6 +228,7 @@ void tnx_slot_note(int index, void *self, uint64_t arg1) {
 }
 
 void tnx_slot_fired_report(void) {
+    static const char *last[TNX_SLOT_COUNT];
     uint64_t total = 0;
     int armedCount = 0;
 
@@ -255,8 +256,14 @@ void tnx_slot_fired_report(void) {
 
         total += t_slot_hits[i];
 
+        if (last[i] == state) continue;
+
+        last[i] = state;
+
         tnx_logf("hook %s %s armed=%d slots=%d slotRva=%#llx this=%p arg1=%p firstCallTick=%llu "
-                 "hits=%llu tick=%llu",
+                 "hits=%llu tick=%llu - printed on a state change only, the ten tick cadence "
+                 "used to write this line thirty four times over and the dump was two thirds "
+                 "of the whole file",
                  t_slot_specs[i].shortTag, state, armed, t_slot_slots[i],
                  (unsigned long long)t_slot_specs[i].slotRva, (void *)t_slot_object[i],
                  (void *)t_slot_arg1[i], (unsigned long long)t_slot_first_tick[i],

@@ -140,6 +140,19 @@ int t_active_2 = 0;
 
 int t_js_live = 0;
 
+int t_life_3 = 0;
+
+int tnx_life_3(float px, float py) {
+    uint8_t dead = 0;
+
+    if (!t_manager_count) return 0;
+    if (!t_own_elem) return 3;
+    if (tnx_read_u8(t_own_elem + (uintptr_t)TNX_OBJ_DEADFLAG_OFF, &dead) && dead != 0) return 2;
+    if (px == 0.0f && py == 0.0f) return 0;
+
+    return 1;
+}
+
 uint64_t t_js_tick = 0;
 
 int tnx_js_owns_3(void) {
@@ -1495,6 +1508,9 @@ static int t_js_urgent = 0;
 static int t_js_vo = 0;
 static int t_js_n = 0;
 static uint64_t t_js_picks = 0;
+static int t_js3_mates = 0;
+static int t_js3_foes = 0;
+static int t_js3_unk = 0;
 
 static tnx_js3_proj_t t_js3_projs[TNX_PROJ_MAX];
 static tnx_js3_proj_t t_js3_prev[TNX_PROJ_MAX];
@@ -1561,9 +1577,26 @@ static int tnx_js3_prev_slot(int32_t gid) {
     return -1;
 }
 
+static int tnx_js3_my_team(void) {
+    int32_t v = 0;
+
+    if (t_own_elem && tnx_read_i32(t_own_elem + (uintptr_t)TNX_OBJ_TEAM_OFF, &v)) {
+        if (v == 0 || v == 1) return v;
+    }
+
+    if (t_own_team_4 == 0 || t_own_team_4 == 1) return t_own_team_4;
+
+    return -1;
+}
+
 static void tnx_js3_collect(float px, float py) {
     int i;
     int n = 0;
+    int myTeam = -1;
+
+    t_js3_mates = 0;
+    t_js3_foes = 0;
+    t_js3_unk = 0;
 
     tnx_js3_build_dirs();
     tnx_js3_speed_probe();
@@ -1582,7 +1615,20 @@ static void tnx_js3_collect(float px, float py) {
         float speed;
 
         if (!p->elem) continue;
-        if (t_own_team_4 >= 0 && p->team == t_own_team_4) continue;
+
+        if (myTeam < 0) myTeam = tnx_js3_my_team();
+
+        if (p->team == 0 || p->team == 1) {
+            if (myTeam >= 0 && p->team == myTeam) {
+                t_js3_mates++;
+
+                continue;
+            }
+
+            t_js3_foes++;
+        } else {
+            t_js3_unk++;
+        }
 
         if (!tnx_read_u8(p->elem + (uintptr_t)TNX_OBJ_DEADFLAG_OFF, &dead)) continue;
         if (dead != 0) continue;
@@ -1627,6 +1673,14 @@ static void tnx_js3_collect(float px, float py) {
                                           : TNX_JS_SPEED_FALLBACK;
 
         if (speed < 1.0f) speed = TNX_JS_SPEED_FALLBACK;
+
+        {
+            float toward = mx * dx + my * dy;
+
+            if (toward >= 0.0f) continue;
+
+            if (sqrtf(mx * mx + my * my) / speed > TNX_JS3_T_FIELD * 2.0f) continue;
+        }
 
         q = &t_js3_projs[n];
         q->x = (float)p->x;
@@ -1981,6 +2035,14 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
     t_js_live = 0;
     t_js_tick = t_ticks_3;
 
+    t_life_3 = tnx_life_3(px, py);
+
+    if (t_life_3 != 1) {
+        t_moving = 0;
+
+        return 0;
+    }
+
     tnx_arm(px, py);
     tnx_stats();
 
@@ -2106,14 +2168,14 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
     if (t_logs_4 < 24 && (t_ticks_3 % 60) == 0) {
         t_logs_4++;
 
-        TNX_LOGX("dodge segs=%d threatened=%d picked=%d jsProj=%d jsUrgent=%d jsVo=%d target=(%.0f,%.0f) dist=%.0f way=%.0f "
+        TNX_LOGX("dodge segs=%d threatened=%d picked=%d jsProj=%d jsMate=%d jsFoe=%d jsUnk=%d life=%d jsUrgent=%d jsVo=%d target=(%.0f,%.0f) dist=%.0f way=%.0f "
                  "stick=%d angle=%.1f joyw=%d snap=%d moving=%d - the threat segments start where "
                  "each shot is NOW and run along its own flight, so a shot that already passed is "
                  "behind the segment and not a reason to run; the directions are walked outward from "
                  "the stick angle so a safe heading near the one the player holds wins; way is the "
                  "heading actually written towards in degrees, counted from the positive x axis, so "
                  "two consecutive lines with the same way is the character holding one direction",
-                 t_seg_count, threatened, picked, t_js_n, t_js_urgent, t_js_vo,
+                 t_seg_count, threatened, picked, t_js_n, t_js3_mates, t_js3_foes, t_js3_unk, t_life_3, t_js_urgent, t_js_vo,
                  (double)t_tx_2, (double)t_ty_2,
                  (double)sqrtf((t_tx_2 - px) * (t_tx_2 - px) +
                                (t_ty_2 - py) * (t_ty_2 - py)),

@@ -91,7 +91,6 @@ void tnx_alert_battle_check(void) {
                  t_manager_best_count, (void *)t_scene_object, (void *)t_players_object,
                  (void *)candidate);
 
-        tnx_battle_alert(t_scene_object, 0);
     }
 }
 

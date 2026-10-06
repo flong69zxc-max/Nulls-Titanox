@@ -1,10 +1,10 @@
 #include "titanox.h"
 
-int g_find_joy_done = 0;
+int t_find_joy_done = 0;
 
-int g_entry_logs = 0;
+int t_entry_logs = 0;
 
-uintptr_t g_manager = 0;
+uintptr_t t_manager = 0;
 
 int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) {
     void *data = NULL;
@@ -14,7 +14,7 @@ int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) 
     uintptr_t gidOff = TNX_OBJ_GLOBALID_OFF;
     uint32_t walkSeq = 0;
 
-    memset(&g_reject, 0, sizeof(g_reject));
+    memset(&t_reject, 0, sizeof(t_reject));
 
     tnx_gidless_scan(manager);
 
@@ -29,12 +29,12 @@ int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) 
 
     gidOff = tnx_list_gid_off((uintptr_t)data, count);
 
-    walkSeq = g_seq;
+    walkSeq = t_seq;
 
-    g_walk_aborted = 0;
-    g_walk_abort_i = -1;
-    g_walk_arr = (uintptr_t)data;
-    g_walk_n = count;
+    t_walk_aborted = 0;
+    t_walk_abort_i = -1;
+    t_walk_arr = (uintptr_t)data;
+    t_walk_n = count;
 
     for (int32_t i = 0; i < count && usable < capacity; i++) {
         void *element = NULL;
@@ -44,20 +44,20 @@ int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) 
 
         memset(&entry, 0, sizeof(entry));
 
-        g_reject.elementsRead++;
+        t_reject.elementsRead++;
 
-        if (g_seq != walkSeq) {
-            g_walk_aborted = 1;
-            g_walk_abort_i = i;
-            g_walk_aborts++;
+        if (t_seq != walkSeq) {
+            t_walk_aborted = 1;
+            t_walk_abort_i = i;
+            t_walk_aborts++;
 
-            if (g_walk_aborts <= TNX_WALK_ABORT_FULL) {
+            if (t_walk_aborts <= TNX_WALK_ABORT_FULL) {
                 tnx_logf("walk aborted at i=%d n=%d arr=%p g_arr=%p g_n=%d aborts=%llu",
-                         i, count, (void *)(uintptr_t)data, (void *)g_pub_array,
-                         g_pub_count, (unsigned long long)g_walk_aborts);
-            } else if ((g_walk_aborts % TNX_WALK_ABORT_EVERY) == 0) {
+                         i, count, (void *)(uintptr_t)data, (void *)t_pub_array,
+                         t_pub_count, (unsigned long long)t_walk_aborts);
+            } else if ((t_walk_aborts % TNX_WALK_ABORT_EVERY) == 0) {
                 tnx_logf("walk aborts=%llu at i=%d n=%d",
-                         (unsigned long long)g_walk_aborts, i, count,
+                         (unsigned long long)t_walk_aborts, i, count,
                          TNX_WALK_ABORT_FULL);
             }
 
@@ -65,14 +65,14 @@ int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) 
         }
 
         if (!tnx_read_ptr((uintptr_t)data + (uintptr_t)i * sizeof(void *), &element)) {
-            g_reject.rejUnreadable++;
+            t_reject.rejUnreadable++;
             bad++;
 
             continue;
         }
 
         if (!element) {
-            g_reject.rejNull++;
+            t_reject.rejNull++;
             bad++;
 
             continue;
@@ -81,24 +81,24 @@ int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) 
         entry.object = (uintptr_t)element;
 
         if (tnx_element_ascii(entry.object)) {
-            g_reject.rejAscii++;
-            g_ascii_rejected++;
+            t_reject.rejAscii++;
+            t_ascii_rejected++;
             bad++;
 
             continue;
         }
 
         if (!tnx_read_ptr(entry.object, &vtable) || !vtable) {
-            g_reject.rejUnreadable++;
+            t_reject.rejUnreadable++;
             bad++;
 
             continue;
         }
 
-        vtRva = (uintptr_t)vtable - g_base;
+        vtRva = (uintptr_t)vtable - t_base;
 
         if (vtRva < TNX_DC_RVA_LO || vtRva >= TNX_DC_RVA_LO + TNX_DC_RVA_SIZE) {
-            g_reject.rejNoVt++;
+            t_reject.rejNoVt++;
             bad++;
 
             continue;
@@ -121,19 +121,19 @@ int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) 
             !tnx_read_i32(entry.object + TNX_TEAM_OFF, &entry.teamNew) ||
             !tnx_read_u8(entry.object + TNX_OBJ_DEADFLAG_OFF, &entry.dead) ||
             !tnx_read_u8(entry.object + TNX_OBJ_ACTIVEFLAG_OFF, &entry.activeFlag)) {
-            g_reject.rejUnreadable++;
+            t_reject.rejUnreadable++;
             bad++;
 
             continue;
         }
 
         if (entry.gid >= TNX_PLAYER_GID_MAX) {
-            g_reject.rejNonPlayer++;
+            t_reject.rejNonPlayer++;
             bad++;
 
             tnx_proj_track(entry.object, vtRva, entry.gid, entry.teamOld);
 
-            if (g_dump_np < TNX_NP_DUMPS) {
+            if (t_dump_np < TNX_NP_DUMPS) {
                 int32_t npX = 0;
                 int32_t npY = 0;
                 int32_t np70 = 0;
@@ -145,7 +145,7 @@ int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) 
                 void *np38 = NULL;
                 uintptr_t npRva = vtRva;
 
-                g_dump_np++;
+                t_dump_np++;
 
                 tnx_read_i32(entry.object + TNX_OBJ_X_OFF, &npX);
                 tnx_read_i32(entry.object + TNX_OBJ_Y_OFF, &npY);
@@ -170,8 +170,8 @@ int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) 
             continue;
         }
 
-        if (entry.gid == 0 && !g_gidless) {
-            g_reject.rejGidZero++;
+        if (entry.gid == 0 && !t_gidless) {
+            t_reject.rejGidZero++;
             bad++;
 
             continue;
@@ -179,13 +179,13 @@ int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) 
 
         if (entry.x <= -TNX_COORD_ABS_MAX || entry.x >= TNX_COORD_ABS_MAX ||
             entry.y <= -TNX_COORD_ABS_MAX || entry.y >= TNX_COORD_ABS_MAX) {
-            if (g_coord_logs < 6) {
+            if (t_coord_logs < 6) {
                 void *tvtable = NULL;
                 uintptr_t tvtRva = 0;
 
-                g_coord_logs++;
+                t_coord_logs++;
 
-                if (tnx_read_ptr(entry.object, &tvtable) && tvtable) tvtRva = (uintptr_t)tvtable - g_base;
+                if (tnx_read_ptr(entry.object, &tvtable) && tvtable) tvtRva = (uintptr_t)tvtable - t_base;
 
                 tnx_logf("coord suspect elem=%p vtRva=%#llx +%#llx=%d +%#llx=%d gid=%d",
                          (void *)entry.object, (unsigned long long)tvtRva,
@@ -194,7 +194,7 @@ int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) 
             }
 
             if (!TNX_COORD_SOFT) {
-                g_reject.rejOutOfRange++;
+                t_reject.rejOutOfRange++;
                 bad++;
 
                 continue;
@@ -203,13 +203,13 @@ int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) 
 
         if (!((entry.teamOld >= 0 && entry.teamOld <= TNX_OBJ_TEAM_MAX) ||
               (entry.teamNew >= 0 && entry.teamNew <= TNX_OBJ_TEAM_MAX))) {
-            g_reject.rejTeamMissing++;
+            t_reject.rejTeamMissing++;
             bad++;
 
             continue;
         }
 
-        if (entry.dead == 1) g_reject.deadSeen++;
+        if (entry.dead == 1) t_reject.deadSeen++;
 
         out[usable++] = entry;
     }
@@ -251,13 +251,13 @@ void tnx_discriminate(uintptr_t manager) {
 
     usable = tnx_collect(manager, objects, TNX_OBJECT_MAX, &rejected);
 
-    g_dodge_probe_usable = usable;
-    if (usable > 0) memcpy(g_dodge_probe_list, objects, (size_t)usable * sizeof(g_dodge_probe_list[0]));
+    t_dodge_probe_usable = usable;
+    if (usable > 0) memcpy(t_dodge_probe_list, objects, (size_t)usable * sizeof(t_dodge_probe_list[0]));
 
     if (usable == 0) {
         char reasons[320];
 
-        if (rejected > 0 || g_reject.elementsRead > 0) {
+        if (rejected > 0 || t_reject.elementsRead > 0) {
             tnx_logf("fields manager=%p usable=0 rejected=%d -- all elements rejected: %s",
                      (void *)manager, rejected, tnx_reject_text(reasons, sizeof(reasons)));
         } else {
@@ -437,10 +437,10 @@ void tnx_discriminate(uintptr_t manager) {
              intPairOff >= 0 ? "+" : "none:", intPairOff >= 0 ? intPairOff : 0,
              floatPairOff >= 0 ? "+" : "none:", floatPairOff >= 0 ? floatPairOff : 0);
 
-    g_coord_off = (int)TNX_OBJ_X_OFF;
+    t_coord_off = (int)TNX_OBJ_X_OFF;
 
-    if (!g_coord_fixed_logged) {
-        g_coord_fixed_logged = 1;
+    if (!t_coord_fixed_logged) {
+        t_coord_fixed_logged = 1;
 
         tnx_logf("walk coord fixed +%#llx/+%#llx (was auto)",
                  (unsigned long long)TNX_OBJ_X_OFF, (unsigned long long)TNX_OBJ_Y_OFF,
@@ -461,7 +461,7 @@ void tnx_probe_3(uintptr_t manager, uintptr_t mode, int verbose) {
 
     memset(objects, 0, sizeof(objects));
 
-    g_probe_done_2 = 1;
+    t_probe_done_2 = 1;
 
     if (mode) tnx_read_map(mode);
 
@@ -471,9 +471,9 @@ void tnx_probe_3(uintptr_t manager, uintptr_t mode, int verbose) {
         if (v142_walk_logs < 12 || (v142_walk_logs % 128) == 0) {
             v142_walk_logs++;
 
-            tnx_logf("walk enter arr=%p n=%d g_arr=%p g_n=%d tick_arr=%p tick_n=%d manager=%p", (void *)g_tick_array,
-                     g_tick_count, (void *)g_players_array, g_players_count,
-                     (void *)g_tick_array, g_tick_count, (void *)manager);
+            tnx_logf("walk enter arr=%p n=%d g_arr=%p g_n=%d tick_arr=%p tick_n=%d manager=%p", (void *)t_tick_array,
+                     t_tick_count, (void *)t_players_array, t_players_count,
+                     (void *)t_tick_array, t_tick_count, (void *)manager);
         }
     }
 
@@ -485,9 +485,9 @@ void tnx_probe_3(uintptr_t manager, uintptr_t mode, int verbose) {
         if (v142_leave_logs < 12 || (v142_leave_logs % 128) == 0) {
             v142_leave_logs++;
 
-            tnx_logf("walk leave arr=%p n=%d g_arr=%p g_n=%d aborted=%d abortI=%d usable=%d rejected=%d", (void *)g_walk_arr, g_walk_n,
-                     (void *)g_pub_array, g_pub_count, g_walk_aborted,
-                     g_walk_abort_i, usable, rejected);
+            tnx_logf("walk leave arr=%p n=%d g_arr=%p g_n=%d aborted=%d abortI=%d usable=%d rejected=%d", (void *)t_walk_arr, t_walk_n,
+                     (void *)t_pub_array, t_pub_count, t_walk_aborted,
+                     t_walk_abort_i, usable, rejected);
         }
     }
 
@@ -516,7 +516,7 @@ void tnx_probe_3(uintptr_t manager, uintptr_t mode, int verbose) {
         if (teamsNew[i]) distinctNew++;
     }
 
-    g_team_off = (int)TNX_OBJ_TEAM_OFF;
+    t_team_off = (int)TNX_OBJ_TEAM_OFF;
 
     {
         char reasons[320];
@@ -524,20 +524,20 @@ void tnx_probe_3(uintptr_t manager, uintptr_t mode, int verbose) {
         tnx_logf("man walk mode=%p manager=%p usable=%d rejected=%d (%s) mapOk=%d mapW=%d "
                  "mapH=%d inRange=%d distinct=%d teamsOld=%d teamsNew=%d teamOff=0x%x",
                  (void *)mode, (void *)manager, usable, rejected,
-                 tnx_reject_text(reasons, sizeof(reasons)), g_map_ok, g_map_w,
-                 g_map_h, inRange, distinct, distinctOld, distinctNew, g_team_off);
+                 tnx_reject_text(reasons, sizeof(reasons)), t_map_ok, t_map_w,
+                 t_map_h, inRange, distinct, distinctOld, distinctNew, t_team_off);
     }
 
     tnx_logf("walk team reverted to +0x%x with distinct(+0x40)=%d distinct(+0x4c)=%d",
-             g_team_off, distinctOld, distinctNew);
+             t_team_off, distinctOld, distinctNew);
 
     tnx_logf("walk offsets team=+0x%x distinctOld=%d distinctNew=%d coord=+0x%llx/+0x%llx usable=%d distinct=%d inRange=%d",
-             g_team_off, distinctOld, distinctNew,
+             t_team_off, distinctOld, distinctNew,
              (unsigned long long)tnx_coord_x_off(), (unsigned long long)tnx_coord_y_off(),
              usable, distinct, inRange);
 
-    if (!TNX_DEAD_ONCE || !g_dead_probe_done) {
-        g_dead_probe_done = 1;
+    if (!TNX_DEAD_ONCE || !t_dead_probe_done) {
+        t_dead_probe_done = 1;
     }
 
     if (verbose) {
@@ -557,8 +557,8 @@ void tnx_probe_3(uintptr_t manager, uintptr_t mode, int verbose) {
         }
     }
 
-    g_coord_usable = usable;
-    g_coord_distinct = distinct;
+    t_coord_usable = usable;
+    t_coord_distinct = distinct;
 
     {
         int unique = 0;
@@ -583,12 +583,12 @@ void tnx_probe_3(uintptr_t manager, uintptr_t mode, int verbose) {
     tnx_team_dump(objects, usable);
     tnx_class_dump(objects, usable);
 
-    g_coord_ok = (usable >= 2 && inRange == usable && distinct >= 2 &&
+    t_coord_ok = (usable >= 2 && inRange == usable && distinct >= 2 &&
                       (distinctOld >= 2 || distinctNew >= 2)) ? 1 : 0;
 
     tnx_logf("coords ok=%d (need >=2 objects, all in range, >=2 distinct positions, "
              "and a team field that splits them)",
-             g_coord_ok);
+             t_coord_ok);
 
     {
         int back = 0;
@@ -611,11 +611,11 @@ void tnx_probe_3(uintptr_t manager, uintptr_t mode, int verbose) {
     }
 }
 
-int g_logs_2 = 0;
+int t_logs_2 = 0;
 
-int32_t g_max_x = 0;
+int32_t t_max_x = 0;
 
-int32_t g_max_y = 0;
+int32_t t_max_y = 0;
 
 uintptr_t tnx_bounds_obj(uintptr_t receiver) {
     uintptr_t out = 0;
@@ -624,7 +624,7 @@ uintptr_t tnx_bounds_obj(uintptr_t receiver) {
     if (!tnx_pointer_plausible(receiver)) return 0;
     if (!tnx_callable(TNX_BOUNDS_RVA)) return 0;
 
-    out = ((uintptr_t (*)(uintptr_t))(g_base + TNX_BOUNDS_RVA))(receiver);
+    out = ((uintptr_t (*)(uintptr_t))(t_base + TNX_BOUNDS_RVA))(receiver);
 
     if (!out || (out & 7)) return 0;
     if (!tnx_addr_readable(out, 0x100)) return 0;
@@ -641,8 +641,8 @@ int tnx_clamp(int32_t *x, int32_t *y) {
     int32_t oy = *y;
 
     if (!bounds) {
-        if (g_logs_2 < TNX_LOGS_2) {
-            g_logs_2++;
+        if (t_logs_2 < TNX_LOGS_2) {
+            t_logs_2++;
 
             tnx_logf("clamp skipped receiver=%p - the bounds accessor returned nothing, so the "
                      "target is sent unchanged", (void *)receiver);
@@ -655,8 +655,8 @@ int tnx_clamp(int32_t *x, int32_t *y) {
     if (!tnx_read_i32(bounds + TNX_BOUNDS_Y_OFF, &maxY)) return 0;
 
     if (maxX <= 3 || maxY <= 3 || maxX > 200000 || maxY > 200000) {
-        if (g_logs_2 < TNX_LOGS_2) {
-            g_logs_2++;
+        if (t_logs_2 < TNX_LOGS_2) {
+            t_logs_2++;
 
             tnx_logf("clamp skipped max=(%d,%d) receiver=%p bounds=%p", maxX, maxY, (void *)receiver, (void *)bounds);
         }
@@ -664,8 +664,8 @@ int tnx_clamp(int32_t *x, int32_t *y) {
         return 0;
     }
 
-    g_max_x = maxX;
-    g_max_y = maxY;
+    t_max_x = maxX;
+    t_max_y = maxY;
 
     tnx_map_dump(bounds);
 
@@ -674,8 +674,8 @@ int tnx_clamp(int32_t *x, int32_t *y) {
     if (*x <= 1) *x = 0;
     if (*y <= 1) *y = 0;
 
-    if (g_logs_2 < TNX_LOGS_2) {
-        g_logs_2++;
+    if (t_logs_2 < TNX_LOGS_2) {
+        t_logs_2++;
 
         tnx_logf("clamp max=(%d,%d) target=(%d,%d)->(%d,%d) receiver=%p bounds=%p",
                  maxX, maxY, ox, oy, *x, *y, (void *)receiver, (void *)bounds,
@@ -687,9 +687,9 @@ int tnx_clamp(int32_t *x, int32_t *y) {
     return 1;
 }
 
-uint64_t g_dec_us = 0;
+uint64_t t_dec_us = 0;
 
-uint64_t g_dec_us_max = 0;
+uint64_t t_dec_us_max = 0;
 
 uint64_t tnx_us(void) {
     static mach_timebase_info_data_t tb;
@@ -708,20 +708,20 @@ uint64_t tnx_us(void) {
     return (t / (uint64_t)tb.denom) * (uint64_t)tb.numer / 1000ULL;
 }
 
-int g_logs_5 = 0;
+int t_logs_5 = 0;
 
-int g_seeded = 0;
+int t_seeded = 0;
 
-int32_t g_last_x_2 = 0;
+int32_t t_last_x_2 = 0;
 
-int32_t g_last_y_2 = 0;
+int32_t t_last_y_2 = 0;
 
 static uintptr_t tnx_pair_base(void) {
     void *battleRaw = NULL;
     uintptr_t battle = 0;
     uintptr_t alt = tnx_controller();
 
-    if (g_base && tnx_read_ptr(g_base + TNX_BATTLE_RVA, &battleRaw)) {
+    if (t_base && tnx_read_ptr(t_base + TNX_BATTLE_RVA, &battleRaw)) {
         battle = (uintptr_t)battleRaw;
     }
 
@@ -746,29 +746,29 @@ void tnx_paircal(void) {
     float angPair = 0.0f;
     float angMove = 0.0f;
 
-    if ((g_ticks_3 % 60) != 0) return;
-    if (g_logs_5 >= TNX_LOGS_3) return;
-    if (g_stick_hold) return;
+    if ((t_ticks_3 % 60) != 0) return;
+    if (t_logs_5 >= TNX_LOGS_3) return;
+    if (t_stick_hold) return;
     if (!ctrl) return;
     if (!tnx_own(&ownX, &ownY)) return;
     if (!tnx_read_i32(ctrl + TNX_CTRL_RAW_X_OFF, &px)) return;
     if (!tnx_read_i32(ctrl + TNX_CTRL_RAW_Y_OFF, &py)) return;
 
-    if (g_seeded) {
-        dx = (int)(ownX - g_last_x_2);
-        dy = (int)(ownY - g_last_y_2);
+    if (t_seeded) {
+        dx = (int)(ownX - t_last_x_2);
+        dy = (int)(ownY - t_last_y_2);
     }
 
-    g_seeded = 1;
-    g_last_x_2 = ownX;
-    g_last_y_2 = ownY;
+    t_seeded = 1;
+    t_last_x_2 = ownX;
+    t_last_y_2 = ownY;
 
     pLen = sqrtf((float)(px * px + py * py));
     mLen = sqrtf((float)(dx * dx + dy * dy));
 
     if (pLen < 1.0f || mLen < 1.0f) return;
 
-    g_logs_5++;
+    t_logs_5++;
 
     dot = ((float)px / pLen) * ((float)dx / mLen) + ((float)py / pLen) * ((float)dy / mLen);
     angPair = atan2f((float)py, (float)px) * 57.2958f;

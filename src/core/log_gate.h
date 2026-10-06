@@ -7,8 +7,8 @@
 #define TNX_VERBOSE_DEFAULT 1
 #endif
 
-extern int g_tnx_verbose;
+extern int t_tnx_verbose;
 
-#define TNX_LOGX(...) do { if (g_tnx_verbose) tnx_logf(__VA_ARGS__); } while (0)
+#define TNX_LOGX(...) do { if (t_tnx_verbose) tnx_logf(__VA_ARGS__); } while (0)
 
 #endif

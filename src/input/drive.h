@@ -3,13 +3,13 @@
 
 #include "core/types.h"
 
-extern int g_engaged_ticks;
-extern tnx_seg_t g_seg[TNX_SEG_MAX];
-extern int g_seg_count;
-extern int32_t g_stick_x;
-extern int32_t g_stick_y;
-extern uint64_t g_ticks_3;
-extern float g_walk_step;
+extern int t_engaged_ticks;
+extern tnx_seg_t t_seg[TNX_SEG_MAX];
+extern int t_seg_count;
+extern int32_t t_stick_x;
+extern int32_t t_stick_y;
+extern uint64_t t_ticks_3;
+extern float t_walk_step;
 uintptr_t tnx_bs(void);
 void tnx_drag(int engaged, int haveOwn, int32_t ownX, int32_t ownY, float dirX, float dirY);
 int tnx_drive(void);
@@ -22,6 +22,5 @@ void tnx_select(float px, float py);
 int tnx_snap(float dx, float dy);
 float tnx_speed(void);
 void tnx_stick(int engaged, float dirX, float dirY);
-int tnx_write(float dirX, float dirY);
 
 #endif

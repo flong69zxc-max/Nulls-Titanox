@@ -32,15 +32,15 @@ size_t tnx_start_index(uintptr_t address, BOOL *exact) {
     size_t index = (size_t)-1;
 
     if (exact) *exact = NO;
-    if (!g_starts || !g_starts_count) return index;
+    if (!t_starts || !t_starts_count) return index;
 
     size_t low = 0;
-    size_t high = g_starts_count;
+    size_t high = t_starts_count;
 
     while (low < high) {
         size_t mid = low + (high - low) / 2;
 
-        if (g_starts[mid] <= address) low = mid + 1;
+        if (t_starts[mid] <= address) low = mid + 1;
         else high = mid;
     }
 
@@ -48,7 +48,7 @@ size_t tnx_start_index(uintptr_t address, BOOL *exact) {
 
     index = low - 1;
 
-    if (exact) *exact = (g_starts[index] == address);
+    if (exact) *exact = (t_starts[index] == address);
 
     return index;
 }
@@ -82,7 +82,7 @@ BOOL tnx_start_boundary(const uint8_t *bytes, size_t offset) {
 }
 
 void tnx_load_function_starts(void) {
-    if (g_starts || !g_base) return;
+    if (t_starts || !t_base) return;
 
     uintptr_t textAddress = 0;
     uint64_t textSize = 0;
@@ -149,8 +149,8 @@ void tnx_load_function_starts(void) {
         return;
     }
 
-    g_starts = starts;
-    g_starts_count = count;
+    t_starts = starts;
+    t_starts_count = count;
 
     tnx_logf("starts scanned=%zu text=%p size=%llu first=%p last=%p",
              count, (void *)textAddress, (unsigned long long)textSize,
@@ -239,17 +239,17 @@ uintptr_t tnx_entry(uintptr_t rva) {
     uint32_t self = 0;
     uint32_t prev = 0;
 
-    if (!g_base || !rva) return 0;
-    if (!tnx_word(g_base + rva, &self)) return 0;
+    if (!t_base || !rva) return 0;
+    if (!tnx_word(t_base + rva, &self)) return 0;
     if (self == 0) return 0;
 
-    if (tnx_is_prologue(self)) return g_base + rva;
-    if (!tnx_word(g_base + rva - 4, &prev)) return 0;
-    if (tnx_is_term(prev)) return g_base + rva;
+    if (tnx_is_prologue(self)) return t_base + rva;
+    if (!tnx_word(t_base + rva - 4, &prev)) return 0;
+    if (tnx_is_term(prev)) return t_base + rva;
 
     return 0;
 }
 
-uintptr_t *g_starts = NULL;
+uintptr_t *t_starts = NULL;
 
-size_t g_starts_count = 0;
+size_t t_starts_count = 0;

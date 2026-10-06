@@ -3,41 +3,41 @@
 #include <dlfcn.h>
 #include <sys/ucontext.h>
 
-char g_phase[48] = "boot";
+char t_phase[48] = "boot";
 
-char g_hist[8][48];
+char t_hist[8][48];
 
-volatile int g_hist_n = 0;
+volatile int t_hist_n = 0;
 
-volatile int g_fd = -1;
+volatile int t_fd = -1;
 
-volatile uint64_t g_stage_ticks = 0;
+volatile uint64_t t_stage_ticks = 0;
 
-int g_installed = 0;
+int t_installed = 0;
 
 void tnx_phase(const char *p) {
     int n;
 
     if (!p) return;
 
-    strncpy(g_phase, p, sizeof(g_phase) - 1);
-    g_phase[sizeof(g_phase) - 1] = '\0';
+    strncpy(t_phase, p, sizeof(t_phase) - 1);
+    t_phase[sizeof(t_phase) - 1] = '\0';
 
-    n = g_hist_n;
+    n = t_hist_n;
 
     if (n < 0) n = 0;
     if (n > 7) n = 7;
 
-    strncpy(g_hist[n], p, sizeof(g_hist[0]) - 1);
-    g_hist[n][sizeof(g_hist[0]) - 1] = '\0';
+    strncpy(t_hist[n], p, sizeof(t_hist[0]) - 1);
+    t_hist[n][sizeof(t_hist[0]) - 1] = '\0';
 
-    g_hist_n = (n + 1) & 7;
-    g_stage_ticks++;
+    t_hist_n = (n + 1) & 7;
+    t_stage_ticks++;
 
-    if (g_fd < 0) {
+    if (t_fd < 0) {
         FILE *h = tnx_log_handle();
 
-        if (h) g_fd = fileno(h);
+        if (h) t_fd = fileno(h);
     }
 }
 
@@ -53,8 +53,8 @@ void tnx_where(uintptr_t addr, char *out, size_t n) {
         return;
     }
 
-    if (g_base && addr >= g_base && addr < (g_base + 0x40000000ULL)) {
-        snprintf(out, n, "game+%#llx", (unsigned long long)(addr - g_base));
+    if (t_base && addr >= t_base && addr < (t_base + 0x40000000ULL)) {
+        snprintf(out, n, "game+%#llx", (unsigned long long)(addr - t_base));
         return;
     }
 
@@ -83,12 +83,12 @@ void tnx_crash(int sig, siginfo_t *info, void *ctx) {
                  "h4=%s h5=%s h6=%s h7=%s - phase is the stage that was running when the "
                  "signal arrived, the rest are the stages before it in arrival order, and this "
                  "line is written with write(2) so the log cap cannot drop it\n",
-                 sig, fault, g_phase, (unsigned long long)g_stage_ticks,
-                 g_hist[0], g_hist[1], g_hist[2], g_hist[3],
-                 g_hist[4], g_hist[5], g_hist[6], g_hist[7]);
+                 sig, fault, t_phase, (unsigned long long)t_stage_ticks,
+                 t_hist[0], t_hist[1], t_hist[2], t_hist[3],
+                 t_hist[4], t_hist[5], t_hist[6], t_hist[7]);
 
-    if (n > 0 && g_fd >= 0) {
-        ssize_t ignored = write((int)g_fd, buf, (size_t)n);
+    if (n > 0 && t_fd >= 0) {
+        ssize_t ignored = write((int)t_fd, buf, (size_t)n);
 
         (void)ignored;
     }
@@ -119,8 +119,8 @@ void tnx_crash(int sig, siginfo_t *info, void *ctx) {
                      "our own code and far is the address the fault touched\n",
                      (void *)pc, pcs, (void *)lr, lrs, (void *)sp, fault);
 
-        if (n > 0 && g_fd >= 0) {
-            ssize_t ignored = write((int)g_fd, buf, (size_t)n);
+        if (n > 0 && t_fd >= 0) {
+            ssize_t ignored = write((int)t_fd, buf, (size_t)n);
 
             (void)ignored;
         }
@@ -131,26 +131,26 @@ void tnx_crash(int sig, siginfo_t *info, void *ctx) {
 
         n = snprintf(buf, sizeof(buf),
                      "\n[JOURNAL] writes=%llu stale=%llu of %d slots, newest first:\n",
-                     (unsigned long long)g_writes_2, (unsigned long long)g_stale,
+                     (unsigned long long)t_writes_2, (unsigned long long)t_stale,
                      (int)TNX_JOURNAL);
 
-        if (n > 0 && g_fd >= 0) {
-            ssize_t ignored = write((int)g_fd, buf, (size_t)n);
+        if (n > 0 && t_fd >= 0) {
+            ssize_t ignored = write((int)t_fd, buf, (size_t)n);
 
             (void)ignored;
         }
 
         for (i = 0; i < TNX_JOURNAL_LINES; i++) {
-            int slot = (g_at - 1 - i + TNX_JOURNAL * 2) % TNX_JOURNAL;
+            int slot = (t_at - 1 - i + TNX_JOURNAL * 2) % TNX_JOURNAL;
 
             n = snprintf(buf, sizeof(buf),
                          "[JOURNAL] #%d addr=%p value=%#x len=%u denied=%u tick=%llu phase=%s\n",
-                         i, (void *)g_addr[slot], g_value[slot], (unsigned)g_size[slot],
-                         (unsigned)g_denied[slot], (unsigned long long)g_tick_3[slot],
-                         g_phase_2[slot] ? g_phase_2[slot] : "?");
+                         i, (void *)t_addr[slot], t_value[slot], (unsigned)t_size[slot],
+                         (unsigned)t_denied[slot], (unsigned long long)t_tick_3[slot],
+                         t_phase_2[slot] ? t_phase_2[slot] : "?");
 
-            if (n > 0 && g_fd >= 0) {
-                ssize_t ignored = write((int)g_fd, buf, (size_t)n);
+            if (n > 0 && t_fd >= 0) {
+                ssize_t ignored = write((int)t_fd, buf, (size_t)n);
 
                 (void)ignored;
             }
@@ -167,11 +167,11 @@ void tnx_install(void) {
     FILE *h = tnx_log_handle();
     int i;
 
-    if (g_installed) return;
+    if (t_installed) return;
 
-    g_installed = 1;
+    t_installed = 1;
 
-    if (h) g_fd = fileno(h);
+    if (h) t_fd = fileno(h);
 
     memset(&sa, 0, sizeof(sa));
 
@@ -184,7 +184,7 @@ void tnx_install(void) {
 
     tnx_logf("crash locator armed fd=%d sigs=5 - the next signal writes the running stage "
              "and the eight before it to that descriptor, so a crash names itself instead of "
-             "ending the log", (int)g_fd);
+             "ending the log", (int)t_fd);
 }
 
 __attribute__((constructor))

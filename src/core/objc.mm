@@ -80,7 +80,7 @@ tnx_objc_hook_t *tnx_objc_find(id self, SEL _cmd) {
     int bySelectorCount = 0;
 
     for (int i = 0; i < OBJC_HOOK_MAX; i++) {
-        tnx_objc_hook_t *hook = &g_objc_hooks[i];
+        tnx_objc_hook_t *hook = &t_objc_hooks[i];
 
         if (!hook->used || hook->sel != _cmd) continue;
 
@@ -120,33 +120,33 @@ BOOL tnx_objc_targets(id self, tnx_objc_hook_t *hook) {
 void tnx_objc_rep0(id self, SEL _cmd) {
     tnx_objc_hook_t *hook = tnx_objc_find(self, _cmd);
 
-    g_render_calls++;
+    t_render_calls++;
 
     if (hook) hook->hits++;
 
-    if (g_render_calls <= TNX_CALL_LOGS ||
-        (g_render_calls % TNX_CALL_EVERY) == 0) {
+    if (t_render_calls <= TNX_CALL_LOGS ||
+        (t_render_calls % TNX_CALL_EVERY) == 0) {
         tnx_logf("render CALLED n=%llu self=%p hook=%p wanted=%d targets=%d inHook=%d "
                  "base=%p scene=%p - the workload runs on exactly this condition, so hook=0 or "
                  "targets=0 is the whole reason a dodge line does not exist; inHook is read "
                  "before it is set and is 0 on the outermost call by construction, it is not the "
                  "gate; the v138 line above ",
-                 (unsigned long long)g_render_calls, (__bridge void *)self, (void *)hook,
+                 (unsigned long long)t_render_calls, (__bridge void *)self, (void *)hook,
                  hook ? hook->wantedCount : -1, tnx_objc_targets(self, hook) ? 1 : 0,
-                 g_inside_hook, (void *)g_base, (void *)g_scene_object);
+                 t_inside_hook, (void *)t_base, (void *)t_scene_object);
 
         tnx_logf("render CALLED n=%llu self=%p inHook=%d base=%p scene=%p - the dodge is driven "
                  "from this callback and nothing else, so this line is the first thing to check when "
                  "the dodge prints nothing: if it is absent the whole workload is never entered and "
                  "the state has nothing to do with the dodge's own gates",
-                 (unsigned long long)g_render_calls, (__bridge void *)self, g_inside_hook, (void *)g_base,
-                 (void *)g_scene_object);
+                 (unsigned long long)t_render_calls, (__bridge void *)self, t_inside_hook, (void *)t_base,
+                 (void *)t_scene_object);
     }
 
-    if (hook && !g_inside_hook && tnx_objc_targets(self, hook)) {
-        g_inside_hook = YES;
+    if (hook && !t_inside_hook && tnx_objc_targets(self, hook)) {
+        t_inside_hook = YES;
         tnx_run_workload();
-        g_inside_hook = NO;
+        t_inside_hook = NO;
     }
 
     if (hook && hook->original) {
@@ -182,14 +182,14 @@ int tnx_objc_arm(const char *clsName, const char *selName) {
     Class wanted = objc_getClass(clsName);
 
     if (!wanted) return 0;
-    if (!tnx_image_owns_address(g_base, (uintptr_t)wanted)) return 0;
+    if (!tnx_image_owns_address(t_base, (uintptr_t)wanted)) return 0;
 
     SEL sel = sel_registerName(selName);
 
     Class owner = tnx_owner_class(wanted, sel);
 
     if (!owner) return 0;
-    if (!tnx_image_owns_address(g_base, (uintptr_t)owner)) return 0;
+    if (!tnx_image_owns_address(t_base, (uintptr_t)owner)) return 0;
 
     Method method = class_getInstanceMethod(owner, sel);
 
@@ -221,15 +221,15 @@ int tnx_objc_arm(const char *clsName, const char *selName) {
     }
 
     for (int i = 0; i < OBJC_HOOK_MAX; i++) {
-        if (!g_objc_hooks[i].used) continue;
-        if (g_objc_hooks[i].cls != owner || g_objc_hooks[i].sel != sel) continue;
+        if (!t_objc_hooks[i].used) continue;
+        if (t_objc_hooks[i].cls != owner || t_objc_hooks[i].sel != sel) continue;
 
         tlog([NSString stringWithFormat:@"objc hook %s -%s joined via %s", clsName, selName, class_getName(owner)]);
         return 0;
     }
 
     for (int i = 0; i < OBJC_HOOK_MAX; i++) {
-        if (g_objc_hooks[i].used) continue;
+        if (t_objc_hooks[i].used) continue;
 
         IMP previous = method_setImplementation(method, replacement);
 
@@ -241,19 +241,19 @@ int tnx_objc_arm(const char *clsName, const char *selName) {
             return 0;
         }
 
-        g_objc_hooks[i].used = YES;
-        g_objc_hooks[i].cls = owner;
-        g_objc_hooks[i].sel = sel;
-        g_objc_hooks[i].original = previous;
-        g_objc_hooks[i].replacement = replacement;
-        g_objc_hooks[i].selName = selName;
-        g_objc_hooks[i].signature = types;
-        g_objc_hooks[i].hits = 0;
+        t_objc_hooks[i].used = YES;
+        t_objc_hooks[i].cls = owner;
+        t_objc_hooks[i].sel = sel;
+        t_objc_hooks[i].original = previous;
+        t_objc_hooks[i].replacement = replacement;
+        t_objc_hooks[i].selName = selName;
+        t_objc_hooks[i].signature = types;
+        t_objc_hooks[i].hits = 0;
 
-        g_objc_hooks[i].wanted[0] = owner;
-        g_objc_hooks[i].wantedCount = 1;
+        t_objc_hooks[i].wanted[0] = owner;
+        t_objc_hooks[i].wantedCount = 1;
 
-        g_objc_armed++;
+        t_objc_armed++;
 
         tlog([NSString stringWithFormat:@"objc hook %s -%s armed via %s sig=%s orig=%p repl=%p",
               clsName, selName, class_getName(owner), types, (void *)previous, (void *)replacement]);
@@ -271,7 +271,7 @@ int tnx_objc_arm(const char *clsName, const char *selName) {
                  originalExact ? 1 : 0,
                  originalIndex == (size_t)-1 ? -1 : (int)originalIndex,
                  tnx_addr_executable(originalRaw) ? 1 : 0,
-                 tnx_image_text_contains(g_base, originalRaw) ? 1 : 0);
+                 tnx_image_text_contains(t_base, originalRaw) ? 1 : 0);
 
         return 1;
     }
@@ -279,4 +279,4 @@ int tnx_objc_arm(const char *clsName, const char *selName) {
     return 0;
 }
 
-tnx_objc_hook_t g_objc_hooks[OBJC_HOOK_MAX];
+tnx_objc_hook_t t_objc_hooks[OBJC_HOOK_MAX];

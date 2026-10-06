@@ -1,18 +1,18 @@
 #include "titanox.h"
 
-int g_pred_blocked = 0;
+int t_pred_blocked = 0;
 
-uint32_t g_token_2 = 0;
+uint32_t t_token_2 = 0;
 
-uint64_t g_diag_us = 0;
+uint64_t t_diag_us = 0;
 
-uint64_t g_diag_max_us = 0;
+uint64_t t_diag_max_us = 0;
 
-int g_dead_probe_done = 0;
+int t_dead_probe_done = 0;
 
 int tnx_mode_2(void) {
-    int mates = g_mate_n;
-    int en = g_enemy_n;
+    int mates = t_mate_n;
+    int en = t_enemy_n;
 
     if (!TNX_MODE_TUNE) return 2;
     if (mates <= 0 && en <= 1) return 0;
@@ -28,13 +28,13 @@ float tnx_look_ms(void) {
     return looks[tnx_mode_2()];
 }
 
-uint64_t g_clamped = 0;
+uint64_t t_clamped = 0;
 
-uint64_t g_ctrl_dead = 0;
+uint64_t t_ctrl_dead = 0;
 
-uint64_t g_stuck_3 = 0;
+uint64_t t_stuck_3 = 0;
 
-uint64_t g_mask_before = 0;
+uint64_t t_mask_before = 0;
 
 int tnx_ctrl_ok(uintptr_t ctrl) {
     int32_t rawX = 0;
@@ -46,127 +46,125 @@ int tnx_ctrl_ok(uintptr_t ctrl) {
     if (!ctrl) return 0;
     if (!tnx_writable(ctrl + TNX_FLAG_OFF_2, TNX_CTRL_APPLIED_Y_OFF -
                            TNX_FLAG_OFF_2 + sizeof(int32_t))) {
-        g_ctrl_dead++;
+        t_ctrl_dead++;
 
         return 0;
     }
     if (!tnx_writable(ctrl + TNX_CUR_X_OFF, TNX_ORG_Y_OFF -
                            TNX_CUR_X_OFF + sizeof(float))) {
-        g_ctrl_dead++;
+        t_ctrl_dead++;
 
         return 0;
     }
     if (TNX_STALE_SIGHT && tnx_read_ptr(ctrl, &vt) && vt) {
-        if ((uintptr_t)vt < g_base || (uintptr_t)vt >= g_base + TNX_IMAGE_SPAN) g_stale++;
+        if ((uintptr_t)vt < t_base || (uintptr_t)vt >= t_base + TNX_IMAGE_SPAN) t_stale++;
     }
     if (!tnx_read_i32(ctrl + TNX_CTRL_RAW_X_OFF, &rawX)) return 0;
     if (!tnx_read_i32(ctrl + TNX_CTRL_RAW_Y_OFF, &rawY)) return 0;
     if (!tnx_read_i32(ctrl + TNX_CTRL_APPLIED_X_OFF, &appX)) return 0;
     if (!tnx_read_i32(ctrl + TNX_CTRL_APPLIED_Y_OFF, &appY)) return 0;
 
-    if (rawX < -TNX_DEGEN || rawX > TNX_DEGEN) { g_ctrl_dead++; return 0; }
-    if (rawY < -TNX_DEGEN || rawY > TNX_DEGEN) { g_ctrl_dead++; return 0; }
-    if (appX < -TNX_DEGEN || appX > TNX_DEGEN) { g_ctrl_dead++; return 0; }
-    if (appY < -TNX_DEGEN || appY > TNX_DEGEN) { g_ctrl_dead++; return 0; }
+    if (rawX < -TNX_DEGEN || rawX > TNX_DEGEN) { t_ctrl_dead++; return 0; }
+    if (rawY < -TNX_DEGEN || rawY > TNX_DEGEN) { t_ctrl_dead++; return 0; }
+    if (appX < -TNX_DEGEN || appX > TNX_DEGEN) { t_ctrl_dead++; return 0; }
+    if (appY < -TNX_DEGEN || appY > TNX_DEGEN) { t_ctrl_dead++; return 0; }
 
     return 1;
 }
 
-int g_body_blocks = 0;
+int t_body_blocks = 0;
 
-int g_body_mine = 0;
+int t_body_mine = 0;
 
-int g_body_enemy = 0;
+int t_body_enemy = 0;
 
-int g_body_logs = 0;
+int t_body_logs = 0;
 
-int g_input_skips = 0;
+int t_input_skips = 0;
 
-int g_wrote_input = 0;
+int t_wrote_input = 0;
 
-int g_engaged_frame = 0;
+int t_engaged_frame = 0;
 
-int g_neutral_logs = 0;
+int t_neutral_logs = 0;
 
-uint64_t g_test_tick = 0;
+uint64_t t_test_tick = 0;
 
-int g_test_before_x = 0;
+int t_test_before_x = 0;
 
-int g_test_before_y = 0;
+int t_test_before_y = 0;
 
-int g_test_after_x_2 = 0;
+int t_test_after_x_2 = 0;
 
-int g_test_after_y_2 = 0;
+int t_test_after_y_2 = 0;
 
-int g_moved_2 = 0;
+int t_moved_2 = 0;
 
-int g_moved2_2 = 0;
+int t_moved2_2 = 0;
 
-int g_kept_2 = 0;
+int t_kept_2 = 0;
 
-uint64_t g_enqueues = 0;
+uint64_t t_enqueues = 0;
 
-int g_q_before = -1;
+int t_q_before = -1;
 
-int g_q_after = -1;
+int t_q_after = -1;
 
-int g_readback_tick = -1;
+int t_readback_tick = -1;
 
-int g_hop2_logs = 0;
+int t_hop2_logs = 0;
 
-int g_hop2_filled = 0;
+int t_hop2_filled = 0;
 
-uintptr_t g_hop2 = 0;
+uintptr_t t_hop2 = 0;
 
-int g_queue_logs = 0;
+int t_queue_logs = 0;
 
-int g_window_logs = 0;
+int t_window_logs = 0;
 
-uint64_t g_push_frame = 0;
+uint64_t t_push_frame = 0;
 
-int g_frame_logs = 0;
+uint64_t t_test_tickbase = 0;
 
-uint64_t g_test_tickbase = 0;
+int t_enq_ok = 0;
 
-int g_enq_ok = 0;
+const char *t_alloc_how = "none";
 
-const char *g_alloc_how = "none";
+void *t_msg = NULL;
 
-void *g_msg = NULL;
+int t_seq_before = -1;
 
-int g_seq_before = -1;
+int t_seq_after = -1;
 
-int g_seq_after = -1;
+int t_q_before_2 = -1;
 
-int g_q_before_2 = -1;
+int t_q_after_2 = -1;
 
-int g_q_after_2 = -1;
+void *t_q_last = NULL;
 
-void *g_q_last = NULL;
+int32_t t_scene_before_x = 0;
 
-int32_t g_scene_before_x = 0;
+int32_t t_scene_before_y = 0;
 
-int32_t g_scene_before_y = 0;
+uint64_t t_watch_from = 0;
 
-uint64_t g_watch_from = 0;
-
-int g_watch_logs = 0;
+int t_watch_logs = 0;
 
 void *tnx_msg_alloc(void) {
     uintptr_t stub = tnx_entry_2(TNX_ALLOC_RVA);
     uintptr_t got = 0;
 
     if (stub) {
-        g_alloc_how = "stub";
+        t_alloc_how = "stub";
         return ((void *(*)(size_t))stub)((size_t)TNX_MSG_SIZE);
     }
 
-    if (g_base && tnx_read_ptr(g_base + TNX_ALLOC_GOT_RVA, (void **)&got) && got) {
-        g_alloc_how = "got";
+    if (t_base && tnx_read_ptr(t_base + TNX_ALLOC_GOT_RVA, (void **)&got) && got) {
+        t_alloc_how = "got";
         return ((void *(*)(size_t))got)((size_t)TNX_MSG_SIZE);
     }
 
-    g_alloc_how = "none";
+    t_alloc_how = "none";
 
     return NULL;
 }
@@ -188,10 +186,10 @@ void *tnx_q_last(void) {
 }
 
 uintptr_t tnx_entry_2(uintptr_t rva) {
-    if (!g_base || !rva) return 0;
+    if (!t_base || !rva) return 0;
     if (!tnx_callable(rva)) return 0;
 
-    return g_base + rva;
+    return t_base + rva;
 }
 
 void *tnx_manager(void) {
@@ -222,27 +220,27 @@ int tnx_queue_count(uintptr_t *mgrOut) {
     return (int)count;
 }
 
-uintptr_t g_pred_last = 0;
+uintptr_t t_pred_last = 0;
 
-int g_predict_logs = 0;
+int t_predict_logs = 0;
 
 int tnx_predict(int32_t x, int32_t y) {
     uintptr_t battleFn = tnx_entry_2(TNX_GETBATTLE_RVA);
     void *battle = NULL;
 
     if (!TNX_PREDICT) return 0;
-    if (!g_addr_setprediction) return 0;
+    if (!t_addr_setprediction) return 0;
     if (!battleFn) return 0;
 
     battle = ((void *(*)(void))battleFn)();
 
     if (!battle) {
-        g_pred_fails++;
+        t_pred_fails++;
 
         return 0;
     }
 
-    ((void (*)(void *, int, int, int))g_addr_setprediction)(battle, x, y, TNX_PREDICT_FLAG);
+    ((void (*)(void *, int, int, int))t_addr_setprediction)(battle, x, y, TNX_PREDICT_FLAG);
 
     {
         int32_t px = 0;
@@ -256,33 +254,33 @@ int tnx_predict(int32_t x, int32_t y) {
             uint8_t back = 0;
 
             tnx_write_bytes((uintptr_t)battle + TNX_GATE_OFF, &one, sizeof(one));
-            g_gate_writes_2++;
+            t_gate_writes_2++;
 
             if (tnx_read_bytes((uintptr_t)battle + TNX_GATE_OFF, &back, sizeof(back)) &&
                 back == 1) {
-                g_gate_held++;
+                t_gate_held++;
             }
         }
 
-        if (px == x && py == y) g_pred_took++;
-        else g_pred_miss++;
+        if (px == x && py == y) t_pred_took++;
+        else t_pred_miss++;
 
-        if (g_pred_logs < TNX_PRED_LOGS) {
-            g_pred_logs++;
+        if (t_pred_logs < TNX_PRED_LOGS) {
+            t_pred_logs++;
 
             TNX_LOGX("predict battle=%p sent=(%d,%d) read=(%d,%d) took=%llu miss=%llu", battle, x, y, px, py,
-                     (unsigned long long)g_pred_took, (unsigned long long)g_pred_miss);
+                     (unsigned long long)t_pred_took, (unsigned long long)t_pred_miss);
         }
     }
 
-    g_pred_last = (uintptr_t)battle;
-    g_pred_calls++;
+    t_pred_last = (uintptr_t)battle;
+    t_pred_calls++;
 
-    if (g_predict_logs < TNX_PREDICT_LOGS) {
-        g_predict_logs++;
+    if (t_predict_logs < TNX_PREDICT_LOGS) {
+        t_predict_logs++;
 
         TNX_LOGX("predict call=%llu battle=%p target=(%d,%d) fn=%p",
-                 (unsigned long long)g_pred_calls, battle, x, y, (void *)g_addr_setprediction,
+                 (unsigned long long)t_pred_calls, battle, x, y, (void *)t_addr_setprediction,
                  (unsigned long long)TNX_MGR_OFF);
     }
 
@@ -320,7 +318,7 @@ int tnx_pending(int want, uint64_t *mask) {
     return found;
 }
 
-static int g_pred_ok = 0;
+static int t_pred_ok = 0;
 
 static int tnx_pred_probe(uintptr_t pred, int *alignOut, int *readOut, int *writeOut, int *vtOut) {
     void *vtRaw = NULL;
@@ -365,14 +363,14 @@ int tnx_pred_set(int x, int y) {
 
     if (!TNX_PRED_SET) return 0;
 
-    if (!g_coord_ok) {
-        if (g_pred_blocked < TNX_QGUARD_LOGS) {
-            g_pred_blocked++;
+    if (!t_coord_ok) {
+        if (t_pred_blocked < TNX_QGUARD_LOGS) {
+            t_pred_blocked++;
 
             TNX_LOGX("predSkip x=%d y=%d coordOk=%d usable=%d tick=%llu - the prediction is only"
                      " written once the coordinates are calibrated, otherwise the first frames of a"
                      " battle command the character to the origin",
-                     x, y, g_coord_ok, g_coord_usable, (unsigned long long)g_ticks_3);
+                     x, y, t_coord_ok, t_coord_usable, (unsigned long long)t_ticks_3);
         }
 
         return 0;
@@ -385,11 +383,11 @@ int tnx_pred_set(int x, int y) {
     pred = tnx_controller();
 
     if (!tnx_pred_ok(pred)) {
-        if (g_pred_ok < 4) {
+        if (t_pred_ok < 4) {
             TNX_LOGX("predMiss pred=%p - the receiver is the logic client itself, no hop, and a "
                      "receiver that fails here is one the write cannot land on, so nothing of the "
                      "local prediction follows the dodge on this frame", (void *)pred);
-            g_pred_ok++;
+            t_pred_ok++;
         }
 
         return 0;
@@ -397,37 +395,37 @@ int tnx_pred_set(int x, int y) {
 
     ((void (*)(uintptr_t, int, int, int))setFn)(pred, x, y, TNX_PRED_FLAG);
 
-    if (g_pred_ok < 4) {
+    if (t_pred_ok < 4) {
         TNX_LOGX("predSet pred=%p x=%d y=%d flag=%d", (void *)pred, x, y, (int)TNX_PRED_FLAG);
-        g_pred_ok++;
+        t_pred_ok++;
     }
 
     return 1;
 }
 
-int g_qguard_probe = 0;
-int g_qguard_skip = 0;
+int t_qguard_probe = 0;
+int t_qguard_skip = 0;
 
-int g_enq_stop_1 = 0;
+int t_enq_stop_1 = 0;
 
-int g_enq_stop_2 = 0;
+int t_enq_stop_2 = 0;
 
-int g_enq_stop_3 = 0;
+int t_enq_stop_3 = 0;
 
-int g_enq_stop_4 = 0;
+int t_enq_stop_4 = 0;
 
-int g_enq_stop_5 = 0;
+int t_enq_stop_5 = 0;
 
 int tnx_enqueue(int x, int y) {
-    if (!g_coord_ok) {
-        if (g_enq_stop_5 < 8) {
-            g_enq_stop_5++;
+    if (!t_coord_ok) {
+        if (t_enq_stop_5 < 8) {
+            t_enq_stop_5++;
 
             TNX_LOGX("enqueueStop coords gate ok=%d usable=%d x=%d y=%d tick=%llu - the push is "
                      "refused before anything is allocated or signed, and until now this return had "
                      "no counter and no line, so a run in which every push died here looked exactly "
                      "like a run in which the push succeeded and the engine ignored it",
-                     g_coord_ok, g_coord_usable, x, y, (unsigned long long)g_ticks_3);
+                     t_coord_ok, t_coord_usable, x, y, (unsigned long long)t_ticks_3);
         }
 
         return 0;
@@ -442,20 +440,20 @@ int tnx_enqueue(int x, int y) {
     void *mgr = NULL;
     void *msg = NULL;
 
-    g_enq_ok = 0;
-    g_msg = NULL;
-    g_q_last = NULL;
-    g_seq_before = -1;
-    g_seq_after = -1;
-    g_q_before_2 = -1;
-    g_q_after_2 = -1;
+    t_enq_ok = 0;
+    t_msg = NULL;
+    t_q_last = NULL;
+    t_seq_before = -1;
+    t_seq_after = -1;
+    t_q_before_2 = -1;
+    t_q_after_2 = -1;
 
     if (!inputFn) {
-        if (g_enq_stop_1 < 8) {
-            g_enq_stop_1++;
+        if (t_enq_stop_1 < 8) {
+            t_enq_stop_1++;
 
             TNX_LOGX("enqueueStop addInput rva=%#llx base=%p callable=0",
-                     (unsigned long long)TNX_ADDINPUT_RVA, (void *)g_base);
+                     (unsigned long long)TNX_ADDINPUT_RVA, (void *)t_base);
         }
 
         return 0;
@@ -464,10 +462,10 @@ int tnx_enqueue(int x, int y) {
     msg = tnx_msg_alloc();
 
     if (!msg) {
-        if (g_enq_stop_2 < 8) {
-            g_enq_stop_2++;
+        if (t_enq_stop_2 < 8) {
+            t_enq_stop_2++;
 
-            TNX_LOGX("enqueueStop alloc how=%s size=%#llx", g_alloc_how,
+            TNX_LOGX("enqueueStop alloc how=%s size=%#llx", t_alloc_how,
                      (unsigned long long)TNX_MSG_SIZE, (unsigned long long)TNX_MSG_SIZE);
         }
 
@@ -482,11 +480,11 @@ int tnx_enqueue(int x, int y) {
     tnx_write_bytes((uintptr_t)msg + TNX_X_OFF, &vx, sizeof(vx));
     tnx_write_bytes((uintptr_t)msg + TNX_Y_OFF, &vy, sizeof(vy));
 
-    if (TNX_QUEUE_GUARD && g_qguard_probe < 1) {
+    if (TNX_QUEUE_GUARD && t_qguard_probe < 1) {
         void *mvt = NULL;
         int32_t back = 0;
 
-        g_qguard_probe++;
+        t_qguard_probe++;
 
         tnx_read_ptr((uintptr_t)msg, &mvt);
         tnx_read_i32((uintptr_t)msg + TNX_TYPE_OFF, &back);
@@ -496,7 +494,7 @@ int tnx_enqueue(int x, int y) {
                  "object and the push is what kills the frame; vtableRva!=0 with shaped=1 means "
                  "the message is fine and the manager is the one to look at",
                  (void *)msg, mvt,
-                 (unsigned long long)(g_base && (uintptr_t)mvt > g_base ? (uintptr_t)mvt - g_base : 0),
+                 (unsigned long long)(t_base && (uintptr_t)mvt > t_base ? (uintptr_t)mvt - t_base : 0),
                  (int)type, (int)back, (int)tnx_instance_shaped((uintptr_t)msg),
                  (unsigned long long)TNX_MSG_SIZE);
     }
@@ -504,14 +502,14 @@ int tnx_enqueue(int x, int y) {
     {
         uintptr_t battleFn = tnx_entry_2(TNX_GETBATTLE_RVA);
 
-        g_token_2 = 0;
-        g_raw_x = 0;
-        g_raw_y = 0;
+        t_token_2 = 0;
+        t_raw_x = 0;
+        t_raw_y = 0;
 
         if (battleFn) {
             void *battle = ((void *(*)(void))battleFn)();
 
-            if (battle) g_token_2 = tnx_ci_sign(msg, battle);
+            if (battle) t_token_2 = tnx_ci_sign(msg, battle);
         }
     }
 
@@ -521,25 +519,25 @@ int tnx_enqueue(int x, int y) {
 
     if (!mgr) {
         TNX_LOGX("queuePush aborted x=%d y=%d msg=%p alloc=%s",
-                 x, y, msg, g_alloc_how, (unsigned long long)TNX_MGR_OFF);
+                 x, y, msg, t_alloc_how, (unsigned long long)TNX_MGR_OFF);
 
         return 0;
     }
 
-    tnx_read_i32((uintptr_t)mgr + TNX_MGR_SEQ_OFF, &g_seq_before);
+    tnx_read_i32((uintptr_t)mgr + TNX_MGR_SEQ_OFF, &t_seq_before);
 
-    g_q_before_2 = tnx_queue_count(NULL);
+    t_q_before_2 = tnx_queue_count(NULL);
 
-    if (tnx_pending(TNX_TYPE_MOVE, &g_mask_before)) {
-        g_stuck_3++;
+    if (tnx_pending(TNX_TYPE_MOVE, &t_mask_before)) {
+        t_stuck_3++;
     }
 
     {
         void *mgrInner = NULL;
 
         if (!tnx_read_ptr((uintptr_t)mgr + TNX_CI_MGR_QUEUE_OFF, &mgrInner) || !mgrInner) {
-            if (g_enq_stop_3 < 8) {
-                g_enq_stop_3++;
+            if (t_enq_stop_3 < 8) {
+                t_enq_stop_3++;
 
                 TNX_LOGX("enqueueStop queueSlot mgr=%p slot+%#llx=%p", (void *)mgr,
                          (unsigned long long)TNX_CI_MGR_QUEUE_OFF, (void *)mgrInner);
@@ -549,18 +547,18 @@ int tnx_enqueue(int x, int y) {
         }
     }
 
-    g_enq_stop_4++;
+    t_enq_stop_4++;
 
     if (TNX_QUEUE_GUARD || TNX_QUEUE_GUARD_MGR) {
         int msgOk = tnx_instance_shaped((uintptr_t)msg);
         int mgrOk = tnx_manager_shape((uintptr_t)mgr);
 
         if ((TNX_QUEUE_GUARD && !msgOk) || (TNX_QUEUE_GUARD_MGR && !mgrOk)) {
-            if (g_qguard_skip < TNX_QGUARD_LOGS) {
+            if (t_qguard_skip < TNX_QGUARD_LOGS) {
                 void *mvt = NULL;
                 void *gvt = NULL;
 
-                g_qguard_skip++;
+                t_qguard_skip++;
 
                 tnx_read_ptr((uintptr_t)msg, &mvt);
                 tnx_read_ptr((uintptr_t)mgr, &gvt);
@@ -570,7 +568,7 @@ int tnx_enqueue(int x, int y) {
                          "like the thing it must be, so the push is skipped; the page-writable "
                          "guard cannot see this, a readable freed block passes it",
                          (void *)msg, mvt, msgOk, (void *)mgr, gvt, mgrOk,
-                         (unsigned long long)g_ticks_3);
+                         (unsigned long long)t_ticks_3);
             }
 
             return 0;
@@ -579,73 +577,57 @@ int tnx_enqueue(int x, int y) {
 
     ((void (*)(void *, void *))inputFn)(mgr, msg);
 
-    g_seq_after = -1;
-    tnx_read_i32((uintptr_t)mgr + TNX_MGR_SEQ_OFF, &g_seq_after);
-    g_q_after_2 = tnx_queue_count(NULL);
-    g_q_last = tnx_q_last();
-    g_msg = msg;
-    g_enq_ok = 1;
+    t_seq_after = -1;
+    tnx_read_i32((uintptr_t)mgr + TNX_MGR_SEQ_OFF, &t_seq_after);
+    t_q_after_2 = tnx_queue_count(NULL);
+    t_q_last = tnx_q_last();
+    t_msg = msg;
+    t_enq_ok = 1;
 
     if (TNX_QUEUE) {
-        if (g_q_after_2 <= 0) g_drain++;
-        if ((uint64_t)(g_q_after_2 > 0 ? g_q_after_2 : 0) > g_q_max) {
-            g_q_max = (uint64_t)g_q_after_2;
+        if (t_q_after_2 <= 0) t_drain++;
+        if ((uint64_t)(t_q_after_2 > 0 ? t_q_after_2 : 0) > t_q_max) {
+            t_q_max = (uint64_t)t_q_after_2;
         }
     }
-    g_enqueues++;
-    g_push_frame = g_ticks_3;
+    t_enqueues++;
+    t_push_frame = t_ticks_3;
 
-    if (g_push_logs < TNX_PUSH_LOGS || (g_push_logs % 64) == 0) {
+    if (t_push_logs < TNX_PUSH_LOGS || (t_push_logs % 64) == 0) {
         TNX_LOGX("queuePush tick=%llu type=%d x=%d y=%d msg=%p mgr=%p alloc=%s seqBefore=%d seqAfter=%d qBefore=%d qAfter=%d qLast=%p",
-                 (unsigned long long)g_tick_2, TNX_TYPE_MOVE, x, y, msg, mgr, g_alloc_how,
-                 g_seq_before, g_seq_after, g_q_before_2, g_q_after_2, g_q_last,
+                 (unsigned long long)t_tick_2, TNX_TYPE_MOVE, x, y, msg, mgr, t_alloc_how,
+                 t_seq_before, t_seq_after, t_q_before_2, t_q_after_2, t_q_last,
                  (unsigned long long)0x79de88ULL, (unsigned)TNX_MSG_SIZE,
                  (unsigned long long)TNX_MSGCTOR_RVA, (unsigned long long)TNX_TYPE_OFF,
                  TNX_TYPE_MOVE, (unsigned long long)TNX_X_OFF,
                  (unsigned long long)TNX_ADDINPUT_RVA, (unsigned long long)TNX_GETBATTLE_RVA,
-                 (unsigned long long)TNX_MGR_OFF, g_alloc_how,
+                 (unsigned long long)TNX_MGR_OFF, t_alloc_how,
                  (unsigned long long)TNX_ALLOC_RVA, (unsigned long long)TNX_ALLOC_GOT_RVA,
                  (unsigned long long)TNX_MGR_SEQ_OFF);
     }
 
-    g_push_logs++;
+    t_push_logs++;
 
     return 1;
 }
 
-const char *tnx_state_x(int32_t v) {
-    if (v == g_enq_x) return "MATCH";
-    if (v == -1) return "RESET";
-    if (v == 0) return "DEFAULT";
+int32_t t_own_held_x = 0;
 
-    return "other";
-}
+int32_t t_own_held_y = 0;
 
-const char *tnx_state_y(int32_t v) {
-    if (v == g_enq_y && g_enq_y != 0) return "MATCH";
-    if (v == -1) return "RESET";
-    if (v == 0) return (g_enq_y == 0) ? "MATCH=DEFAULT" : "DEFAULT";
+int32_t t_own_flag = -1;
 
-    return "other";
-}
+int t_have_wit = 0;
 
-int32_t g_own_held_x = 0;
+int t_calls = 0;
 
-int32_t g_own_held_y = 0;
+int t_act_logs = 0;
 
-int32_t g_own_flag = -1;
+int t_wit_logs = 0;
 
-int g_have_wit = 0;
+int t_own_logs_3 = 0;
 
-int g_calls = 0;
-
-int g_act_logs = 0;
-
-int g_wit_logs = 0;
-
-int g_own_logs_3 = 0;
-
-int g_probe_done = 0;
+int t_probe_done = 0;
 
 void tnx_probe(void) {
     uintptr_t ctrl = tnx_client();
@@ -663,10 +645,10 @@ void tnx_probe(void) {
     int32_t own_flag = -1;
     int32_t own_mode = -1;
 
-    if (g_probe_done) return;
+    if (t_probe_done) return;
     if (!ctrl) return;
 
-    g_probe_done = 1;
+    t_probe_done = 1;
 
     if (!tnx_read_i32(ctrl + TNX_CTRL_RAW_X_OFF, &raw_x)) raw_x = 0;
     if (!tnx_read_i32(ctrl + TNX_CTRL_RAW_Y_OFF, &raw_y)) raw_y = 0;
@@ -729,18 +711,18 @@ void tnx_actuate(void) {
     int doSetter = (TNX_MODE == TNX_MODE_SETTER ||
                     TNX_MODE == TNX_MODE_BOTH) ? 1 : 0;
 
-    if (!g_active) return;
+    if (!t_active) return;
     if (!doWrite && !doSetter) return;
 
-    g_calls++;
+    t_calls++;
 
     tnx_probe();
 
     if (!tnx_witness(&wx, &wy)) {
-        wx = g_wit_x0;
-        wy = g_wit_y0;
+        wx = t_wit_x0;
+        wy = t_wit_y0;
     } else {
-        g_have_wit = 1;
+        t_have_wit = 1;
     }
 
     if (doSetter && fn && own) {
@@ -756,7 +738,7 @@ void tnx_actuate(void) {
                  (unsigned long long)TNX_INPUT_Y_OFF, pairBeforeY,
                  (unsigned long long)TNX_INPUT_K_OFF, pairBeforeK,
                  (unsigned long long)TNX_GATE_FLAG_OFF, gateBefore,
-                 (unsigned long long)TNX_MODE_OFF, modeBefore, g_calls,
+                 (unsigned long long)TNX_MODE_OFF, modeBefore, t_calls,
                  (unsigned long long)TNX_SETPRED4_RVA, (unsigned long long)0x79de14ULL);
 
         ((void (*)(void *, int, int, int))fn)((void *)own, wx + TNX_DX, wy + TNX_DY,
@@ -778,9 +760,9 @@ void tnx_actuate(void) {
                  wx + TNX_DX, wy + TNX_DY, (unsigned long long)TNX_GATE_FLAG_OFF,
                  (unsigned long long)0xac3424ULL, wx + TNX_DX, wy + TNX_DY);
 
-        g_own_held_x = pairAfterX;
-        g_own_held_y = pairAfterY;
-        g_own_flag = gateAfter;
+        t_own_held_x = pairAfterX;
+        t_own_held_y = pairAfterY;
+        t_own_flag = gateAfter;
     }
 
     (void)raw_keep_x;
@@ -789,28 +771,28 @@ void tnx_actuate(void) {
     if (own && !doSetter) {
         tnx_read_i32(own + TNX_GATE_FLAG_OFF, &flagAfter);
 
-        if (!tnx_read_i32(own + TNX_GATE_X_OFF, &g_own_held_x)) g_own_held_x = 0;
-        if (!tnx_read_i32(own + TNX_GATE_Y_OFF, &g_own_held_y)) g_own_held_y = 0;
+        if (!tnx_read_i32(own + TNX_GATE_X_OFF, &t_own_held_x)) t_own_held_x = 0;
+        if (!tnx_read_i32(own + TNX_GATE_Y_OFF, &t_own_held_y)) t_own_held_y = 0;
 
-        g_own_flag = flagAfter;
+        t_own_flag = flagAfter;
     }
 
-    if (g_act_logs < TNX_ACT_LOGS) {
-        g_act_logs++;
+    if (t_act_logs < TNX_ACT_LOGS) {
+        t_act_logs++;
 
         tnx_vt_ok(own, &ownVt);
 
-        if (ownVt >= g_base) ownCls = ownVt - g_base;
+        if (ownVt >= t_base) ownCls = ownVt - t_base;
 
-        if (g_actuate_logs < 8) {
-            g_actuate_logs++;
+        if (t_actuate_logs < 8) {
+            t_actuate_logs++;
 
             TNX_LOGX("actuate own=%p ownFrom=%s ownClassRva=%#llx valid=%d",
-                     (void *)own, g_own_from_3, (unsigned long long)ownCls, own ? 1 : 0);
+                     (void *)own, t_own_from_3, (unsigned long long)ownCls, own ? 1 : 0);
         }
 
         TNX_LOGX("actuate mode=%d call=%d doWrite=%d doSetter=%d own=%p ownFrom=%s ownClassRva=%#llx scene=%p wrote raw+%#llx (%d,%d) over (%d,%d) on the scene, setterRan=%d, wouldCall %#llx(own,%d,%d,%d) from the witness (%d,%d)",
-                 TNX_MODE, g_calls, doWrite, doSetter, (void *)own, g_own_from_3,
+                 TNX_MODE, t_calls, doWrite, doSetter, (void *)own, t_own_from_3,
                  (unsigned long long)ownCls, (void *)ctrl,
                  (unsigned long long)TNX_CTRL_RAW_X_OFF, raw_x, raw_y, raw_keep_x, raw_keep_y,
                  setterRan, (unsigned long long)TNX_SETPRED4_RVA, wx + TNX_DX,
@@ -830,38 +812,38 @@ void tnx_hop2(void) {
     uintptr_t vt0Rva = 0;
     int32_t count = 0;
 
-    if (!g_scene_object) return;
-    if (g_hop2_filled) return;
+    if (!t_scene_object) return;
+    if (t_hop2_filled) return;
 
-    if (!tnx_read_ptr((uintptr_t)g_scene_object + TNX_HOP2_OWNER_OFF, &outer) || !outer) return;
+    if (!tnx_read_ptr((uintptr_t)t_scene_object + TNX_HOP2_OWNER_OFF, &outer) || !outer) return;
     if (!tnx_read_ptr((uintptr_t)outer + TNX_HOP2_INNER_OFF, &inner) || !inner) return;
 
-    g_hop2 = (uintptr_t)inner;
+    t_hop2 = (uintptr_t)inner;
 
     if (!tnx_read_ptr((uintptr_t)inner + TNX_MGR_ARRAY_OFF, &list) || !list) {
-        if (g_tick_2 % 10 != 0) return;
-        if (g_tick_2 > TNX_HOP2_WAIT) return;
-        if (g_hop2_logs >= 6) return;
+        if (t_tick_2 % 10 != 0) return;
+        if (t_tick_2 > TNX_HOP2_WAIT) return;
+        if (t_hop2_logs >= 6) return;
 
-        g_hop2_logs++;
+        t_hop2_logs++;
 
         TNX_LOGX("hop2 tick=%llu at=%p array=null",
-                 (unsigned long long)g_tick_2, inner,
+                 (unsigned long long)t_tick_2, inner,
                  (unsigned long long)TNX_HOP2_OWNER_OFF,
                  (unsigned long long)TNX_HOP2_INNER_OFF, TNX_HOP2_WAIT);
 
         return;
     }
 
-    g_hop2_filled = 1;
+    t_hop2_filled = 1;
     tnx_read_i32((uintptr_t)inner + TNX_MGR_COUNT_OFF, &count);
 
     if (tnx_read_ptr((uintptr_t)list, &e0) && e0) {
-        if (tnx_read_ptr((uintptr_t)e0, &vt0) && vt0) vt0Rva = (uintptr_t)vt0 - g_base;
+        if (tnx_read_ptr((uintptr_t)e0, &vt0) && vt0) vt0Rva = (uintptr_t)vt0 - t_base;
     }
 
     TNX_LOGX("hop2 FILLED tick=%llu container=%p count=%d elem0=%p elem0vt=%#llx",
-             (unsigned long long)g_tick_2, inner, count, e0, (unsigned long long)vt0Rva,
+             (unsigned long long)t_tick_2, inner, count, e0, (unsigned long long)vt0Rva,
              (unsigned long long)TNX_HOP2_OWNER_OFF,
              (unsigned long long)TNX_HOP2_INNER_OFF);
 
@@ -904,8 +886,8 @@ int tnx_proj_vel(const tnx_proj_t *p, float *vxOut, float *vyOut) {
 uintptr_t tnx_input_mgr(void) {
     void *mgr = NULL;
 
-    if (!g_scene_object) return 0;
-    if (!tnx_read_ptr(g_scene_object + TNX_MODE_INPUTMGR_OFF, &mgr) || !mgr) return 0;
+    if (!t_scene_object) return 0;
+    if (!tnx_read_ptr(t_scene_object + TNX_MODE_INPUTMGR_OFF, &mgr) || !mgr) return 0;
     if (!tnx_heap_contains((uintptr_t)mgr)) return 0;
 
     return (uintptr_t)mgr;
@@ -915,12 +897,12 @@ void tnx_input_release(void) {
     uintptr_t mgr = 0;
     int32_t held[3] = { 0, 0, 0 };
     int32_t zero[3] = { 0, 0, 0 };
-    int engagedLast = g_engaged_frame;
+    int engagedLast = t_engaged_frame;
 
-    g_engaged_frame = 0;
+    t_engaged_frame = 0;
 
     if (!TNX_INPUT_MGR) return;
-    if (!g_wrote_input) return;
+    if (!t_wrote_input) return;
     if (engagedLast) return;
 
     mgr = tnx_input_mgr();
@@ -931,7 +913,7 @@ void tnx_input_release(void) {
     tnx_read_i32(mgr + 0x8, &held[1]);
     tnx_read_i32(mgr + 0xc, &held[2]);
 
-    g_wrote_input = 0;
+    t_wrote_input = 0;
 
     if (held[0] == 0 && held[1] == 0 && held[2] == 0) return;
 
@@ -939,75 +921,60 @@ void tnx_input_release(void) {
     tnx_write_bytes(mgr + 0x8, &zero[1], sizeof(zero[1]));
     tnx_write_bytes(mgr + 0xc, &zero[2], sizeof(zero[2]));
 
-    if (g_neutral_logs < 4) {
-        g_neutral_logs++;
+    if (t_neutral_logs < 4) {
+        t_neutral_logs++;
 
         TNX_LOGX("input released: the record held (%d,%d,%d) and the previous frame was the last one this build wrote, so it is zeroed now", held[0], held[1], held[2]);
     }
 }
 
-uintptr_t g_joystick = 0;
+uintptr_t t_joystick = 0;
 
-uint64_t g_joystick_writes = 0;
+uint64_t t_joystick_writes = 0;
 
-uint64_t g_joystick_took = 0;
+uint64_t t_joystick_took = 0;
 
-int g_stick_hold = 0;
+int t_stick_hold = 0;
 
-uint64_t g_stick_tick = 0;
+uint64_t t_stick_tick = 0;
 
-long long g_sum_x = 0;
+long long t_sum_x = 0;
 
-long long g_sum_y = 0;
+long long t_sum_y = 0;
 
-int g_route_seeded = 0;
+int t_route_seeded = 0;
 
-int32_t g_last_own_x = 0;
+int32_t t_last_own_x = 0;
 
-int32_t g_last_own_y = 0;
+int32_t t_last_own_y = 0;
 
-uint64_t g_drag_writes_2 = 0;
+int t_precond = -1;
 
-uint64_t g_back_ok = 0;
+int t_gate = -1;
 
-uint64_t g_back_bad = 0;
+int t_accepted = 0;
 
-int g_precond = -1;
+int t_proofs = 0;
 
-int g_gate = -1;
+int t_drove = 0;
 
-int g_accepted = 0;
+uint64_t t_drive_tick = 0;
 
-int g_proofs = 0;
+float t_mark = 0.0f;
 
-int g_drove = 0;
+float t_dot = 0.0f;
 
-uint64_t g_drive_tick = 0;
+float t_last_dx = 0.0f;
 
-float g_mark = 0.0f;
+float t_last_dy = 0.0f;
 
-float g_dot = 0.0f;
+int32_t t_raw_x = 0;
 
-float g_last_dx = 0.0f;
+int32_t t_raw_y = 0;
 
-float g_last_dy = 0.0f;
+int32_t t_app_x = 0;
 
-int32_t g_raw_x = 0;
-
-int32_t g_raw_y = 0;
-
-int32_t g_app_x = 0;
-
-int32_t g_app_y = 0;
-
-int tnx_sign(void) {
-    uint8_t b = 0;
-
-    if (!g_base) return 1;
-    if (!tnx_read_bytes(g_base + TNX_SIGN_RVA, &b, 1)) return 1;
-
-    return b ? 1 : -1;
-}
+int32_t t_app_y = 0;
 
 void tnx_snapshot_3(void) {
     uintptr_t ctrl = tnx_controller();
@@ -1037,13 +1004,13 @@ void tnx_snapshot_3(void) {
 
     tnx_read_f32(ctrl + TNX_MARK_OFF, &mark);
 
-    g_raw_x = rawX;
-    g_raw_y = rawY;
-    g_app_x = appX;
-    g_app_y = appY;
-    g_precond = (int)precond;
-    g_gate = (int)(gate & 1);
-    g_mark = mark;
+    t_raw_x = rawX;
+    t_raw_y = rawY;
+    t_app_x = appX;
+    t_app_y = appY;
+    t_precond = (int)precond;
+    t_gate = (int)(gate & 1);
+    t_mark = mark;
 
     if (!TNX_HUMAN) return;
 
@@ -1051,53 +1018,53 @@ void tnx_snapshot_3(void) {
     if (!tnx_read_f32(ctrl + TNX_ORG_X_OFF, &dragOx) || !tnx_read_f32(ctrl + TNX_ORG_Y_OFF, &dragOy)) return;
     if (!tnx_read_bytes(ctrl + TNX_TOUCH_GATE_OFF, &touch, sizeof(touch))) return;
 
-    g_moved_3 = 0;
+    t_moved_3 = 0;
 
-    if (fabsf(dragX - g_cur_x) > TNX_EPS) g_moved_3 = 1;
-    if (fabsf(dragY - g_cur_y) > TNX_EPS) g_moved_3 = 1;
-    if (fabsf(dragOx - g_org_x) > TNX_EPS) g_moved_3 = 1;
-    if (fabsf(dragOy - g_org_y) > TNX_EPS) g_moved_3 = 1;
+    if (fabsf(dragX - t_cur_x) > TNX_EPS) t_moved_3 = 1;
+    if (fabsf(dragY - t_cur_y) > TNX_EPS) t_moved_3 = 1;
+    if (fabsf(dragOx - t_org_x) > TNX_EPS) t_moved_3 = 1;
+    if (fabsf(dragOy - t_org_y) > TNX_EPS) t_moved_3 = 1;
 
-    g_touch = (int)(touch & 1);
-    g_human_2 = (g_touch || g_moved_3) ? 1 : 0;
+    t_touch = (int)(touch & 1);
+    t_human_2 = (t_touch || t_moved_3) ? 1 : 0;
 
-    if (g_drove && g_drive_tick + 1 < g_ticks_3 && !g_human_2) {
-        tnx_write_f32(ctrl + TNX_CUR_X_OFF, g_org_x);
-        tnx_write_f32(ctrl + TNX_CUR_Y_OFF, g_org_y);
-        g_cur_x = g_org_x;
-        g_cur_y = g_org_y;
-        g_drove = 0;
-        g_stops++;
+    if (t_drove && t_drive_tick + 1 < t_ticks_3 && !t_human_2) {
+        tnx_write_f32(ctrl + TNX_CUR_X_OFF, t_org_x);
+        tnx_write_f32(ctrl + TNX_CUR_Y_OFF, t_org_y);
+        t_cur_x = t_org_x;
+        t_cur_y = t_org_y;
+        t_drove = 0;
+        t_stops++;
     }
 
-    if (!g_drove) return;
-    if (g_last_dx == 0.0f && g_last_dy == 0.0f) return;
+    if (!t_drove) return;
+    if (t_last_dx == 0.0f && t_last_dy == 0.0f) return;
 
     len = sqrtf((float)(rawX * rawX + rawY * rawY));
 
     if (len < 1.0f) return;
 
-    dot = ((float)rawX * g_last_dx + (float)rawY * g_last_dy) / len;
-    g_dot = dot;
+    dot = ((float)rawX * t_last_dx + (float)rawY * t_last_dy) / len;
+    t_dot = dot;
 
     if (fabsf(dot) < TNX_ALIGN) {
-        g_proofs = 0;
+        t_proofs = 0;
 
         return;
     }
 
-    if (g_proofs < TNX_PROOF) g_proofs++;
+    if (t_proofs < TNX_PROOF) t_proofs++;
 
-    if (g_proofs >= TNX_PROOF) g_accepted = 1;
+    if (t_proofs >= TNX_PROOF) t_accepted = 1;
 }
 
 void tnx_threats(void) {
     int k = 0;
 
-    if ((g_ticks_3 % 60) != 0) return;
+    if ((t_ticks_3 % 60) != 0) return;
 
     for (k = 0; k < TNX_PROJ_MAX; k++) {
-        const tnx_proj_t *p = &g_projs[k];
+        const tnx_proj_t *p = &t_projs[k];
         float vx = 0.0f;
         float vy = 0.0f;
         const char *verdict = "threat";
@@ -1106,7 +1073,7 @@ void tnx_threats(void) {
 
         if (!tnx_proj_vel(p, &vx, &vy)) {
             verdict = p->hasPrev ? "vel-unreadable" : "one-sample";
-        } else if (TNX_TEAM_FILTER && g_own_team_seen && p->team == g_own_team_3) {
+        } else if (TNX_TEAM_FILTER && t_own_team_seen && p->team == t_own_team_3) {
             verdict = "own-team";
         } else if (sqrtf(vx * vx + vy * vy) < TNX_MIN_PROJ_SPEED) {
             verdict = "still";
@@ -1115,36 +1082,36 @@ void tnx_threats(void) {
         TNX_LOGX("threat gid=%d elem=%p at=(%d,%d) prev=(%d,%d) dt=%llu vel=(%.1f,%.1f) team=%d verdict=%s ownTeam=%d armed=%d",
                  p->gid, (void *)p->elem, p->x, p->y, p->px, p->py,
                  (unsigned long long)(p->qtick - p->ptick), (double)vx, (double)vy, p->team, verdict,
-                 g_own_team_3, g_own_team_seen);
+                 t_own_team_3, t_own_team_seen);
     }
 }
 
 int tnx_body_blocked(float x, float y, float ownX, float ownY) {
     int i = 0;
 
-    if (g_pl_n <= 0) return 0;
+    if (t_pl_n <= 0) return 0;
 
-    for (i = 0; i < g_pl_n; i++) {
+    for (i = 0; i < t_pl_n; i++) {
         float px = 0.0f;
         float py = 0.0f;
 
-        if (g_pl_mine[i]) continue;
+        if (t_pl_mine[i]) continue;
 
-        px = (float)g_pl_x[i];
-        py = (float)g_pl_y[i];
+        px = (float)t_pl_x[i];
+        py = (float)t_pl_y[i];
 
         if (tnx_seg_dist(ownX, ownY, x, y, px, py) < TNX_BODY_CLEAR) {
-            g_body_blocks++;
+            t_body_blocks++;
 
-            if (g_pl_mine[i]) g_body_mine++;
-            else g_body_enemy++;
+            if (t_pl_mine[i]) t_body_mine++;
+            else t_body_enemy++;
 
-            if (g_body_logs < TNX_BODY_LOGS) {
-                g_body_logs++;
+            if (t_body_logs < TNX_BODY_LOGS) {
+                t_body_logs++;
 
-                TNX_LOGX("body in the way body=(%d,%d) mine=%d own=(%d,%d) candidate=(%d,%d) off=%d blocks=%d", (int)px, (int)py, g_pl_mine[i], (int)ownX,
+                TNX_LOGX("body in the way body=(%d,%d) mine=%d own=(%d,%d) candidate=(%d,%d) off=%d blocks=%d", (int)px, (int)py, t_pl_mine[i], (int)ownX,
                          (int)ownY, (int)x, (int)y,
-                         (int)tnx_seg_dist(ownX, ownY, x, y, px, py), g_body_blocks);
+                         (int)tnx_seg_dist(ownX, ownY, x, y, px, py), t_body_blocks);
             }
 
             return 1;

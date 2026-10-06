@@ -4,91 +4,91 @@
 #define TNX_LOG_PLANS 0
 #endif
 
-int g_own_team = 0;
+int t_own_team = 0;
 
-int g_own_idhit = 0;
+int t_own_idhit = 0;
 
-uintptr_t g_setpred = 0;
+uintptr_t t_setpred = 0;
 
-int g_wide_runs = 0;
+int t_wide_runs = 0;
 
-int g_miss_logs = 0;
+int t_miss_logs = 0;
 
-int g_live_objs = 0;
+int t_live_objs = 0;
 
-int g_live_teams = 0;
+int t_live_teams = 0;
 
-int g_fb_on = 0;
+int t_fb_on = 0;
 
-int g_fb_logged = 0;
+int t_fb_logged = 0;
 
-int g_bar_logged = 0;
+int t_bar_logged = 0;
 
-unsigned g_vt_text_rejects = 0;
+unsigned t_vt_text_rejects = 0;
 
-unsigned long long g_obj_prev = 0;
+unsigned long long t_obj_prev = 0;
 
-uintptr_t g_site = 0;
+uintptr_t t_site = 0;
 
-int g_state_2 = -1;
+int t_state_2 = -1;
 
-int g_scan_armed = -1;
+int t_scan_armed = -1;
 
-volatile uint32_t g_seq = 0;
+volatile uint32_t t_seq = 0;
 
-uintptr_t g_pub_object = 0;
+uintptr_t t_pub_object = 0;
 
-uintptr_t g_pub_array = 0;
+uintptr_t t_pub_array = 0;
 
-int32_t g_pub_count = 0;
+int32_t t_pub_count = 0;
 
-int32_t g_pub_cap = 0;
+int32_t t_pub_cap = 0;
 
-int g_pub_logs = 0;
+int t_pub_logs = 0;
 
-uintptr_t g_tick_object = 0;
+uintptr_t t_tick_object = 0;
 
-uintptr_t g_tick_array = 0;
+uintptr_t t_tick_array = 0;
 
-int32_t g_tick_count = 0;
+int32_t t_tick_count = 0;
 
-uint64_t g_tick_logs = 0;
+uint64_t t_tick_logs = 0;
 
-int g_score_logs_2 = 0;
+int t_score_logs_2 = 0;
 
-uint64_t g_walk_aborts = 0;
+uint64_t t_walk_aborts = 0;
 
 void tnx_publish(uintptr_t object, uintptr_t array, int32_t count, int32_t cap,
                              const char *why) {
     __sync_synchronize();
 
-    g_seq++;
+    t_seq++;
 
     __sync_synchronize();
 
-    g_pub_object = object;
-    g_pub_array = array;
-    g_pub_count = count;
-    g_pub_cap = cap;
+    t_pub_object = object;
+    t_pub_array = array;
+    t_pub_count = count;
+    t_pub_cap = cap;
 
-    g_players_object = object;
-    g_players_array = array;
-    g_players_count = count;
-    g_players_cap = cap;
-
-    __sync_synchronize();
-
-    g_seq++;
+    t_players_object = object;
+    t_players_array = array;
+    t_players_count = count;
+    t_players_cap = cap;
 
     __sync_synchronize();
 
-    if (g_pub_logs < 12) {
-        g_pub_logs++;
+    t_seq++;
+
+    __sync_synchronize();
+
+    if (t_pub_logs < 12) {
+        t_pub_logs++;
 
         tnx_logf("publish why=%s object=%p array=%p count=%d cap=%d seq=%u - the whole triple "
                  "moves under one sequence, so no reader can take the new array with the old "
                  "count", why ? why : "?", (void *)object, (void *)array, count, cap,
-                 (unsigned)g_seq);
+                 (unsigned)t_seq);
     }
 }
 
@@ -96,20 +96,20 @@ int tnx_snapshot(uintptr_t *objectOut, uintptr_t *arrayOut, int32_t *countOut) {
     int tries;
 
     for (tries = 0; tries < 8; tries++) {
-        uint32_t s1 = g_seq;
+        uint32_t s1 = t_seq;
         uintptr_t o;
         uintptr_t a;
         int32_t c;
 
         if (s1 & 1u) continue;
 
-        o = g_pub_object;
-        a = g_pub_array;
-        c = g_pub_count;
+        o = t_pub_object;
+        a = t_pub_array;
+        c = t_pub_count;
 
         __sync_synchronize();
 
-        if (g_seq != s1) continue;
+        if (t_seq != s1) continue;
 
         if (objectOut) *objectOut = o;
         if (arrayOut) *arrayOut = a;
@@ -128,29 +128,29 @@ void tnx_tick_begin(const char *phase) {
 
     if (!tnx_snapshot(&o, &a, &c)) return;
 
-    g_tick_object = o;
-    g_tick_array = a;
-    g_tick_count = c;
-    g_tick_stamp++;
+    t_tick_object = o;
+    t_tick_array = a;
+    t_tick_count = c;
+    t_tick_stamp++;
 
-    if (g_tick_logs < 12) {
-        g_tick_logs++;
+    if (t_tick_logs < 12) {
+        t_tick_logs++;
 
         tnx_logf("tick enter phase=%s object=%p array=%p count=%d stamp=%llu - the snapshot is "
                  "taken before any stage reads it and is what the walk, the census and the "
                  "resolver all use, so a publish from the scan timer cannot split them",
                  phase ? phase : "?", (void *)o, (void *)a, c,
-                 (unsigned long long)g_tick_stamp);
+                 (unsigned long long)t_tick_stamp);
     }
 }
 
-uint64_t g_idle_start = 0;
+uint64_t t_idle_start = 0;
 
-int g_idle_on = 0;
+int t_idle_on = 0;
 
-int g_idle_logged = 0;
+int t_idle_logged = 0;
 
-int g_idle_skips = 0;
+int t_idle_skips = 0;
 
 void tnx_slot_install_one(int index) {
     uintptr_t target = 0;
@@ -158,14 +158,14 @@ void tnx_slot_install_one(int index) {
 
     if (index < 0 || index >= TNX_SLOT_COUNT) return;
 
-    g_slot_installed[index] = 0;
-    g_slot_slots[index] = 0;
+    t_slot_installed[index] = 0;
+    t_slot_slots[index] = 0;
 
     setenv("TITANOX_ALLOW_CODE_PATCH", "0", 1);
 
-    if (!g_slot_specs[index].rva && !g_slot_specs[index].slotRva) return;
+    if (!t_slot_specs[index].rva && !t_slot_specs[index].slotRva) return;
 
-    target = g_base + g_slot_specs[index].rva;
+    target = t_base + t_slot_specs[index].rva;
 
     if (!target) return;
 
@@ -175,7 +175,7 @@ void tnx_slot_install_one(int index) {
         tnx_logf("slot %s: reject-bulk target=%p slots=%d - that many identical copies means the address is "
                  "a shared constant duplicated across class tables and not a vtable entry, so redirecting "
                  "it would send every original caller into a stub with the wrong arguments",
-                 g_slot_specs[index].tag, (void *)target, slots);
+                 t_slot_specs[index].tag, (void *)target, slots);
 
         return;
     }
@@ -200,7 +200,7 @@ void tnx_slot_install_one(int index) {
             tnx_logf("slot %s: reject-nonfunc target=%p firstWord=%#x - the first instruction is not a "
                      "prologue, a leaf return, a branch or an adrp, so this is not a function entry and a "
                      "stub placed here would be entered with the caller's scratch registers intact",
-                     g_slot_specs[index].tag, (void *)target, (unsigned)w);
+                     t_slot_specs[index].tag, (void *)target, (unsigned)w);
 
             return;
         }
@@ -209,32 +209,32 @@ void tnx_slot_install_one(int index) {
     if (slots <= 0) {
         tnx_logf("slot %s: not-found target=%p slots=0 in __DATA_CONST/__DATA - runtime inline "
                  "patching is not supported, so this target needs a data slot (%s)",
-                 g_slot_specs[index].tag, (void *)target,
+                 t_slot_specs[index].tag, (void *)target,
                  hook_last_error() ? hook_last_error() : "-");
 
         return;
     }
 
-    if (!brk_install((void *)target, (void *)g_slot_specs[index].replacement)) {
-        tnx_logf("slot %s: install failed target=%p (%s)", g_slot_specs[index].tag,
+    if (!brk_install((void *)target, (void *)t_slot_specs[index].replacement)) {
+        tnx_logf("slot %s: install failed target=%p (%s)", t_slot_specs[index].tag,
                  (void *)target, hook_last_error() ? hook_last_error() : "-");
 
         return;
     }
 
-    g_slot_orig[index] = (tnx_slot_fn_t)brk_original_ptr((void *)target);
-    g_slot_installed[index] = 1;
-    g_slot_slots[index] = slots;
+    t_slot_orig[index] = (tnx_slot_fn_t)brk_original_ptr((void *)target);
+    t_slot_installed[index] = 1;
+    t_slot_slots[index] = slots;
 
     tnx_logf("slot %s: installed target=%p original=%p mode=pointer slots=%d liveSlots=%d",
-             g_slot_specs[index].tag, (void *)target, (void *)g_slot_orig[index], slots,
+             t_slot_specs[index].tag, (void *)target, (void *)t_slot_orig[index], slots,
              brk_live_slot_count());
 }
 
 void tnx_slot_hooks_install(void) {
     const char *flag = NULL;
 
-    if (!g_base) return;
+    if (!t_base) return;
 
     setenv("TITANOX_ALLOW_CODE_PATCH", "0", 1);
 
@@ -250,36 +250,36 @@ void tnx_slot_hooks_install(void) {
 }
 
 void tnx_run_autododge(int from_update) {
-    if (g_in_drive) {
-        g_reentry++;
+    if (t_in_drive) {
+        t_reentry++;
 
         return;
     }
 
     if (!TNX_DRIVE_FROM_UPDATE && from_update) {
-        g_update_skip++;
+        t_update_skip++;
 
         return;
     }
 
-    g_in_drive = 1;
-    g_t0 = tnx_us();
+    t_in_drive = 1;
+    t_t0 = tnx_us();
     tnx_autododge_v48();
-    g_in_drive = 0;
+    t_in_drive = 0;
 }
 
 void tnx_run_autoaim(void) {
-    if (!g_addr_getinstance || !g_addr_getownchar || !g_addr_battlescreen) return;
+    if (!t_addr_getinstance || !t_addr_getownchar || !t_addr_battlescreen) return;
 
-    void *battleMode = ((fn_get_inst_t)g_addr_getinstance)();
+    void *battleMode = ((fn_get_inst_t)t_addr_getinstance)();
     if (!tnx_object_plausible(battleMode)) return;
 
-    void *ownChar = ((fn_get_own_char_t)g_addr_getownchar)(battleMode);
+    void *ownChar = ((fn_get_own_char_t)t_addr_getownchar)(battleMode);
     if (!tnx_object_plausible(ownChar)) return;
 
-    int ownX = g_addr_getx ? ((fn_get_coord_t)g_addr_getx)(ownChar) : 0;
-    int ownY = g_addr_gety ? ((fn_get_coord_t)g_addr_gety)(ownChar) : 0;
-    int ownTeam = g_addr_getteam ? ((fn_get_team_t)g_addr_getteam)(battleMode) : 0;
+    int ownX = t_addr_getx ? ((fn_get_coord_t)t_addr_getx)(ownChar) : 0;
+    int ownY = t_addr_gety ? ((fn_get_coord_t)t_addr_gety)(ownChar) : 0;
+    int ownTeam = t_addr_getteam ? ((fn_get_team_t)t_addr_getteam)(battleMode) : 0;
 
     void *objMgr = NULL;
     if (!tnx_read_ptr((uintptr_t)battleMode + OFF_BATTLEMODE_OBJECTMANAGERPTR, &objMgr)) return;
@@ -320,8 +320,8 @@ void tnx_run_autoaim(void) {
         if (!tnx_read_i32((uintptr_t)obj + OFF_GAMEOBJ_TEAM, &team)) continue;
         if (team == ownTeam) continue;
 
-        int ex = g_addr_getx ? ((fn_get_coord_t)g_addr_getx)(obj) : 0;
-        int ey = g_addr_gety ? ((fn_get_coord_t)g_addr_gety)(obj) : 0;
+        int ex = t_addr_getx ? ((fn_get_coord_t)t_addr_getx)(obj) : 0;
+        int ey = t_addr_gety ? ((fn_get_coord_t)t_addr_gety)(obj) : 0;
 
         float dx = (float)(ex - ownX);
         float dy = (float)(ey - ownY);
@@ -338,11 +338,11 @@ void tnx_run_autoaim(void) {
     if (!found) return;
 
     void *screen = NULL;
-    if (!tnx_read_ptr(g_addr_battlescreen, &screen)) return;
+    if (!tnx_read_ptr(t_addr_battlescreen, &screen)) return;
 
     if (!tnx_object_plausible(screen)) {
-        if (!g_aim_rejected) {
-            g_aim_rejected = YES;
+        if (!t_aim_rejected) {
+            t_aim_rejected = YES;
             tlog(@"autofire disabled: RVA_BATTLESCREEN__BATTLESCREEN is not a valid instance slot");
         }
         return;
@@ -352,8 +352,8 @@ void tnx_run_autoaim(void) {
     uintptr_t fireY = (uintptr_t)screen + OFF_BATTLESCREEN_AUTOFIREY;
 
     if (!tnx_addr_writable(fireX, 4) || !tnx_addr_writable(fireY, 4)) {
-        if (!g_aim_rejected) {
-            g_aim_rejected = YES;
+        if (!t_aim_rejected) {
+            t_aim_rejected = YES;
             tlog(@"autofire disabled: target offsets are not writable");
         }
         return;
@@ -373,7 +373,7 @@ int tnx_vtable_is_data(uintptr_t vtable) {
     return 0;
 }
 
-int g_ascii_logs = 0;
+int t_ascii_logs = 0;
 
 int tnx_state_tick(void) {
     uintptr_t slot = (uintptr_t)tnx_read_global_ptr(TNX_STATE_RVA);
@@ -396,7 +396,7 @@ int tnx_state_tick(void) {
 
     if (slot) tnx_read_i32(slot + TNX_STATE_ENUM_OFF, &state);
 
-    if (slot != g_site || state != g_state_2) {
+    if (slot != t_site || state != t_state_2) {
         tnx_state_note(state);
         tnx_logf("state slot=%p state=%d - the engine loads this word in 0x8cdfd4, tests "
                  "[slot+%#llx] against %d in 0x8c5130 and only then returns [slot+%#llx]; the "
@@ -405,8 +405,8 @@ int tnx_state_tick(void) {
                  (unsigned long long)TNX_STATE_ENUM_OFF, TNX_STATE_BATTLE,
                  (unsigned long long)TNX_SCENE_OFF);
 
-        g_site = slot;
-        g_state_2 = state;
+        t_site = slot;
+        t_state_2 = state;
 
     }
 
@@ -421,10 +421,10 @@ int tnx_state_tick(void) {
 
     scene = (uintptr_t)value;
 
-    if (scene != g_scene_object) {
-        uintptr_t scenePrev = g_scene_object;
+    if (scene != t_scene_object) {
+        uintptr_t scenePrev = t_scene_object;
 
-        g_scene_object = scene;
+        t_scene_object = scene;
         tnx_battle_alert(scene, scenePrev);
 
         tnx_logf("scene=%p from slot+%#llx at state=%d - the screen factory 0x8ce048 builds "
@@ -471,31 +471,31 @@ int tnx_state_tick(void) {
 
     if (score[1] > score[0]) {
         chosen = 1;
-        g_hop_sticky = 1;
+        t_hop_sticky = 1;
     } else if (score[0] > score[1]) {
         chosen = 0;
-        g_hop_sticky = 0;
+        t_hop_sticky = 0;
     } else {
-        chosen = hopOk[1] ? 1 : (hopOk[0] && !g_hop_sticky ? 0 : -1);
+        chosen = hopOk[1] ? 1 : (hopOk[0] && !t_hop_sticky ? 0 : -1);
     }
 
-    if (chosen != g_last_choice) {
-        g_last_choice = chosen;
+    if (chosen != t_last_choice) {
+        t_last_choice = chosen;
 
         tnx_logf("hop-select chosen=%d score0=%d score1=%d hopOk=%d/%d sticky=%d - the hop is "
                  "re-decided every tick from the own slot inside each candidate, so it can leave the "
                  "object that carried a header first and go back to the client hop",
-                 chosen, score[0], score[1], hopOk[0], hopOk[1], g_hop_sticky);
-    } else if (g_hop_logs < 6) {
-        g_hop_logs++;
+                 chosen, score[0], score[1], hopOk[0], hopOk[1], t_hop_sticky);
+    } else if (t_hop_logs < 6) {
+        t_hop_logs++;
 
     }
 
-    if (g_tick_2 < 4 || (g_tick_2 % 90) == 0) {
+    if (t_tick_2 < 4 || (t_tick_2 % 90) == 0) {
     }
 
-    if (scene != g_hop_scene) {
-        g_hop_scene = scene;
+    if (scene != t_hop_scene) {
+        t_hop_scene = scene;
 
         tnx_logf("hop1 scene+%#llx=%p client hop2 client+%#llx=%p inner hop1test=%d (%s) "
                  "hop2test=%d (%s) chosen=%d - findOwningTeam reads +0x28 off its receiver and "
@@ -507,31 +507,31 @@ int tnx_state_tick(void) {
 
         tnx_hop_dump(client, inner);
 
-        if (g_field_scans < TNX_FIELD_SCANS) {
-            g_field_scans++;
+        if (t_field_scans < TNX_FIELD_SCANS) {
+            t_field_scans++;
 
         }
     }
 
-    if (TNX_WIRE_OWNER && g_owner_2) {
+    if (TNX_WIRE_OWNER && t_owner_2) {
         void *directArray = NULL;
         int32_t directCount = 0;
 
-        if (tnx_read_ptr(g_owner_2 + TNX_MGR_ARRAY_OFF, &directArray) && directArray &&
-            tnx_read_i32(g_owner_2 + TNX_MGR_COUNT_OFF, &directCount) && directCount > 0) {
-            g_players_object = g_owner_2;
-            g_players_array = (uintptr_t)directArray;
-            g_players_count = directCount;
-            g_hop_chosen = TNX_HOPCHOSEN_DIRECT;
+        if (tnx_read_ptr(t_owner_2 + TNX_MGR_ARRAY_OFF, &directArray) && directArray &&
+            tnx_read_i32(t_owner_2 + TNX_MGR_COUNT_OFF, &directCount) && directCount > 0) {
+            t_players_object = t_owner_2;
+            t_players_array = (uintptr_t)directArray;
+            t_players_count = directCount;
+            t_hop_chosen = TNX_HOPCHOSEN_DIRECT;
 
-            if (!g_wired) {
-                g_wired = 1;
+            if (!t_wired) {
+                t_wired = 1;
 
                 tnx_logf("owner wired route=direct owner=%p array=%p count-at-wire=%d chosen=%d - the walk "
                          "reads the owner list from this tick on; the array and the count are re-read from the "
                          "owner on every tick, and chosen stays above one because a negative value already means "
                          "no container elsewhere in the engine path",
-                         (void *)g_owner_2, (void *)directArray, directCount,
+                         (void *)t_owner_2, (void *)directArray, directCount,
                          TNX_HOPCHOSEN_DIRECT);
             }
 
@@ -544,7 +544,7 @@ int tnx_state_tick(void) {
                  "hop2 %s, sticky=%d) - nothing is published this tick, and once hop2 has ever "
                  "passed the choice stays on it instead of falling back to the client, so the "
                  "last good container is what the walk keeps reading", hopWhy[0], hopWhy[1],
-                 g_hop_sticky);
+                 t_hop_sticky);
 
         return 1;
     }
@@ -554,12 +554,12 @@ int tnx_state_tick(void) {
     count = hopCount[chosen];
     capacity = hopCap[chosen];
 
-    g_hop_chosen = chosen;
+    t_hop_chosen = chosen;
 
     {
         static int v141_array_vote_logs = 0;
 
-        if ((uintptr_t)array != g_pub_array && (uintptr_t)players == g_pub_object &&
+        if ((uintptr_t)array != t_pub_array && (uintptr_t)players == t_pub_object &&
             v141_array_vote_logs < TNX_ARRAY_VOTE_LOGS) {
             v141_array_vote_logs++;
 
@@ -567,12 +567,12 @@ int tnx_state_tick(void) {
                      "newArray=%p count=%d - the pair is republished on the array alone, because "
                      "the container can stay equal while the engine reallocates or swaps the "
                      "list, and that difference is what made the resolver read a foreign array",
-                     (void *)players, chosen, (void *)g_pub_array, array, count);
+                     (void *)players, chosen, (void *)t_pub_array, array, count);
         }
     }
 
-    if ((uintptr_t)players != g_pub_object || (uintptr_t)array != g_pub_array ||
-        count != g_pub_count) {
+    if ((uintptr_t)players != t_pub_object || (uintptr_t)array != t_pub_array ||
+        count != t_pub_count) {
         tnx_publish((uintptr_t)players, (uintptr_t)array, count, capacity, "hop-adopt");
 
         tnx_logf("container=%p hop=%d count=%d cap=%d array=%p - read straight out of the "
@@ -580,28 +580,28 @@ int tnx_state_tick(void) {
                  "after 0xac3ddc reads it",
                  (void *)players, chosen, count, capacity, array, chosen);
 
-        if (g_players_dumps < TNX_PLAYERS_DUMPS) {
-            g_players_dumps++;
+        if (t_players_dumps < TNX_PLAYERS_DUMPS) {
+            t_players_dumps++;
 
             tnx_players_dump(players, (uintptr_t)array, count, capacity);
         }
     }
 
-    g_manager_count = count;
+    t_manager_count = count;
 
     if (count > 0 && count <= TNX_MANAGER_MAX_OBJECTS && capacity > 0 &&
         capacity <= TNX_MGR_CAP_MAX && array) {
 
-        if (g_hop_chosen == 1) {
-            if (!g_hop2_census && players != g_census_container) {
-                g_hop2_census = 1;
+        if (t_hop_chosen == 1) {
+            if (!t_hop2_census && players != t_census_container) {
+                t_hop2_census = 1;
 
                 tnx_logf("census armed on hop2: hop=%d container=%p count=%d array=%p - the "
                          "census is taken once per container and only on the hop the engine "
                          "walks; the dedup key is the container and not the array, because the "
                          "array pointer moves when it is reallocated and the v88 run took a "
                          "second census of the same manager for that reason",
-                         g_hop_chosen, (void *)players, count, (void *)array);
+                         t_hop_chosen, (void *)players, count, (void *)array);
             }
 
             tnx_container_census((uintptr_t)array, count, players);
@@ -615,63 +615,63 @@ const int tnx_object_slots[TNX_OBJ_SLOTS] = { 2, 3, 4 };
 
 int tnx_scan_allowed(uint64_t fired, uint64_t total) {
     if (fired > 0) {
-        if (g_idle_on) {
+        if (t_idle_on) {
             tnx_logf("scan resumed at tick=%llu objFired=%llu total=%llu - the object-class "
                      "slots are being dispatched again after %d parked ticks",
-                     (unsigned long long)g_ticks_4, (unsigned long long)fired,
-                     (unsigned long long)total, g_idle_skips);
+                     (unsigned long long)t_ticks_4, (unsigned long long)fired,
+                     (unsigned long long)total, t_idle_skips);
         }
 
-        g_idle_on = 0;
-        g_idle_start = 0;
-        g_idle_logged = 0;
-        g_idle_skips = 0;
+        t_idle_on = 0;
+        t_idle_start = 0;
+        t_idle_logged = 0;
+        t_idle_skips = 0;
 
         return 1;
     }
 
-    if (g_idle_start == 0) g_idle_start = g_ticks_4;
+    if (t_idle_start == 0) t_idle_start = t_ticks_4;
 
-    g_idle_on = 1;
+    t_idle_on = 1;
 
-    if (!g_idle_logged && (g_ticks_4 - g_idle_start) >= TNX_IDLE_TICKS) {
-        g_idle_logged = 1;
+    if (!t_idle_logged && (t_ticks_4 - t_idle_start) >= TNX_IDLE_TICKS) {
+        t_idle_logged = 1;
 
         tnx_logf("scan parked at tick=%llu: none of the %d object-class slots has been "
                  "dispatched in %llu ticks while the %d armed slots together reached %llu, so "
                  "the app is drawing UI and not a battle and the heap walk has no mode to find; "
                  "it resumes on the first object-class dispatch and is retried every %d parked "
-                 "ticks", (unsigned long long)g_ticks_4, TNX_OBJ_SLOTS,
-                 (unsigned long long)(g_ticks_4 - g_idle_start), TNX_SLOT_COUNT,
+                 "ticks", (unsigned long long)t_ticks_4, TNX_OBJ_SLOTS,
+                 (unsigned long long)(t_ticks_4 - t_idle_start), TNX_SLOT_COUNT,
                  (unsigned long long)total, TNX_IDLE_RETRY_TICKS);
     }
 
-    if ((g_ticks_4 - g_idle_start) < TNX_IDLE_RETRY_TICKS) {
-        g_idle_skips++;
+    if ((t_ticks_4 - t_idle_start) < TNX_IDLE_RETRY_TICKS) {
+        t_idle_skips++;
 
         return 0;
     }
 
-    g_idle_start = g_ticks_4;
-    g_idle_skips = 0;
+    t_idle_start = t_ticks_4;
+    t_idle_skips = 0;
 
     return 1;
 }
 
 int tnx_battle_gate_2(int v63) {
-    int liveEnough = (g_live_objs >= TNX_LIVE_OBJ_MIN &&
-                      g_live_teams >= TNX_LIVE_TEAM_MIN);
+    int liveEnough = (t_live_objs >= TNX_LIVE_OBJ_MIN &&
+                      t_live_teams >= TNX_LIVE_TEAM_MIN);
 
-    g_fb_on = (v63 || liveEnough) ? 1 : 0;
+    t_fb_on = (v63 || liveEnough) ? 1 : 0;
 
-    if (!g_fb_on) {
-        if (!g_bar_logged && g_ticks_4 >= TNX_BAR_TICKS) {
-            g_bar_logged = 1;
+    if (!t_fb_on) {
+        if (!t_bar_logged && t_ticks_4 >= TNX_BAR_TICKS) {
+            t_bar_logged = 1;
 
             tnx_logf("gate fallback OFF v63=%d liveObjs=%d liveTeams=%d need=%d/%d - the "
                      "objhit set holds no live objects over two teams, so nothing here claims "
-                     "a battle the mode signature cannot see", v63, g_live_objs,
-                     g_live_teams, TNX_LIVE_OBJ_MIN, TNX_LIVE_TEAM_MIN);
+                     "a battle the mode signature cannot see", v63, t_live_objs,
+                     t_live_teams, TNX_LIVE_OBJ_MIN, TNX_LIVE_TEAM_MIN);
         }
 
         return 0;
@@ -679,19 +679,19 @@ int tnx_battle_gate_2(int v63) {
 
     if (v63) return 1;
 
-    if (!g_fb_logged) {
-        g_fb_logged = 1;
+    if (!t_fb_logged) {
+        t_fb_logged = 1;
 
         tnx_logf("gate fallback ON liveObjs=%d liveTeams=%d - v63 cannot see a mode, but "
                  "the objhit set holds live objects over two teams, which is the weaker "
-                 "signal the trail itself uses", g_live_objs, g_live_teams);
+                 "signal the trail itself uses", t_live_objs, t_live_teams);
     }
 
     return 1;
 }
 
 void tnx_start_timer(void) {
-    if (g_scan_timer) return;
+    if (t_scan_timer) return;
 
     dispatch_queue_t queue = dispatch_get_global_queue(QOS_CLASS_UTILITY, 0);
     dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, queue);
@@ -712,14 +712,14 @@ void tnx_start_timer(void) {
         int fallback = tnx_battle_gate_2(battle);
 
         int ready = tnx_scan_ready(battle || fallback);
-        int needScan = !scene && !g_players_object;
+        int needScan = !scene && !t_players_object;
 
-        if (needScan != g_scan_armed) {
-            g_scan_armed = needScan;
+        if (needScan != t_scan_armed) {
+            t_scan_armed = needScan;
 
             tnx_logf("heap walk %s - the scene chain %s, so the walk is %s",
                      needScan ? "armed" : "parked",
-                     g_players_object ? "delivered the container" : "has not delivered yet",
+                     t_players_object ? "delivered the container" : "has not delivered yet",
                      needScan ? "the only remaining source" : "not needed this tick");
         }
 
@@ -731,19 +731,19 @@ void tnx_start_timer(void) {
 
         tnx_modesig_tick();
 
-        g_scan_ticks++;
-        g_ticks_4++;
+        t_scan_ticks++;
+        t_ticks_4++;
 
-        if ((g_ticks_4 % TNX_HB_TICKS) == 0) tnx_log_heartbeat();
+        if ((t_ticks_4 % TNX_HB_TICKS) == 0) tnx_log_heartbeat();
 
-        if ((g_ticks_4 % 10) == 0) tnx_slot_fired_report();
+        if ((t_ticks_4 % 10) == 0) tnx_slot_fired_report();
 
         tnx_overlay_update();
     });
 
     dispatch_resume(timer);
 
-    g_scan_timer = timer;
+    t_scan_timer = timer;
 
     tnx_logf("scan timer started (1 Hz, render hook no longer drives the scan)");
 
@@ -760,13 +760,13 @@ void tnx_run_workload(void) {
 
     tnx_tick_begin("post-locate");
 
-    if (g_scene_object) {
-        if (!g_snapshot_first) {
-            g_snapshot_first = YES;
-            g_snapshot_start = CFAbsoluteTimeGetCurrent();
-        } else if (!g_snapshot_second) {
-            if (CFAbsoluteTimeGetCurrent() > (g_snapshot_start + TNX_SNAPSHOT_DELAY)) {
-                g_snapshot_second = YES;
+    if (t_scene_object) {
+        if (!t_snapshot_first) {
+            t_snapshot_first = YES;
+            t_snapshot_start = CFAbsoluteTimeGetCurrent();
+        } else if (!t_snapshot_second) {
+            if (CFAbsoluteTimeGetCurrent() > (t_snapshot_start + TNX_SNAPSHOT_DELAY)) {
+                t_snapshot_second = YES;
             }
         }
     }
@@ -786,27 +786,27 @@ void tnx_run_workload(void) {
     tnx_phase("tick-end");
 }
 
-int g_walk_aborted = 0;
+int t_walk_aborted = 0;
 
-int g_walk_abort_i = -1;
+int t_walk_abort_i = -1;
 
-uintptr_t g_walk_arr = 0;
+uintptr_t t_walk_arr = 0;
 
-int32_t g_walk_n = 0;
+int32_t t_walk_n = 0;
 
-int g_pub_logs_2 = 0;
+int t_pub_logs_2 = 0;
 
-int g_stale_logs = 0;
+int t_stale_logs = 0;
 
-int g_actuate_logs = 0;
+int t_actuate_logs = 0;
 
-uintptr_t g_own_slot = 0;
+uintptr_t t_own_slot = 0;
 
-int32_t g_own_slot_gid = 0;
+int32_t t_own_slot_gid = 0;
 
-int g_own_slot_ok = 0;
+int t_own_slot_ok = 0;
 
-int g_own_slot_logs = 0;
+int t_own_slot_logs = 0;
 
 uintptr_t tnx_battle_global(void) {
     return (uintptr_t)tnx_read_global_ptr(TNX_BATTLE_RVA);
@@ -814,7 +814,7 @@ uintptr_t tnx_battle_global(void) {
 
 void tnx_chain(void) {
     static int done = 0;
-    uintptr_t scene = (uintptr_t)g_scene_object;
+    uintptr_t scene = (uintptr_t)t_scene_object;
     uintptr_t battle = tnx_battle_global();
     void *holder = NULL;
     uintptr_t own = 0;
@@ -863,8 +863,8 @@ void tnx_chain(void) {
              (unsigned long long)TNX_OWN_INNER_OFF, holder,
              ((uintptr_t)holder == own) ? "holder" : "own", (void *)own, (own == scene) ? 1 : 0,
              (unsigned long long)TNX_BATTLE_RVA, (void *)battle,
-             (void *)slotOwn, g_own_slot_idx, slotGid, TNX_OWN_EXPECT_GID,
-             (unsigned long long)TNX_CTRL_RAW_X_OFF, rawOk, rawX, rawY, g_own_slot_ok,
+             (void *)slotOwn, t_own_slot_idx, slotGid, TNX_OWN_EXPECT_GID,
+             (unsigned long long)TNX_CTRL_RAW_X_OFF, rawOk, rawX, rawY, t_own_slot_ok,
              (unsigned long long)TNX_INPUT_X_OFF, (unsigned long long)TNX_INPUT_Y_OFF, ownOk,
              ownX, ownY, (unsigned long long)TNX_SCENE_OFF,
              (unsigned long long)TNX_STATE_RVA, (unsigned long long)0x8ce9d8ULL,
@@ -886,9 +886,9 @@ void tnx_chain(void) {
              "slot element instead", (void *)own, inHop0, inHop1, (void *)slotOwn, slotGid);
 }
 
-int g_gate2_seen = 0;
+int t_gate2_seen = 0;
 
-int g_gate3_seen = 0;
+int t_gate3_seen = 0;
 
 int tnx_pair(uintptr_t obj, int32_t *x, int32_t *y) {
     if (x) *x = 0;
@@ -907,32 +907,32 @@ int tnx_src(uintptr_t off, int32_t *x, int32_t *y, int *flag) {
     if (x) *x = 0;
     if (y) *y = 0;
     if (flag) *flag = -1;
-    if (!g_scene_object) return 0;
-    if (!tnx_read_ptr((uintptr_t)g_scene_object + off, &o) || !o) return 0;
+    if (!t_scene_object) return 0;
+    if (!tnx_read_ptr((uintptr_t)t_scene_object + off, &o) || !o) return 0;
     if (flag && tnx_read_u8((uintptr_t)o + TNX_GATE_BYTE_OFF, &b)) *flag = (int)b;
 
     return tnx_pair((uintptr_t)o, x, y);
 }
 
-int32_t g_src30_prev_x = 0;
+int32_t t_src30_prev_x = 0;
 
-int32_t g_src30_prev_y = 0;
+int32_t t_src30_prev_y = 0;
 
-int32_t g_src38_prev_x = 0;
+int32_t t_src38_prev_x = 0;
 
-int32_t g_src38_prev_y = 0;
+int32_t t_src38_prev_y = 0;
 
-int g_src30_have = 0;
+int t_src30_have = 0;
 
-int g_src38_have = 0;
+int t_src38_have = 0;
 
-uint64_t g_src30_moves = 0;
+uint64_t t_src30_moves = 0;
 
-uint64_t g_src38_moves = 0;
+uint64_t t_src38_moves = 0;
 
-int g_w_eq_x = 0;
+int t_w_eq_x = 0;
 
-int g_w_eq_y = 0;
+int t_w_eq_y = 0;
 
 int tnx_weq(int32_t a, int32_t b, int32_t out, int32_t d) {
     if (d == 0) return -1;
@@ -943,20 +943,10 @@ int tnx_weq(int32_t a, int32_t b, int32_t out, int32_t d) {
 uintptr_t tnx_mode_ptr(uintptr_t off) {
     void *o = NULL;
 
-    if (!g_scene_object) return 0;
-    if (!tnx_read_ptr((uintptr_t)g_scene_object + off, &o)) return 0;
+    if (!t_scene_object) return 0;
+    if (!tnx_read_ptr((uintptr_t)t_scene_object + off, &o)) return 0;
 
     return (uintptr_t)o;
-}
-
-int g_probe_logs = 0;
-
-uintptr_t tnx_cls(uintptr_t obj) {
-    uintptr_t vt = 0;
-
-    if (!tnx_vt_ok(obj, &vt)) return 0;
-
-    return (vt >= g_base) ? (vt - g_base) : 0;
 }
 
 void tnx_slot_pump(void) {
@@ -965,36 +955,36 @@ void tnx_slot_pump(void) {
     for (int i = 0; i < TNX_SLOT_COUNT; i++) {
         uint32_t bit = (uint32_t)(1u << i);
 
-        if (!g_slot_object[i]) continue;
+        if (!t_slot_object[i]) continue;
 
-        if (!g_slot_specs[i].control && first < 0) first = i;
+        if (!t_slot_specs[i].control && first < 0) first = i;
 
-        if (g_slot_reported_mask & bit) continue;
+        if (t_slot_reported_mask & bit) continue;
 
-        g_slot_reported_mask |= bit;
+        t_slot_reported_mask |= bit;
 
-        tnx_logf("slot %s: captured this=%p arg1=%p hits=%llu%s", g_slot_specs[i].tag,
-                 (void *)g_slot_object[i], (void *)g_slot_arg1[i],
-                 (unsigned long long)g_slot_hits[i],
-                 g_slot_specs[i].control ? " CONTROL" : "");
+        tnx_logf("slot %s: captured this=%p arg1=%p hits=%llu%s", t_slot_specs[i].tag,
+                 (void *)t_slot_object[i], (void *)t_slot_arg1[i],
+                 (unsigned long long)t_slot_hits[i],
+                 t_slot_specs[i].control ? " CONTROL" : "");
     }
 
     if (first < 0) return;
 
-    uintptr_t object = g_slot_object[first];
+    uintptr_t object = t_slot_object[first];
 
-    if (g_slot_adopted == object) return;
+    if (t_slot_adopted == object) return;
 
-    g_slot_adopted = object;
+    t_slot_adopted = object;
 
     int installed = 0;
 
     for (int i = 0; i < TNX_SLOT_COUNT; i++) {
-        if (g_slot_installed[i] == 1) installed++;
+        if (t_slot_installed[i] == 1) installed++;
     }
 
     tnx_logf("slot pump object=%p source=%s installed=%d/%d",
-             (void *)object, g_slot_specs[first].tag, installed, TNX_SLOT_COUNT);
+             (void *)object, t_slot_specs[first].tag, installed, TNX_SLOT_COUNT);
 
     {
         void *vtable = NULL;
@@ -1010,7 +1000,7 @@ void tnx_slot_pump(void) {
             reason = "vtable-garbage";
         }
 
-        tnx_logf("slot %s reject reason=%s this=%p vt=%p", g_slot_specs[first].shortTag, reason,
+        tnx_logf("slot %s reject reason=%s this=%p vt=%p", t_slot_specs[first].shortTag, reason,
                  (void *)object, vtable);
 
         if (strcmp(reason, "vtable-garbage") == 0) return;
@@ -1064,19 +1054,19 @@ void tnx_slot_pump(void) {
 
     }
 
-    if (g_slot_arg1[first]) {
-        tnx_report_manager("slot arg1", g_slot_arg1[first]);
+    if (t_slot_arg1[first]) {
+        tnx_report_manager("slot arg1", t_slot_arg1[first]);
     }
 
     void *ownerField = NULL;
 
     if (tnx_read_ptr(object + TNX_SLOT_OWNER_OFF, &ownerField) && ownerField &&
-        (uintptr_t)ownerField != g_slot_arg1[first]) {
+        (uintptr_t)ownerField != t_slot_arg1[first]) {
         tnx_report_manager("slot +20", (uintptr_t)ownerField);
     }
 
     {
-        uintptr_t plan = g_slot_arg1[first] ? g_slot_arg1[first] : (uintptr_t)ownerField;
+        uintptr_t plan = t_slot_arg1[first] ? t_slot_arg1[first] : (uintptr_t)ownerField;
 
         if (plan && tnx_manager_live_count(plan) >= TNX_MANAGER_MIN_OBJECTS) {
             int detailed = tnx_object_detail(plan, TNX_OBJECT_DETAIL_MAX);
@@ -1108,14 +1098,14 @@ void tnx_slot_pump(void) {
 }
 
 void setup(void) {
-    if (g_setup_done) return;
-    g_setup_done = YES;
+    if (t_setup_done) return;
+    t_setup_done = YES;
 
-    tlog([NSString stringWithFormat:@"setup base=%p", (void *)g_base]);
+    tlog([NSString stringWithFormat:@"setup base=%p", (void *)t_base]);
 
     image_ref_t ref;
-    ref.base = g_base;
-    ref.hdr = (const struct mach_header_64 *)g_base;
+    ref.base = t_base;
+    ref.hdr = (const struct mach_header_64 *)t_base;
 
     rt_dump_image(ref);
 
@@ -1131,7 +1121,7 @@ void setup(void) {
     int buildControls = 0;
 
     for (int i = 0; i < TNX_SLOT_COUNT; i++) {
-        if (g_slot_specs[i].control) buildControls++;
+        if (t_slot_specs[i].control) buildControls++;
     }
 
     tnx_slot_table_dump();
@@ -2414,5 +2404,5 @@ tnx_logf("plan v49: (1) the left-hand panel is REMOVED -- the overlay draws noth
 
     tnx_start_timer();
 
-    tlog([NSString stringWithFormat:@"setup completed successfully armed=%d", g_objc_armed]);
+    tlog([NSString stringWithFormat:@"setup completed successfully armed=%d", t_objc_armed]);
 }

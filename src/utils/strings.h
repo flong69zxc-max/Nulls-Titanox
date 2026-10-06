@@ -3,19 +3,19 @@
 
 #include "core/types.h"
 
-extern uint64_t g_setpred_calls;
-extern uintptr_t g_setpred_this;
-extern float g_setpred_x;
-extern float g_setpred_y;
-extern uint64_t g_ascii_rejected;
-extern uint32_t g_never_dispatched_mask;
-extern uint64_t g_ticks_4;
-extern int g_ascii_refused;
-extern int g_alert_streak;
-extern uintptr_t g_alert_streak_ptr;
-extern uint64_t g_alert_calls;
-extern tnx_reject_t g_reject;
-extern int g_setpred_blocked_logs;
+extern uint64_t t_setpred_calls;
+extern uintptr_t t_setpred_this;
+extern float t_setpred_x;
+extern float t_setpred_y;
+extern uint64_t t_ascii_rejected;
+extern uint32_t t_never_dispatched_mask;
+extern uint64_t t_ticks_4;
+extern int t_ascii_refused;
+extern int t_alert_streak;
+extern uintptr_t t_alert_streak_ptr;
+extern uint64_t t_alert_calls;
+extern tnx_reject_t t_reject;
+extern int t_setpred_blocked_logs;
 
 int tnx_ascii_word(uintptr_t address);
 int tnx_word_ascii(uint64_t value);

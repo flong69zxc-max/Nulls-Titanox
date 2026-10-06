@@ -42,8 +42,5 @@ typedef struct {
     float fadeK;
 } tnx_kind_t;
 
-int tnx_kind_index(const char *name);
-const tnx_kind_t *tnx_kind(const char *name);
-const tnx_fit_t *tnx_kind_fit(const char *name);
 
 #endif

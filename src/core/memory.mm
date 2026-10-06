@@ -1,13 +1,13 @@
 #include "titanox.h"
 
-const char *g_image_names[4] = {
+const char *t_image_names[4] = {
     "Nulls Brawl",
     "Laser",
     "NB.app",
     NULL
 };
 
-const tnx_rva_entry_t g_rvas[32] = {
+const tnx_rva_entry_t t_rvas[32] = {
     { "RVA_BATTLEMODE_GETINSTANCE", RVA_BATTLEMODE_GETINSTANCE },
     { "RVA_BATTLESCREEN__BATTLESCREEN", RVA_BATTLESCREEN__BATTLESCREEN },
     { "RVA_BATTLESCREEN__UPDATEMOVEMENT", RVA_BATTLESCREEN__UPDATEMOVEMENT },
@@ -42,189 +42,189 @@ const tnx_rva_entry_t g_rvas[32] = {
     { NULL, 0 }
 };
 
-FILE *g_log = NULL;
+FILE *t_log = NULL;
 
-long g_log_written = 0;
+long t_log_written = 0;
 
-BOOL g_setup_done = NO;
+BOOL t_setup_done = NO;
 
-BOOL g_wm_failed = NO;
+BOOL t_wm_failed = NO;
 
-BOOL g_wm_ready = NO;
+BOOL t_wm_ready = NO;
 
-BOOL g_aim_rejected = NO;
+BOOL t_aim_rejected = NO;
 
-__thread BOOL g_inside_hook = NO;
+__thread BOOL t_inside_hook = NO;
 
-uint64_t g_dodge_calls = 0;
+uint64_t t_dodge_calls = 0;
 
-uint64_t g_render_calls = 0;
+uint64_t t_render_calls = 0;
 
-int g_dump_np = 0;
+int t_dump_np = 0;
 
-uintptr_t g_prev_scene = 0;
+uintptr_t t_prev_scene = 0;
 
-const uintptr_t g_mode_vtables_verified[3] = { 0x1002548, 0xff5720, 0 };
+const uintptr_t t_mode_vtables_verified[3] = { 0x1002548, 0xff5720, 0 };
 
 int tnx_verified_vtable(uintptr_t vtable) {
-    if (!g_base || vtable <= g_base) return -1;
+    if (!t_base || vtable <= t_base) return -1;
 
-    uintptr_t rva = vtable - g_base;
+    uintptr_t rva = vtable - t_base;
 
-    for (int i = 0; g_mode_vtables_verified[i]; i++) {
-        if (rva == g_mode_vtables_verified[i]) return i;
+    for (int i = 0; t_mode_vtables_verified[i]; i++) {
+        if (rva == t_mode_vtables_verified[i]) return i;
     }
 
     return -1;
 }
 
-BOOL g_mode_strong = NO;
+BOOL t_mode_strong = NO;
 
-int g_mode_best_objects = 0;
+int t_mode_best_objects = 0;
 
-int g_mode_last_types = 0;
+int t_mode_last_types = 0;
 
-int g_mode_verified_hits = 0;
+int t_mode_verified_hits = 0;
 
-int g_manager_count = 0;
+int t_manager_count = 0;
 
-int g_manager_probes = 0;
+int t_manager_probes = 0;
 
-int g_manager_probes_total = 0;
+int t_manager_probes_total = 0;
 
-int g_manager_skipped = 0;
+int t_manager_skipped = 0;
 
-int g_manager_last_live = 0;
+int t_manager_last_live = 0;
 
-int g_manager_last_nonempty = 0;
+int t_manager_last_nonempty = 0;
 
-int g_manager_last_capacity = 0;
+int t_manager_last_capacity = 0;
 
-int g_manager_saw_cap = 0;
+int t_manager_saw_cap = 0;
 
-int g_manager_loose_count = 0;
+int t_manager_loose_count = 0;
 
-int g_chain_checks = 0;
+int t_chain_checks = 0;
 
-int g_chain_probes = 0;
+int t_chain_probes = 0;
 
-int g_chain_skipped = 0;
+int t_chain_skipped = 0;
 
-int g_chain_best_own = 0;
+int t_chain_best_own = 0;
 
-int g_chain_best_gid = 0;
+int t_chain_best_gid = 0;
 
-int g_seen_stable = 0;
+int t_seen_stable = 0;
 
-int g_owner_vote_count = 0;
+int t_owner_vote_count = 0;
 
-unsigned long long g_objvote_hits = 0;
+unsigned long long t_objvote_hits = 0;
 
-unsigned long long g_objvote_skipped = 0;
+unsigned long long t_objvote_skipped = 0;
 
-int g_objvote_dead_seen = 0;
+int t_objvote_dead_seen = 0;
 
-uintptr_t g_objvote_best_owner = 0;
+uintptr_t t_objvote_best_owner = 0;
 
-int g_objvote_best_gids = 0;
+int t_objvote_best_gids = 0;
 
-int g_objvote_confirm = 0;
+int t_objvote_confirm = 0;
 
-BOOL g_objvote_owner_ok = NO;
+BOOL t_objvote_owner_ok = NO;
 
-unsigned long long g_objvote_owner_img = 0;
+unsigned long long t_objvote_owner_img = 0;
 
-unsigned long long g_objvote_obj_img = 0;
+unsigned long long t_objvote_obj_img = 0;
 
-int g_objvote_best_teamcount = 0;
+int t_objvote_best_teamcount = 0;
 
-int g_objvote_best_gids_full = 0;
+int t_objvote_best_gids_full = 0;
 
-tnx_objhit_t g_objhits[TNX_OBJ_HIT_DUMP_MAX];
+tnx_objhit_t t_objhits[TNX_OBJ_HIT_DUMP_MAX];
 
-int g_objhit_count = 0;
+int t_objhit_count = 0;
 
-unsigned long long g_objvote_owner_reg = 0;
+unsigned long long t_objvote_owner_reg = 0;
 
-unsigned long long g_objvote_owner_above_win = 0;
+unsigned long long t_objvote_owner_above_win = 0;
 
-int g_objvote_max_votes = 0;
+int t_objvote_max_votes = 0;
 
-unsigned long long g_objvote_shaped = 0;
+unsigned long long t_objvote_shaped = 0;
 
-unsigned long long g_vtcensus_total = 0;
+unsigned long long t_vtcensus_total = 0;
 
-int g_heap_big_skip = 0;
+int t_heap_big_skip = 0;
 
-int g_heap_region_capped = 0;
+int t_heap_region_capped = 0;
 
-uintptr_t g_img_span_lo = 0;
+uintptr_t t_img_span_lo = 0;
 
-uintptr_t g_img_span_hi = 0;
+uintptr_t t_img_span_hi = 0;
 
-int g_img_span_ok = 0;
+int t_img_span_ok = 0;
 
-int g_trail_best = 0;
+int t_trail_best = 0;
 
-int g_manager_cap_rejects = 0;
+int t_manager_cap_rejects = 0;
 
-int g_manager_best_count = 0;
+int t_manager_best_count = 0;
 
-int g_manager_best_live = 0;
+int t_manager_best_live = 0;
 
-int g_heap_passes = 0;
+int t_heap_passes = 0;
 
-unsigned long long g_heap_covered = 0;
+unsigned long long t_heap_covered = 0;
 
-uintptr_t g_mode_source = 0;
+uintptr_t t_mode_source = 0;
 
-int g_votescan_attempts = 0;
+int t_votescan_attempts = 0;
 
-double g_votescan_last = 0.0;
+double t_votescan_last = 0.0;
 
-BOOL g_snapshot_first = NO;
+BOOL t_snapshot_first = NO;
 
-BOOL g_snapshot_second = NO;
+BOOL t_snapshot_second = NO;
 
-double g_snapshot_start = 0.0;
+double t_snapshot_start = 0.0;
 
-int g_objc_armed = 0;
+int t_objc_armed = 0;
 
-uintptr_t g_addr_getinstance = 0;
+uintptr_t t_addr_getinstance = 0;
 
-uintptr_t g_addr_getownchar = 0;
+uintptr_t t_addr_getownchar = 0;
 
-uintptr_t g_addr_getteam = 0;
+uintptr_t t_addr_getteam = 0;
 
-uintptr_t g_addr_getx = 0;
+uintptr_t t_addr_getx = 0;
 
-uintptr_t g_addr_gety = 0;
+uintptr_t t_addr_gety = 0;
 
-uintptr_t g_addr_setprediction = 0;
+uintptr_t t_addr_setprediction = 0;
 
-uintptr_t g_addr_sendmovement = 0;
+uintptr_t t_addr_sendmovement = 0;
 
-uintptr_t g_addr_getclip = 0;
+uintptr_t t_addr_getclip = 0;
 
-uintptr_t g_addr_gettf = 0;
+uintptr_t t_addr_gettf = 0;
 
-uintptr_t g_addr_settext = 0;
+uintptr_t t_addr_settext = 0;
 
-uintptr_t g_addr_setxy = 0;
+uintptr_t t_addr_setxy = 0;
 
-uintptr_t g_addr_addchild = 0;
+uintptr_t t_addr_addchild = 0;
 
-uintptr_t g_addr_battlescreen = 0;
+uintptr_t t_addr_battlescreen = 0;
 
-void *g_label_clip = NULL;
+void *t_label_clip = NULL;
 
-void *g_label_tf = NULL;
+void *t_label_tf = NULL;
 
-void *g_label_sc = NULL;
+void *t_label_sc = NULL;
 
-char g_label_text[64] = {0};
+char t_label_text[64] = {0};
 
-int g_label_updates = 0;
+int t_label_updates = 0;
 
 uintptr_t tnx_strip_imp(IMP imp) {
 #if defined(__has_feature)
@@ -235,136 +235,136 @@ uintptr_t tnx_strip_imp(IMP imp) {
     return (uintptr_t)imp;
 }
 
-FILE *g_battle_log = NULL;
+FILE *t_battle_log = NULL;
 
-BOOL g_battle_capture = NO;
+BOOL t_battle_capture = NO;
 
-BOOL g_battle_header = NO;
+BOOL t_battle_header = NO;
 
 void tnx_battle_write(const char *utf8, size_t len) {
-    if (!g_battle_log) {
+    if (!t_battle_log) {
         NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
 
         if (paths.count == 0) return;
 
         NSString *path = [paths[0] stringByAppendingPathComponent:@"Titanox.battle.log"];
-        g_battle_log = fopen(path.UTF8String, "a");
+        t_battle_log = fopen(path.UTF8String, "a");
     }
 
-    if (!g_battle_log) return;
+    if (!t_battle_log) return;
 
-    if (!g_battle_header) {
-        g_battle_header = YES;
+    if (!t_battle_header) {
+        t_battle_header = YES;
 
         const char *header = "---- battle capture started ----\n";
-        fwrite(header, 1, strlen(header), g_battle_log);
+        fwrite(header, 1, strlen(header), t_battle_log);
     }
 
-    fwrite(utf8, 1, len, g_battle_log);
-    fflush(g_battle_log);
+    fwrite(utf8, 1, len, t_battle_log);
+    fflush(t_battle_log);
 }
 
-uintptr_t g_addr[TNX_JOURNAL];
+uintptr_t t_addr[TNX_JOURNAL];
 
-uint32_t g_value[TNX_JOURNAL];
+uint32_t t_value[TNX_JOURNAL];
 
-uint64_t g_tick_3[TNX_JOURNAL];
+uint64_t t_tick_3[TNX_JOURNAL];
 
-const char *g_phase_2[TNX_JOURNAL];
+const char *t_phase_2[TNX_JOURNAL];
 
-uint8_t g_size[TNX_JOURNAL];
+uint8_t t_size[TNX_JOURNAL];
 
-uint8_t g_denied[TNX_JOURNAL];
+uint8_t t_denied[TNX_JOURNAL];
 
-volatile int g_at = 0;
+volatile int t_at = 0;
 
-volatile uint64_t g_writes_2 = 0;
+volatile uint64_t t_writes_2 = 0;
 
-uint64_t g_stale = 0;
+uint64_t t_stale = 0;
 
-tnx_slot_fn_t g_slot_orig[TNX_SLOT_COUNT] = { NULL };
+tnx_slot_fn_t t_slot_orig[TNX_SLOT_COUNT] = { NULL };
 
-uintptr_t g_slot_object[TNX_SLOT_COUNT] = { 0 };
+uintptr_t t_slot_object[TNX_SLOT_COUNT] = { 0 };
 
-uintptr_t g_slot_arg1[TNX_SLOT_COUNT] = { 0 };
+uintptr_t t_slot_arg1[TNX_SLOT_COUNT] = { 0 };
 
-uint64_t g_slot_hits_total = 0;
+uint64_t t_slot_hits_total = 0;
 
-int g_slot_installed[TNX_SLOT_COUNT] = { -1, -1, -1, -1, -1, -1, -1,
+int t_slot_installed[TNX_SLOT_COUNT] = { -1, -1, -1, -1, -1, -1, -1,
                                                -1, -1, -1, -1, -1, -1, -1,
                                                -1, -1, -1, -1, -1, -1, -1,
                                                -1, -1, -1, -1, -1, -1, -1,
                                                -1, -1, -1, -1 };
 
-int g_slot_slots[TNX_SLOT_COUNT] = { 0 };
+int t_slot_slots[TNX_SLOT_COUNT] = { 0 };
 
-int g_chain_rej[20] = { 0 };
+int t_chain_rej[20] = { 0 };
 
-int g_chain_probes_pass = 0;
+int t_chain_probes_pass = 0;
 
-int g_layout_logs = 0;
+int t_layout_logs = 0;
 
-int g_no_source_passes = 0;
+int t_no_source_passes = 0;
 
-int g_route_logged = 0;
+int t_route_logged = 0;
 
-uint32_t g_slot_reported_mask = 0;
+uint32_t t_slot_reported_mask = 0;
 
-uint64_t g_slot_first_tick[TNX_SLOT_COUNT] = { 0 };
+uint64_t t_slot_first_tick[TNX_SLOT_COUNT] = { 0 };
 
-uintptr_t g_slot_adopted = 0;
+uintptr_t t_slot_adopted = 0;
 
-int g_ag_adopted = 0;
+int t_ag_adopted = 0;
 
-int g_chain_hits = 0;
+int t_chain_hits = 0;
 
-int g_mode_from_chain = 0;
+int t_mode_from_chain = 0;
 
-int g_idle_probe_logged = 0;
+int t_idle_probe_logged = 0;
 
-uintptr_t g_last_cand = 0;
+uintptr_t t_last_cand = 0;
 
-uintptr_t g_last_vt = 0;
+uintptr_t t_last_vt = 0;
 
-char g_last_why[96] = { 0 };
+char t_last_why[96] = { 0 };
 
-int g_sig_ticks = 0;
+int t_sig_ticks = 0;
 
-int g_sig_logs = 0;
+int t_sig_logs = 0;
 
-uintptr_t g_sig_last = 0;
+uintptr_t t_sig_last = 0;
 
-int g_trail_refusals = 0;
+int t_trail_refusals = 0;
 
-int g_players_cap = 0;
+int t_players_cap = 0;
 
-int g_field_scans = 0;
+int t_field_scans = 0;
 
-int g_elem_full_dumps = 0;
+int t_elem_full_dumps = 0;
 
-int g_walk_relogs = 0;
+int t_walk_relogs = 0;
 
-uint64_t g_walk_tick = 0;
+uint64_t t_walk_tick = 0;
 
-uint64_t g_enter_tick = 0;
+uint64_t t_enter_tick = 0;
 
-int g_walk_count = -1;
+int t_walk_count = -1;
 
-int g_coord_fixed_logged = 0;
+int t_coord_fixed_logged = 0;
 
-int g_class_pass = 0;
+int t_class_pass = 0;
 
-const char *g_mode_source_2 = "none";
+const char *t_mode_source_2 = "none";
 
-uint64_t g_t0 = 0;
+uint64_t t_t0 = 0;
 
-uint64_t g_slow = 0;
+uint64_t t_slow = 0;
 
 uint64_t tnx_slot_repl_0(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                 uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(0, a0, a1);
 
-    if (g_slot_orig[0]) return g_slot_orig[0](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[0]) return t_slot_orig[0](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -373,7 +373,7 @@ uint64_t tnx_slot_repl_1(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                 uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(1, a0, a1);
 
-    if (g_slot_orig[1]) return g_slot_orig[1](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[1]) return t_slot_orig[1](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -382,7 +382,7 @@ uint64_t tnx_slot_repl_2(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                 uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(2, a0, a1);
 
-    if (g_slot_orig[2]) return g_slot_orig[2](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[2]) return t_slot_orig[2](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -391,7 +391,7 @@ uint64_t tnx_slot_repl_3(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                 uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(3, a0, a1);
 
-    if (g_slot_orig[3]) return g_slot_orig[3](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[3]) return t_slot_orig[3](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -400,7 +400,7 @@ uint64_t tnx_slot_repl_4(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                 uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(4, a0, a1);
 
-    if (g_slot_orig[4]) return g_slot_orig[4](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[4]) return t_slot_orig[4](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -409,7 +409,7 @@ uint64_t tnx_slot_repl_5(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                 uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(5, a0, a1);
 
-    if (g_slot_orig[5]) return g_slot_orig[5](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[5]) return t_slot_orig[5](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -418,7 +418,7 @@ uint64_t tnx_slot_repl_6(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                 uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(6, a0, a1);
 
-    if (g_slot_orig[6]) return g_slot_orig[6](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[6]) return t_slot_orig[6](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -427,7 +427,7 @@ uint64_t tnx_slot_repl_7(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                 uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(7, a0, a1);
 
-    if (g_slot_orig[7]) return g_slot_orig[7](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[7]) return t_slot_orig[7](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -436,7 +436,7 @@ uint64_t tnx_slot_repl_8(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                 uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(8, a0, a1);
 
-    if (g_slot_orig[8]) return g_slot_orig[8](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[8]) return t_slot_orig[8](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -445,7 +445,7 @@ uint64_t tnx_slot_repl_9(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                 uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(9, a0, a1);
 
-    if (g_slot_orig[9]) return g_slot_orig[9](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[9]) return t_slot_orig[9](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -454,7 +454,7 @@ uint64_t tnx_slot_repl_10(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(10, a0, a1);
 
-    if (g_slot_orig[10]) return g_slot_orig[10](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[10]) return t_slot_orig[10](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -463,7 +463,7 @@ uint64_t tnx_slot_repl_11(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(11, a0, a1);
 
-    if (g_slot_orig[11]) return g_slot_orig[11](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[11]) return t_slot_orig[11](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -472,7 +472,7 @@ uint64_t tnx_slot_repl_12(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(12, a0, a1);
 
-    if (g_slot_orig[12]) return g_slot_orig[12](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[12]) return t_slot_orig[12](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -481,7 +481,7 @@ uint64_t tnx_slot_repl_13(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(13, a0, a1);
 
-    if (g_slot_orig[13]) return g_slot_orig[13](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[13]) return t_slot_orig[13](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -490,7 +490,7 @@ uint64_t tnx_slot_repl_14(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(14, a0, a1);
 
-    if (g_slot_orig[14]) return g_slot_orig[14](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[14]) return t_slot_orig[14](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -499,7 +499,7 @@ uint64_t tnx_slot_repl_15(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(15, a0, a1);
 
-    if (g_slot_orig[15]) return g_slot_orig[15](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[15]) return t_slot_orig[15](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -508,7 +508,7 @@ uint64_t tnx_slot_repl_16(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(16, a0, a1);
 
-    if (g_slot_orig[16]) return g_slot_orig[16](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[16]) return t_slot_orig[16](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -517,7 +517,7 @@ uint64_t tnx_slot_repl_17(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(17, a0, a1);
 
-    if (g_slot_orig[17]) return g_slot_orig[17](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[17]) return t_slot_orig[17](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -526,7 +526,7 @@ uint64_t tnx_slot_repl_18(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(18, a0, a1);
 
-    if (g_slot_orig[18]) return g_slot_orig[18](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[18]) return t_slot_orig[18](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -535,7 +535,7 @@ uint64_t tnx_slot_repl_19(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(19, a0, a1);
 
-    if (g_slot_orig[19]) return g_slot_orig[19](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[19]) return t_slot_orig[19](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -544,7 +544,7 @@ uint64_t tnx_slot_repl_20(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(20, a0, a1);
 
-    if (g_slot_orig[20]) return g_slot_orig[20](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[20]) return t_slot_orig[20](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -553,7 +553,7 @@ uint64_t tnx_slot_repl_21(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(21, a0, a1);
 
-    if (g_slot_orig[21]) return g_slot_orig[21](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[21]) return t_slot_orig[21](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -562,7 +562,7 @@ uint64_t tnx_slot_repl_22(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(22, a0, a1);
 
-    if (g_slot_orig[22]) return g_slot_orig[22](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[22]) return t_slot_orig[22](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -571,7 +571,7 @@ uint64_t tnx_slot_repl_23(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(23, a0, a1);
 
-    if (g_slot_orig[23]) return g_slot_orig[23](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[23]) return t_slot_orig[23](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -580,7 +580,7 @@ uint64_t tnx_slot_repl_24(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(24, a0, a1);
 
-    if (g_slot_orig[24]) return g_slot_orig[24](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[24]) return t_slot_orig[24](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -589,7 +589,7 @@ uint64_t tnx_slot_repl_25(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(25, a0, a1);
 
-    if (g_slot_orig[25]) return g_slot_orig[25](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[25]) return t_slot_orig[25](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -598,7 +598,7 @@ uint64_t tnx_slot_repl_26(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(26, a0, a1);
 
-    if (g_slot_orig[26]) return g_slot_orig[26](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[26]) return t_slot_orig[26](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -607,7 +607,7 @@ uint64_t tnx_slot_repl_27(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(27, a0, a1);
 
-    if (g_slot_orig[27]) return g_slot_orig[27](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[27]) return t_slot_orig[27](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -616,7 +616,7 @@ uint64_t tnx_slot_repl_28(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(28, a0, a1);
 
-    if (g_slot_orig[28]) return g_slot_orig[28](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[28]) return t_slot_orig[28](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -625,7 +625,7 @@ uint64_t tnx_slot_repl_29(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(29, a0, a1);
 
-    if (g_slot_orig[29]) return g_slot_orig[29](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[29]) return t_slot_orig[29](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -634,7 +634,7 @@ uint64_t tnx_slot_repl_30(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(30, a0, a1);
 
-    if (g_slot_orig[30]) return g_slot_orig[30](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[30]) return t_slot_orig[30](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -643,7 +643,7 @@ uint64_t tnx_slot_repl_31(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     tnx_slot_note(31, a0, a1);
 
-    if (g_slot_orig[31]) return g_slot_orig[31](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[31]) return t_slot_orig[31](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return 0;
 }
@@ -652,9 +652,9 @@ uint64_t tnx_slot_repl_32(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     uint64_t r = 0;
 
-    g_update_hits++;
+    t_update_hits++;
 
-    if (g_slot_orig[32]) r = g_slot_orig[32](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[32]) r = t_slot_orig[32](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return r;
 }
@@ -663,14 +663,14 @@ uint64_t tnx_slot_repl_33(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     uint64_t r = 0;
 
-    g_move_hits++;
+    t_move_hits++;
 
-    if (g_slot_orig[33]) r = g_slot_orig[33](a0, a1, a2, a3, a4, a5, a6, a7);
+    if (t_slot_orig[33]) r = t_slot_orig[33](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return r;
 }
 
-const struct tnx_t_g_slot_specs g_slot_specs[TNX_SLOT_COUNT] = {
+const struct tnx_t_g_slot_specs t_slot_specs[TNX_SLOT_COUNT] = {
 
     { "A1/vt1002548+10/ad4ed0", "A1", 0x00ad4ed0ULL, 0x01002598ULL, tnx_slot_repl_0, 0 },
     { "A2/vt1002548+07/ad521c", "A2", 0x00ad521cULL, 0x01002580ULL, tnx_slot_repl_1, 0 },
@@ -718,11 +718,11 @@ const struct tnx_t_g_slot_specs g_slot_specs[TNX_SLOT_COUNT] = {
       tnx_slot_repl_33, 0 },
 };
 
-int g_ag_installed = -1;
+int t_ag_installed = -1;
 
-uint64_t g_ag_hits = 0;
+uint64_t t_ag_hits = 0;
 
-uintptr_t g_ag_objects[TNX_AG_OBJECT_MAX] = { 0 };
+uintptr_t t_ag_objects[TNX_AG_OBJECT_MAX] = { 0 };
 
 BOOL tnx_query_region(uintptr_t address,
                              vm_prot_t *protection,
@@ -828,9 +828,9 @@ BOOL tnx_read_f32(uintptr_t address, float *out) {
     return tnx_read_bytes(address, out, 4);
 }
 
-uint64_t g_write_denied = 0;
+uint64_t t_write_denied = 0;
 
-int g_deny_logs = 0;
+int t_deny_logs = 0;
 
 BOOL tnx_writable(uintptr_t address, size_t length) {
     uintptr_t end = address + length;
@@ -859,7 +859,7 @@ BOOL tnx_writable(uintptr_t address, size_t length) {
 }
 
 void tnx_note(uintptr_t address, const void *src, size_t length, int denied) {
-    int n = g_at;
+    int n = t_at;
     uint32_t value = 0;
 
     if (n < 0) n = 0;
@@ -871,14 +871,14 @@ void tnx_note(uintptr_t address, const void *src, size_t length, int denied) {
         memcpy(&value, src, take);
     }
 
-    g_addr[n] = address;
-    g_value[n] = value;
-    g_tick_3[n] = g_stage_ticks;
-    g_phase_2[n] = g_phase;
-    g_size[n] = (uint8_t)(length > 255 ? 255 : length);
-    g_denied[n] = (uint8_t)(denied ? 1 : 0);
-    g_writes_2++;
-    g_at = (n + 1) % TNX_JOURNAL;
+    t_addr[n] = address;
+    t_value[n] = value;
+    t_tick_3[n] = t_stage_ticks;
+    t_phase_2[n] = t_phase;
+    t_size[n] = (uint8_t)(length > 255 ? 255 : length);
+    t_denied[n] = (uint8_t)(denied ? 1 : 0);
+    t_writes_2++;
+    t_at = (n + 1) % TNX_JOURNAL;
 }
 
 BOOL tnx_write_bytes(uintptr_t address, const void *src, size_t length) {
@@ -886,16 +886,16 @@ BOOL tnx_write_bytes(uintptr_t address, const void *src, size_t length) {
     if (!address) return NO;
 
     if (TNX_WRITE_GUARD && !tnx_writable(address, length)) {
-        g_write_denied++;
+        t_write_denied++;
         tnx_note(address, src, length, 1);
 
-        if (g_deny_logs < TNX_DENY_LOGS) {
-            g_deny_logs++;
+        if (t_deny_logs < TNX_DENY_LOGS) {
+            t_deny_logs++;
 
             tnx_logf("write denied at %p len=%zu total=%llu - the target is not inside a "
                      "writable region of this process, so the store is dropped instead of taking "
                      "the process down with it",
-                     (void *)address, length, (unsigned long long)g_write_denied);
+                     (void *)address, length, (unsigned long long)t_write_denied);
         }
 
         return NO;
@@ -922,22 +922,22 @@ BOOL tnx_read_ptr(uintptr_t address, void **out) {
 }
 
 void *tnx_read_global_ptr(uintptr_t rva) {
-    if (!g_base || !rva) return NULL;
+    if (!t_base || !rva) return NULL;
 
     void *value = NULL;
 
-    if (!tnx_read_ptr(g_base + rva, &value)) return NULL;
+    if (!tnx_read_ptr(t_base + rva, &value)) return NULL;
 
     return value;
 }
 
 uintptr_t tnx_callable(uintptr_t rva) {
-    if (!g_base || !rva) return 0;
+    if (!t_base || !rva) return 0;
 
-    uintptr_t address = g_base + rva;
+    uintptr_t address = t_base + rva;
 
     if (!tnx_addr_executable(address)) return 0;
-    if (!tnx_image_text_contains(g_base, address)) return 0;
+    if (!tnx_image_text_contains(t_base, address)) return 0;
 
     BOOL exact = NO;
 
@@ -974,16 +974,16 @@ BOOL tnx_copy(uintptr_t source, void *destination, size_t length) {
 }
 
 BOOL tnx_text_section(uintptr_t *address, uint64_t *size) {
-    if (!g_base) return NO;
-    if (!tnx_addr_readable(g_base, sizeof(struct mach_header_64))) return NO;
+    if (!t_base) return NO;
+    if (!tnx_addr_readable(t_base, sizeof(struct mach_header_64))) return NO;
 
-    const struct mach_header_64 *header = (const struct mach_header_64 *)g_base;
+    const struct mach_header_64 *header = (const struct mach_header_64 *)t_base;
 
     if (header->magic != MH_MAGIC_64) return NO;
 
     const uint8_t *cursor = (const uint8_t *)(header + 1);
     const uint8_t *limit = cursor + header->sizeofcmds;
-    uintptr_t slide = tnx_image_slide(g_base);
+    uintptr_t slide = tnx_image_slide(t_base);
 
     for (uint32_t i = 0; i < header->ncmds; i++) {
         if (cursor + sizeof(struct load_command) > limit) return NO;
@@ -1061,8 +1061,8 @@ BOOL find_game_image(uintptr_t *out_base) {
 
         BOOL matched = NO;
 
-        for (int n = 0; g_image_names[n]; n++) {
-            if (strstr(path, g_image_names[n])) {
+        for (int n = 0; t_image_names[n]; n++) {
+            if (strstr(path, t_image_names[n])) {
                 matched = YES;
                 break;
             }
@@ -1084,51 +1084,51 @@ BOOL find_game_image(uintptr_t *out_base) {
     return NO;
 }
 
-double g_overlay_last = 0.0;
+double t_overlay_last = 0.0;
 
-int g_scan_ticks = 0;
+int t_scan_ticks = 0;
 
-uint64_t g_drain = 0;
+uint64_t t_drain = 0;
 
-uint64_t g_q_max = 0;
+uint64_t t_q_max = 0;
 
-uint64_t g_drag_writes = 0;
+uint64_t t_drag_writes = 0;
 
-uint64_t g_drag_back = 0;
+uint64_t t_drag_back = 0;
 
-int g_alert_shown = 0;
+int t_alert_shown = 0;
 
-uint64_t g_alert_cleared_ms = 0;
+uint64_t t_alert_cleared_ms = 0;
 
-int32_t g_gid_lo = 0;
+int32_t t_gid_lo = 0;
 
-int32_t g_gid_hi = 0;
+int32_t t_gid_hi = 0;
 
-uintptr_t g_alert_scene = 0;
+uintptr_t t_alert_scene = 0;
 
-uint64_t g_alert_ms = 0;
+uint64_t t_alert_ms = 0;
 
-uintptr_t g_owner = 0;
+uintptr_t t_owner = 0;
 
-int g_done = 0;
+int t_done = 0;
 
-uintptr_t g_owner_2 = 0;
+uintptr_t t_owner_2 = 0;
 
-int g_wired = 0;
+int t_wired = 0;
 
-dispatch_source_t g_scan_timer = NULL;
+dispatch_source_t t_scan_timer = NULL;
 
 BOOL tnx_segment_range(const char *name, uintptr_t *lo, uintptr_t *hi) {
-    if (!g_base || !name) return NO;
-    if (!tnx_addr_readable(g_base, sizeof(struct mach_header_64))) return NO;
+    if (!t_base || !name) return NO;
+    if (!tnx_addr_readable(t_base, sizeof(struct mach_header_64))) return NO;
 
-    const struct mach_header_64 *header = (const struct mach_header_64 *)g_base;
+    const struct mach_header_64 *header = (const struct mach_header_64 *)t_base;
 
     if (header->magic != MH_MAGIC_64) return NO;
 
     const uint8_t *cursor = (const uint8_t *)(header + 1);
     const uint8_t *limit = cursor + header->sizeofcmds;
-    uintptr_t slide = tnx_image_slide(g_base);
+    uintptr_t slide = tnx_image_slide(t_base);
 
     for (uint32_t i = 0; i < header->ncmds; i++) {
         if (cursor + sizeof(struct load_command) > limit) return NO;
@@ -1156,16 +1156,16 @@ BOOL tnx_segment_range(const char *name, uintptr_t *lo, uintptr_t *hi) {
 }
 
 BOOL tnx_image_contains(uintptr_t value) {
-    if (!g_base || !value) return NO;
-    if (!tnx_addr_readable(g_base, sizeof(struct mach_header_64))) return NO;
+    if (!t_base || !value) return NO;
+    if (!tnx_addr_readable(t_base, sizeof(struct mach_header_64))) return NO;
 
-    const struct mach_header_64 *header = (const struct mach_header_64 *)g_base;
+    const struct mach_header_64 *header = (const struct mach_header_64 *)t_base;
 
     if (header->magic != MH_MAGIC_64) return NO;
 
     const uint8_t *cursor = (const uint8_t *)(header + 1);
     const uint8_t *limit = cursor + header->sizeofcmds;
-    uintptr_t slide = tnx_image_slide(g_base);
+    uintptr_t slide = tnx_image_slide(t_base);
 
     for (uint32_t i = 0; i < header->ncmds; i++) {
         if (cursor + sizeof(struct load_command) > limit) return NO;
@@ -1192,19 +1192,19 @@ BOOL tnx_image_contains(uintptr_t value) {
 }
 
 void tnx_image_span_refresh(void) {
-    g_img_span_lo = 0;
-    g_img_span_hi = 0;
-    g_img_span_ok = 0;
+    t_img_span_lo = 0;
+    t_img_span_hi = 0;
+    t_img_span_ok = 0;
 
-    if (!g_base || !tnx_addr_readable(g_base, sizeof(struct mach_header_64))) return;
+    if (!t_base || !tnx_addr_readable(t_base, sizeof(struct mach_header_64))) return;
 
-    const struct mach_header_64 *header = (const struct mach_header_64 *)g_base;
+    const struct mach_header_64 *header = (const struct mach_header_64 *)t_base;
 
     if (header->magic != MH_MAGIC_64) return;
 
     const uint8_t *cursor = (const uint8_t *)(header + 1);
     const uint8_t *limit = cursor + header->sizeofcmds;
-    uintptr_t slide = tnx_image_slide(g_base);
+    uintptr_t slide = tnx_image_slide(t_base);
 
     for (uint32_t i = 0; i < header->ncmds; i++) {
         if (cursor + sizeof(struct load_command) > limit) break;
@@ -1221,35 +1221,35 @@ void tnx_image_span_refresh(void) {
                 uintptr_t start = slide + (uintptr_t)segment->vmaddr;
                 uintptr_t end = start + (uintptr_t)segment->vmsize;
 
-                if (!g_img_span_lo || start < g_img_span_lo) g_img_span_lo = start;
-                if (end > g_img_span_hi) g_img_span_hi = end;
+                if (!t_img_span_lo || start < t_img_span_lo) t_img_span_lo = start;
+                if (end > t_img_span_hi) t_img_span_hi = end;
             }
         }
 
         cursor += command->cmdsize;
     }
 
-    g_img_span_ok = (g_img_span_hi > g_img_span_lo) ? 1 : 0;
+    t_img_span_ok = (t_img_span_hi > t_img_span_lo) ? 1 : 0;
 }
 
 BOOL tnx_in_image_span(uintptr_t value) {
     if (!value) return NO;
-    if (!g_img_span_ok) return tnx_image_contains(value);
+    if (!t_img_span_ok) return tnx_image_contains(value);
 
-    return (value >= g_img_span_lo && value < g_img_span_hi) ? YES : NO;
+    return (value >= t_img_span_lo && value < t_img_span_hi) ? YES : NO;
 }
 
 const char *tnx_image_segment_name(uintptr_t value) {
-    if (!g_base || !value) return NULL;
-    if (!tnx_addr_readable(g_base, sizeof(struct mach_header_64))) return NULL;
+    if (!t_base || !value) return NULL;
+    if (!tnx_addr_readable(t_base, sizeof(struct mach_header_64))) return NULL;
 
-    const struct mach_header_64 *header = (const struct mach_header_64 *)g_base;
+    const struct mach_header_64 *header = (const struct mach_header_64 *)t_base;
 
     if (header->magic != MH_MAGIC_64) return NULL;
 
     const uint8_t *cursor = (const uint8_t *)(header + 1);
     const uint8_t *limit = cursor + header->sizeofcmds;
-    uintptr_t slide = tnx_image_slide(g_base);
+    uintptr_t slide = tnx_image_slide(t_base);
 
     for (uint32_t i = 0; i < header->ncmds; i++) {
         if (cursor + sizeof(struct load_command) > limit) return NULL;
@@ -1277,15 +1277,15 @@ const char *tnx_image_segment_name(uintptr_t value) {
     return NULL;
 }
 
-tnx_region_t g_heap_regions[TNX_HEAP_REGION_MAX];
+tnx_region_t t_heap_regions[TNX_HEAP_REGION_MAX];
 
-int g_heap_region_count = 0;
+int t_heap_region_count = 0;
 
-uintptr_t g_heap_window_low = 0;
+uintptr_t t_heap_window_low = 0;
 
-uintptr_t g_heap_window_high = 0;
+uintptr_t t_heap_window_high = 0;
 
-int g_heap_window_ok = 0;
+int t_heap_window_ok = 0;
 
 void tnx_heap_regions_refresh(void) {
     uintptr_t cursor = 0x10000;
@@ -1309,8 +1309,8 @@ void tnx_heap_regions_refresh(void) {
             size <= TNX_HEAP_REGION_MAX_SIZE &&
             start >= 0x10000 &&
             !tnx_image_segment_name(start)) {
-            g_heap_regions[count].low = start;
-            g_heap_regions[count].high = next;
+            t_heap_regions[count].low = start;
+            t_heap_regions[count].high = next;
             count++;
 
             if (!lowest || start < lowest) lowest = start;
@@ -1320,32 +1320,32 @@ void tnx_heap_regions_refresh(void) {
         cursor = next;
     }
 
-    g_heap_region_count = count;
-    g_heap_window_low = lowest;
-    g_heap_window_high = highest;
-    g_heap_window_ok = count > 0 ? 1 : 0;
+    t_heap_region_count = count;
+    t_heap_window_low = lowest;
+    t_heap_window_high = highest;
+    t_heap_window_ok = count > 0 ? 1 : 0;
 
-    g_heap_region_capped = (count >= TNX_HEAP_REGION_MAX) ? 1 : 0;
+    t_heap_region_capped = (count >= TNX_HEAP_REGION_MAX) ? 1 : 0;
 
     tnx_image_span_refresh();
 }
 
 BOOL tnx_heap_contains(uintptr_t value) {
     int lo = 0;
-    int hi = g_heap_region_count - 1;
+    int hi = t_heap_region_count - 1;
 
     if (!value) return NO;
 
-    if (!g_heap_region_count) return tnx_image_segment_name(value) ? NO : YES;
+    if (!t_heap_region_count) return tnx_image_segment_name(value) ? NO : YES;
 
-    if (value < g_heap_window_low || value >= g_heap_window_high) return NO;
+    if (value < t_heap_window_low || value >= t_heap_window_high) return NO;
 
     while (lo <= hi) {
         int mid = lo + (hi - lo) / 2;
 
-        if (value < g_heap_regions[mid].low) {
+        if (value < t_heap_regions[mid].low) {
             hi = mid - 1;
-        } else if (value >= g_heap_regions[mid].high) {
+        } else if (value >= t_heap_regions[mid].high) {
             lo = mid + 1;
         } else {
             return YES;
@@ -1440,7 +1440,7 @@ BOOL tnx_manager_shape(uintptr_t manager) {
     return YES;
 }
 
-const uintptr_t g_mode_vtables[36] = {
+const uintptr_t t_mode_vtables[36] = {
     0x10012c8, 0x1001318, 0x1001368, 0x10013b8,
     0x1001408, 0x1001458, 0x10014a8, 0x10014f8, 0x1001548, 0x1001598, 0x10015e8, 0x10016e0,
     0x10017d8, 0x10018c0, 0x1001908, 0x10019d0, 0x1001ac8, 0x1001bc0, 0x1001cb8, 0x1001d80,
@@ -1455,36 +1455,36 @@ uintptr_t tnx_vtable_rva(void *object) {
     if (!object) return 0;
     if (!tnx_read_ptr((uintptr_t)object, &vtable)) return 0;
     if (!vtable) return 0;
-    if ((uintptr_t)vtable < g_base) return 0;
+    if ((uintptr_t)vtable < t_base) return 0;
 
-    return (uintptr_t)vtable - g_base;
+    return (uintptr_t)vtable - t_base;
 }
 
-tnx_trail_t g_trail[TNX_TRAIL_MAX];
+tnx_trail_t t_trail[TNX_TRAIL_MAX];
 
-int g_trail_count = 0;
+int t_trail_count = 0;
 
-uint64_t g_trail_total = 0;
+uint64_t t_trail_total = 0;
 
-int g_gate_last = -1;
+int t_gate_last = -1;
 
-int g_gate_logs = 0;
+int t_gate_logs = 0;
 
-int g_dodge_probe_usable = 0;
+int t_dodge_probe_usable = 0;
 
-int g_step_logs = 0;
+int t_step_logs = 0;
 
-int g_elem_logs = 0;
+int t_elem_logs = 0;
 
-uintptr_t g_last_own = 0;
+uintptr_t t_last_own = 0;
 
-int g_logs = 0;
+int t_logs = 0;
 
-int32_t g_last_tx = 0;
+int32_t t_last_tx = 0;
 
-int32_t g_last_ty = 0;
+int32_t t_last_ty = 0;
 
-int g_issued = 0;
+int t_issued = 0;
 
 int tnx_write_i32(uintptr_t address, int32_t value) {
     if (address & 3) return 0;
@@ -1492,58 +1492,56 @@ int tnx_write_i32(uintptr_t address, int32_t value) {
     return tnx_write_bytes(address, &value, sizeof(value)) ? 1 : 0;
 }
 
-uintptr_t g_enemy_elem = 0;
+uintptr_t t_enemy_elem = 0;
 
-uint64_t g_push_logs = 0;
+uint64_t t_push_logs = 0;
 
-uint64_t g_reloads = 0;
+uint64_t t_reloads = 0;
 
-uint64_t g_pre_reloads = 0;
+uint64_t t_pre_reloads = 0;
 
-uint64_t g_pre_frames = 0;
+uint64_t t_pre_frames = 0;
 
-uint64_t g_push_frame_2 = 0;
+uint64_t t_push_frame_2 = 0;
 
-uint64_t g_win_reloads = 0;
+uint64_t t_win_reloads = 0;
 
-int g_win_stage = 0;
+int t_win_stage = 0;
 
-float g_dir_x = 0.0f;
+float t_dir_x = 0.0f;
 
-float g_dir_y = 0.0f;
+float t_dir_y = 0.0f;
 
-int g_human_2 = 0;
+int t_human_2 = 0;
 
-int g_touch = 0;
+int t_touch = 0;
 
-int g_moved_3 = 0;
+int t_moved_3 = 0;
 
-uint64_t g_stops = 0;
+uint64_t t_stops = 0;
 
-uint64_t g_queue_skips_2 = 0;
+uint64_t t_queue_skips_2 = 0;
 
-int g_logs_11 = 0;
+float t_org_x = 0.0f;
 
-float g_org_x = 0.0f;
+float t_org_y = 0.0f;
 
-float g_org_y = 0.0f;
+float t_cur_x = 0.0f;
 
-float g_cur_x = 0.0f;
+float t_cur_y = 0.0f;
 
-float g_cur_y = 0.0f;
+int32_t t_tx_3 = 0;
 
-int32_t g_tx_3 = 0;
+int32_t t_ty_3 = 0;
 
-int32_t g_ty_3 = 0;
-
-uint64_t g_hold = 0;
+uint64_t t_hold = 0;
 
 BOOL tnx_vtable_in_image(uintptr_t vtable) {
     uintptr_t lo = 0;
     uintptr_t hi = 0;
 
     if (!vtable) return NO;
-    if (vtable >= g_base + TNX_DC_RVA_LO && vtable < g_base + TNX_DC_RVA_LO + TNX_DC_RVA_SIZE) {
+    if (vtable >= t_base + TNX_DC_RVA_LO && vtable < t_base + TNX_DC_RVA_LO + TNX_DC_RVA_SIZE) {
         return YES;
     }
 
@@ -1561,25 +1559,25 @@ uintptr_t tnx_strip_ptr(uintptr_t value) {
     stripped = (uintptr_t)ptrauth_strip((void *)value, ptrauth_key_function_pointer);
 #endif
 
-    if (stripped >= g_base && stripped < g_base + TNX_IMAGE_SPAN) return stripped;
+    if (stripped >= t_base && stripped < t_base + TNX_IMAGE_SPAN) return stripped;
 
     if ((stripped & 0xffffffffULL) < TNX_IMAGE_SPAN) {
-        uintptr_t viaLow = g_base + (stripped & 0xffffffffULL);
+        uintptr_t viaLow = t_base + (stripped & 0xffffffffULL);
 
-        if (viaLow >= g_base && viaLow < g_base + TNX_IMAGE_SPAN) return viaLow;
+        if (viaLow >= t_base && viaLow < t_base + TNX_IMAGE_SPAN) return viaLow;
     }
 
     return stripped;
 }
 
 void poll_for_game(int tick) {
-    if (g_setup_done) return;
+    if (t_setup_done) return;
     if (tick > 1200) return;
 
     uintptr_t base = 0;
 
     if (find_game_image(&base)) {
-        g_base = base;
+        t_base = base;
         setup();
         return;
     }

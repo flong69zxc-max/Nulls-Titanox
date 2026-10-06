@@ -3,8 +3,8 @@
 
 #include "core/types.h"
 
-extern uintptr_t * g_starts;
-extern size_t g_starts_count;
+extern uintptr_t * t_starts;
+extern size_t t_starts_count;
 uintptr_t tnx_entry(uintptr_t rva);
 int tnx_is_prologue(uint32_t w);
 int tnx_is_term(uint32_t w);

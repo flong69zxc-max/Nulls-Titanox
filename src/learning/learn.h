@@ -3,13 +3,13 @@
 
 #include "core/types.h"
 
-extern uint64_t g_bucket_abs[TNX_ADV_BUCKETS];
-extern uint64_t g_bucket_n[TNX_ADV_BUCKETS];
-extern uint64_t g_learn_loss[3][3][2];
-extern uint64_t g_learn_win[3][3][2];
-extern uint64_t g_stat_absorbed;
-extern uint64_t g_stat_dodged;
-extern int g_stat_near;
+extern uint64_t t_bucket_abs[TNX_ADV_BUCKETS];
+extern uint64_t t_bucket_n[TNX_ADV_BUCKETS];
+extern uint64_t t_learn_loss[3][3][2];
+extern uint64_t t_learn_win[3][3][2];
+extern uint64_t t_stat_absorbed;
+extern uint64_t t_stat_dodged;
+extern int t_stat_near;
 int tnx_blacklisted(float speed, float radius);
 int tnx_key_c(int n);
 int tnx_key_t(float tti);

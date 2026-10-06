@@ -5,27 +5,27 @@
 #include "core/config.h"
 #include "core/offsets.h"
 
-extern uint8_t g_grid[TNX_GRID_MAX * TNX_GRID_MAX];
-extern uintptr_t g_tiles;
-extern int g_w;
-extern int g_h;
-extern int g_cells;
-extern int g_solid;
-extern int g_move;
-extern int g_img;
-extern int g_own_tx;
-extern int g_own_ty;
-extern int g_own_proj;
-extern int g_own_move;
-extern int g_passes;
-extern int g_armed;
-extern int g_live;
-extern int g_fail;
-extern int g_seg_test;
-extern int g_seg_clip;
-extern int g_seg_frac;
-extern int g_logs_10;
-extern uint64_t g_built;
+extern uint8_t t_grid[TNX_GRID_MAX * TNX_GRID_MAX];
+extern uintptr_t t_tiles;
+extern int t_w;
+extern int t_h;
+extern int t_cells;
+extern int t_solid;
+extern int t_move;
+extern int t_img;
+extern int t_own_tx;
+extern int t_own_ty;
+extern int t_own_proj;
+extern int t_own_move;
+extern int t_passes;
+extern int t_armed;
+extern int t_live;
+extern int t_fail;
+extern int t_seg_test;
+extern int t_seg_clip;
+extern int t_seg_frac;
+extern int t_logs_10;
+extern uint64_t t_built;
 
 uintptr_t tnx_map_object(void);
 int tnx_clip_walk(int32_t ax, int32_t ay, int32_t bx, int32_t by, int32_t cell, const uint8_t *solid, int gw, int gh, int32_t *outX, int32_t *outY);

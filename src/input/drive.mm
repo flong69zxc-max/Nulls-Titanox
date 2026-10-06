@@ -1,8 +1,8 @@
 #include "titanox.h"
 
-tnx_seg_t g_seg[TNX_SEG_MAX];
+tnx_seg_t t_seg[TNX_SEG_MAX];
 
-int g_seg_count = 0;
+int t_seg_count = 0;
 
 uintptr_t tnx_bs(void) {
     return tnx_client();
@@ -57,7 +57,7 @@ int tnx_joy_angle(float *outAngle) {
 }
 
 void tnx_select(float px, float py) {
-    float speed = g_walk_step * 60.0f;
+    float speed = t_walk_step * 60.0f;
     float reach = 0.0f;
     int i = 0;
 
@@ -65,15 +65,15 @@ void tnx_select(float px, float py) {
     if (speed > 1200.0f) speed = 1200.0f;
 
     reach = speed * TNX_HORIZON;
-    g_sel_n = 0;
+    t_sel_n = 0;
 
-    for (i = 0; i < g_seg_count && g_sel_n < TNX_SEL_MAX; i++) {
-        const tnx_seg_t *seg = &g_seg[i];
+    for (i = 0; i < t_seg_count && t_sel_n < TNX_SEL_MAX; i++) {
+        const tnx_seg_t *seg = &t_seg[i];
         float d = tnx_seg_dist(px, py, seg->ax, seg->ay, seg->bx, seg->by);
 
         if (d > reach + seg->inflatedR) continue;
 
-        g_sel[g_sel_n++] = i;
+        t_sel[t_sel_n++] = i;
     }
 }
 
@@ -95,12 +95,12 @@ int tnx_drive(void) {
     int32_t pairX = 0;
     int32_t pairY = 0;
 
-    if (g_active_2) {
-        g_tx_3 = g_tx;
-        g_ty_3 = g_ty;
-        g_hold = g_ticks_3;
+    if (t_active_2) {
+        t_tx_3 = t_tx;
+        t_ty_3 = t_ty;
+        t_hold = t_ticks_3;
         held = 1;
-    } else if (!g_crit_reaction && g_hold && (g_ticks_3 - g_hold) <= TNX_DATA_HOLD) {
+    } else if (!t_crit_reaction && t_hold && (t_ticks_3 - t_hold) <= TNX_DATA_HOLD) {
         held = 1;
     }
 
@@ -134,13 +134,13 @@ int tnx_drive(void) {
         len = sqrtf(dx * dx + dy * dy);
 
         if (len < 0.0001f) {
-            g_dead_picks++;
+            t_dead_picks++;
             tnx_stick(0, 0.0f, 0.0f);
 
             return 0;
         }
 
-        g_escapes++;
+        t_escapes++;
         tnx_stick(1, (float)TNX_STICK_SIGN * dx, (float)TNX_STICK_SIGN * dy);
         tnx_precision(ownX, ownY, dx, dy, 1);
 
@@ -150,8 +150,8 @@ int tnx_drive(void) {
     if (!tnx_own(&ownX, &ownY)) return 0;
     if (!tnx_own_ok(ownX, ownY)) return 0;
 
-    dx = (float)(g_tx_3 - ownX);
-    dy = (float)(g_ty_3 - ownY);
+    dx = (float)(t_tx_3 - ownX);
+    dy = (float)(t_ty_3 - ownY);
     len = sqrtf(dx * dx + dy * dy);
 
     if (len >= 0.0001f) {
@@ -172,12 +172,12 @@ int tnx_drive(void) {
             dx = dx / len * step;
             dy = dy / len * step;
             len = step;
-            g_clamped++;
+            t_clamped++;
         }
     }
 
     if (len < 0.0001f) {
-        g_dead_picks++;
+        t_dead_picks++;
         tnx_stick(0, 0.0f, 0.0f);
 
         return 0;
@@ -197,16 +197,16 @@ int tnx_drive(void) {
 
         human = (hgate == 1 || hid >= 0) ? 1 : 0;
 
-        if (TNX_HUMAN && g_human_2) human = 1;
+        if (TNX_HUMAN && t_human_2) human = 1;
 
-        threat = g_active_2 ? 1 : 0;
+        threat = t_active_2 ? 1 : 0;
 
-        if (human) g_human++;
+        if (human) t_human++;
 
         if (threat || !human || !TNX_STICK_WHEN_FREE) {
             tnx_stick(1, (float)TNX_STICK_SIGN * dx, (float)TNX_STICK_SIGN * dy);
         } else {
-            g_stick_skips++;
+            t_stick_skips++;
         }
     }
 
@@ -216,14 +216,14 @@ int tnx_drive(void) {
     ty = ownY + (int32_t)((double)dy / (double)len * (double)TNX_REACH);
 
     if (TNX_QUIET) {
-        g_queue_skips_2++;
-        g_queue_calls++;
+        t_queue_skips_2++;
+        t_queue_calls++;
     } else if (!TNX_PAIR_ONLY) {
-        if (TNX_STICK_ONLY) g_pos_skips++;
+        if (TNX_STICK_ONLY) t_pos_skips++;
         else tnx_enqueue(tx, ty);
-        g_queue_calls++;
+        t_queue_calls++;
     } else {
-        g_queue_skips++;
+        t_queue_skips++;
     }
 
     if (!TNX_STICK_ONLY && !TNX_JS_NOPREDICT) {
@@ -239,8 +239,8 @@ int tnx_drive(void) {
         tnx_read_i32(ctrl + TNX_TOUCH_STATE_OFF, &stateNow);
         tnx_read_i32(ctrl + TNX_TOUCH_ID_OFF, &idNow);
 
-        if (g_flag_logs < TNX_FLAG_LOGS) {
-            g_flag_logs++;
+        if (t_flag_logs < TNX_FLAG_LOGS) {
+            t_flag_logs++;
 
             TNX_LOGX("touch gate=%d state=%d id=%d writes=%llu idWrites=%llu own=(%d,%d) applied=(%d,%d) - "
                       "gate is the byte the engine's own move function tests first, and this build reads "
@@ -249,8 +249,8 @@ int tnx_drive(void) {
                       "was the opposite of driving one, state and id are the rest of the touch "
                       "bookkeeping, and applied is now only read back so this line can show the engine "
                       "moving it instead of this build",
-                     gateNow, stateNow, idNow, (unsigned long long)g_gate_writes,
-                     (unsigned long long)g_touchid_writes, ownX, ownY, appX, appY);
+                     gateNow, stateNow, idNow, (unsigned long long)t_gate_writes,
+                     (unsigned long long)t_touchid_writes, ownX, ownY, appX, appY);
         }
     }
 
@@ -262,7 +262,7 @@ int tnx_drive(void) {
 
     }
 
-    if (g_stuck_logs < TNX_STUCK_LOG && g_engage_writes > 20 && !g_move_tick) {
+    if (t_stuck_logs < TNX_STUCK_LOG && t_engage_writes > 20 && !t_move_tick) {
         int i = 0;
         int near = -1;
         int within = 0;
@@ -270,15 +270,15 @@ int tnx_drive(void) {
         float slen = sqrtf(dx * dx + dy * dy);
         float dot = 0.0f;
 
-        for (i = 0; i < g_pl_n; i++) {
+        for (i = 0; i < t_pl_n; i++) {
             float bx = 0.0f;
             float by = 0.0f;
             float d = 0.0f;
 
-            if (g_pl_mine[i]) continue;
+            if (t_pl_mine[i]) continue;
 
-            bx = (float)g_pl_x[i] - (float)ownX;
-            by = (float)g_pl_y[i] - (float)ownY;
+            bx = (float)t_pl_x[i] - (float)ownX;
+            by = (float)t_pl_y[i] - (float)ownY;
             d = sqrtf(bx * bx + by * by);
 
             if (d < nd) {
@@ -290,52 +290,52 @@ int tnx_drive(void) {
         }
 
         if (near >= 0 && slen > 1.0f) {
-            float bx = (float)g_pl_x[near] - (float)ownX;
-            float by = (float)g_pl_y[near] - (float)ownY;
+            float bx = (float)t_pl_x[near] - (float)ownX;
+            float by = (float)t_pl_y[near] - (float)ownY;
 
             dot = (bx * dx + by * dy) / (sqrtf(bx * bx + by * by) * slen);
         }
 
-        g_stuck_2++;
-        g_stuck_logs++;
+        t_stuck_2++;
+        t_stuck_logs++;
 
         TNX_LOGX("stuck writes=%llu own=(%d,%d) step=%.0f nearestBody=%.0f dot=%+.2f mine=%d "
                  "withinStep=%d pick=(%d,%d) - the body does not move although this build keeps "
                  "writing, which is what a character pressed against another player looks like: dot "
                  "near +1 means the step points at that body, withinStep counts the bodies closer "
-                 "than the step", (unsigned long long)g_engage_writes, ownX, ownY, (double)slen,
-                 (double)nd, (double)dot, (near >= 0) ? g_pl_mine[near] : -1, within, g_tx_3,
-                 g_ty_3);
+                 "than the step", (unsigned long long)t_engage_writes, ownX, ownY, (double)slen,
+                 (double)nd, (double)dot, (near >= 0) ? t_pl_mine[near] : -1, within, t_tx_3,
+                 t_ty_3);
     }
 
-    g_sent_dx = tx - ownX;
-    g_sent_dy = ty - ownY;
-    g_last_tx_2 = tx;
-    g_last_ty_2 = ty;
-    g_drive_ticks++;
+    t_sent_dx = tx - ownX;
+    t_sent_dy = ty - ownY;
+    t_last_tx_2 = tx;
+    t_last_ty_2 = ty;
+    t_drive_ticks++;
 
     tnx_drive_note(ownX, ownY, tx, ty, appX, appY, pairX, pairY);
 
-    if (g_active_2) {
-        g_last_decision = g_ticks_3;
-        g_decide_x = ownX;
-        g_decide_y = ownY;
+    if (t_active_2) {
+        t_last_decision = t_ticks_3;
+        t_decide_x = ownX;
+        t_decide_y = ownY;
     }
 
-    if (g_drive_logs < TNX_DRIVE_LOGS ||
-        ((g_ticks_3 % 60) == 0 && g_drive_logs < 240)) {
-        g_drive_logs++;
+    if (t_drive_logs < TNX_DRIVE_LOGS ||
+        ((t_ticks_3 % 60) == 0 && t_drive_logs < 240)) {
+        t_drive_logs++;
 
         TNX_LOGX("drive held=%d engaged=%d own=(%d,%d) pick=(%d,%d) sent=(%d,%d) step=%.0f "
                  "pair=(%d,%d) queue=%llu skipped=%llu pairOnly=%d holdTicks=%d - the step handed "
                  "to the client input is one frame of travel and not the pick, so the body is "
                  "walked instead of carried; a sent distance that has grown back to the pick means "
-                 "something below put the uncapped target back", held, g_active_2, ownX, ownY,
-                 g_tx_3, g_ty_3, tx, ty,
-                 (double)sqrtf((float)(g_sent_dx * g_sent_dx +
-                                       g_sent_dy * g_sent_dy)),
-                 g_stick_x, g_stick_y, (unsigned long long)g_queue_calls,
-                 (unsigned long long)g_queue_skips, TNX_PAIR_ONLY, TNX_DATA_HOLD);
+                 "something below put the uncapped target back", held, t_active_2, ownX, ownY,
+                 t_tx_3, t_ty_3, tx, ty,
+                 (double)sqrtf((float)(t_sent_dx * t_sent_dx +
+                                       t_sent_dy * t_sent_dy)),
+                 t_stick_x, t_stick_y, (unsigned long long)t_queue_calls,
+                 (unsigned long long)t_queue_skips, TNX_PAIR_ONLY, TNX_DATA_HOLD);
     }
 
     return 1;
@@ -372,11 +372,11 @@ int tnx_snap(float dx, float dy) {
     int32_t vx = 0;
     int32_t vy = 0;
 
-    g_snap_live = 0;
+    t_snap_live = 0;
 
     if (!TNX_SNAP) {
-        if (g_snap_off_logs < 4) {
-            g_snap_off_logs++;
+        if (t_snap_off_logs < 4) {
+            t_snap_off_logs++;
 
             TNX_LOGX("snap off elem=%p client=%p mag=%.0f - this was the only call that handed the "
                      "engine move function the container element as the receiver together with a "
@@ -407,11 +407,11 @@ int tnx_snap(float dx, float dy) {
 
     ((void (*)(uintptr_t, int, int, int))fn)(dst, vx, vy, TNX_SETFLAG);
 
-    g_snap_calls++;
-    g_snap_live = 1;
+    t_snap_calls++;
+    t_snap_live = 1;
 
-    if (g_snap_logs < TNX_SNAP_LOGS || (g_ticks_3 % 180) == 0) {
-        g_snap_logs++;
+    if (t_snap_logs < TNX_SNAP_LOGS || (t_ticks_3 % 180) == 0) {
+        t_snap_logs++;
 
         TNX_LOGX("snap dst=%p sent=(%d,%d) own=(%d,%d) dir=(%.0f,%.0f) len=%.0f step=%.0f delta=%d "
                  "elem=%p mag=%.0f - the receiver is the logic client the prediction call uses and the "
@@ -440,11 +440,11 @@ void tnx_predict_2(int32_t ownX, int32_t ownY, float tx, float ty) {
     float d = 0.0f;
     int react = -1;
 
-    if (g_logs_8 >= TNX_LOGS_4) return;
-    if (TNX_EVERY_2 > 0 && (g_ticks_3 % (uint64_t)TNX_EVERY_2) != 0) return;
+    if (t_logs_8 >= TNX_LOGS_4) return;
+    if (TNX_EVERY_2 > 0 && (t_ticks_3 % (uint64_t)TNX_EVERY_2) != 0) return;
 
-    for (i = 0; i < g_seg_count; i++) {
-        const tnx_seg_t *s = &g_seg[i];
+    for (i = 0; i < t_seg_count; i++) {
+        const tnx_seg_t *s = &t_seg[i];
         float abx = s->bx - s->ax;
         float aby = s->by - s->ay;
         float den = abx * abx + aby * aby;
@@ -470,15 +470,15 @@ void tnx_predict_2(int32_t ownX, int32_t ownY, float tx, float ty) {
         }
     }
 
-    if (g_new_tick >= 0) react = (int)((int64_t)g_ticks_3 - (int64_t)g_new_tick);
+    if (t_new_tick >= 0) react = (int)((int64_t)t_ticks_3 - (int64_t)t_new_tick);
 
-    g_logs_8++;
+    t_logs_8++;
 
     if (best < 0) {
         TNX_LOGX("predict tick=%llu own=(%d,%d) tgt=(%.0f,%.0f) threats=0 react=%d flees=%llu - "
                  "no segment is live, so there is nothing to lead and the pick is a plain step",
-                 (unsigned long long)g_ticks_3, ownX, ownY, (double)tx, (double)ty, react,
-                 (unsigned long long)g_flees);
+                 (unsigned long long)t_ticks_3, ownX, ownY, (double)tx, (double)ty, react,
+                 (unsigned long long)t_flees);
 
         return;
     }
@@ -489,9 +489,9 @@ void tnx_predict_2(int32_t ownX, int32_t ownY, float tx, float ty) {
              "impact=(%.0f,%.0f) lead=(%.0f,%.0f) d=%.0f eta=%.0fms spd=%.0f ms=%.0f - impact is the "
              "closest point of the nearest flight to own, lead is the offset own has to clear, and a "
              "react above one tick means the pick was made a frame or more after the threat appeared",
-             (unsigned long long)g_ticks_3, ownX, ownY, (double)tx, (double)ty, g_seg_count,
-             react, g_seg[best].gid, (double)qx, (double)qy, (double)(qx - px), (double)(qy - py),
-             (double)d, (double)bestMs, (double)g_seg[best].speed, (double)(d / (g_seg[best].speed > 1.0f ? g_seg[best].speed : 1.0f) * 1000.0f));
+             (unsigned long long)t_ticks_3, ownX, ownY, (double)tx, (double)ty, t_seg_count,
+             react, t_seg[best].gid, (double)qx, (double)qy, (double)(qx - px), (double)(qy - py),
+             (double)d, (double)bestMs, (double)t_seg[best].speed, (double)(d / (t_seg[best].speed > 1.0f ? t_seg[best].speed : 1.0f) * 1000.0f));
 }
 
 void tnx_precision(int32_t ownX, int32_t ownY, float dirX, float dirY, int escape) {
@@ -507,9 +507,9 @@ void tnx_precision(int32_t ownX, int32_t ownY, float dirX, float dirY, int escap
     int lag = -1;
 
     if (!TNX_PRECISION) return;
-    if (TNX_EVERY > 0 && (g_ticks_3 % (uint64_t)TNX_EVERY) != 0) return;
+    if (TNX_EVERY > 0 && (t_ticks_3 % (uint64_t)TNX_EVERY) != 0) return;
 
-    g_logs_7++;
+    t_logs_7++;
     ctrl = tnx_controller();
 
     if (ctrl) {
@@ -519,28 +519,28 @@ void tnx_precision(int32_t ownX, int32_t ownY, float dirX, float dirY, int escap
         tnx_read_i32(ctrl + TNX_CTRL_APPLIED_Y_OFF, &appY);
     }
 
-    if (g_joystick) tnx_read_i32(g_joystick + TNX_BS_MODE, &mode);
+    if (t_joystick) tnx_read_i32(t_joystick + TNX_BS_MODE, &mode);
 
-    if (g_pred_last) {
-        tnx_read_i32(g_pred_last + TNX_MODE_PREDICTX_OFF, &predX);
-        tnx_read_i32(g_pred_last + TNX_MODE_PREDICTY_OFF, &predY);
+    if (t_pred_last) {
+        tnx_read_i32(t_pred_last + TNX_MODE_PREDICTX_OFF, &predX);
+        tnx_read_i32(t_pred_last + TNX_MODE_PREDICTY_OFF, &predY);
     }
 
     eta = tnx_eta_ms((float)ownX, (float)ownY);
 
-    if (g_t0) {
+    if (t_t0) {
         uint64_t now = tnx_us();
 
-        g_dec_us = (now >= g_t0) ? (now - g_t0) : 0;
+        t_dec_us = (now >= t_t0) ? (now - t_t0) : 0;
 
-        if (g_dec_us > g_dec_us_max) g_dec_us_max = g_dec_us;
-        if (g_dec_us > TNX_SLOW_US) g_slow++;
+        if (t_dec_us > t_dec_us_max) t_dec_us_max = t_dec_us;
+        if (t_dec_us > TNX_SLOW_US) t_slow++;
     }
 
-    if (g_build_tick >= 0) lag = (int)((int64_t)g_ticks_3 - (int64_t)g_build_tick);
+    if (t_build_tick >= 0) lag = (int)((int64_t)t_ticks_3 - (int64_t)t_build_tick);
 
     {
-        uintptr_t wrap = (uintptr_t)g_scene_object;
+        uintptr_t wrap = (uintptr_t)t_scene_object;
         uintptr_t cli = tnx_client();
         int32_t wAx = 0;
         int32_t wAy = 0;
@@ -568,40 +568,17 @@ void tnx_precision(int32_t ownX, int32_t ownY, float dirX, float dirY, int escap
              "took=%llu denied=%llu - eta is the time the nearest bullet needs to reach own at its "
              "own speed, so any decision later than eta is a decision after the hit, and buildLag is "
              "the ticks between rebuilding the threat list and writing the stick",
-             (unsigned long long)g_ticks_3, ownX, ownY, (double)dirX, (double)dirY, escape, ax, ay,
-             appX, appY, mode, (void *)g_joystick, g_seg_count, (double)eta, lag, predX,
-             predY, (unsigned long long)g_joystick_took,
-             (unsigned long long)g_write_denied);
+             (unsigned long long)t_ticks_3, ownX, ownY, (double)dirX, (double)dirY, escape, ax, ay,
+             appX, appY, mode, (void *)t_joystick, t_seg_count, (double)eta, lag, predX,
+             predY, (unsigned long long)t_joystick_took,
+             (unsigned long long)t_write_denied);
 }
 
-int tnx_write(float dirX, float dirY) {
-    uintptr_t bs = tnx_bs();
-    float len = sqrtf(dirX * dirX + dirY * dirY);
-    float nx = 0.0f;
-    float ny = 0.0f;
-    int32_t two = 2;
+int32_t t_stick_x = 0;
 
-    if (len < 0.001f) return 0;
-    if (!bs) return 0;
+int32_t t_stick_y = 0;
 
-    nx = dirX / len * TNX_JOY_SCALE;
-    ny = dirY / len * TNX_JOY_SCALE;
-
-    if (!tnx_write_f32(bs + TNX_BS_AX, nx)) return 0;
-    if (!tnx_write_f32(bs + TNX_BS_AY, ny)) return 0;
-    if (!tnx_write_f32(bs + TNX_BS_BX, nx)) return 0;
-    if (!tnx_write_f32(bs + TNX_BS_BY, ny)) return 0;
-
-    tnx_write_bytes(bs + TNX_BS_MODE, &two, sizeof(two));
-
-    return 1;
-}
-
-int32_t g_stick_x = 0;
-
-int32_t g_stick_y = 0;
-
-int g_engaged_ticks = 0;
+int t_engaged_ticks = 0;
 
 void tnx_drag(int engaged, int haveOwn, int32_t ownX, int32_t ownY, float dirX, float dirY) {
     (void)engaged;
@@ -649,11 +626,11 @@ void tnx_stick(int engaged, float dirX, float dirY) {
                 wy = (int32_t)((double)dirY / (double)len * (double)TNX_JOY_MAG);
             }
 
-            g_stick_hold = 1;
-            g_stick_tick = g_ticks_3;
-            g_engaged_ticks++;
-            g_sum_x += wx;
-            g_sum_y += wy;
+            t_stick_hold = 1;
+            t_stick_tick = t_ticks_3;
+            t_engaged_ticks++;
+            t_sum_x += wx;
+            t_sum_y += wy;
         }
     }
 
@@ -662,22 +639,22 @@ void tnx_stick(int engaged, float dirX, float dirY) {
         int32_t relX = 0;
         int32_t relY = 0;
 
-        if (!g_stick_hold) return;
-        if (TNX_JS_STICK && g_ticks_3 < g_stick_tick + TNX_JS_HOLD) return;
-        if (!TNX_RAGE && g_stick_tick + TNX_STICK_TTL > g_ticks_3) return;
+        if (!t_stick_hold) return;
+        if (TNX_JS_STICK && t_ticks_3 < t_stick_tick + TNX_JS_HOLD) return;
+        if (!TNX_RAGE && t_stick_tick + TNX_STICK_TTL > t_ticks_3) return;
 
-        g_stick_hold = 0;
+        t_stick_hold = 0;
 
         if (relCtrl && tnx_read_i32(relCtrl + TNX_CTRL_RAW_X_OFF, &relX) &&
             tnx_read_i32(relCtrl + TNX_CTRL_RAW_Y_OFF, &relY)) {
-            if (relX != g_stick_x || relY != g_stick_y) return;
+            if (relX != t_stick_x || relY != t_stick_y) return;
         }
     }
 
-    g_stick_x = wx;
-    g_stick_y = wy;
+    t_stick_x = wx;
+    t_stick_y = wy;
 
-    if (TNX_STICK_RAW_WRITE && !(TNX_RETIRE && g_accepted && !TNX_JS_STICK)) {
+    if (TNX_STICK_RAW_WRITE && !(TNX_RETIRE && t_accepted && !TNX_JS_STICK)) {
         if (!tnx_write_bytes(ctrl + TNX_CTRL_RAW_X_OFF, &wx, sizeof(wx))) return;
 
         tnx_write_bytes(ctrl + TNX_CTRL_RAW_Y_OFF, &wy, sizeof(wy));
@@ -713,7 +690,7 @@ void tnx_route(int engaged) {
     int dx = 0;
     int dy = 0;
     int moved = 0;
-    int ours = g_engaged_ticks;
+    int ours = t_engaged_ticks;
     long long sumX = 0;
     long long sumY = 0;
     float sLen = 0.0f;
@@ -721,10 +698,10 @@ void tnx_route(int engaged) {
     float dot = 0.0f;
     const char *align = "no-move";
 
-    if ((g_ticks_3 % 60) != 0) return;
+    if ((t_ticks_3 % 60) != 0) return;
     if (!tnx_own(&ownX, &ownY)) return;
 
-    g_engaged_ticks = 0;
+    t_engaged_ticks = 0;
 
     if (ctrl) {
         tnx_read_i32(ctrl + TNX_CTRL_RAW_X_OFF, &backX);
@@ -733,17 +710,17 @@ void tnx_route(int engaged) {
         tnx_read_i32(ctrl + TNX_CTRL_APPLIED_Y_OFF, &appY);
     }
 
-    if (g_route_seeded) {
-        dx = (int)(ownX - g_last_own_x);
-        dy = (int)(ownY - g_last_own_y);
+    if (t_route_seeded) {
+        dx = (int)(ownX - t_last_own_x);
+        dy = (int)(ownY - t_last_own_y);
 
         moved = (int)sqrtf((float)(dx * dx + dy * dy));
     }
 
-    sumX = g_sum_x;
-    sumY = g_sum_y;
-    g_sum_x = 0;
-    g_sum_y = 0;
+    sumX = t_sum_x;
+    sumY = t_sum_y;
+    t_sum_x = 0;
+    t_sum_y = 0;
 
     sLen = sqrtf((float)(sumX * sumX + sumY * sumY));
     mLen = sqrtf((float)(dx * dx + dy * dy));
@@ -756,12 +733,12 @@ void tnx_route(int engaged) {
         else align = "unrelated";
     }
 
-    g_route_seeded = 1;
-    g_last_own_x = ownX;
-    g_last_own_y = ownY;
+    t_route_seeded = 1;
+    t_last_own_x = ownX;
+    t_last_own_y = ownY;
 
     TNX_LOGX("route engaged=%d stick=(%d,%d) back=(%d,%d) applied=(%d,%d) own=(%d,%d) movedLastSecond=%d stickSum=(%lld,%lld) stickDir=(%.2f,%.2f) moveDir=(%.2f,%.2f) dot=%+.2f aligned=%s engagedTicks=%d queue=%d",
-             engaged, g_stick_x, g_stick_y, backX, backY, appX, appY, ownX, ownY, moved,
+             engaged, t_stick_x, t_stick_y, backX, backY, appX, appY, ownX, ownY, moved,
              sumX, sumY,
              (double)(sLen > 0.5f ? (float)sumX / sLen : 0.0f),
              (double)(sLen > 0.5f ? (float)sumY / sLen : 0.0f),
@@ -771,7 +748,7 @@ void tnx_route(int engaged) {
 }
 
 float tnx_speed(void) {
-    float v = g_walk_step * 60.0f;
+    float v = t_walk_step * 60.0f;
 
     if (v < 120.0f) v = 120.0f;
     if (v > 1200.0f) v = 1200.0f;
@@ -779,6 +756,6 @@ float tnx_speed(void) {
     return v;
 }
 
-float g_walk_step = TNX_STEP_3;
+float t_walk_step = TNX_STEP_3;
 
-uint64_t g_ticks_3 = 0;
+uint64_t t_ticks_3 = 0;

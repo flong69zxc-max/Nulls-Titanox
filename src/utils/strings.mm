@@ -1,26 +1,26 @@
 #include "titanox.h"
 
-uint64_t g_setpred_calls = 0;
+uint64_t t_setpred_calls = 0;
 
-uintptr_t g_setpred_this = 0;
+uintptr_t t_setpred_this = 0;
 
-float g_setpred_x = 0.0f;
+float t_setpred_x = 0.0f;
 
-float g_setpred_y = 0.0f;
+float t_setpred_y = 0.0f;
 
-uint64_t g_ascii_rejected = 0;
+uint64_t t_ascii_rejected = 0;
 
-uint32_t g_never_dispatched_mask = 0;
+uint32_t t_never_dispatched_mask = 0;
 
-uint64_t g_ticks_4 = 0;
+uint64_t t_ticks_4 = 0;
 
-int g_ascii_refused = 0;
+int t_ascii_refused = 0;
 
-int g_alert_streak = 0;
+int t_alert_streak = 0;
 
-uintptr_t g_alert_streak_ptr = 0;
+uintptr_t t_alert_streak_ptr = 0;
 
-uint64_t g_alert_calls = 0;
+uint64_t t_alert_calls = 0;
 
 int tnx_ascii_word(uintptr_t address) {
     uint8_t bytes[8];
@@ -86,18 +86,18 @@ void tnx_append(char *buf, size_t size, size_t *used, const char *token) {
     buf[*used] = 0;
 }
 
-tnx_reject_t g_reject;
+tnx_reject_t t_reject;
 
 const char *tnx_reject_text(char *buf, size_t size) {
     snprintf(buf, size,
              "elements=%d rejNull=%d rejUnreadable=%d rejAscii=%d rejNoVt=%d rejGidZero=%d "
              "rejNonPlayer=%d rejOutOfRange=%d rejTeamMissing=%d deadSeen=%d",
-             g_reject.elementsRead, g_reject.rejNull, g_reject.rejUnreadable,
-             g_reject.rejAscii, g_reject.rejNoVt, g_reject.rejGidZero,
-             g_reject.rejNonPlayer,
-             g_reject.rejOutOfRange, g_reject.rejTeamMissing, g_reject.deadSeen);
+             t_reject.elementsRead, t_reject.rejNull, t_reject.rejUnreadable,
+             t_reject.rejAscii, t_reject.rejNoVt, t_reject.rejGidZero,
+             t_reject.rejNonPlayer,
+             t_reject.rejOutOfRange, t_reject.rejTeamMissing, t_reject.deadSeen);
 
     return buf;
 }
 
-int g_setpred_blocked_logs = 0;
+int t_setpred_blocked_logs = 0;

@@ -56,12 +56,7 @@ typedef struct {
     float spawnAreaActiveTime;
 } tnx_shape_in_t;
 
-int tnx_shape_hazards(const tnx_shape_in_t *in, uint64_t nowMs, tnx_shape_t *out, int maxOut);
-int tnx_shape_blocks_linear(const char *name);
 void tnx_shape_note_death(const char *name, int32_t x, int32_t y, int32_t spawnX, int32_t spawnY,
                           float angleDeg);
-void tnx_shape_reset(void);
-int tnx_shape_variant(void);
-float tnx_shape_trace(float wx, float wy, float dirX, float dirY, float maxDist);
 
 #endif

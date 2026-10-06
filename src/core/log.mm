@@ -37,6 +37,10 @@ const char *g_log_keep[64] = {
     "predMiss", "clamp ", "snap ", "build ",
     "shot ", "crit ",
     "stat ", "advise ",
+    "queuePush", "queueSkip", "enqueueStop", "msgProbe",
+    "window ", "predict", "predSkip", "stick ",
+    "route ", "input ", "body ", "chain-only",
+    "summary", "test ", "setter-before", "setter-after",
     NULL
 };
 
@@ -342,13 +346,16 @@ extern int g_enq_stop_2;
 
 extern int g_enq_stop_3;
 
+extern int g_enq_stop_5;
+
 void tnx_log_heartbeat(void) {
     int sigDelta = g_modesig_hits - g_hb_sig_prev;
 
     tnx_logf("hb tick=%llu battle=%d reason=%s slot=%p state=%d objFired=%llu "
              "modesigHits=%d sigLast=%d chainHits=%d classesPass=%d g_mode=%p src=%s mgr=%p "
              "count=%d fb=%d liveObjs=%d liveTeams=%d parked=%d drop=26 ctrlPick=%d "
-             "clampMax=(%d,%d) enqOk=%llu enqBlocked=%llu predCalls=%llu",
+             "clampMax=(%d,%d) enqOk=%llu enqBlocked=%llu predCalls=%llu signOn=%d tokens=%u "
+             "signFails=%u",
              (unsigned long long)g_ticks_4,
              g_battle_active, g_battle_reason, (void *)g_site, g_state_2,
              (unsigned long long)tnx_object_dispatches(), g_modesig_hits, sigDelta,
@@ -356,8 +363,9 @@ void tnx_log_heartbeat(void) {
              (void *)g_scene_object, g_mode_source_2, (void *)g_players_object, g_manager_count,
              g_fb_on, g_live_objs, g_live_teams, g_idle_on, g_ctrl_pick,
              (int)g_max_x, (int)g_max_y, (unsigned long long)g_enq_ok,
-             (unsigned long long)(g_enq_stop_1 + g_enq_stop_2 + g_enq_stop_3),
-             (unsigned long long)g_pred_calls);
+             (unsigned long long)(g_enq_stop_1 + g_enq_stop_2 + g_enq_stop_3 + g_enq_stop_5),
+             (unsigned long long)g_pred_calls, g_ci_sign_on, (unsigned)g_ci_tokens,
+             (unsigned)g_ci_sign_fails);
 
     tnx_log_census();
 

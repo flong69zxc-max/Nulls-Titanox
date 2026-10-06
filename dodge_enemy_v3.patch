@@ -1,0 +1,312 @@
+diff --git a/src/dodge/autododge.mm b/src/dodge/autododge.mm
+index 4995b73..a47bf0f 100644
+--- a/src/dodge/autododge.mm
++++ b/src/dodge/autododge.mm
+@@ -1462,6 +1462,11 @@ static void tnx_dodge_state_tick(float px, float py) {
+ #define TNX_JS_INTENT_W 1.2f
+ #define TNX_JS_INERTIA_TICKS 24
+ #define TNX_JS_CAND_MAX 192
++#define TNX_ENEMY_KEEP_2 420.0f
++#define TNX_ENEMY_COS_2 0.35f
++#define TNX_JS_ENEMY_W_2 2600.0f
++#define TNX_JS_ENEMY_RANGE_2 1000.0f
++#define TNX_JS_HOLD_TICKS_2 8
+ 
+ typedef struct {
+     float x;
+@@ -1486,6 +1491,10 @@ static uint64_t t_js_last_tick = 0;
+ static float t_js_dir[TNX_JS_DIRS][2];
+ static float t_js_urgent_dirs = 0.0f;
+ static int t_js_dirs_built = 0;
++static float t_js_hold_x_2 = 0.0f;
++static float t_js_hold_y_2 = 0.0f;
++static uint64_t t_js_hold_tick_2 = 0;
++static int t_js_hold_2 = 0;
+ 
+ static void tnx_js_build_dirs(void) {
+     int i;
+@@ -1585,7 +1594,7 @@ static int tnx_js_urgent(const tnx_js_proj_t *p, float mx, float my, float mr) {
+     return (ddx * ddx + ddy * ddy) <= r * r;
+ }
+ 
+-static float tnx_js_enemy_penalty(float dirX, float dirY, float mx, float my) {
++static float tnx_js_enemy_penalty_2(float dirX, float dirY, float mx, float my) {
+     int i;
+     float best = 1e18f;
+     float bx = 0.0f;
+@@ -1605,18 +1614,70 @@ static float tnx_js_enemy_penalty(float dirX, float dirY, float mx, float my) {
+         }
+     }
+ 
+-    if (best > 1e17f || best < 1.0f) return 0.0f;
++    if (best > 1e17f) return 0.0f;
+ 
+     d = sqrtf(best);
++
++    if (d < 1.0f) return TNX_JS_ENEMY_W_2;
++
+     closing = (dirX * bx + dirY * by) / d;
+ 
+     if (closing <= 0.0f) return 0.0f;
+ 
+-    return closing * TNX_JS_ENEMY_W;
++    return closing * TNX_JS_ENEMY_W_2 * (TNX_JS_ENEMY_RANGE_2 / (d + TNX_JS_ENEMY_RANGE_2));
++}
++
++static float tnx_js_enemy_closing_2(float dirX, float dirY, float mx, float my) {
++    int i;
++    float best = 1e18f;
++    float bx = 0.0f;
++    float by = 0.0f;
++    float d;
++
++    for (i = 0; i < t_enemy_n && i < TNX_PLAYER_MAX; i++) {
++        float dx = (float)t_enemy_x[i] - mx;
++        float dy = (float)t_enemy_y[i] - my;
++        float d2 = dx * dx + dy * dy;
++
++        if (d2 < best) {
++            best = d2;
++            bx = dx;
++            by = dy;
++        }
++    }
++
++    if (best > 1e17f) return 0.0f;
++
++    d = sqrtf(best);
++
++    if (d < 1.0f) return 1.0f;
++
++    return (dirX * bx + dirY * by) / d;
+ }
+ 
+-static float tnx_js_score(float dirX, float dirY, float mx, float my, float mr,
+-                          int haveIntent, float ix, float iy) {
++static int tnx_js_enemy_unsafe_2(float dirX, float dirY, float mx, float my) {
++    int i;
++
++    for (i = 0; i < t_enemy_n && i < TNX_PLAYER_MAX; i++) {
++        float dx = (float)t_enemy_x[i] - mx;
++        float dy = (float)t_enemy_y[i] - my;
++        float d2 = dx * dx + dy * dy;
++        float d;
++
++        if (d2 < 1.0f) return 1;
++
++        d = sqrtf(d2);
++
++        if (d < TNX_ENEMY_KEEP_2) return 1;
++
++        if ((dirX * dx + dirY * dy) / d > TNX_ENEMY_COS_2) return 1;
++    }
++
++    return 0;
++}
++
++static float tnx_js_score_2(float dirX, float dirY, float mx, float my, float mr,
++                            int haveIntent, float ix, float iy) {
+     int i;
+     float score = 0.0f;
+ 
+@@ -1649,7 +1710,7 @@ static float tnx_js_score(float dirX, float dirY, float mx, float my, float mr,
+ 
+     if (haveIntent) score -= (dirX * ix + dirY * iy) * TNX_JS_INTENT_W * 15.0f;
+ 
+-    score += tnx_js_enemy_penalty(dirX, dirY, mx, my);
++    score += tnx_js_enemy_penalty_2(dirX, dirY, mx, my);
+ 
+     if (t_js_have_last && (t_ticks_3 - t_js_last_tick) < TNX_JS_INERTIA_TICKS) {
+         score -= (dirX * t_js_last_x + dirY * t_js_last_y) * 45.0f;
+@@ -1726,8 +1787,8 @@ static int tnx_js_danger(float mx, float my, float mr) {
+     return 0;
+ }
+ 
+-static int tnx_js_pick(float mx, float my, float mr, int haveIntent, float ix, float iy,
+-                       float *outX, float *outY) {
++static int tnx_js_pick_2(float mx, float my, float mr, int haveIntent, float ix, float iy,
++                         float *outX, float *outY) {
+     float cand[TNX_JS_CAND_MAX][2];
+     int n = 0;
+     int i;
+@@ -1810,7 +1871,11 @@ static int tnx_js_pick(float mx, float my, float mr, int haveIntent, float ix, f
+     }
+ 
+     for (i = 0; i < n; i++) {
+-        float s = tnx_js_score(cand[i][0], cand[i][1], mx, my, mr, haveIntent, ix, iy);
++        float s;
++
++        if (tnx_js_enemy_unsafe_2(cand[i][0], cand[i][1], mx, my)) continue;
++
++        s = tnx_js_score_2(cand[i][0], cand[i][1], mx, my, mr, haveIntent, ix, iy);
+ 
+         if (s < bestScore) {
+             bestScore = s;
+@@ -1818,21 +1883,31 @@ static int tnx_js_pick(float mx, float my, float mr, int haveIntent, float ix, f
+         }
+     }
+ 
+-    if (best < 0) return 0;
++    if (best >= 0) {
++        *outX = cand[best][0];
++        *outY = cand[best][1];
+ 
+-    *outX = cand[best][0];
+-    *outY = cand[best][1];
++        if (!tnx_js_unsafe(*outX, *outY, mx, my, mr)) return 1;
++    }
+ 
+-    if (tnx_js_unsafe(*outX, *outY, mx, my, mr)) {
++    {
+         int found = 0;
+ 
+         bestScore = 1e18f;
++
+         for (i = 0; i < TNX_JS_DIRS; i++) {
+             float s;
++            float closing;
+ 
+             if (tnx_js_unsafe(t_js_dir[i][0], t_js_dir[i][1], mx, my, mr)) continue;
++
++            closing = tnx_js_enemy_closing_2(t_js_dir[i][0], t_js_dir[i][1], mx, my);
++
++            if (closing > TNX_ENEMY_COS_2) continue;
++
+             found = 1;
+-            s = tnx_js_score(t_js_dir[i][0], t_js_dir[i][1], mx, my, mr, haveIntent, ix, iy);
++            s = tnx_js_score_2(t_js_dir[i][0], t_js_dir[i][1], mx, my, mr, haveIntent, ix, iy);
++
+             if (s < bestScore) {
+                 bestScore = s;
+                 *outX = t_js_dir[i][0];
+@@ -1840,13 +1915,64 @@ static int tnx_js_pick(float mx, float my, float mr, int haveIntent, float ix, f
+             }
+         }
+ 
+-        if (!found) return 2;
++        if (found) return 1;
+     }
+ 
+-    return 1;
++    {
++        int found = 0;
++
++        bestScore = 1e18f;
++
++        for (i = 0; i < TNX_JS_DIRS; i++) {
++            float s;
++            float closing;
++
++            closing = tnx_js_enemy_closing_2(t_js_dir[i][0], t_js_dir[i][1], mx, my);
++
++            if (closing > TNX_ENEMY_COS_2) continue;
++
++            found = 1;
++            s = tnx_js_score_2(t_js_dir[i][0], t_js_dir[i][1], mx, my, mr, haveIntent, ix, iy);
++
++            if (s < bestScore) {
++                bestScore = s;
++                *outX = t_js_dir[i][0];
++                *outY = t_js_dir[i][1];
++            }
++        }
++
++        if (found) return 1;
++    }
++
++    {
++        int found = 0;
++        float bestClosing = 1e18f;
++        float bestScore3 = 1e18f;
++
++        for (i = 0; i < TNX_JS_DIRS; i++) {
++            float closing = tnx_js_enemy_closing_2(t_js_dir[i][0], t_js_dir[i][1], mx, my);
++            float s;
++
++            if (found && closing > bestClosing) continue;
++
++            s = tnx_js_score_2(t_js_dir[i][0], t_js_dir[i][1], mx, my, mr, haveIntent, ix, iy);
++
++            if (!found || closing < bestClosing || (closing == bestClosing && s < bestScore3)) {
++                bestClosing = closing;
++                bestScore3 = s;
++                *outX = t_js_dir[i][0];
++                *outY = t_js_dir[i][1];
++                found = 1;
++            }
++        }
++
++        if (found) return 1;
++    }
++
++    return 0;
+ }
+ 
+-int tnx_js_decide(float px, float py, float *outX, float *outY, int *urgentOut) {
++int tnx_js_decide_2(float px, float py, float *outX, float *outY, int *urgentOut) {
+     int have = 0;
+     int ix = 0;
+     float iX = 0.0f;
+@@ -1860,7 +1986,25 @@ int tnx_js_decide(float px, float py, float *outX, float *outY, int *urgentOut)
+ 
+     if (mr <= 0.0f) mr = TNX_PLAYER_RADIUS;
+ 
+-    if (!tnx_js_danger(px, py, mr)) return 0;
++    if (!tnx_js_danger(px, py, mr)) {
++        t_js_hold_2 = 0;
++
++        return 0;
++    }
++
++    if (t_js_hold_2 && (t_ticks_3 - t_js_hold_tick_2) < (uint64_t)TNX_JS_HOLD_TICKS_2 &&
++        !tnx_js_unsafe(t_js_hold_x_2, t_js_hold_y_2, px, py, mr) &&
++        !tnx_js_enemy_unsafe_2(t_js_hold_x_2, t_js_hold_y_2, px, py)) {
++        *outX = t_js_hold_x_2;
++        *outY = t_js_hold_y_2;
++        *urgentOut = (t_js_urgent_dirs > 0.0f);
++
++        t_js_last_x = *outX;
++        t_js_last_y = *outY;
++        t_js_have_last = 1;
++
++        return 1;
++    }
+ 
+     if (t_have_angle) {
+         iX = cosf(t_angle);
+@@ -1868,15 +2012,24 @@ int tnx_js_decide(float px, float py, float *outX, float *outY, int *urgentOut)
+         have = 1;
+     }
+ 
+-    res = tnx_js_pick(px, py, mr, have, iX, iY, outX, outY);
++    res = tnx_js_pick_2(px, py, mr, have, iX, iY, outX, outY);
++
++    if (res == 0) {
++        t_js_hold_2 = 0;
+ 
+-    if (res == 0) return 0;
++        return 0;
++    }
+ 
+     t_js_last_x = *outX;
+     t_js_last_y = *outY;
+     t_js_have_last = 1;
+     t_js_last_tick = t_ticks_3;
+ 
++    t_js_hold_x_2 = *outX;
++    t_js_hold_y_2 = *outY;
++    t_js_hold_tick_2 = t_ticks_3;
++    t_js_hold_2 = 1;
++
+     *urgentOut = (t_js_urgent_dirs > 0.0f);
+ 
+     return 1;
+@@ -1951,7 +2104,7 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
+         float jsX = 0.0f;
+         float jsY = 0.0f;
+ 
+-        t_js_picked = tnx_js_decide(px, py, &jsX, &jsY, &jsUrgent);
++        t_js_picked = tnx_js_decide_2(px, py, &jsX, &jsY, &jsUrgent);
+ 
+         if (t_js_picked) {
+             tx = px + jsX * TNX_REACH;

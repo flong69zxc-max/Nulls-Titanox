@@ -1637,7 +1637,6 @@ static void tnx_js3_collect(float px, float py) {
         const tnx_proj_t *p = &t_projs[i];
         tnx_js3_proj_t *q;
         uint8_t dead = 0;
-        int slot;
         float mx;
         float my;
         float dx = 0.0f;
@@ -1666,34 +1665,25 @@ static void tnx_js3_collect(float px, float py) {
 
         if (mx * mx + my * my > TNX_JS3_MAX_DIST_SQ) continue;
 
-        slot = tnx_js3_prev_slot(p->gid);
-
         if (p->hasPrev) {
             dx = (float)(p->x - p->px);
             dy = (float)(p->y - p->py);
             len = sqrtf(dx * dx + dy * dy);
         }
 
-        if (len > TNX_JS3_DIRT_MIN) {
-            dx /= len;
-            dy /= len;
-        } else if (slot >= 0) {
-            dx = t_js3_prev[slot].dx;
-            dy = t_js3_prev[slot].dy;
-        } else {
-            float ang = 0.0f;
+        if (len <= TNX_JS3_DIRT_MIN) continue;
 
-            if (tnx_read_f32(p->elem + (uintptr_t)TNX_PROJ_ANGLE_OFF, &ang) &&
-                ang >= -7.0f && ang <= 7.0f) {
-                dx = cosf(ang);
-                dy = sinf(ang);
-            } else {
-                dx = 0.0f;
-                dy = 0.0f;
-            }
+        dx /= len;
+        dy /= len;
+
+        {
+            float bx = (float)p->x - px;
+            float by = (float)p->y - py;
+            float br = tnx_own_radius();
+
+            if (br < 40.0f) br = TNX_DATA_OWN_R;
+            if (sqrtf(bx * bx + by * by) < br) continue;
         }
-
-        if (dx == 0.0f && dy == 0.0f) continue;
 
         dt = (p->ptick > 0 && t_ticks_3 > p->ptick) ? (t_ticks_3 - p->ptick) : 1;
 

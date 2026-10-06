@@ -1,0 +1,105 @@
+diff --git a/src/core/config.h b/src/core/config.h
+index ec69bb7..c95fa65 100644
+--- a/src/core/config.h
++++ b/src/core/config.h
+@@ -3,7 +3,7 @@
+ 
+ #include "core/imports.h"
+ 
+-#define LOG_MAX_BYTES (2048 * 1024)
++#define LOG_MAX_BYTES (32 * 1024 * 1024)
+ #define TNX_LOG_ROLL 1
+ #define TNX_LOG_FILTER 1
+ 
+diff --git a/src/core/log.mm b/src/core/log.mm
+index 8158426..9448c72 100644
+--- a/src/core/log.mm
++++ b/src/core/log.mm
+@@ -163,11 +163,7 @@ void tnx_write_line(const char *text) {
+     if (!text) return;
+     if (!tnx_keep_line(text)) return;
+ 
+-    if (t_log_written >= LOG_MAX_BYTES) {
+-        if (!TNX_LOG_ROLL) return;
+-
+-        tnx_log_roll();
+-    }
++    if (t_log_written >= LOG_MAX_BYTES) tnx_log_roll();
+ 
+     handle = tnx_log_handle();
+ 
+diff --git a/src/diag/recon.mm b/src/diag/recon.mm
+index c783fd5..f8fa934 100644
+--- a/src/diag/recon.mm
++++ b/src/diag/recon.mm
+@@ -252,9 +252,9 @@ void tnx_recon_live_3(void) {
+ }
+ 
+ void tnx_recon_3(void) {
+-    if (t_recon_runs >= 1) return;
+-    if (t_ticks_3 < 90) return;
+-
++    if (t_recon_runs >= 2) return;
++    if (t_ticks_3 < 30) return;
++    if (t_recon_runs == 1 && t_ticks_3 < 150) return;
+ 
+     t_recon_runs++;
+ 
+diff --git a/src/dodge/autododge.mm b/src/dodge/autododge.mm
+index 63a60a5..d504b4a 100644
+--- a/src/dodge/autododge.mm
++++ b/src/dodge/autododge.mm
+@@ -1637,7 +1637,6 @@ static void tnx_js3_collect(float px, float py) {
+         const tnx_proj_t *p = &t_projs[i];
+         tnx_js3_proj_t *q;
+         uint8_t dead = 0;
+-        int slot;
+         float mx;
+         float my;
+         float dx = 0.0f;
+@@ -1666,34 +1665,25 @@ static void tnx_js3_collect(float px, float py) {
+ 
+         if (mx * mx + my * my > TNX_JS3_MAX_DIST_SQ) continue;
+ 
+-        slot = tnx_js3_prev_slot(p->gid);
+-
+         if (p->hasPrev) {
+             dx = (float)(p->x - p->px);
+             dy = (float)(p->y - p->py);
+             len = sqrtf(dx * dx + dy * dy);
+         }
+ 
+-        if (len > TNX_JS3_DIRT_MIN) {
+-            dx /= len;
+-            dy /= len;
+-        } else if (slot >= 0) {
+-            dx = t_js3_prev[slot].dx;
+-            dy = t_js3_prev[slot].dy;
+-        } else {
+-            float ang = 0.0f;
++        if (len <= TNX_JS3_DIRT_MIN) continue;
+ 
+-            if (tnx_read_f32(p->elem + (uintptr_t)TNX_PROJ_ANGLE_OFF, &ang) &&
+-                ang >= -7.0f && ang <= 7.0f) {
+-                dx = cosf(ang);
+-                dy = sinf(ang);
+-            } else {
+-                dx = 0.0f;
+-                dy = 0.0f;
+-            }
+-        }
++        dx /= len;
++        dy /= len;
++
++        {
++            float bx = (float)p->x - px;
++            float by = (float)p->y - py;
++            float br = tnx_own_radius();
+ 
+-        if (dx == 0.0f && dy == 0.0f) continue;
++            if (br < 40.0f) br = TNX_DATA_OWN_R;
++            if (sqrtf(bx * bx + by * by) < br) continue;
++        }
+ 
+         dt = (p->ptick > 0 && t_ticks_3 > p->ptick) ? (t_ticks_3 - p->ptick) : 1;
+ 

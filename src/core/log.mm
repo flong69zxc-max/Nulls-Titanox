@@ -163,11 +163,7 @@ void tnx_write_line(const char *text) {
     if (!text) return;
     if (!tnx_keep_line(text)) return;
 
-    if (t_log_written >= LOG_MAX_BYTES) {
-        if (!TNX_LOG_ROLL) return;
-
-        tnx_log_roll();
-    }
+    if (t_log_written >= LOG_MAX_BYTES) tnx_log_roll();
 
     handle = tnx_log_handle();
 

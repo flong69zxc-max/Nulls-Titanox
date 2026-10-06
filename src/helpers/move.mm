@@ -445,8 +445,22 @@ int g_enq_stop_3 = 0;
 
 int g_enq_stop_4 = 0;
 
+int g_enq_stop_5 = 0;
+
 int tnx_enqueue(int x, int y) {
-    if (!g_coord_ok) return 0;
+    if (!g_coord_ok) {
+        if (g_enq_stop_5 < 8) {
+            g_enq_stop_5++;
+
+            TNX_LOGX("enqueueStop coords gate ok=%d usable=%d x=%d y=%d tick=%llu - the push is "
+                     "refused before anything is allocated or signed, and until now this return had "
+                     "no counter and no line, so a run in which every push died here looked exactly "
+                     "like a run in which the push succeeded and the engine ignored it",
+                     g_coord_ok, g_coord_usable, x, y, (unsigned long long)g_ticks_3);
+        }
+
+        return 0;
+    }
 
 
     uintptr_t ctorFn = tnx_entry_2(TNX_MSGCTOR_RVA);

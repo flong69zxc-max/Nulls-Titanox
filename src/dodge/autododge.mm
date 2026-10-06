@@ -2125,9 +2125,23 @@ static int tnx_dodge_decide(float px, float py, float *outX, float *outY, int *u
     tnx_dodge_collect(t_dodge_ox, t_dodge_oy);
 
     if ((t_ticks_3 % 5) == 0) {
-        tnx_logf("joyset ok=%d on=%d wrote=(%.1f,%.1f) centre=(%.1f,%.1f) client=%#llx",
+        float jax = 0.0f;
+        float jay = 0.0f;
+        float jbx = 0.0f;
+        float jby = 0.0f;
+        float jcs = 1.0f;
+        float jsn = 0.0f;
+        uint32_t jmode = 0;
+        int jread = tnx_joy_read(tnx_bs(), &jax, &jay, &jbx, &jby, &jmode, &jcs, &jsn);
+
+        tnx_logf("joyset ok=%d on=%d wrote=(%.1f,%.1f) centre=(%.1f,%.1f) client=%#llx obj=%#llx "
+                 "alt=%d reason=%d read=%d pair=(%.1f,%.1f)/(%.1f,%.1f) mode=%u cs=%.2f sn=%.2f "
+                 "drive=%d radius=%.0f",
                  t_joy_drive_ok, t_joy_drive_on, (double)t_joy_drive_ax, (double)t_joy_drive_ay,
-                 (double)t_joy_drive_cx, (double)t_joy_drive_cy, (unsigned long long)tnx_bs());
+                 (double)t_joy_drive_cx, (double)t_joy_drive_cy, (unsigned long long)tnx_bs(),
+                 (unsigned long long)t_joy_drive_obj, t_joy_drive_alt, t_joy_drive_reason,
+                 jread, (double)jax, (double)jay, (double)jbx, (double)jby, jmode,
+                 (double)jcs, (double)jsn, TNX_JOY_DRIVE, (double)TNX_JOY_RADIUS);
     }
 
     if ((t_ticks_3 % 5) == 0) {
@@ -2428,7 +2442,6 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
         tnx_enqueue((int32_t)tx, (int32_t)ty);
         tnx_move_to((int32_t)tx, (int32_t)ty, px, py);
         tnx_joy_set(t_js_dir_x, t_js_dir_y, 1);
-        tnx_input_apply(t_js_dir_x, t_js_dir_y, (int32_t)px, (int32_t)py);
 
         if (t_new_tick >= 0) {
             uint64_t react = t_ticks_3 - (uint64_t)t_new_tick;
@@ -2474,8 +2487,6 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
         t_ty_2 = py;
     }
 
-    if (!t_js_picked) tnx_input_clear((int32_t)px, (int32_t)py);
-
     if ((t_ticks_3 % 10) == 0) {
         t_logs_4++;
 
@@ -2487,9 +2498,7 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
                  "heading actually written towards in degrees, counted from the positive x axis, so "
                  "two consecutive lines with the same way is the character holding one direction; "
                  "moveN is how many times the engine move setter was called on the own character and "
-                 "moveOwn is the object it was called on; inN counts the input pushes written straight "
-                 "into the carrier the engine reads and inStuck counts the ones that read back"
-                 " inN=%d inStuck=%d inOn=%d",
+                 "moveOwn is the object it was called on",
                  t_seg_count, threatened, picked, t_js_n, t_dodge_mates, t_dodge_foes, t_dodge_unk, t_life_3, t_dodge_ox, t_dodge_oy, t_dodge_ohit, t_pick_src, t_js_urgent, t_js_vo,
                  (double)t_tx_2, (double)t_ty_2,
                  (double)sqrtf((t_tx_2 - px) * (t_tx_2 - px) +
@@ -2497,8 +2506,7 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
                  (double)(atan2f(t_ty_2 - py, t_tx_2 - px) * 180.0f / 3.14159265358979f),
                  stick, (double)desiredDeg, TNX_JOY_WRITE, t_snap_live, t_moving,
                  t_move_n, t_move_ok, (void *)t_move_own, (double)t_meas_tps,
-                 TNX_AIM, t_aim_idx, t_aim_shots, t_aim_ok,
-                 t_inapply_n, t_inapply_stuck, t_inapply_on);
+                 TNX_AIM, t_aim_idx, t_aim_shots, t_aim_ok);
     }
 
 

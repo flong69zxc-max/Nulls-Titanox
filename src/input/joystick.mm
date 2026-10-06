@@ -41,23 +41,72 @@ int t_joy_drive_on = 0;
 
 int t_joy_drive_ok = 0;
 
-int tnx_joy_set(float dirX, float dirY, int on) {
+uintptr_t t_joy_drive_obj = 0;
+
+int t_joy_drive_alt = 0;
+
+int t_joy_drive_reason = 0;
+
+static int tnx_joy_pair(uintptr_t obj, float *ax, float *ay, float *bx, float *by) {
+    if (!obj) return 0;
+    if (!tnx_read_f32(obj + TNX_BS_AX, ax)) return 0;
+    if (!tnx_read_f32(obj + TNX_BS_AY, ay)) return 0;
+    if (!tnx_read_f32(obj + TNX_BS_BX, bx)) return 0;
+    if (!tnx_read_f32(obj + TNX_BS_BY, by)) return 0;
+    if (!(*ax > -TNX_JOY_COORD_LIMIT && *ax < TNX_JOY_COORD_LIMIT)) return 0;
+    if (!(*ay > -TNX_JOY_COORD_LIMIT && *ay < TNX_JOY_COORD_LIMIT)) return 0;
+    if (!(*bx > -TNX_JOY_COORD_LIMIT && *bx < TNX_JOY_COORD_LIMIT)) return 0;
+    if (!(*by > -TNX_JOY_COORD_LIMIT && *by < TNX_JOY_COORD_LIMIT)) return 0;
+    if (*ax == 0.0f && *ay == 0.0f && *bx == 0.0f && *by == 0.0f) return 0;
+
+    return 1;
+}
+
+static uintptr_t tnx_joy_target(float *ax, float *ay, float *bx, float *by) {
     uintptr_t bs = tnx_bs();
+    uintptr_t hop = 0;
+
+    t_joy_drive_alt = 0;
+    t_joy_drive_reason = 0;
+
+    if (!bs) {
+        t_joy_drive_reason = 1;
+
+        return 0;
+    }
+
+    if (tnx_joy_pair(bs, ax, ay, bx, by)) return bs;
+
+    if (!tnx_read_ptr(bs + TNX_JOY_TARGET_OFF, (void **)&hop) || !hop) {
+        t_joy_drive_reason = 2;
+
+        return 0;
+    }
+
+    if (!tnx_joy_pair(hop, ax, ay, bx, by)) {
+        t_joy_drive_reason = 3;
+
+        return 0;
+    }
+
+    t_joy_drive_alt = 1;
+
+    return hop;
+}
+
+int tnx_joy_set(float dirX, float dirY, int on) {
     float ax = 0.0f;
     float ay = 0.0f;
     float bx = 0.0f;
     float by = 0.0f;
+    uintptr_t obj = 0;
     int ok = 0;
 
     if (!TNX_JOY_DRIVE) return 0;
-    if (!bs) return 0;
-    if (!tnx_read_f32(bs + TNX_BS_AX, &ax)) return 0;
-    if (!tnx_read_f32(bs + TNX_BS_AY, &ay)) return 0;
-    if (!tnx_read_f32(bs + TNX_BS_BX, &bx)) return 0;
-    if (!tnx_read_f32(bs + TNX_BS_BY, &by)) return 0;
-    if (!(bx > -TNX_JOY_COORD_LIMIT && bx < TNX_JOY_COORD_LIMIT)) return 0;
-    if (!(by > -TNX_JOY_COORD_LIMIT && by < TNX_JOY_COORD_LIMIT)) return 0;
-    if (bx == 0.0f && by == 0.0f) return 0;
+
+    obj = tnx_joy_target(&ax, &ay, &bx, &by);
+
+    if (!obj) return 0;
 
     if (on) {
         ax = bx + dirX * TNX_JOY_RADIUS;
@@ -67,9 +116,9 @@ int tnx_joy_set(float dirX, float dirY, int on) {
         ay = by;
     }
 
-    ok = tnx_write_f32(bs + TNX_BS_AX, ax);
-    ok = ok && tnx_write_f32(bs + TNX_BS_AY, ay);
-    ok = ok && tnx_write_i32(bs + TNX_BS_MODE, on ? TNX_JOY_MODE_ON : TNX_JOY_MODE_OFF);
+    ok = tnx_write_f32(obj + TNX_BS_AX, ax);
+    ok = ok && tnx_write_f32(obj + TNX_BS_AY, ay);
+    ok = ok && tnx_write_i32(obj + TNX_BS_MODE, on ? TNX_JOY_MODE_ON : TNX_JOY_MODE_OFF);
 
     t_joy_drive_ax = ax;
     t_joy_drive_ay = ay;
@@ -77,6 +126,7 @@ int tnx_joy_set(float dirX, float dirY, int on) {
     t_joy_drive_cy = by;
     t_joy_drive_on = on;
     t_joy_drive_ok = ok ? 1 : 0;
+    t_joy_drive_obj = obj;
 
     return t_joy_drive_ok;
 }

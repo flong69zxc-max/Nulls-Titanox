@@ -225,6 +225,12 @@
 #define TNX_BS_BX 0x9c0
 #define TNX_BS_BY 0x9c4
 #define TNX_BS_MODE 0x8ac
+#define TNX_JOY_ALT_CUR_X 0x9d0
+#define TNX_JOY_ALT_CUR_Y 0x9d4
+#define TNX_JOY_ALT_CEN_X 0x9d8
+#define TNX_JOY_ALT_CEN_Y 0x9dc
+#define TNX_JOY_ALT_DRAG 0xee8
+#define TNX_JOY_DEEP 0
 #define TNX_BS_COS 0x8f4
 #define TNX_BS_SIN 0x8f8
 #define TNX_WIN 0x1000

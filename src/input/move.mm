@@ -383,7 +383,7 @@ int t_enq_stop_4 = 0;
 
 int t_enq_stop_5 = 0;
 
-int tnx_enqueue_type_6(int x, int y, int type) {
+int tnx_enqueue_type(int x, int y, int type) {
     if (!t_coord_ok) {
         if (t_enq_stop_5 < 8) {
             t_enq_stop_5++;
@@ -578,57 +578,57 @@ int tnx_enqueue_type_6(int x, int y, int type) {
 }
 
 int tnx_enqueue(int x, int y) {
-    return tnx_enqueue_type_6(x, y, (int)TNX_TYPE_MOVE);
+    return tnx_enqueue_type(x, y, (int)TNX_TYPE_MOVE);
 }
 
-int t_move_6_n = 0;
+int t_move_n = 0;
 
-int t_move_6_probe = 0;
+int t_move_probe = 0;
 
-int t_move_6_rej = 0;
+int t_move_rej = 0;
 
-int t_move_6_ok = 0;
+int t_move_ok = 0;
 
-int t_move_6_logs = 0;
+int t_move_logs = 0;
 
-uintptr_t t_move_6_own = 0;
+uintptr_t t_move_own = 0;
 
-int32_t t_move_6_x = 0;
+int32_t t_move_x = 0;
 
-int32_t t_move_6_y = 0;
+int32_t t_move_y = 0;
 
-int32_t t_move_6_before_x = 0;
+int32_t t_move_before_x = 0;
 
-int32_t t_move_6_before_y = 0;
+int32_t t_move_before_y = 0;
 
-int32_t t_move_6_before_k = 0;
+int32_t t_move_before_k = 0;
 
-int32_t t_move_6_before_arm = 0;
+int32_t t_move_before_arm = 0;
 
-int32_t t_move_6_after_x = 0;
+int32_t t_move_after_x = 0;
 
-int32_t t_move_6_after_y = 0;
+int32_t t_move_after_y = 0;
 
-int32_t t_move_6_after_k = 0;
+int32_t t_move_after_k = 0;
 
-int32_t t_move_6_after_arm = 0;
+int32_t t_move_after_arm = 0;
 
-int tnx_move6_pair_ok(uintptr_t obj, int32_t *outX, int32_t *outY) {
+int tnx_move_pair_ok(uintptr_t obj, int32_t *outX, int32_t *outY) {
     int32_t ix = 0;
     int32_t iy = 0;
     int32_t key = 0;
     int32_t arm = 0;
 
     if (!obj) return 0;
-    if (!tnx_read_i32(obj + TNX_MOVE6_X_OFF, &ix)) return 0;
-    if (!tnx_read_i32(obj + TNX_MOVE6_Y_OFF, &iy)) return 0;
-    if (!tnx_read_i32(obj + TNX_MOVE6_KEY_OFF, &key)) return 0;
-    if (!tnx_read_i32(obj + TNX_MOVE6_ARM_OFF, &arm)) return 0;
+    if (!tnx_read_i32(obj + TNX_MOVE_X_OFF, &ix)) return 0;
+    if (!tnx_read_i32(obj + TNX_MOVE_Y_OFF, &iy)) return 0;
+    if (!tnx_read_i32(obj + TNX_MOVE_KEY_OFF, &key)) return 0;
+    if (!tnx_read_i32(obj + TNX_MOVE_ARM_OFF, &arm)) return 0;
 
-    if (ix < -TNX_MOVE6_COORD_LIMIT || ix > TNX_MOVE6_COORD_LIMIT) return 0;
-    if (iy < -TNX_MOVE6_COORD_LIMIT || iy > TNX_MOVE6_COORD_LIMIT) return 0;
+    if (ix < -TNX_MOVE_COORD_LIMIT || ix > TNX_MOVE_COORD_LIMIT) return 0;
+    if (iy < -TNX_MOVE_COORD_LIMIT || iy > TNX_MOVE_COORD_LIMIT) return 0;
     if (key < 0 || key > 1) return 0;
-    if ((arm & 0xFF) > TNX_MOVE6_ARM_ON) return 0;
+    if ((arm & 0xFF) > TNX_MOVE_ARM_ON) return 0;
 
     if (outX) *outX = ix;
     if (outY) *outY = iy;
@@ -636,19 +636,19 @@ int tnx_move6_pair_ok(uintptr_t obj, int32_t *outX, int32_t *outY) {
     return 1;
 }
 
-int tnx_move6_near_own(uintptr_t obj, float ox, float oy, int32_t *outX, int32_t *outY) {
+int tnx_move_near_own(uintptr_t obj, float ox, float oy, int32_t *outX, int32_t *outY) {
     int32_t ix = 0;
     int32_t iy = 0;
     float dx = 0.0f;
     float dy = 0.0f;
 
-    if (!tnx_move6_pair_ok(obj, &ix, &iy)) return 0;
+    if (!tnx_move_pair_ok(obj, &ix, &iy)) return 0;
 
     dx = (float)ix - ox;
     dy = (float)iy - oy;
 
-    if (!(dx > -TNX_MOVE6_TOL && dx < TNX_MOVE6_TOL)) return 0;
-    if (!(dy > -TNX_MOVE6_TOL && dy < TNX_MOVE6_TOL)) return 0;
+    if (!(dx > -TNX_MOVE_TOL && dx < TNX_MOVE_TOL)) return 0;
+    if (!(dy > -TNX_MOVE_TOL && dy < TNX_MOVE_TOL)) return 0;
 
     if (outX) *outX = ix;
     if (outY) *outY = iy;
@@ -656,7 +656,7 @@ int tnx_move6_near_own(uintptr_t obj, float ox, float oy, int32_t *outX, int32_t
     return 1;
 }
 
-uintptr_t tnx_move6_vt_rva(uintptr_t obj) {
+uintptr_t tnx_move_vt_rva(uintptr_t obj) {
     uintptr_t vt = 0;
 
     if (!tnx_read_ptr(obj, (void **)&vt) || !vt) return 0;
@@ -665,15 +665,15 @@ uintptr_t tnx_move6_vt_rva(uintptr_t obj) {
     return vt - t_base;
 }
 
-int tnx_move6_arm_byte(uintptr_t obj) {
+int tnx_move_arm_byte(uintptr_t obj) {
     int32_t arm = 0;
 
-    if (!tnx_read_i32(obj + TNX_MOVE6_ARM_OFF, &arm)) return -1;
+    if (!tnx_read_i32(obj + TNX_MOVE_ARM_OFF, &arm)) return -1;
 
     return arm & 0xFF;
 }
 
-int tnx_move6_read_vt(uintptr_t obj, uintptr_t *out) {
+int tnx_move_read_vt(uintptr_t obj, uintptr_t *out) {
     uintptr_t vt = 0;
 
     if (!obj || !out) return 0;
@@ -685,7 +685,60 @@ int tnx_move6_read_vt(uintptr_t obj, uintptr_t *out) {
     return 1;
 }
 
-static void tnx_move6_probe_5(const char *tag, int idx, uintptr_t obj, float ox, float oy) {
+static int tnx_joy_pair_ok(float ax, float ay, float bx, float by, int drag) {
+    if (!(ax > -TNX_JOY_COORD_LIMIT && ax < TNX_JOY_COORD_LIMIT)) return 0;
+    if (!(ay > -TNX_JOY_COORD_LIMIT && ay < TNX_JOY_COORD_LIMIT)) return 0;
+    if (!(bx > -TNX_JOY_COORD_LIMIT && bx < TNX_JOY_COORD_LIMIT)) return 0;
+    if (!(by > -TNX_JOY_COORD_LIMIT && by < TNX_JOY_COORD_LIMIT)) return 0;
+    if (ax == 0.0f && ay == 0.0f && bx == 0.0f && by == 0.0f) return 0;
+    if (drag != 0 && drag != 1) return 0;
+
+    return 1;
+}
+
+static void tnx_joy_dump(const char *tag, int idx, uintptr_t obj, int deep) {
+    float ax = 0.0f;
+    float ay = 0.0f;
+    float bx = 0.0f;
+    float by = 0.0f;
+    float cx = 0.0f;
+    float cy = 0.0f;
+    float ex = 0.0f;
+    float ey = 0.0f;
+    int32_t draga = -1;
+    int32_t dragb = -1;
+    int joya = 0;
+    int joyb = 0;
+
+    if (!obj || !TNX_JOY_SCAN_ON) return;
+    if (!deep) return;
+
+    if (!tnx_read_f32(obj + (uintptr_t)TNX_BS_AX, &ax)) return;
+    if (!tnx_read_f32(obj + (uintptr_t)TNX_BS_AY, &ay)) return;
+    if (!tnx_read_f32(obj + (uintptr_t)TNX_BS_BX, &bx)) return;
+    if (!tnx_read_f32(obj + (uintptr_t)TNX_BS_BY, &by)) return;
+    if (!tnx_read_f32(obj + (uintptr_t)TNX_JOY_ALT_CUR_X, &cx)) return;
+    if (!tnx_read_f32(obj + (uintptr_t)TNX_JOY_ALT_CUR_Y, &cy)) return;
+    if (!tnx_read_f32(obj + (uintptr_t)TNX_JOY_ALT_CEN_X, &ex)) return;
+    if (!tnx_read_f32(obj + (uintptr_t)TNX_JOY_ALT_CEN_Y, &ey)) return;
+
+    tnx_read_i32(obj + (uintptr_t)TNX_BS_MODE, &draga);
+    tnx_read_i32(obj + (uintptr_t)TNX_JOY_ALT_DRAG, &dragb);
+
+    joya = tnx_joy_pair_ok(ax, ay, bx, by, draga & 0xFF);
+    joyb = tnx_joy_pair_ok(cx, cy, ex, ey, dragb & 0xFF);
+
+    TNX_LOGX("joyscan %s[%d] obj=%p vtRva=%#llx joyA=%d curA=(%.1f,%.1f) cenA=(%.1f,%.1f) dragA+%#llx=%d "
+             "joyB=%d curB=(%.1f,%.1f) cenB=(%.1f,%.1f) dragB+%#llx=%d - a joystick is two floats for the knob, two "
+             "for the centre it springs back to and a byte that goes to one while the stick is held, so the object "
+             "where both pairs stay in screen range and the byte flips while the player walks is the stick the game "
+             "reads every frame and the one worth writing instead of the input pair",
+             tag, idx, (void *)obj, (unsigned long long)tnx_move_vt_rva(obj),
+             joya, (double)ax, (double)ay, (double)bx, (double)by, (unsigned long long)TNX_BS_MODE, draga & 0xFF,
+             joyb, (double)cx, (double)cy, (double)ex, (double)ey, (unsigned long long)TNX_JOY_ALT_DRAG, dragb & 0xFF);
+}
+
+static void tnx_move_probe_5(const char *tag, int idx, uintptr_t obj, float ox, float oy) {
     uintptr_t vt = 0;
     int32_t ix = 0;
     int32_t iy = 0;
@@ -696,31 +749,31 @@ static void tnx_move6_probe_5(const char *tag, int idx, uintptr_t obj, float ox,
 
     if (!obj) return;
 
-    near = tnx_move6_near_own(obj, ox, oy, &ix, &iy);
-    pair = tnx_move6_pair_ok(obj, NULL, NULL);
+    near = tnx_move_near_own(obj, ox, oy, &ix, &iy);
+    pair = tnx_move_pair_ok(obj, NULL, NULL);
 
-    tnx_read_i32(obj + TNX_MOVE6_KEY_OFF, &key);
-    tnx_read_i32(obj + TNX_MOVE6_ARM_OFF, &arm);
+    tnx_read_i32(obj + TNX_MOVE_KEY_OFF, &key);
+    tnx_read_i32(obj + TNX_MOVE_ARM_OFF, &arm);
 
-    tnx_move6_read_vt(obj, &vt);
+    tnx_move_read_vt(obj, &vt);
 
-    TNX_LOGX("move6probe %s[%d] obj=%p vt=%p vtRva=%#llx own=(%.0f,%.0f) pair=%d near=%d "
+    TNX_LOGX("moveprobe %s[%d] obj=%p vt=%p vtRva=%#llx own=(%.0f,%.0f) pair=%d near=%d "
              "key+%#llx=%d arm+%#llx=%d x+%#llx=%d y+%#llx=%d armByte=%d",
              tag, idx, (void *)obj, (void *)vt,
              vt ? (unsigned long long)(vt - t_base) : 0ULL,
              (double)ox, (double)oy, pair, near,
-             (unsigned long long)TNX_MOVE6_KEY_OFF, key,
-             (unsigned long long)TNX_MOVE6_ARM_OFF, arm,
-             (unsigned long long)TNX_MOVE6_X_OFF, ix,
-             (unsigned long long)TNX_MOVE6_Y_OFF, iy,
+             (unsigned long long)TNX_MOVE_KEY_OFF, key,
+             (unsigned long long)TNX_MOVE_ARM_OFF, arm,
+             (unsigned long long)TNX_MOVE_X_OFF, ix,
+             (unsigned long long)TNX_MOVE_Y_OFF, iy,
              arm & 0xFF);
 }
 
-void tnx_move6_locate(float ox, float oy) {
+void tnx_move_locate(float ox, float oy) {
     uintptr_t own = tnx_own_obj();
     uintptr_t scene = tnx_client();
-    uintptr_t seed[TNX_MOVE6_MAX];
-    uintptr_t seen[TNX_MOVE6_MAX * 4];
+    uintptr_t seed[TNX_MOVE_MAX];
+    uintptr_t seen[TNX_MOVE_MAX * 4];
     int seedN = 0;
     int seenN = 0;
     int i = 0;
@@ -728,14 +781,16 @@ void tnx_move6_locate(float ox, float oy) {
     int hop = 0;
     int kidx = 0;
 
-    if (t_move_6_probe > 0) return;
+    if (t_move_probe > 0) return;
 
-    if (t_ticks_3 < TNX_MOVE6_PROBE_TICK) return;
+    if (t_ticks_3 < TNX_MOVE_PROBE_TICK) return;
 
-    t_move_6_probe = 1;
+    t_move_probe = 1;
 
     seed[seedN++] = own;
     seed[seedN++] = scene;
+    seed[seedN++] = t_scene_object;
+    seed[seedN++] = t_joystick;
 
     if (scene) {
         uintptr_t hopped = 0;
@@ -743,21 +798,28 @@ void tnx_move6_locate(float ox, float oy) {
         if (tnx_read_ptr(scene + TNX_MGR_OFF, (void **)&hopped) && hopped) seed[seedN++] = hopped;
     }
 
+    for (i = 0; i < TNX_SLOT_COUNT; i++) {
+        if (seedN >= TNX_MOVE_MAX - 1) break;
+        if (t_slot_object[i]) seed[seedN++] = t_slot_object[i];
+        if (t_slot_arg1[i] && seedN < TNX_MOVE_MAX - 1) seed[seedN++] = t_slot_arg1[i];
+    }
+
     for (i = 0; i < seedN; i++) {
-        tnx_move6_probe_5("seed", i, seed[i], ox, oy);
+        tnx_move_probe_5("seed", i, seed[i], ox, oy);
+        tnx_joy_dump("seed", i, seed[i], 1);
         seen[seenN++] = seed[i];
     }
 
-    for (hop = 0; hop < TNX_MOVE6_HOPS; hop++) {
+    for (hop = 0; hop < TNX_MOVE_HOPS; hop++) {
         int limit = seenN;
 
-        for (i = 0; i < limit && kidx < TNX_MOVE6_MAX; i++) {
+        for (i = 0; i < limit && kidx < TNX_MOVE_MAX; i++) {
             uintptr_t base = seen[i];
             uintptr_t off = 0;
 
             if (!base) continue;
 
-            for (off = 8; off <= TNX_MOVE6_SCAN_END; off += 8) {
+            for (off = 8; off <= TNX_MOVE_SCAN_END; off += 8) {
                 uintptr_t kid = 0;
                 int dup = 0;
                 int j = 0;
@@ -776,91 +838,92 @@ void tnx_move6_locate(float ox, float oy) {
                 }
 
                 if (dup) continue;
-                if (seenN >= TNX_MOVE6_MAX * 4) break;
+                if (seenN >= TNX_MOVE_MAX * 4) break;
 
                 seen[seenN++] = kid;
 
-                tnx_move6_probe_5(hop == 0 ? "hop1" : "hop2", kidx, kid, ox, oy);
+                tnx_move_probe_5(hop == 0 ? "hop1" : "hop2", kidx, kid, ox, oy);
+                tnx_joy_dump("hop1", kidx, kid, TNX_JOY_DEEP);
 
                 kidx++;
 
-                if (kidx >= TNX_MOVE6_MAX) break;
+                if (kidx >= TNX_MOVE_MAX) break;
             }
         }
     }
 }
 
-int tnx_move_to_6(int32_t x, int32_t y, float ox, float oy) {
+int tnx_move_to(int32_t x, int32_t y, float ox, float oy) {
     uintptr_t fn = 0;
     uintptr_t own = 0;
     int32_t pairX = 0;
     int32_t pairY = 0;
 
-    tnx_move6_locate(ox, oy);
+    tnx_move_locate(ox, oy);
 
-    if (!TNX_MOVE6_ON) return 0;
-    if (x < -TNX_MOVE6_COORD_LIMIT || x > TNX_MOVE6_COORD_LIMIT) return 0;
-    if (y < -TNX_MOVE6_COORD_LIMIT || y > TNX_MOVE6_COORD_LIMIT) return 0;
+    if (!TNX_MOVE_ON) return 0;
+    if (x < -TNX_MOVE_COORD_LIMIT || x > TNX_MOVE_COORD_LIMIT) return 0;
+    if (y < -TNX_MOVE_COORD_LIMIT || y > TNX_MOVE_COORD_LIMIT) return 0;
 
-    fn = tnx_entry_2(TNX_MOVE6_RVA);
+    fn = tnx_entry_2(TNX_MOVE_RVA);
     own = tnx_own_obj();
 
     if (!fn || !own) {
-        if (t_move_6_logs < TNX_MOVE6_LOGS) {
-            t_move_6_logs++;
+        if (t_move_logs < TNX_MOVE_LOGS) {
+            t_move_logs++;
 
-            TNX_LOGX("move6 skip fn=%p own=%p from=%s x=%d y=%d tick=%llu",
+            TNX_LOGX("move skip fn=%p own=%p from=%s x=%d y=%d tick=%llu",
                      (void *)fn, (void *)own, t_own_from_3, x, y, (unsigned long long)t_ticks_3);
         }
 
         return 0;
     }
 
-    if (!tnx_move6_near_own(own, ox, oy, &pairX, &pairY)) {
-        t_move_6_rej++;
+    if (!tnx_move_near_own(own, ox, oy, &pairX, &pairY)) {
+        t_move_rej++;
 
-        if (t_move_6_rej < TNX_MOVE6_LOGS || (t_move_6_rej % TNX_MOVE6_EVERY) == 0) {
-            TNX_LOGX("move6 reject own=%p vtRva=%#llx pairBefore=(%d,%d) ownPos=(%.0f,%.0f) "
+        if (t_move_rej < TNX_MOVE_LOGS || (t_move_rej % TNX_MOVE_EVERY) == 0) {
+            TNX_LOGX("move reject own=%p vtRva=%#llx pairBefore=(%d,%d) ownPos=(%.0f,%.0f) "
                      "want=(%d,%d) armByte=%d - the object is not the one that carries the input "
                      "pair the engine writes, so writing there corrupts a pointer and crashes",
                      (void *)own,
-                     (unsigned long long)(tnx_move6_vt_rva(own)),
-                     pairX, pairY, (double)ox, (double)oy, x, y, tnx_move6_arm_byte(own));
+                     (unsigned long long)(tnx_move_vt_rva(own)),
+                     pairX, pairY, (double)ox, (double)oy, x, y, tnx_move_arm_byte(own));
         }
 
         return 0;
     }
 
-    t_move_6_n++;
-    t_move_6_own = own;
-    t_move_6_x = x;
-    t_move_6_y = y;
+    t_move_n++;
+    t_move_own = own;
+    t_move_x = x;
+    t_move_y = y;
 
-    tnx_read_i32(own + TNX_MOVE6_X_OFF, &t_move_6_before_x);
-    tnx_read_i32(own + TNX_MOVE6_Y_OFF, &t_move_6_before_y);
-    tnx_read_i32(own + TNX_MOVE6_KEY_OFF, &t_move_6_before_k);
-    tnx_read_i32(own + TNX_MOVE6_ARM_OFF, &t_move_6_before_arm);
+    tnx_read_i32(own + TNX_MOVE_X_OFF, &t_move_before_x);
+    tnx_read_i32(own + TNX_MOVE_Y_OFF, &t_move_before_y);
+    tnx_read_i32(own + TNX_MOVE_KEY_OFF, &t_move_before_k);
+    tnx_read_i32(own + TNX_MOVE_ARM_OFF, &t_move_before_arm);
 
-    ((void (*)(void *, int, int, int))fn)((void *)own, (int)x, (int)y, (int)TNX_MOVE6_FLAG);
+    ((void (*)(void *, int, int, int))fn)((void *)own, (int)x, (int)y, (int)TNX_MOVE_FLAG);
 
-    tnx_read_i32(own + TNX_MOVE6_X_OFF, &t_move_6_after_x);
-    tnx_read_i32(own + TNX_MOVE6_Y_OFF, &t_move_6_after_y);
-    tnx_read_i32(own + TNX_MOVE6_KEY_OFF, &t_move_6_after_k);
-    tnx_read_i32(own + TNX_MOVE6_ARM_OFF, &t_move_6_after_arm);
+    tnx_read_i32(own + TNX_MOVE_X_OFF, &t_move_after_x);
+    tnx_read_i32(own + TNX_MOVE_Y_OFF, &t_move_after_y);
+    tnx_read_i32(own + TNX_MOVE_KEY_OFF, &t_move_after_k);
+    tnx_read_i32(own + TNX_MOVE_ARM_OFF, &t_move_after_arm);
 
-    if (t_move_6_after_x == x && t_move_6_after_y == y) t_move_6_ok = 1;
+    if (t_move_after_x == x && t_move_after_y == y) t_move_ok = 1;
 
-    if (t_move_6_logs < TNX_MOVE6_LOGS || (t_move_6_n % TNX_MOVE6_EVERY) == 0) {
-        t_move_6_logs++;
+    if (t_move_logs < TNX_MOVE_LOGS || (t_move_n % TNX_MOVE_EVERY) == 0) {
+        t_move_logs++;
 
-        TNX_LOGX("move6 n=%d own=%p from=%s want=(%d,%d) key+%#llx=%d arm+%#llx=%d "
+        TNX_LOGX("move n=%d own=%p from=%s want=(%d,%d) key+%#llx=%d arm+%#llx=%d "
                  "before=(%d,%d,%d,%d) after=(%d,%d,%d,%d) rva=%#llx tick=%llu",
-                 t_move_6_n, (void *)own, t_own_from_3, x, y,
-                 (unsigned long long)TNX_MOVE6_KEY_OFF, (int)TNX_MOVE6_FLAG,
-                 (unsigned long long)TNX_MOVE6_ARM_OFF, (int)TNX_MOVE6_ARM_ON,
-                 t_move_6_before_x, t_move_6_before_y, t_move_6_before_k, t_move_6_before_arm,
-                 t_move_6_after_x, t_move_6_after_y, t_move_6_after_k, t_move_6_after_arm,
-                 (unsigned long long)TNX_MOVE6_RVA, (unsigned long long)t_ticks_3);
+                 t_move_n, (void *)own, t_own_from_3, x, y,
+                 (unsigned long long)TNX_MOVE_KEY_OFF, (int)TNX_MOVE_FLAG,
+                 (unsigned long long)TNX_MOVE_ARM_OFF, (int)TNX_MOVE_ARM_ON,
+                 t_move_before_x, t_move_before_y, t_move_before_k, t_move_before_arm,
+                 t_move_after_x, t_move_after_y, t_move_after_k, t_move_after_arm,
+                 (unsigned long long)TNX_MOVE_RVA, (unsigned long long)t_ticks_3);
     }
 
     return 1;

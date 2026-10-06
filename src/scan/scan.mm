@@ -2192,9 +2192,50 @@ void tnx_state(void) {
                  (unsigned long long)TNX_JOYSTATE_OFF);
     }
 
+    {
+        uintptr_t st = 0;
+
+        if (tnx_read_ptr(tnx_client() + TNX_MGR_OFF, (void **)&st) && st) {
+            int32_t stx = 0;
+            int32_t sty = 0;
+            int32_t stk = 0;
+            int32_t sta = 0;
+            uintptr_t stv = 0;
+
+            tnx_read_i32(st + TNX_MOVE_X_OFF, &stx);
+            tnx_read_i32(st + TNX_MOVE_Y_OFF, &sty);
+            tnx_read_i32(st + TNX_MOVE_KEY_OFF, &stk);
+            tnx_read_i32(st + TNX_MOVE_ARM_OFF, &sta);
+            if (tnx_read_ptr(st, (void **)&stv) && stv >= t_base) stv -= t_base;
+
+            TNX_LOGX("inputstate obj=%p vtRva=%#llx x+%#llx=%d y+%#llx=%d key+%#llx=%d arm+%#llx=%d seen=(%d,%d) "
+                     "prev=(%d,%d) moved=%d qLast=%p - the pair the engine holds for the input read from [scene+%#llx], "
+                     "and it is the same pair the engine setter writes, so while the player walks it has to track the "
+                     "walk and then writing there steers the body instead of corrupting a pointer",
+                     (void *)st, (unsigned long long)stv,
+                     (unsigned long long)TNX_MOVE_X_OFF, stx, (unsigned long long)TNX_MOVE_Y_OFF, sty,
+                     (unsigned long long)TNX_MOVE_KEY_OFF, stk, (unsigned long long)TNX_MOVE_ARM_OFF, sta,
+                     t_state_prev_x, t_state_prev_y,
+                     (stx != t_state_prev_x || sty != t_state_prev_y) ? 1 : 0,
+                     tnx_q_last(),
+                     (unsigned long long)TNX_MGR_OFF);
+
+            t_state_prev_x = stx;
+            t_state_prev_y = sty;
+        }
+    }
+
     tnx_sd_log();
 
 }
+
+int32_t t_state_prev_x = 0;
+
+int32_t t_state_prev_y = 0;
+
+int32_t t_state_seen_x = 0;
+
+int32_t t_state_seen_y = 0;
 
 uint64_t tnx_word_2(uintptr_t address) {
     uint64_t value = 0;

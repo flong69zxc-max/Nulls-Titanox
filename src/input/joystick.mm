@@ -41,7 +41,7 @@ int t_joy_drive_on = 0;
 
 int t_joy_drive_ok = 0;
 
-int tnx_joy_set_6(float dirX, float dirY, int on) {
+int tnx_joy_set(float dirX, float dirY, int on) {
     uintptr_t bs = tnx_bs();
     float ax = 0.0f;
     float ay = 0.0f;

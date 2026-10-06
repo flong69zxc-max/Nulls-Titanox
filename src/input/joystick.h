@@ -26,7 +26,7 @@ extern int t_joy_drive_on;
 
 extern int t_joy_drive_ok;
 
-int tnx_joy_set_6(float dirX, float dirY, int on);
+int tnx_joy_set(float dirX, float dirY, int on);
 
 int tnx_joy_read(uintptr_t bs, float *ax, float *ay, float *bx, float *by, uint32_t *mode, float *cs, float *sn);
 void tnx_precision(int32_t ownX, int32_t ownY, float dirX, float dirY, int escape);

@@ -1488,7 +1488,7 @@ static void tnx_dodge_state_tick(float px, float py) {
 #define TNX_JS3_MAX_DIST_SQ 25000000.0f
 #define TNX_JS3_INERTIA_TICKS 24
 #define TNX_JS3_CAND_MAX 160
-#define TNX_JS3_CONE 2.25f
+#define TNX_JS3_CONE 6.25f
 #define TNX_JS3_REACH 4.0f
 #define TNX_JS3_SPEED_MIN 300
 #define TNX_JS3_SPEED_MAX 8500

@@ -2,6 +2,8 @@
 
 int t_recon_runs = 0;
 
+uint64_t t_recon_last_3 = 0;
+
 uintptr_t t_recon_seen_3[96];
 int t_recon_seen_n = 0;
 
@@ -51,9 +53,9 @@ void tnx_recon_vtable_3(const char *tag, uintptr_t vtRva, int slots) {
 void tnx_recon_words_3(const char *tag, uintptr_t obj, int from, int to) {
     int off = 0;
 
-    if (!obj || from >= to) return;
-
     tnx_logf("recon words %s obj=%#llx from=%#x to=%#x", tag, (unsigned long long)obj, from, to);
+
+    if (!obj || from >= to) return;
 
     for (off = from; off < to; off += 4) {
         int32_t v = 0;
@@ -171,6 +173,8 @@ void tnx_recon_live_3(void) {
     tnx_recon_words_3("ctrl", tnx_controller(), TNX_RECON_OFF_CTRL_FROM, TNX_RECON_OFF_CTRL_TO);
     tnx_recon_words_3("client", tnx_client(), TNX_RECON_OFF_CLIENT_FROM, TNX_RECON_OFF_CLIENT_TO);
     tnx_recon_words_3("client2", tnx_client(), TNX_RECON_OFF_CLIENT2_FROM, TNX_RECON_OFF_CLIENT2_TO);
+    tnx_recon_words_3("clientWide", tnx_client(), TNX_RECON_OFF_CLIENT_WIDE_FROM, TNX_RECON_OFF_CLIENT_WIDE_TO);
+    tnx_recon_words_3("clientTail", tnx_client(), TNX_RECON_OFF_CLIENT_TAIL_FROM, TNX_RECON_OFF_CLIENT_TAIL_TO);
     tnx_recon_words_3("joy", tnx_controller(), TNX_RECON_OFF_JOY_FROM, TNX_RECON_OFF_JOY_TO);
     tnx_recon_words_3("joy2", tnx_controller(), TNX_RECON_OFF_JOY2_FROM, TNX_RECON_OFF_JOY2_TO);
 
@@ -258,10 +262,11 @@ void tnx_recon_live_3(void) {
 
 void tnx_recon_3(void) {
     if (t_recon_runs >= 2) return;
-    if (t_ticks_3 < 30) return;
-    if (t_recon_runs == 1 && t_ticks_3 < 150) return;
+    if (!t_manager_count) return;
+    if (t_recon_runs == 1 && (t_ticks_3 - t_recon_last_3) < TNX_RECON_BATTLE_TICKS) return;
 
     t_recon_runs++;
+    t_recon_last_3 = t_ticks_3;
 
     tnx_logf("recon begin run=%d tick=%llu base=%#llx slide=%#llx", t_recon_runs,
              (unsigned long long)t_ticks_3, (unsigned long long)t_base, 0ULL);

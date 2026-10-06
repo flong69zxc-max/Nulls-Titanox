@@ -272,14 +272,13 @@ int tnx_drive(void) {
         t_queue_calls++;
     } else if (!TNX_PAIR_ONLY) {
         if (TNX_STICK_ONLY) t_pos_skips++;
-        else if (tnx_js_owns_3()) t_queue_skips_2++;
         else tnx_enqueue(tx, ty);
         t_queue_calls++;
     } else {
         t_queue_skips++;
     }
 
-    if (!TNX_STICK_ONLY && !TNX_JS_NOPREDICT && !tnx_js_owns_3()) {
+    if (!TNX_STICK_ONLY && !TNX_JS_NOPREDICT) {
         tnx_predict(tx, ty);
     }
 
@@ -488,6 +487,156 @@ void tnx_drag(int engaged, int haveOwn, int32_t ownX, int32_t ownY, float dirX, 
     (void)dirY;
 }
 
+uintptr_t t_joy_knob_obj = 0;
+
+uintptr_t t_joy_knob_pair = 0;
+
+int t_joy_knob_n = 0;
+
+int t_joy_knob_ok = 0;
+
+int t_joy_knob_logs = 0;
+
+int t_joy_knob_on = 0;
+
+static uint8_t t_joy_knob_state_1 = 0;
+
+static uint8_t t_joy_knob_state_2 = 0;
+
+static int t_joy_knob_saved = 0;
+
+static int tnx_joy_pair_read(uintptr_t obj, uintptr_t pair, float *kx, float *ky, float *cx, float *cy) {
+    if (!obj) return 0;
+    if (!tnx_read_f32(obj + pair, kx)) return 0;
+    if (!tnx_read_f32(obj + pair + TNX_JOY_PAIR_Y, ky)) return 0;
+    if (!tnx_read_f32(obj + pair + TNX_JOY_PAIR_CEN, cx)) return 0;
+    if (!tnx_read_f32(obj + pair + TNX_JOY_PAIR_CEN + TNX_JOY_PAIR_Y, cy)) return 0;
+    if (!(*kx > -TNX_JOY_COORD_LIMIT && *kx < TNX_JOY_COORD_LIMIT)) return 0;
+    if (!(*ky > -TNX_JOY_COORD_LIMIT && *ky < TNX_JOY_COORD_LIMIT)) return 0;
+    if (!(*cx > -TNX_JOY_COORD_LIMIT && *cx < TNX_JOY_COORD_LIMIT)) return 0;
+    if (!(*cy > -TNX_JOY_COORD_LIMIT && *cy < TNX_JOY_COORD_LIMIT)) return 0;
+    if (fabsf(*cx) < TNX_JOY_MIN_CENTER && fabsf(*cy) < TNX_JOY_MIN_CENTER) return 0;
+
+    return 1;
+}
+
+static uintptr_t tnx_joy_knob_target(uintptr_t *pairOut, float *cx, float *cy, float *kx, float *ky) {
+    uintptr_t base = tnx_bs();
+    uintptr_t scene = (uintptr_t)t_scene_object;
+    uintptr_t hop = 0;
+    uintptr_t list[TNX_JOY_TARGETS];
+    uintptr_t pair[TNX_JOY_PAIR_N];
+    int i = 0;
+    int j = 0;
+
+    list[0] = scene;
+    list[1] = 0;
+    list[2] = base;
+    list[3] = 0;
+
+    if (scene && tnx_read_ptr(scene + TNX_OFF_BATTLE_SCREEN, (void **)&hop) && hop) list[1] = hop;
+    if (base && tnx_read_ptr(base + TNX_JOY_TARGET_OFF, (void **)&hop) && hop) list[3] = hop;
+
+    pair[0] = TNX_JOY_PAIR_1;
+    pair[1] = TNX_JOY_PAIR_2;
+    pair[2] = TNX_JOY_PAIR_3;
+
+    for (i = 0; i < TNX_JOY_TARGETS; i++) {
+        if (!list[i]) continue;
+
+        for (j = 0; j < TNX_JOY_PAIR_N; j++) {
+            if (!tnx_joy_pair_read(list[i], pair[j], kx, ky, cx, cy)) continue;
+
+            *pairOut = pair[j];
+
+            return list[i];
+        }
+    }
+
+    return 0;
+}
+
+void tnx_joy_knob(float dirX, float dirY, int on) {
+    uintptr_t obj = 0;
+    uintptr_t pair = 0;
+    float kx = 0.0f;
+    float ky = 0.0f;
+    float cx = 0.0f;
+    float cy = 0.0f;
+    float len = 0.0f;
+    uint8_t one = 1;
+
+    if (!TNX_JOY_KNOB_ON) return;
+
+    if (t_joy_knob_obj && !tnx_joy_pair_read(t_joy_knob_obj, t_joy_knob_pair, &kx, &ky, &cx, &cy)) {
+        t_joy_knob_obj = 0;
+    }
+
+    if (!t_joy_knob_obj) {
+        obj = tnx_joy_knob_target(&pair, &cx, &cy, &kx, &ky);
+
+        if (!obj) return;
+
+        t_joy_knob_obj = obj;
+        t_joy_knob_pair = pair;
+    } else {
+        obj = t_joy_knob_obj;
+        pair = t_joy_knob_pair;
+    }
+
+    len = sqrtf(dirX * dirX + dirY * dirY);
+
+    if (on && len > TNX_JOY_EPS) {
+        kx = cx + dirX / len * TNX_JOY_KNOB_MAG;
+        ky = cy + dirY / len * TNX_JOY_KNOB_MAG;
+    } else {
+        kx = cx;
+        ky = cy;
+    }
+
+    if (!tnx_write_f32(obj + pair, kx)) return;
+
+    tnx_write_f32(obj + pair + TNX_JOY_PAIR_Y, ky);
+
+    if (!t_joy_knob_saved) {
+        tnx_read_bytes(obj + TNX_JOY_DRAG_OFF, &t_joy_knob_state_1, sizeof(t_joy_knob_state_1));
+        tnx_read_bytes(obj + TNX_JOY_DRAG2_OFF, &t_joy_knob_state_2, sizeof(t_joy_knob_state_2));
+        t_joy_knob_saved = 1;
+    }
+
+    if (on) {
+        tnx_write_bytes(obj + TNX_JOY_DRAG_OFF, &one, sizeof(one));
+        tnx_write_bytes(obj + TNX_JOY_DRAG2_OFF, &one, sizeof(one));
+    } else {
+        tnx_write_bytes(obj + TNX_JOY_DRAG_OFF, &t_joy_knob_state_1, sizeof(t_joy_knob_state_1));
+        tnx_write_bytes(obj + TNX_JOY_DRAG2_OFF, &t_joy_knob_state_2, sizeof(t_joy_knob_state_2));
+    }
+
+    t_joy_knob_n++;
+    t_joy_knob_on = on;
+
+    if (t_joy_knob_logs < TNX_JOY_KNOB_LOGS) {
+        float bx = 0.0f;
+        float by = 0.0f;
+        uint8_t s1 = 0;
+        uint8_t s2 = 0;
+
+        t_joy_knob_logs++;
+
+        tnx_read_f32(obj + pair, &bx);
+        tnx_read_f32(obj + pair + TNX_JOY_PAIR_Y, &by);
+        tnx_read_bytes(obj + TNX_JOY_DRAG_OFF, &s1, sizeof(s1));
+        tnx_read_bytes(obj + TNX_JOY_DRAG2_OFF, &s2, sizeof(s2));
+
+        if (bx == kx && by == ky) t_joy_knob_ok++;
+
+        TNX_LOGX("joyknob n=%d obj=%p pair=%#llx on=%d cen=(%.1f,%.1f) want=(%.1f,%.1f) "
+                 "back=(%.1f,%.1f) s1=%d s2=%d ok=%d",
+                 t_joy_knob_n, (void *)obj, (unsigned long long)pair, on, (double)cx, (double)cy,
+                 (double)kx, (double)ky, (double)bx, (double)by, (int)s1, (int)s2, t_joy_knob_ok);
+    }
+}
+
 static void tnx_stick_arm(uintptr_t ctrl, int on) {
     uint8_t v = on ? 1 : 0;
 
@@ -568,6 +717,12 @@ void tnx_stick(int engaged, float dirX, float dirY) {
         tnx_write_bytes(ctrl + TNX_CTRL_RAW_Y_OFF, &wy, sizeof(wy));
 
         tnx_stick_arm(ctrl, want);
+
+        if (want) {
+            tnx_joy_knob(dirX, dirY, 1);
+        } else if (t_joy_knob_on) {
+            tnx_joy_knob(0.0f, 0.0f, 0);
+        }
     }
 
     {

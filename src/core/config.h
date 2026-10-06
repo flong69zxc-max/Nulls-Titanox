@@ -17,7 +17,7 @@
 #define TNX_ENEMY_MARGIN 60.0f
 #define TNX_TRUST_LOGS 8
 #define TNX_ROSTER_LOGS 10
-#define TNX_PREDICT 0
+#define TNX_PREDICT 1
 #define TNX_BODY_CLEAR 180.0f
 #define TNX_TOUCH_FLAG 1
 #define TNX_FLAG_LOGS 8
@@ -215,6 +215,16 @@
 #define TNX_JOY_DRIVE 0
 
 #define TNX_JOY_RADIUS 275.0f
+
+#define TNX_JOY_KNOB_ON 1
+#define TNX_JOY_KNOB_MAG 30.0f
+#define TNX_JOY_MIN_CENTER 50.0f
+#define TNX_JOY_PAIR_Y 4
+#define TNX_JOY_PAIR_CEN 8
+#define TNX_JOY_PAIR_N 3
+#define TNX_JOY_TARGETS 4
+#define TNX_JOY_KNOB_LOGS 8
+#define TNX_JOY_EPS 0.0001f
 
 #define TNX_JOY_MODE_ON 2
 

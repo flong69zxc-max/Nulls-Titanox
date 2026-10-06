@@ -488,6 +488,15 @@ void tnx_drag(int engaged, int haveOwn, int32_t ownX, int32_t ownY, float dirX, 
     (void)dirY;
 }
 
+static void tnx_stick_arm(uintptr_t ctrl, int on) {
+    uint8_t v = on ? 1 : 0;
+
+    if (!ctrl) return;
+
+    tnx_write_bytes(ctrl + TNX_CTRL_MOVE_OFF, &v, sizeof(v));
+    tnx_write_bytes(ctrl + TNX_CTRL_ALIVE_OFF, &v, sizeof(v));
+}
+
 void tnx_stick(int engaged, float dirX, float dirY) {
     if (!TNX_V245_STICK && !TNX_JS_STICK) return;
     uintptr_t ctrl = tnx_controller();
@@ -502,7 +511,7 @@ void tnx_stick(int engaged, float dirX, float dirY) {
     haveOwn = tnx_own(&ownX, &ownY);
     tnx_drag(engaged, haveOwn, ownX, ownY, dirX, dirY);
 
-    if (!TNX_RAW_STICK) return;
+    if (!TNX_STICK_RAW_WRITE) return;
     if (!tnx_ctrl_ok(ctrl)) return;
 
     if (engaged) {
@@ -557,23 +566,34 @@ void tnx_stick(int engaged, float dirX, float dirY) {
         if (!tnx_write_bytes(ctrl + TNX_CTRL_RAW_X_OFF, &wx, sizeof(wx))) return;
 
         tnx_write_bytes(ctrl + TNX_CTRL_RAW_Y_OFF, &wy, sizeof(wy));
+
+        tnx_stick_arm(ctrl, want);
     }
 
     {
         static int stickLogs = 0;
 
-        if (stickLogs < 6) {
+        if (stickLogs < TNX_DRIVE_LOGS) {
             int32_t backX = 0;
             int32_t backY = 0;
+            int32_t appX = 0;
+            int32_t appY = 0;
+            uint8_t mv = 0;
+            uint8_t al = 0;
 
             stickLogs++;
 
             tnx_read_i32(ctrl + TNX_CTRL_RAW_X_OFF, &backX);
             tnx_read_i32(ctrl + TNX_CTRL_RAW_Y_OFF, &backY);
+            tnx_read_i32(ctrl + TNX_CTRL_APPLIED_X_OFF, &appX);
+            tnx_read_i32(ctrl + TNX_CTRL_APPLIED_Y_OFF, &appY);
+            tnx_read_bytes(ctrl + TNX_CTRL_MOVE_OFF, &mv, sizeof(mv));
+            tnx_read_bytes(ctrl + TNX_CTRL_ALIVE_OFF, &al, sizeof(al));
 
-            TNX_LOGX("stick write #%d ctrl=%p want=(%d,%d) back=(%d,%d) kept=%d engaged=%d",
+            TNX_LOGX("stick write #%d ctrl=%p want=(%d,%d) back=(%d,%d) kept=%d engaged=%d "
+                     "applied=(%d,%d) move=%d alive=%d",
                      stickLogs, (void *)ctrl, wx, wy, backX, backY,
-                     (backX == wx && backY == wy) ? 1 : 0, want);
+                     (backX == wx && backY == wy) ? 1 : 0, want, appX, appY, (int)mv, (int)al);
         }
     }
 }

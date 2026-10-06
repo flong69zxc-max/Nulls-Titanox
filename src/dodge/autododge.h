@@ -161,12 +161,6 @@ extern int t_joy_drive_on;
 
 extern int t_joy_drive_ok;
 
-extern uintptr_t t_joy_drive_obj;
-
-extern int t_joy_drive_alt;
-
-extern int t_joy_drive_reason;
-
 int tnx_joy_set(float dirX, float dirY, int on);
 
 uintptr_t tnx_bs(void);

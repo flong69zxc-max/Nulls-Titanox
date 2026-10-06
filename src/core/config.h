@@ -212,7 +212,7 @@
 #define TNX_PLAYER_SPEED 7200.0f
 #define TNX_JOY_SCALE 100.0f
 #define TNX_SEG_MAX 32
-#define TNX_JOY_DRIVE 1
+#define TNX_JOY_DRIVE 0
 
 #define TNX_JOY_RADIUS 275.0f
 
@@ -238,9 +238,9 @@
 #define TNX_BASES 5
 #define TNX_MAX_LINES 4
 #define TNX_BUCKET_TICKS 60
-#define TNX_RAW_STICK 0
+#define TNX_RAW_STICK 1
 #define TNX_RAW_SWAP 0
-#define TNX_PRED_SET 1
+#define TNX_PRED_SET 0
 #define TNX_PRED_FLAG 1
 #define TNX_LOGS_3 12
 #define TNX_PLAYER_GID 1000000

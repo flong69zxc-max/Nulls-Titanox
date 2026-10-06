@@ -2125,23 +2125,9 @@ static int tnx_dodge_decide(float px, float py, float *outX, float *outY, int *u
     tnx_dodge_collect(t_dodge_ox, t_dodge_oy);
 
     if ((t_ticks_3 % 5) == 0) {
-        float jax = 0.0f;
-        float jay = 0.0f;
-        float jbx = 0.0f;
-        float jby = 0.0f;
-        float jcs = 1.0f;
-        float jsn = 0.0f;
-        uint32_t jmode = 0;
-        int jread = tnx_joy_read(tnx_bs(), &jax, &jay, &jbx, &jby, &jmode, &jcs, &jsn);
-
-        tnx_logf("joyset ok=%d on=%d wrote=(%.1f,%.1f) centre=(%.1f,%.1f) client=%#llx obj=%#llx "
-                 "alt=%d reason=%d read=%d pair=(%.1f,%.1f)/(%.1f,%.1f) mode=%u cs=%.2f sn=%.2f "
-                 "drive=%d radius=%.0f",
+        tnx_logf("joyset ok=%d on=%d wrote=(%.1f,%.1f) centre=(%.1f,%.1f) client=%#llx",
                  t_joy_drive_ok, t_joy_drive_on, (double)t_joy_drive_ax, (double)t_joy_drive_ay,
-                 (double)t_joy_drive_cx, (double)t_joy_drive_cy, (unsigned long long)tnx_bs(),
-                 (unsigned long long)t_joy_drive_obj, t_joy_drive_alt, t_joy_drive_reason,
-                 jread, (double)jax, (double)jay, (double)jbx, (double)jby, jmode,
-                 (double)jcs, (double)jsn, TNX_JOY_DRIVE, (double)TNX_JOY_RADIUS);
+                 (double)t_joy_drive_cx, (double)t_joy_drive_cy, (unsigned long long)tnx_bs());
     }
 
     if ((t_ticks_3 % 5) == 0) {

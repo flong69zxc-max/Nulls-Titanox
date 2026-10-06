@@ -3,8 +3,6 @@
 
 #include "core/types.h"
 
-/* the on screen readout and the alerts */
-
 extern int g_alerts_off;
 extern UILabel * g_overlay;
 void tnx_alert_battle_check(void);

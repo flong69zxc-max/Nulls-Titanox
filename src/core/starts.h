@@ -3,8 +3,6 @@
 
 #include "core/types.h"
 
-/* the branch target table: prologues, entries and terms */
-
 extern uintptr_t * g_starts;
 extern size_t g_starts_count;
 uintptr_t tnx_entry(uintptr_t rva);

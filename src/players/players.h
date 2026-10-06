@@ -3,8 +3,6 @@
 
 #include "core/types.h"
 
-/* rosters, teams, and which object is the player */
-
 extern int g_cand_changes[TNX_CAND];
 extern int g_cand_frame[TNX_CAND];
 extern int g_dead_slot;
@@ -50,6 +48,7 @@ extern int g_team_trust;
 extern uint64_t g_tick_stamp;
 void tnx_clear_life(void);
 int tnx_container_has(uintptr_t container, uintptr_t own);
+void tnx_contact_note(float dist, float projR);
 int tnx_enemy_blocked(float x, float y, float ownX, float ownY);
 int tnx_inject_own(tnx_obj_t *objects, int usable, int capacity);
 int tnx_life(uintptr_t ownElem, int32_t ownX, int32_t ownY);
@@ -64,6 +63,7 @@ int tnx_own_latch(const tnx_obj_t *objects, int usable, int *indexOut, const cha
 uintptr_t tnx_own_obj(void);
 int tnx_own_ok(int32_t x, int32_t y);
 void tnx_own_probe(void);
+float tnx_own_radius(void);
 int tnx_own_scan(void);
 int tnx_own_side_spawn(int32_t sx, int32_t sy);
 int tnx_own_verdict(uintptr_t element, char *why, size_t whyLen);

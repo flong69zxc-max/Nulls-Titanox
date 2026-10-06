@@ -3,8 +3,6 @@
 
 #include "core/types.h"
 
-/* the Objective-C side of the hook set */
-
 extern tnx_objc_hook_t g_objc_hooks[OBJC_HOOK_MAX];
 BOOL tnx_class_owns_method(Class cls, SEL sel);
 int tnx_objc_arg_types(const char *types, char *out, size_t capacity);

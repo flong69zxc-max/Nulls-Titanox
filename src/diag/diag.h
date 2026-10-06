@@ -3,8 +3,6 @@
 
 #include "core/types.h"
 
-/* dumps, probes and reports; nothing here decides anything */
-
 extern int g_active;
 extern uintptr_t g_ag_manager;
 extern int g_ag_objectCount;

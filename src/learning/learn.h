@@ -3,8 +3,6 @@
 
 #include "core/types.h"
 
-/* tuning keys, learning rates and running statistics */
-
 extern uint64_t g_bucket_abs[TNX_ADV_BUCKETS];
 extern uint64_t g_bucket_n[TNX_ADV_BUCKETS];
 extern uint64_t g_learn_loss[3][3][2];

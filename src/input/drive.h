@@ -3,8 +3,6 @@
 
 #include "core/types.h"
 
-/* the leg that actually moves the character */
-
 extern int g_engaged_ticks;
 extern tnx_seg_t g_seg[TNX_SEG_MAX];
 extern int g_seg_count;

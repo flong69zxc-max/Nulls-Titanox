@@ -1728,8 +1728,9 @@ static void tnx_js3_collect(float px, float py) {
                 else if (dist / speed > TNX_JS3_T_FIELD * TNX_JS3_REACH) verdict = "far";
 
                 tnx_logf("dodgeProj i=%d pos=(%d,%d) me=(%.0f,%.0f) dir=(%.2f,%.2f) spd=%.0f "
-                         "r=%.0f toward=%.1f dist=%.1f lat=%.0f team=%d myTeam=%d pteam=%d hasPrev=%d verdict=%s",
+                         "spawn=(%d,%d) r=%.0f toward=%.1f dist=%.1f lat=%.0f team=%d myTeam=%d pteam=%d hasPrev=%d verdict=%s",
                          i, p->x, p->y, (double)t_js3_ox, (double)t_js3_oy, (double)dx, (double)dy,
+                         p->spawnX, p->spawnY,
                          (double)speed, (double)r, (double)toward, (double)dist, (double)lateral,
                          p->team, myTeam, p->team, p->hasPrev, verdict);
             }
@@ -2180,6 +2181,7 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
 
     t_js_live = 0;
     t_js_tick = t_ticks_3;
+    t_pick_src = 0;
 
     t_life_3 = tnx_life_3(px, py);
 
@@ -2320,9 +2322,13 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
         t_ty_2 = py;
         t_moving = 0;
         t_released = 1;
+        t_commit_until = 0;
 
         tnx_enqueue((int32_t)px, (int32_t)py);
         tnx_joy_set_4(0.0f, 0.0f, 0);
+    } else {
+        t_tx_2 = px;
+        t_ty_2 = py;
     }
 
     if ((t_ticks_3 % 10) == 0) {

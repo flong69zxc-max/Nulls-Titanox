@@ -1,0 +1,130 @@
+diff --git a/src/core/config.h b/src/core/config.h
+index e33e433..680d911 100644
+--- a/src/core/config.h
++++ b/src/core/config.h
+@@ -212,7 +212,7 @@
+ #define TNX_PLAYER_SPEED 7200.0f
+ #define TNX_JOY_SCALE 100.0f
+ #define TNX_SEG_MAX 32
+-#define TNX_JOY_DRIVE 1
++#define TNX_JOY_DRIVE 0
+ 
+ #define TNX_JOY_RADIUS 275.0f
+ 
+diff --git a/src/core/offsets.h b/src/core/offsets.h
+index 60a36a7..7675290 100644
+--- a/src/core/offsets.h
++++ b/src/core/offsets.h
+@@ -435,6 +435,20 @@ int rt_is_code(image_ref_t img, uintptr_t target);
+ 
+ #define TNX_RECON_BATTLE_TICKS 900
+ 
++#define TNX_RECON_OFF_HOP1_FROM 0x0ULL
++
++#define TNX_RECON_OFF_HOP1_TO 0x80ULL
++
++#define TNX_RECON_OFF_HOP2_FROM 0x900ULL
++
++#define TNX_RECON_OFF_HOP2_TO 0xa40ULL
++
++#define TNX_RECON_OFF_HOP3_FROM 0xe00ULL
++
++#define TNX_RECON_OFF_HOP3_TO 0xf00ULL
++
++#define TNX_RECON_HOPS 3
++
+ #define TNX_RECON_OFF_CLIENT_TO 0x9e0ULL
+ 
+ #define TNX_RECON_OFF_CLIENT2_FROM 0xee0ULL
+diff --git a/src/core/tuning.h b/src/core/tuning.h
+index 9360442..f88f356 100644
+--- a/src/core/tuning.h
++++ b/src/core/tuning.h
+@@ -185,3 +185,9 @@
+ #endif
+ 
+ #endif
++
++#define TNX_JOY_COORD_LIMIT 20000.0f
++
++#define TNX_PROJ_RADIUS_DEFAULT 150.0f
++
++#define TNX_OWN_RADIUS_MIN 40.0f
+diff --git a/src/diag/recon.mm b/src/diag/recon.mm
+index 9fa5555..a3343ae 100644
+--- a/src/diag/recon.mm
++++ b/src/diag/recon.mm
+@@ -175,6 +175,27 @@ void tnx_recon_live_3(void) {
+     tnx_recon_words_3("client2", tnx_client(), TNX_RECON_OFF_CLIENT2_FROM, TNX_RECON_OFF_CLIENT2_TO);
+     tnx_recon_words_3("clientWide", tnx_client(), TNX_RECON_OFF_CLIENT_WIDE_FROM, TNX_RECON_OFF_CLIENT_WIDE_TO);
+     tnx_recon_words_3("clientTail", tnx_client(), TNX_RECON_OFF_CLIENT_TAIL_FROM, TNX_RECON_OFF_CLIENT_TAIL_TO);
++
++    {
++        void *hop = NULL;
++        int k = 0;
++
++        for (k = 0; k < TNX_RECON_HOPS; k++) {
++            uintptr_t base = k == 0 ? t_scene_object : (uintptr_t)hop;
++            void *next = NULL;
++
++            if (!base) break;
++            if (!tnx_read_ptr(base + (uintptr_t)TNX_SCENE_OFF, &next) || !next) break;
++
++            hop = next;
++
++            tnx_logf("recon hop k=%d addr=%#llx", k, (unsigned long long)(uintptr_t)hop);
++
++            tnx_recon_words_3("hop1", (uintptr_t)hop, TNX_RECON_OFF_HOP1_FROM, TNX_RECON_OFF_HOP1_TO);
++            tnx_recon_words_3("hop2", (uintptr_t)hop, TNX_RECON_OFF_HOP2_FROM, TNX_RECON_OFF_HOP2_TO);
++            tnx_recon_words_3("hop3", (uintptr_t)hop, TNX_RECON_OFF_HOP3_FROM, TNX_RECON_OFF_HOP3_TO);
++        }
++    }
+     tnx_recon_words_3("joy", tnx_controller(), TNX_RECON_OFF_JOY_FROM, TNX_RECON_OFF_JOY_TO);
+     tnx_recon_words_3("joy2", tnx_controller(), TNX_RECON_OFF_JOY2_FROM, TNX_RECON_OFF_JOY2_TO);
+ 
+diff --git a/src/dodge/autododge.mm b/src/dodge/autododge.mm
+index 79906b6..4adc035 100644
+--- a/src/dodge/autododge.mm
++++ b/src/dodge/autododge.mm
+@@ -1646,7 +1646,7 @@ static void tnx_js3_collect(float px, float py) {
+         float len = 0.0f;
+         uint64_t dt;
+         float speed;
+-        float pr = 150.0f;
++        float pr = TNX_PROJ_RADIUS_DEFAULT;
+ 
+         if (!p->elem) continue;
+ 
+@@ -1683,7 +1683,7 @@ static void tnx_js3_collect(float px, float py) {
+             float by = (float)p->y - py;
+             float br = tnx_own_radius();
+ 
+-            if (br < 40.0f) br = TNX_DATA_OWN_R;
++            if (br < TNX_OWN_RADIUS_MIN) br = TNX_DATA_OWN_R;
+             if (sqrtf(bx * bx + by * by) < br) continue;
+         }
+ 
+@@ -2058,7 +2058,7 @@ static int tnx_js3_decide(float px, float py, float *outX, float *outY, int *urg
+ 
+     mr = tnx_own_radius();
+ 
+-    if (mr < 40.0f) mr = TNX_DATA_OWN_R;
++    if (mr < TNX_OWN_RADIUS_MIN) mr = TNX_DATA_OWN_R;
+ 
+     if (!tnx_js3_danger(t_js3_ox, t_js3_oy, mr)) {
+         tnx_js3_commit();
+diff --git a/src/input/joystick.mm b/src/input/joystick.mm
+index 4adf232..1104cf8 100644
+--- a/src/input/joystick.mm
++++ b/src/input/joystick.mm
+@@ -55,8 +55,8 @@ int tnx_joy_set_4(float dirX, float dirY, int on) {
+     if (!tnx_read_f32(bs + TNX_BS_AY, &ay)) return 0;
+     if (!tnx_read_f32(bs + TNX_BS_BX, &bx)) return 0;
+     if (!tnx_read_f32(bs + TNX_BS_BY, &by)) return 0;
+-    if (!(bx > -20000.0f && bx < 20000.0f)) return 0;
+-    if (!(by > -20000.0f && by < 20000.0f)) return 0;
++    if (!(bx > -TNX_JOY_COORD_LIMIT && bx < TNX_JOY_COORD_LIMIT)) return 0;
++    if (!(by > -TNX_JOY_COORD_LIMIT && by < TNX_JOY_COORD_LIMIT)) return 0;
+     if (bx == 0.0f && by == 0.0f) return 0;
+ 
+     if (on) {

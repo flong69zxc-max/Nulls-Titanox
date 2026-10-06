@@ -175,6 +175,27 @@ void tnx_recon_live_3(void) {
     tnx_recon_words_3("client2", tnx_client(), TNX_RECON_OFF_CLIENT2_FROM, TNX_RECON_OFF_CLIENT2_TO);
     tnx_recon_words_3("clientWide", tnx_client(), TNX_RECON_OFF_CLIENT_WIDE_FROM, TNX_RECON_OFF_CLIENT_WIDE_TO);
     tnx_recon_words_3("clientTail", tnx_client(), TNX_RECON_OFF_CLIENT_TAIL_FROM, TNX_RECON_OFF_CLIENT_TAIL_TO);
+
+    {
+        void *hop = NULL;
+        int k = 0;
+
+        for (k = 0; k < TNX_RECON_HOPS; k++) {
+            uintptr_t base = k == 0 ? t_scene_object : (uintptr_t)hop;
+            void *next = NULL;
+
+            if (!base) break;
+            if (!tnx_read_ptr(base + (uintptr_t)TNX_SCENE_OFF, &next) || !next) break;
+
+            hop = next;
+
+            tnx_logf("recon hop k=%d addr=%#llx", k, (unsigned long long)(uintptr_t)hop);
+
+            tnx_recon_words_3("hop1", (uintptr_t)hop, TNX_RECON_OFF_HOP1_FROM, TNX_RECON_OFF_HOP1_TO);
+            tnx_recon_words_3("hop2", (uintptr_t)hop, TNX_RECON_OFF_HOP2_FROM, TNX_RECON_OFF_HOP2_TO);
+            tnx_recon_words_3("hop3", (uintptr_t)hop, TNX_RECON_OFF_HOP3_FROM, TNX_RECON_OFF_HOP3_TO);
+        }
+    }
     tnx_recon_words_3("joy", tnx_controller(), TNX_RECON_OFF_JOY_FROM, TNX_RECON_OFF_JOY_TO);
     tnx_recon_words_3("joy2", tnx_controller(), TNX_RECON_OFF_JOY2_FROM, TNX_RECON_OFF_JOY2_TO);
 

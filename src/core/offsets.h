@@ -435,6 +435,20 @@ int rt_is_code(image_ref_t img, uintptr_t target);
 
 #define TNX_RECON_BATTLE_TICKS 900
 
+#define TNX_RECON_OFF_HOP1_FROM 0x0ULL
+
+#define TNX_RECON_OFF_HOP1_TO 0x80ULL
+
+#define TNX_RECON_OFF_HOP2_FROM 0x900ULL
+
+#define TNX_RECON_OFF_HOP2_TO 0xa40ULL
+
+#define TNX_RECON_OFF_HOP3_FROM 0xe00ULL
+
+#define TNX_RECON_OFF_HOP3_TO 0xf00ULL
+
+#define TNX_RECON_HOPS 3
+
 #define TNX_RECON_OFF_CLIENT_TO 0x9e0ULL
 
 #define TNX_RECON_OFF_CLIENT2_FROM 0xee0ULL

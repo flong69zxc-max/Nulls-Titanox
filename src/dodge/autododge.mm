@@ -1646,7 +1646,7 @@ static void tnx_js3_collect(float px, float py) {
         float len = 0.0f;
         uint64_t dt;
         float speed;
-        float pr = 150.0f;
+        float pr = TNX_PROJ_RADIUS_DEFAULT;
 
         if (!p->elem) continue;
 
@@ -1683,7 +1683,7 @@ static void tnx_js3_collect(float px, float py) {
             float by = (float)p->y - py;
             float br = tnx_own_radius();
 
-            if (br < 40.0f) br = TNX_DATA_OWN_R;
+            if (br < TNX_OWN_RADIUS_MIN) br = TNX_DATA_OWN_R;
             if (sqrtf(bx * bx + by * by) < br) continue;
         }
 
@@ -2058,7 +2058,7 @@ static int tnx_js3_decide(float px, float py, float *outX, float *outY, int *urg
 
     mr = tnx_own_radius();
 
-    if (mr < 40.0f) mr = TNX_DATA_OWN_R;
+    if (mr < TNX_OWN_RADIUS_MIN) mr = TNX_DATA_OWN_R;
 
     if (!tnx_js3_danger(t_js3_ox, t_js3_oy, mr)) {
         tnx_js3_commit();

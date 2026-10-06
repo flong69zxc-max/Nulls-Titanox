@@ -55,8 +55,8 @@ int tnx_joy_set_4(float dirX, float dirY, int on) {
     if (!tnx_read_f32(bs + TNX_BS_AY, &ay)) return 0;
     if (!tnx_read_f32(bs + TNX_BS_BX, &bx)) return 0;
     if (!tnx_read_f32(bs + TNX_BS_BY, &by)) return 0;
-    if (!(bx > -20000.0f && bx < 20000.0f)) return 0;
-    if (!(by > -20000.0f && by < 20000.0f)) return 0;
+    if (!(bx > -TNX_JOY_COORD_LIMIT && bx < TNX_JOY_COORD_LIMIT)) return 0;
+    if (!(by > -TNX_JOY_COORD_LIMIT && by < TNX_JOY_COORD_LIMIT)) return 0;
     if (bx == 0.0f && by == 0.0f) return 0;
 
     if (on) {

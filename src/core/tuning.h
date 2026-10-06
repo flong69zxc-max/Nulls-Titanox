@@ -185,3 +185,9 @@
 #endif
 
 #endif
+
+#define TNX_JOY_COORD_LIMIT 20000.0f
+
+#define TNX_PROJ_RADIUS_DEFAULT 150.0f
+
+#define TNX_OWN_RADIUS_MIN 40.0f

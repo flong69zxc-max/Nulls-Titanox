@@ -1538,6 +1538,30 @@ static int tnx_js3_own_pos_3(float *ox, float *oy) {
     return 1;
 }
 
+static double t_js4_sec = 0.0;
+static uint64_t t_js4_tick = 0;
+static float t_js4_tps = TNX_JS4_FPS;
+
+static void tnx_js4_clocks(void) {
+    double now = CFAbsoluteTimeGetCurrent();
+
+    if (t_js4_sec > 0.0 && t_ticks_3 > t_js4_tick) {
+        double span = now - t_js4_sec;
+
+        if (span > 0.25) {
+            float rate = (float)((double)(t_ticks_3 - t_js4_tick) / span);
+
+            if (rate > 5.0f && rate < 240.0f) t_js4_tps = rate;
+
+            t_js4_sec = now;
+            t_js4_tick = t_ticks_3;
+        }
+    } else {
+        t_js4_sec = now;
+        t_js4_tick = t_ticks_3;
+    }
+}
+
 static tnx_js3_proj_t t_js3_projs[TNX_PROJ_MAX];
 static tnx_js3_proj_t t_js3_prev[TNX_PROJ_MAX];
 static int t_js3_n = 0;
@@ -1619,6 +1643,7 @@ static void tnx_js3_collect(float px, float py) {
 
     tnx_js3_build_dirs();
     tnx_js3_speed_probe();
+    tnx_js4_clocks();
 
     for (i = 0; i < TNX_PROJ_MAX; i++) {
         const tnx_proj_t *p = &t_projs[i];
@@ -1659,12 +1684,20 @@ static void tnx_js3_collect(float px, float py) {
             dx = (float)(p->x - p->px);
             dy = (float)(p->y - p->py);
             len = sqrtf(dx * dx + dy * dy);
+
+            if (len <= TNX_JS3_DIRT_MIN) continue;
+
+            dx /= len;
+            dy /= len;
+        } else {
+            float angle = 0.0f;
+
+            if (!tnx_read_f32(p->elem + (uintptr_t)TNX_PROJ_ANGLE_OFF, &angle)) continue;
+            if (!(angle > -100.0f && angle < 100.0f)) continue;
+
+            dx = cosf(angle);
+            dy = sinf(angle);
         }
-
-        if (len <= TNX_JS3_DIRT_MIN) continue;
-
-        dx /= len;
-        dy /= len;
 
         {
             float bx = (float)p->x - px;
@@ -1693,12 +1726,18 @@ static void tnx_js3_collect(float px, float py) {
             }
         }
 
-        dt = (p->ptick > 0 && t_ticks_3 > p->ptick) ? (t_ticks_3 - p->ptick) : 1;
+        dt = (p->ptick > 0 && t_ticks_3 > p->ptick) ? (t_ticks_3 - p->ptick) : 0;
 
-        speed = (len > TNX_JS3_DIRT_SPAN) ? ((len / (float)dt) * 60.0f)
-                                          : TNX_JS_SPEED_FALLBACK;
+        speed = 0.0f;
 
-        if (speed < 1.0f) speed = TNX_JS_SPEED_FALLBACK;
+        if (len > 0.0f && dt > 0 && (float)dt <= TNX_JS4_DT_MAX) {
+            speed = (len / (float)dt) * t_js4_tps;
+        }
+
+        if (speed < TNX_JS4_SPEED_MIN || speed > TNX_JS4_SPEED_MAX) speed = TNX_JS_SPEED_FALLBACK;
+
+        if (speed < TNX_JS4_SPEED_MIN) speed = TNX_JS4_SPEED_MIN;
+        if (speed > TNX_JS4_SPEED_MAX) speed = TNX_JS4_SPEED_MAX;
 
         {
             float rr = tnx_proj_radius(p, speed);
@@ -1736,13 +1775,13 @@ static void tnx_js3_collect(float px, float py) {
             }
 
             {
-                float sx = (float)p->spawnX - px;
-                float sy = (float)p->spawnY - py;
-                float sr = tnx_own_radius() + TNX_JS3_SPAWN_MARGIN;
+                float sx = (float)p->px - px;
+                float sy = (float)p->py - py;
+                float sr = tnx_own_radius();
 
-                if (sr < TNX_OWN_RADIUS_MIN) sr = TNX_DATA_OWN_R + TNX_JS3_SPAWN_MARGIN;
+                if (sr < TNX_OWN_RADIUS_MIN) sr = TNX_DATA_OWN_R;
 
-                if (sqrtf(sx * sx + sy * sy) <= sr) {
+                if (p->hasPrev && sqrtf(sx * sx + sy * sy) <= sr) {
                     t_js3_rej_spawn++;
 
                     continue;
@@ -2122,6 +2161,76 @@ int t_aim_ok = 0;
 
 int t_aim_idx = -1;
 
+static int32_t t_aim_hx[TNX_AIM_PRED_MAX];
+static int32_t t_aim_hy[TNX_AIM_PRED_MAX];
+static uint64_t t_aim_ht[TNX_AIM_PRED_MAX];
+static int t_aim_hn = 0;
+static int t_aim_hslot = -1;
+
+static void tnx_aim_push_5(int idx, int32_t x, int32_t y) {
+    int i;
+
+    if (idx != t_aim_hslot) {
+        t_aim_hn = 0;
+        t_aim_hslot = idx;
+    }
+
+    if (t_aim_hn >= TNX_AIM_PRED_MAX) {
+        for (i = 1; i < TNX_AIM_PRED_MAX; i++) {
+            t_aim_hx[i - 1] = t_aim_hx[i];
+            t_aim_hy[i - 1] = t_aim_hy[i];
+            t_aim_ht[i - 1] = t_aim_ht[i];
+        }
+
+        t_aim_hn = TNX_AIM_PRED_MAX - 1;
+    }
+
+    t_aim_hx[t_aim_hn] = x;
+    t_aim_hy[t_aim_hn] = y;
+    t_aim_ht[t_aim_hn] = t_ticks_3;
+
+    t_aim_hn++;
+}
+
+static int tnx_aim_lead_5(int32_t *tx, int32_t *ty, float dist) {
+    float vx = 0.0f;
+    float vy = 0.0f;
+    float wsum = 0.0f;
+    float lead;
+    int i;
+
+    if (t_aim_hn < 2) return 0;
+
+    for (i = 1; i < t_aim_hn; i++) {
+        float w = (float)i;
+        float dt = 0.0f;
+
+        if (t_aim_ht[i] > t_aim_ht[i - 1]) {
+            dt = (float)(t_aim_ht[i] - t_aim_ht[i - 1]) / t_js4_tps;
+        }
+
+        if (dt <= 0.0f) continue;
+
+        vx += ((float)(t_aim_hx[i] - t_aim_hx[i - 1]) / dt) * w;
+        vy += ((float)(t_aim_hy[i] - t_aim_hy[i - 1]) / dt) * w;
+        wsum += w;
+    }
+
+    if (wsum <= 0.0f) return 0;
+
+    vx /= wsum;
+    vy /= wsum;
+
+    lead = TNX_AIM_PRED_COEF * dist / TNX_AIM_PROJ_SPEED;
+
+    if (!(lead > 0.0f) || lead > 4.0f) return 0;
+
+    *tx = (int32_t)((float)t_aim_hx[t_aim_hn - 1] + vx * lead);
+    *ty = (int32_t)((float)t_aim_hy[t_aim_hn - 1] + vy * lead);
+
+    return 1;
+}
+
 int tnx_aim_4(void) {
     float bestD2 = TNX_AIM_RANGE * TNX_AIM_RANGE;
     int32_t mx = 0;
@@ -2155,9 +2264,22 @@ int tnx_aim_4(void) {
 
     if (best < 0) return 0;
 
+    tnx_aim_push_5(best, t_enemy_x[best], t_enemy_y[best]);
+
     t_aim_idx = best;
     t_aim_tx = t_enemy_x[best];
     t_aim_ty = t_enemy_y[best];
+
+    {
+        int32_t leadX = t_aim_tx;
+        int32_t leadY = t_aim_ty;
+
+        if (tnx_aim_lead_5(&leadX, &leadY, sqrtf(bestD2))) {
+            t_aim_tx = leadX;
+            t_aim_ty = leadY;
+        }
+    }
+
     t_aim_ok = tnx_enqueue_type_4(t_aim_tx, t_aim_ty, (int)TNX_TYPE_ATTACK);
     t_aim_shots++;
 
@@ -2286,6 +2408,7 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
         t_commit_until = t_ticks_3;
 
         tnx_enqueue((int32_t)tx, (int32_t)ty);
+        tnx_move_to_5((int32_t)tx, (int32_t)ty);
         tnx_joy_set_4(t_js_dir_x, t_js_dir_y, 1);
 
         if (t_new_tick >= 0) {
@@ -2325,6 +2448,7 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
         t_commit_until = 0;
 
         tnx_enqueue((int32_t)px, (int32_t)py);
+        tnx_move_to_5((int32_t)px, (int32_t)py);
         tnx_joy_set_4(0.0f, 0.0f, 0);
     } else {
         t_tx_2 = px;
@@ -2335,18 +2459,22 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
         t_logs_4++;
 
         TNX_LOGX("dodge segs=%d threatened=%d picked=%d jsProj=%d jsMate=%d jsFoe=%d jsUnk=%d life=%d jsOwn=(%.0f,%.0f) jsOwnOk=%d pickSrc=%d jsUrgent=%d jsVo=%d target=(%.0f,%.0f) dist=%.0f way=%.0f "
-                 "stick=%d angle=%.1f joyw=%d snap=%d moving=%d - the threat segments start where "
+                 "stick=%d angle=%.1f joyw=%d snap=%d moving=%d moveN=%d moveOk=%d moveOwn=%p tps=%.1f aim=%d aimIdx=%d aimShots=%d aimOk=%d - the threat segments start where "
                  "each shot is NOW and run along its own flight, so a shot that already passed is "
                  "behind the segment and not a reason to run; the directions are walked outward from "
                  "the stick angle so a safe heading near the one the player holds wins; way is the "
                  "heading actually written towards in degrees, counted from the positive x axis, so "
-                 "two consecutive lines with the same way is the character holding one direction",
+                 "two consecutive lines with the same way is the character holding one direction; "
+                 "moveN is how many times the engine move setter was called on the own character and "
+                 "moveOwn is the object it was called on",
                  t_seg_count, threatened, picked, t_js_n, t_js3_mates, t_js3_foes, t_js3_unk, t_life_3, t_js3_ox, t_js3_oy, t_js3_ohit, t_pick_src, t_js_urgent, t_js_vo,
                  (double)t_tx_2, (double)t_ty_2,
                  (double)sqrtf((t_tx_2 - px) * (t_tx_2 - px) +
                                (t_ty_2 - py) * (t_ty_2 - py)),
                  (double)(atan2f(t_ty_2 - py, t_tx_2 - px) * 180.0f / 3.14159265358979f),
-                 stick, (double)desiredDeg, TNX_JOY_WRITE, t_snap_live, t_moving);
+                 stick, (double)desiredDeg, TNX_JOY_WRITE, t_snap_live, t_moving,
+                 t_move_5_n, t_move_5_ok, (void *)t_move_5_own, (double)t_js4_tps,
+                 TNX_AIM, t_aim_idx, t_aim_shots, t_aim_ok);
     }
 
 

@@ -581,6 +581,91 @@ int tnx_enqueue(int x, int y) {
     return tnx_enqueue_type_4(x, y, (int)TNX_TYPE_MOVE);
 }
 
+int t_move_5_n = 0;
+
+int t_move_5_ok = 0;
+
+int t_move_5_logs = 0;
+
+uintptr_t t_move_5_own = 0;
+
+int32_t t_move_5_x = 0;
+
+int32_t t_move_5_y = 0;
+
+int32_t t_move_5_before_x = 0;
+
+int32_t t_move_5_before_y = 0;
+
+int32_t t_move_5_before_k = 0;
+
+int32_t t_move_5_before_arm = 0;
+
+int32_t t_move_5_after_x = 0;
+
+int32_t t_move_5_after_y = 0;
+
+int32_t t_move_5_after_k = 0;
+
+int32_t t_move_5_after_arm = 0;
+
+int tnx_move_to_5(int32_t x, int32_t y) {
+    uintptr_t fn = 0;
+    uintptr_t own = 0;
+
+    if (!TNX_MOVE_5_ON) return 0;
+    if (x < -TNX_MOVE_COORD_LIMIT || x > TNX_MOVE_COORD_LIMIT) return 0;
+    if (y < -TNX_MOVE_COORD_LIMIT || y > TNX_MOVE_COORD_LIMIT) return 0;
+
+    fn = tnx_entry_2(TNX_MOVE_RVA);
+    own = tnx_own_obj();
+
+    if (!fn || !own) {
+        if (t_move_5_logs < TNX_MOVE_5_LOGS) {
+            t_move_5_logs++;
+
+            TNX_LOGX("move5 skip fn=%p own=%p from=%s x=%d y=%d tick=%llu",
+                     (void *)fn, (void *)own, t_own_from_3, x, y, (unsigned long long)t_ticks_3);
+        }
+
+        return 0;
+    }
+
+    t_move_5_n++;
+    t_move_5_own = own;
+    t_move_5_x = x;
+    t_move_5_y = y;
+
+    tnx_read_i32(own + TNX_MOVE_X_OFF, &t_move_5_before_x);
+    tnx_read_i32(own + TNX_MOVE_Y_OFF, &t_move_5_before_y);
+    tnx_read_i32(own + TNX_MOVE_KEY_OFF, &t_move_5_before_k);
+    tnx_read_i32(own + TNX_MOVE_ARM_OFF, &t_move_5_before_arm);
+
+    ((void (*)(void *, int, int, int))fn)((void *)own, (int)x, (int)y, (int)TNX_MOVE_FLAG);
+
+    tnx_read_i32(own + TNX_MOVE_X_OFF, &t_move_5_after_x);
+    tnx_read_i32(own + TNX_MOVE_Y_OFF, &t_move_5_after_y);
+    tnx_read_i32(own + TNX_MOVE_KEY_OFF, &t_move_5_after_k);
+    tnx_read_i32(own + TNX_MOVE_ARM_OFF, &t_move_5_after_arm);
+
+    if (t_move_5_after_x == x && t_move_5_after_y == y) t_move_5_ok = 1;
+
+    if (t_move_5_logs < TNX_MOVE_5_LOGS || (t_move_5_n % TNX_MOVE_5_EVERY) == 0) {
+        t_move_5_logs++;
+
+        TNX_LOGX("move5 n=%d own=%p from=%s want=(%d,%d) key+%#llx=%d arm+%#llx=%d "
+                 "before=(%d,%d,%d,%d) after=(%d,%d,%d,%d) rva=%#llx tick=%llu",
+                 t_move_5_n, (void *)own, t_own_from_3, x, y,
+                 (unsigned long long)TNX_MOVE_KEY_OFF, (int)TNX_MOVE_FLAG,
+                 (unsigned long long)TNX_MOVE_ARM_OFF, (int)TNX_MOVE_ARM_ON,
+                 t_move_5_before_x, t_move_5_before_y, t_move_5_before_k, t_move_5_before_arm,
+                 t_move_5_after_x, t_move_5_after_y, t_move_5_after_k, t_move_5_after_arm,
+                 (unsigned long long)TNX_MOVE_RVA, (unsigned long long)t_ticks_3);
+    }
+
+    return 1;
+}
+
 
 int32_t t_own_held_x = 0;
 

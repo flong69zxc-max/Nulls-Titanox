@@ -205,3 +205,29 @@
 #define TNX_AIM_INTERVAL 12
 
 #define TNX_AIM_RANGE 3000.0f
+
+#define TNX_MOVE_5_ON 1
+
+#define TNX_MOVE_5_LOGS 24
+
+#define TNX_MOVE_5_EVERY 128
+
+#define TNX_JS4_FPS 60.0f
+
+#define TNX_JS4_DT_MAX 8.0f
+
+#define TNX_JS4_SPEED_MIN 300.0f
+
+#define TNX_JS4_SPEED_MAX 8500.0f
+
+#define TNX_JS4_STALE_TICKS 30
+
+#define TNX_JS4_BODY_MARGIN 1.0f
+
+#define TNX_JS4_DIRT_MIN 6.0f
+
+#define TNX_AIM_PRED_MAX 3
+
+#define TNX_AIM_PRED_COEF 0.8f
+
+#define TNX_AIM_PROJ_SPEED 3255.0f

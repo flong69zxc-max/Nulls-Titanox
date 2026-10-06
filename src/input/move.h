@@ -117,6 +117,12 @@ int tnx_pending(int want, uint64_t *mask);
 int tnx_enqueue(int x, int y);
 
 int tnx_enqueue_type_4(int x, int y, int type);
+int tnx_move_to_5(int32_t x, int32_t y);
+extern int t_move_5_n;
+extern int t_move_5_ok;
+extern uintptr_t t_move_5_own;
+extern int32_t t_move_5_x;
+extern int32_t t_move_5_y;
 int tnx_witness(int32_t *x, int32_t *y);
 void tnx_probe(void);
 int tnx_resolve_own(const tnx_obj_t *objects, int usable, int *indexOut, const char **fromOut);

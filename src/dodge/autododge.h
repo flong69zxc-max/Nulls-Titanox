@@ -161,7 +161,7 @@ extern int t_joy_drive_on;
 
 extern int t_joy_drive_ok;
 
-int tnx_joy_set_4(float dirX, float dirY, int on);
+int tnx_joy_set_6(float dirX, float dirY, int on);
 
 uintptr_t tnx_bs(void);
 int tnx_joy_read(uintptr_t bs, float *ax, float *ay, float *bx, float *by, uint32_t *mode, float *cs, float *sn);

@@ -194,9 +194,9 @@
 
 #define TNX_AIM 1
 
-#define TNX_JS3_SPAWN_MARGIN 60.0f
+#define TNX_JS6_SPAWN_MARGIN 60.0f
 
-#define TNX_JS3_DETECT_SAFETY 2.5f
+#define TNX_JS6_DETECT_SAFETY 2.5f
 
 #define TNX_OWN_RADIUS_MAX 200.0f
 
@@ -206,28 +206,34 @@
 
 #define TNX_AIM_RANGE 3000.0f
 
-#define TNX_MOVE_5_ON 1
+#define TNX_MOVE6_ON 0
 
-#define TNX_MOVE_5_LOGS 24
+#define TNX_MOVE6_TOL 4000.0f
 
-#define TNX_MOVE_5_EVERY 128
+#define TNX_MOVE6_MAX 12
 
-#define TNX_JS4_FPS 60.0f
+#define TNX_MOVE6_HOPS 2
 
-#define TNX_JS4_DT_MAX 8.0f
+#define TNX_MOVE6_LOGS 24
 
-#define TNX_JS4_SPEED_MIN 300.0f
+#define TNX_MOVE6_EVERY 128
 
-#define TNX_JS4_SPEED_MAX 8500.0f
+#define TNX_JS7_FPS 60.0f
 
-#define TNX_JS4_STALE_TICKS 30
+#define TNX_JS7_DT_MAX 8.0f
 
-#define TNX_JS4_BODY_MARGIN 1.0f
+#define TNX_JS7_SPEED_MIN 300.0f
 
-#define TNX_JS4_DIRT_MIN 6.0f
+#define TNX_JS7_SPEED_MAX 8500.0f
 
-#define TNX_AIM_PRED_MAX 3
+#define TNX_JS7_STALE_TICKS 30
 
-#define TNX_AIM_PRED_COEF 0.8f
+#define TNX_JS7_BODY_MARGIN 1.0f
 
-#define TNX_AIM_PROJ_SPEED 3255.0f
+#define TNX_JS7_DIRT_MIN 6.0f
+
+#define TNX_AIM6_PRED_MAX 3
+
+#define TNX_AIM6_PRED_COEF 0.8f
+
+#define TNX_AIM6_PROJ_SPEED 3255.0f

@@ -1056,8 +1056,8 @@ int tnx_drive(void) {
 
     tnx_precision(ownX, ownY, dx, dy, 0);
 
-    tx = ownX + (int32_t)((double)dx / (double)len * (double)tnx_step());
-    ty = ownY + (int32_t)((double)dy / (double)len * (double)tnx_step());
+    tx = ownX + (int32_t)((double)dx / (double)len * (double)TNX_REACH);
+    ty = ownY + (int32_t)((double)dy / (double)len * (double)TNX_REACH);
 
     if (TNX_QUIET) {
         g_queue_skips_2++;

@@ -252,9 +252,9 @@ void tnx_recon_live_3(void) {
 }
 
 void tnx_recon_3(void) {
-    if (t_recon_runs >= 1) return;
-    if (t_ticks_3 < 1800) return;
-    if ((t_ticks_3 % 60) != 0) return;
+    if (t_recon_runs >= 2) return;
+    if (t_ticks_3 < 90) return;
+    if (t_recon_runs == 1 && t_ticks_3 < 600) return;
 
     t_recon_runs++;
 

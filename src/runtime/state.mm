@@ -60,7 +60,6 @@ int tnx_state_tick(void) {
         uintptr_t scenePrev = t_scene_object;
 
         t_scene_object = scene;
-        tnx_battle_alert(scene, scenePrev);
 
         tnx_logf("scene=%p from slot+%#llx at state=%d - the screen factory 0x8ce048 builds "
                  "state %d as new(0x98) plus the constructor 0x8c51f8, which stores %#llx at [+0], "

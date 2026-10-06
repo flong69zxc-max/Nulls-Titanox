@@ -243,8 +243,4 @@ void tnx_battle_alert(uintptr_t scene, uintptr_t scenePrev) {
 
     t_prev_scene = scene;
 
-    tnx_alert_menu([NSString stringWithFormat:
-        @"Вход в бой\nscene=%p (было %p)\ncontainer=%p count=%d\ngid=%d..%d\nown=min gid",
-        (void *)scene, (void *)scenePrev, (void *)t_players_object, t_players_count,
-        t_gid_lo, t_gid_hi]);
 }

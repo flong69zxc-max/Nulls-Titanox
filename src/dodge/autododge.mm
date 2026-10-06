@@ -1488,6 +1488,8 @@ static void tnx_dodge_state_tick(float px, float py) {
 #define TNX_JS3_MAX_DIST_SQ 25000000.0f
 #define TNX_JS3_INERTIA_TICKS 24
 #define TNX_JS3_CAND_MAX 160
+#define TNX_JS3_CONE 6.25f
+#define TNX_JS3_REACH 4.0f
 #define TNX_JS3_SPEED_MIN 300
 #define TNX_JS3_SPEED_MAX 8500
 #define TNX_JS3_DIRT_MIN 6.0f
@@ -1514,6 +1516,10 @@ static int t_js3_unk = 0;
 static float t_js3_ox = 0.0f;
 static float t_js3_oy = 0.0f;
 static int t_js3_ohit = 0;
+static int t_js3_rej_dir = 0;
+static int t_js3_rej_cone = 0;
+static int t_js3_rej_reach = 0;
+static int t_js3_detail_3 = 0;
 
 static int tnx_js3_own_pos_3(float *ox, float *oy) {
     int32_t x = 0;
@@ -1617,6 +1623,10 @@ static void tnx_js3_collect(float px, float py) {
     t_js3_mates = 0;
     t_js3_foes = 0;
     t_js3_unk = 0;
+    t_js3_rej_dir = 0;
+    t_js3_rej_cone = 0;
+    t_js3_rej_reach = 0;
+    t_js3_detail_3 = 0;
 
     tnx_js3_build_dirs();
     tnx_js3_speed_probe();
@@ -1695,19 +1705,48 @@ static void tnx_js3_collect(float px, float py) {
             float toward = 0.0f;
             float r = 0.0f;
             float lateral = 0.0f;
+            float dist = 0.0f;
 
             if (rr > 0.0f) pr = rr;
 
             toward = mx * dx + my * dy;
-
-            if (toward >= 0.0f) continue;
-
             r = tnx_own_radius() + pr + TNX_JS3_SAFETY;
+            dist = sqrtf(mx * mx + my * my);
             lateral = mx * mx + my * my - toward * toward;
 
-            if (lateral > r * r) continue;
+            if ((t_ticks_3 % 5) == 0 && t_js3_detail_3 < 10) {
+                const char *verdict = "hit";
 
-            if (sqrtf(mx * mx + my * my) / speed > TNX_JS3_T_FIELD * 2.0f) continue;
+                t_js3_detail_3++;
+
+                if (toward >= 0.0f) verdict = "away";
+                else if (lateral > r * r * TNX_JS3_CONE) verdict = "wide";
+                else if (dist / speed > TNX_JS3_T_FIELD * TNX_JS3_REACH) verdict = "far";
+
+                tnx_logf("dodgeProj i=%d pos=(%d,%d) me=(%.0f,%.0f) dir=(%.2f,%.2f) spd=%.0f "
+                         "r=%.0f toward=%.1f dist=%.1f lat=%.0f team=%d hasPrev=%d verdict=%s",
+                         i, p->x, p->y, (double)px, (double)py, (double)dx, (double)dy,
+                         (double)speed, (double)r, (double)toward, (double)dist, (double)lateral,
+                         p->team, p->hasPrev, verdict);
+            }
+
+            if (toward >= 0.0f) {
+                t_js3_rej_dir++;
+
+                continue;
+            }
+
+            if (lateral > r * r * TNX_JS3_CONE) {
+                t_js3_rej_cone++;
+
+                continue;
+            }
+
+            if (dist / speed > TNX_JS3_T_FIELD * TNX_JS3_REACH) {
+                t_js3_rej_reach++;
+
+                continue;
+            }
         }
 
         q = &t_js3_projs[n];
@@ -2008,6 +2047,12 @@ static int tnx_js3_decide(float px, float py, float *outX, float *outY, int *urg
     t_js3_ohit = tnx_js3_own_pos_3(&t_js3_ox, &t_js3_oy);
 
     tnx_js3_collect(t_js3_ox, t_js3_oy);
+
+    if ((t_ticks_3 % 5) == 0) {
+        tnx_logf("dodgeSet raw=%d mate=%d foe=%d unk=%d away=%d wide=%d far=%d kept=%d",
+                 t_js3_mates + t_js3_foes + t_js3_unk, t_js3_mates, t_js3_foes, t_js3_unk,
+                 t_js3_rej_dir, t_js3_rej_cone, t_js3_rej_reach, t_js3_n);
+    }
 
     mr = tnx_own_radius();
 

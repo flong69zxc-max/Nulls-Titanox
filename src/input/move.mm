@@ -383,7 +383,7 @@ int t_enq_stop_4 = 0;
 
 int t_enq_stop_5 = 0;
 
-int tnx_enqueue(int x, int y) {
+int tnx_enqueue_type_4(int x, int y, int type) {
     if (!t_coord_ok) {
         if (t_enq_stop_5 < 8) {
             t_enq_stop_5++;
@@ -403,7 +403,6 @@ int tnx_enqueue(int x, int y) {
     uintptr_t inputFn = tnx_entry_2(TNX_ADDINPUT_RVA);
     int32_t vx = x;
     int32_t vy = y;
-    int32_t type = TNX_TYPE_MOVE;
     void *mgr = NULL;
     void *msg = NULL;
 
@@ -480,7 +479,7 @@ int tnx_enqueue(int x, int y) {
         }
     }
 
-    (void)tnx_pred_set(x, y);
+    if (type == (int)TNX_TYPE_MOVE) (void)tnx_pred_set(x, y);
 
     mgr = tnx_manager();
 
@@ -577,6 +576,11 @@ int tnx_enqueue(int x, int y) {
 
     return 1;
 }
+
+int tnx_enqueue(int x, int y) {
+    return tnx_enqueue_type_4(x, y, (int)TNX_TYPE_MOVE);
+}
+
 
 int32_t t_own_held_x = 0;
 

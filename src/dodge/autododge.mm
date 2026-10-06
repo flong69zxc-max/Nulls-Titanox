@@ -1,5 +1,6 @@
 #include "titanox.h"
 
+
 static float t_dodge_px = 0.0f;
 static float t_dodge_py = 0.0f;
 static int t_dodge_have = 0;
@@ -2094,6 +2095,59 @@ static int tnx_js3_decide(float px, float py, float *outX, float *outY, int *urg
     return 1;
 }
 
+int t_aim_shots = 0;
+
+int t_aim_ok = 0;
+
+int t_aim_idx = -1;
+
+int32_t t_aim_tx = 0;
+
+int32_t t_aim_ty = 0;
+
+int tnx_aim_4(void) {
+    float bestD2 = TNX_AIM_RANGE * TNX_AIM_RANGE;
+    int32_t mx = 0;
+    int32_t my = 0;
+    int best = -1;
+    int i = 0;
+
+    if (!TNX_AIM) return 0;
+    if (t_life_3 != 1) return 0;
+    if (!t_enemy_n) return 0;
+    if ((t_ticks_3 % TNX_AIM_INTERVAL) != 0) return 0;
+
+    mx = (int32_t)t_js3_ox;
+    my = (int32_t)t_js3_oy;
+
+    if (mx == 0 && my == 0) return 0;
+
+    for (i = 0; i < t_enemy_n && i < TNX_PLAYER_MAX; i++) {
+        float ex = (float)(t_enemy_x[i] - mx);
+        float ey = (float)(t_enemy_y[i] - my);
+        float d2 = ex * ex + ey * ey;
+
+        if (d2 < bestD2) {
+            bestD2 = d2;
+            best = i;
+        }
+    }
+
+    if (best < 0) return 0;
+
+    t_aim_idx = best;
+    t_aim_tx = t_enemy_x[best];
+    t_aim_ty = t_enemy_y[best];
+    t_aim_ok = tnx_enqueue_type_4(t_aim_tx, t_aim_ty, (int)TNX_TYPE_ATTACK);
+    t_aim_shots++;
+
+    tnx_logf("aimshot idx=%d target=(%d,%d) me=(%d,%d) enemies=%d type=%#x ok=%d shots=%d",
+             best, t_aim_tx, t_aim_ty, mx, my, t_enemy_n, (unsigned)TNX_TYPE_ATTACK,
+             t_aim_ok, t_aim_shots);
+
+    return t_aim_ok;
+}
+
 int tnx_decide(int32_t ownX, int32_t ownY) {
     float px = (float)ownX;
     float py = (float)ownY;
@@ -2119,6 +2173,8 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
 
         return 0;
     }
+
+    tnx_aim_4();
 
     tnx_arm(px, py);
     tnx_stats();

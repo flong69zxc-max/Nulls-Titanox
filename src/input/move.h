@@ -115,6 +115,8 @@ int tnx_queue_count(uintptr_t *mgrOut);
 int tnx_predict(int32_t x, int32_t y);
 int tnx_pending(int want, uint64_t *mask);
 int tnx_enqueue(int x, int y);
+
+int tnx_enqueue_type_4(int x, int y, int type);
 int tnx_witness(int32_t *x, int32_t *y);
 void tnx_probe(void);
 int tnx_resolve_own(const tnx_obj_t *objects, int usable, int *indexOut, const char **fromOut);

@@ -191,3 +191,9 @@
 #define TNX_PROJ_RADIUS_DEFAULT 150.0f
 
 #define TNX_OWN_RADIUS_MIN 40.0f
+
+#define TNX_AIM 1
+
+#define TNX_AIM_INTERVAL 6
+
+#define TNX_AIM_RANGE 3000.0f

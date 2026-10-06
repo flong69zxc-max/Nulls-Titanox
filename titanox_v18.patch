@@ -1,0 +1,207 @@
+diff --git a/src/core/config.h b/src/core/config.h
+index c95fa65..feb3071 100644
+--- a/src/core/config.h
++++ b/src/core/config.h
+@@ -3,7 +3,7 @@
+ 
+ #include "core/imports.h"
+ 
+-#define LOG_MAX_BYTES (32 * 1024 * 1024)
++#define LOG_MAX_BYTES (20 * 1024 * 1024)
+ #define TNX_LOG_ROLL 1
+ #define TNX_LOG_FILTER 1
+ 
+@@ -212,6 +212,10 @@
+ #define TNX_PLAYER_SPEED 7200.0f
+ #define TNX_JOY_SCALE 100.0f
+ #define TNX_SEG_MAX 32
++#define TNX_JOY_DRIVE 1
++
++#define TNX_JOY_RADIUS 275.0f
++
+ #define TNX_BS_AX 0x9b8
+ #define TNX_BS_AY 0x9bc
+ #define TNX_BS_BX 0x9c0
+diff --git a/src/core/log.mm b/src/core/log.mm
+index 9448c72..b706943 100644
+--- a/src/core/log.mm
++++ b/src/core/log.mm
+@@ -198,6 +198,19 @@ void tnx_logf(const char *format, ...) {
+     vsnprintf(buffer, sizeof(buffer), format, args);
+     va_end(args);
+ 
++    {
++        int n = (int)strlen(buffer);
++        int i = 0;
++
++        for (i = 24; i + 2 < n; i++) {
++            if (buffer[i] == ' ' && buffer[i + 1] == '-' && buffer[i + 2] == ' ') {
++                buffer[i] = 0;
++
++                break;
++            }
++        }
++    }
++
+     tnx_write_line(buffer);
+ }
+ 
+diff --git a/src/diag/recon.mm b/src/diag/recon.mm
+index f8fa934..96b62f8 100644
+--- a/src/diag/recon.mm
++++ b/src/diag/recon.mm
+@@ -166,6 +166,8 @@ void tnx_recon_live_3(void) {
+     tnx_recon_words_3("manager", t_manager, 0x0, 0x30);
+     tnx_recon_words_3("scene", t_scene_object, 0x0, 0x60);
+     tnx_recon_words_3("ctrl", tnx_controller(), 0x0, 0x60);
++    tnx_recon_words_3("client", tnx_client(), 0x8a0, 0x9e0);
++    tnx_recon_words_3("client2", tnx_client(), 0xee0, 0xf40);
+     tnx_recon_words_3("joy", tnx_controller(), 0x9a0, 0xa00);
+     tnx_recon_words_3("joy2", tnx_controller(), 0xee0, 0xf00);
+ 
+diff --git a/src/dodge/autododge.h b/src/dodge/autododge.h
+index 7f1d0a3..fbc293f 100644
+--- a/src/dodge/autododge.h
++++ b/src/dodge/autododge.h
+@@ -149,6 +149,20 @@ int tnx_own_ok(int32_t x, int32_t y);
+ int tnx_enemy_blocked(float x, float y, float ownX, float ownY);
+ int tnx_mate_blocked(float x, float y);
+ int tnx_own_side_spawn(int32_t sx, int32_t sy);
++extern float t_joy_drive_ax;
++
++extern float t_joy_drive_ay;
++
++extern float t_joy_drive_cx;
++
++extern float t_joy_drive_cy;
++
++extern int t_joy_drive_on;
++
++extern int t_joy_drive_ok;
++
++int tnx_joy_drive_4(float dirX, float dirY, int on);
++
+ uintptr_t tnx_bs(void);
+ int tnx_joy_read(uintptr_t bs, float *ax, float *ay, float *bx, float *by, uint32_t *mode, float *cs, float *sn);
+ int tnx_joy_angle(float *outAngle);
+diff --git a/src/dodge/autododge.mm b/src/dodge/autododge.mm
+index d504b4a..66de2bb 100644
+--- a/src/dodge/autododge.mm
++++ b/src/dodge/autododge.mm
+@@ -2041,6 +2041,12 @@ static int tnx_js3_decide(float px, float py, float *outX, float *outY, int *urg
+ 
+     tnx_js3_collect(t_js3_ox, t_js3_oy);
+ 
++    if ((t_ticks_3 % 5) == 0) {
++        tnx_logf("joydrive ok=%d on=%d wrote=(%.1f,%.1f) centre=(%.1f,%.1f) client=%#llx",
++                 t_joy_drive_ok, t_joy_drive_on, (double)t_joy_drive_ax, (double)t_joy_drive_ay,
++                 (double)t_joy_drive_cx, (double)t_joy_drive_cy, (unsigned long long)tnx_bs());
++    }
++
+     if ((t_ticks_3 % 5) == 0) {
+         tnx_logf("dodgeSet raw=%d mate=%d foe=%d unk=%d rejTeam=%d away=%d wide=%d far=%d kept=%d myTeam=%d",
+                  t_js3_mates + t_js3_foes + t_js3_unk, t_js3_mates, t_js3_foes, t_js3_unk,
+@@ -2197,6 +2203,7 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
+         t_commit_until = t_ticks_3;
+ 
+         tnx_enqueue((int32_t)tx, (int32_t)ty);
++        tnx_joy_drive_4(jsX, jsY, 1);
+ 
+         if (t_new_tick >= 0) {
+             uint64_t react = t_ticks_3 - (uint64_t)t_new_tick;
+@@ -2232,6 +2239,7 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
+         t_released = 1;
+ 
+         tnx_enqueue((int32_t)px, (int32_t)py);
++        tnx_joy_drive_4(0.0f, 0.0f, 0);
+     }
+ 
+     if (t_logs_4 < 24 && (t_ticks_3 % 60) == 0) {
+diff --git a/src/input/drive.h b/src/input/drive.h
+index 1870bd5..4f7e008 100644
+--- a/src/input/drive.h
++++ b/src/input/drive.h
+@@ -14,6 +14,20 @@ uintptr_t tnx_bs(void);
+ void tnx_drag(int engaged, int haveOwn, int32_t ownX, int32_t ownY, float dirX, float dirY);
+ int tnx_drive(void);
+ int tnx_joy_angle(float *outAngle);
++extern float t_joy_drive_ax;
++
++extern float t_joy_drive_ay;
++
++extern float t_joy_drive_cx;
++
++extern float t_joy_drive_cy;
++
++extern int t_joy_drive_on;
++
++extern int t_joy_drive_ok;
++
++int tnx_joy_drive_4(float dirX, float dirY, int on);
++
+ int tnx_joy_read(uintptr_t bs, float *ax, float *ay, float *bx, float *by, uint32_t *mode, float *cs, float *sn);
+ void tnx_precision(int32_t ownX, int32_t ownY, float dirX, float dirY, int escape);
+ void tnx_route(int engaged);
+diff --git a/src/input/drive.mm b/src/input/drive.mm
+index 4d3bee6..6174514 100644
+--- a/src/input/drive.mm
++++ b/src/input/drive.mm
+@@ -29,6 +29,58 @@ int tnx_joy_read(uintptr_t bs, float *ax, float *ay, float *bx, float *by,
+     return 1;
+ }
+ 
++float t_joy_drive_ax = 0.0f;
++
++float t_joy_drive_ay = 0.0f;
++
++float t_joy_drive_cx = 0.0f;
++
++float t_joy_drive_cy = 0.0f;
++
++int t_joy_drive_on = 0;
++
++int t_joy_drive_ok = 0;
++
++int tnx_joy_drive_4(float dirX, float dirY, int on) {
++    uintptr_t bs = tnx_bs();
++    float ax = 0.0f;
++    float ay = 0.0f;
++    float bx = 0.0f;
++    float by = 0.0f;
++    int ok = 0;
++
++    if (!TNX_JOY_DRIVE) return 0;
++    if (!bs) return 0;
++    if (!tnx_read_f32(bs + TNX_BS_AX, &ax)) return 0;
++    if (!tnx_read_f32(bs + TNX_BS_AY, &ay)) return 0;
++    if (!tnx_read_f32(bs + TNX_BS_BX, &bx)) return 0;
++    if (!tnx_read_f32(bs + TNX_BS_BY, &by)) return 0;
++    if (!(bx > -20000.0f && bx < 20000.0f)) return 0;
++    if (!(by > -20000.0f && by < 20000.0f)) return 0;
++    if (bx == 0.0f && by == 0.0f) return 0;
++
++    if (on) {
++        ax = bx + dirX * TNX_JOY_RADIUS;
++        ay = by + dirY * TNX_JOY_RADIUS;
++    } else {
++        ax = bx;
++        ay = by;
++    }
++
++    ok = tnx_write_f32(bs + TNX_BS_AX, ax);
++    ok = ok && tnx_write_f32(bs + TNX_BS_AY, ay);
++    ok = ok && tnx_write_i32(bs + TNX_BS_MODE, on ? 2 : 0);
++
++    t_joy_drive_ax = ax;
++    t_joy_drive_ay = ay;
++    t_joy_drive_cx = bx;
++    t_joy_drive_cy = by;
++    t_joy_drive_on = on;
++    t_joy_drive_ok = ok ? 1 : 0;
++
++    return t_joy_drive_ok;
++}
++
+ int tnx_joy_angle(float *outAngle) {
+     float ax = 0.0f;
+     float ay = 0.0f;

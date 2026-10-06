@@ -194,6 +194,10 @@
 
 #define TNX_AIM 1
 
+#define TNX_JS3_SPAWN_MARGIN 60.0f
+
+#define TNX_JS3_DETECT_SAFETY 2.5f
+
 #define TNX_AIM_INTERVAL 6
 
 #define TNX_AIM_RANGE 3000.0f

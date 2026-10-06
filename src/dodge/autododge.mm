@@ -1488,7 +1488,7 @@ static void tnx_dodge_state_tick(float px, float py) {
 #define TNX_JS3_MAX_DIST_SQ 25000000.0f
 #define TNX_JS3_INERTIA_TICKS 24
 #define TNX_JS3_CAND_MAX 160
-#define TNX_JS3_CONE 1.0f
+#define TNX_JS3_CONE 2.25f
 #define TNX_JS3_REACH 4.0f
 #define TNX_JS3_SPEED_MIN 300
 #define TNX_JS3_SPEED_MAX 8500
@@ -1645,7 +1645,7 @@ static void tnx_js3_collect(float px, float py) {
         float len = 0.0f;
         uint64_t dt;
         float speed;
-        float pr = TNX_JS_RADIUS_FALLBACK;
+        float pr = 150.0f;
 
         if (!p->elem) continue;
 
@@ -2066,7 +2066,7 @@ static int tnx_js3_decide(float px, float py, float *outX, float *outY, int *urg
 
     mr = tnx_own_radius();
 
-    if (mr <= 0.0f) mr = TNX_DATA_OWN_R;
+    if (mr < 40.0f) mr = TNX_DATA_OWN_R;
 
     if (!tnx_js3_danger(t_js3_ox, t_js3_oy, mr)) {
         tnx_js3_commit();

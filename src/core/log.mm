@@ -39,7 +39,7 @@ const char *t_log_drop[64] = {
     "classdump", "trail", "state", "modeslot", "hooks",
     "scene", "heap", "fields", "write", "slot",
     "setprediction", "scan", "route", "modesig", "hop",
-    "battle", "named", "offsets", "recon", "dodgeProj", "dodgeSet",
+    "battle", "named", "offsets",
     NULL
 };
 
@@ -59,6 +59,7 @@ const char *t_log_keep[64] = {
     "window ", "predict", "predSkip", "stick ",
     "route ", "input ", "body ", "chain-only",
     "summary", "test ", "setter-before", "setter-after",
+    "recon", "dodgeProj", "dodgeSet",
     NULL
 };
 

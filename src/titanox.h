@@ -11,6 +11,8 @@
 #include "utils/geometry.h"
 #include "utils/strings.h"
 #include "utils/crypto.h"
+#include "helpers/dodge_kinds.h"
+#include "helpers/dodge_profiles.h"
 #include "helpers/move.h"
 #include "helpers/scan.h"
 #include "features/autododge.h"

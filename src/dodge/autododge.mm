@@ -1488,7 +1488,7 @@ static void tnx_dodge_state_tick(float px, float py) {
 #define TNX_JS3_MAX_DIST_SQ 25000000.0f
 #define TNX_JS3_INERTIA_TICKS 24
 #define TNX_JS3_CAND_MAX 160
-#define TNX_JS3_CONE 6.25f
+#define TNX_JS3_CONE 1.0f
 #define TNX_JS3_REACH 4.0f
 #define TNX_JS3_SPEED_MIN 300
 #define TNX_JS3_SPEED_MAX 8500
@@ -1516,6 +1516,7 @@ static int t_js3_unk = 0;
 static float t_js3_ox = 0.0f;
 static float t_js3_oy = 0.0f;
 static int t_js3_ohit = 0;
+static int t_js3_rej_team = 0;
 static int t_js3_rej_dir = 0;
 static int t_js3_rej_cone = 0;
 static int t_js3_rej_reach = 0;
@@ -1623,6 +1624,7 @@ static void tnx_js3_collect(float px, float py) {
     t_js3_mates = 0;
     t_js3_foes = 0;
     t_js3_unk = 0;
+    t_js3_rej_team = 0;
     t_js3_rej_dir = 0;
     t_js3_rej_cone = 0;
     t_js3_rej_reach = 0;
@@ -1650,8 +1652,14 @@ static void tnx_js3_collect(float px, float py) {
         if (myTeam < 0) myTeam = tnx_js3_my_team();
 
         if (p->team == 0 || p->team == 1) {
-            if (myTeam >= 0 && p->team == myTeam) t_js3_mates++;
-            else t_js3_foes++;
+            if (myTeam >= 0 && p->team == myTeam) {
+                t_js3_mates++;
+                t_js3_rej_team++;
+
+                continue;
+            }
+
+            t_js3_foes++;
         } else {
             t_js3_unk++;
         }
@@ -1719,15 +1727,16 @@ static void tnx_js3_collect(float px, float py) {
 
                 t_js3_detail_3++;
 
-                if (toward >= 0.0f) verdict = "away";
+                if (p->team == myTeam && myTeam >= 0) verdict = "own-side";
+                else if (toward >= 0.0f) verdict = "away";
                 else if (lateral > r * r * TNX_JS3_CONE) verdict = "wide";
                 else if (dist / speed > TNX_JS3_T_FIELD * TNX_JS3_REACH) verdict = "far";
 
                 tnx_logf("dodgeProj i=%d pos=(%d,%d) me=(%.0f,%.0f) dir=(%.2f,%.2f) spd=%.0f "
-                         "r=%.0f toward=%.1f dist=%.1f lat=%.0f team=%d hasPrev=%d verdict=%s",
-                         i, p->x, p->y, (double)px, (double)py, (double)dx, (double)dy,
+                         "r=%.0f toward=%.1f dist=%.1f lat=%.0f team=%d myTeam=%d pteam=%d hasPrev=%d verdict=%s",
+                         i, p->x, p->y, (double)t_js3_ox, (double)t_js3_oy, (double)dx, (double)dy,
                          (double)speed, (double)r, (double)toward, (double)dist, (double)lateral,
-                         p->team, p->hasPrev, verdict);
+                         p->team, myTeam, p->team, p->hasPrev, verdict);
             }
 
             if (toward >= 0.0f) {
@@ -2049,9 +2058,10 @@ static int tnx_js3_decide(float px, float py, float *outX, float *outY, int *urg
     tnx_js3_collect(t_js3_ox, t_js3_oy);
 
     if ((t_ticks_3 % 5) == 0) {
-        tnx_logf("dodgeSet raw=%d mate=%d foe=%d unk=%d away=%d wide=%d far=%d kept=%d",
+        tnx_logf("dodgeSet raw=%d mate=%d foe=%d unk=%d rejTeam=%d away=%d wide=%d far=%d kept=%d myTeam=%d",
                  t_js3_mates + t_js3_foes + t_js3_unk, t_js3_mates, t_js3_foes, t_js3_unk,
-                 t_js3_rej_dir, t_js3_rej_cone, t_js3_rej_reach, t_js3_n);
+                 t_js3_rej_team, t_js3_rej_dir, t_js3_rej_cone, t_js3_rej_reach, t_js3_n,
+                 tnx_js3_my_team());
     }
 
     mr = tnx_own_radius();

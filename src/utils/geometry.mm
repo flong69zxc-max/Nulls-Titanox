@@ -2,8 +2,6 @@
 
 int g_find_joy_done = 0;
 
-uint64_t g_ticks_3 = 0;
-
 int g_entry_logs = 0;
 
 uintptr_t g_manager = 0;

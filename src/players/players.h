@@ -1,0 +1,81 @@
+#ifndef TITANOX_PLAYERS_PLAYERS_H
+#define TITANOX_PLAYERS_PLAYERS_H
+
+#include "core/types.h"
+
+/* rosters, teams, and which object is the player */
+
+extern int g_cand_changes[TNX_CAND];
+extern int g_cand_frame[TNX_CAND];
+extern int g_dead_slot;
+extern int g_dead_value;
+extern int g_enemy_n;
+extern int32_t g_enemy_x[TNX_PLAYER_MAX];
+extern int32_t g_enemy_y[TNX_PLAYER_MAX];
+extern int g_inject_logs;
+extern int g_life_logs;
+extern int g_mate_n;
+extern int32_t g_mate_x[TNX_MATE_MAX];
+extern int32_t g_mate_y[TNX_MATE_MAX];
+extern uintptr_t g_own_elem;
+extern uintptr_t g_own_elem_2;
+extern const char * g_own_from;
+extern const char * g_own_from_2;
+extern const char * g_own_from_3;
+extern int32_t g_own_gid;
+extern int g_own_index;
+extern int g_own_index_2;
+extern int g_own_index_3;
+extern int g_own_logs;
+extern uintptr_t g_own_ptr;
+extern uintptr_t g_own_ptr_2;
+extern uintptr_t g_own_ptr_4;
+extern int32_t g_own_slot_idx;
+extern uint64_t g_own_stamp;
+extern int g_own_team_4;
+extern int g_pending;
+extern int g_pending_tick;
+extern int g_pl_n;
+extern int32_t g_pl_team[TNX_PLAYER_MAX];
+extern int32_t g_pl_x[TNX_PLAYER_MAX];
+extern int32_t g_pl_y[TNX_PLAYER_MAX];
+extern uintptr_t g_players_array;
+extern int g_players_count;
+extern uintptr_t g_players_object;
+extern int g_pre[TNX_CAND];
+extern int g_prev_valid;
+extern int g_respawn_tick;
+extern int g_state;
+extern int g_team_trust;
+extern uint64_t g_tick_stamp;
+void tnx_clear_life(void);
+int tnx_container_has(uintptr_t container, uintptr_t own);
+int tnx_enemy_blocked(float x, float y, float ownX, float ownY);
+int tnx_inject_own(tnx_obj_t *objects, int usable, int capacity);
+int tnx_life(uintptr_t ownElem, int32_t ownX, int32_t ownY);
+int tnx_mate_blocked(float x, float y);
+int tnx_own(int32_t *xOut, int32_t *yOut);
+int tnx_own_by_min_gid(uintptr_t array, int32_t count, uintptr_t *elemOut, int32_t *gidOut);
+void tnx_own_dump(uintptr_t element);
+int tnx_own_from_list(const tnx_obj_t *objects, int usable, int *indexOut, const char **fromOut);
+int tnx_own_from_slot(uintptr_t *objectOut, int32_t *gidOut);
+void tnx_own_index_probe(void);
+int tnx_own_latch(const tnx_obj_t *objects, int usable, int *indexOut, const char **fromOut);
+uintptr_t tnx_own_obj(void);
+int tnx_own_ok(int32_t x, int32_t y);
+void tnx_own_probe(void);
+int tnx_own_scan(void);
+int tnx_own_side_spawn(int32_t sx, int32_t sy);
+int tnx_own_verdict(uintptr_t element, char *why, size_t whyLen);
+void tnx_publish_own(uintptr_t elem, const char *from);
+int tnx_resolve_own(const tnx_obj_t *objects, int usable, int *indexOut, const char **fromOut);
+int tnx_resolve_own_2(const tnx_obj_t *objects, int usable, int *indexOut, const char **fromOut);
+void tnx_respawn_event(int32_t x, int32_t y, int32_t px, int32_t py);
+void tnx_roster(uintptr_t ownElem, int ownIndex, int ownTeam, const tnx_obj_t *objects, int usable);
+int tnx_side_near(float px, float py);
+int tnx_side_pick(float px, float py, float *outX, float *outY);
+float tnx_side_score(float px, float py, float x, float y, int near);
+int tnx_take_own(const tnx_obj_t *objects, int usable, int *indexOut, const char **fromOut);
+int tnx_team_at(const tnx_obj_t *objects, int index);
+
+#endif

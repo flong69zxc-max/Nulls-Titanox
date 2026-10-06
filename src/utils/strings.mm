@@ -86,26 +86,6 @@ void tnx_append(char *buf, size_t size, size_t *used, const char *token) {
     buf[*used] = 0;
 }
 
-int tnx_trail_verdict(const tnx_trail_t *entry, char *buf, size_t size) {
-    char parts[64];
-    size_t used = 0;
-
-    parts[0] = 0;
-
-    if (!entry->rawOk) tnx_append(parts, sizeof(parts), &used, "image");
-    if (entry->refused == 1) tnx_append(parts, sizeof(parts), &used, "ascii");
-    if (entry->refused == 2) tnx_append(parts, sizeof(parts), &used, "weak");
-    if (entry->refused == 3) tnx_append(parts, sizeof(parts), &used, "noVt");
-    if (entry->teamDistinct < 2) tnx_append(parts, sizeof(parts), &used, "noTeam");
-    if (entry->posDistinct < 2) tnx_append(parts, sizeof(parts), &used, "noPos");
-
-    if (!used) return 1;
-
-    snprintf(buf, size, "%s", parts);
-
-    return 0;
-}
-
 tnx_reject_t g_reject;
 
 const char *tnx_reject_text(char *buf, size_t size) {

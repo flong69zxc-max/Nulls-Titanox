@@ -2,19 +2,6 @@
 
 int g_pred_blocked = 0;
 
-#ifndef TNX_JS_STICK
-#define TNX_JS_STICK 1
-#endif
-
-#ifndef TNX_JS_HOLD
-#define TNX_JS_HOLD 2
-#endif
-
-#ifndef TNX_STICK_RAW_WRITE
-#define TNX_STICK_RAW_WRITE 1
-#define TNX_PRED_SPAN 0x118
-#endif
-
 uint32_t g_token_2 = 0;
 
 uint64_t g_diag_us = 0;
@@ -93,8 +80,6 @@ int g_body_enemy = 0;
 
 int g_body_logs = 0;
 
-uint64_t g_human_live = 0;
-
 int g_input_skips = 0;
 
 int g_wrote_input = 0;
@@ -102,8 +87,6 @@ int g_wrote_input = 0;
 int g_engaged_frame = 0;
 
 int g_neutral_logs = 0;
-
-int g_test_state_2 = 0;
 
 uint64_t g_test_tick = 0;
 
@@ -121,19 +104,11 @@ int g_moved2_2 = 0;
 
 int g_kept_2 = 0;
 
-int g_tested_2 = 0;
-
 uint64_t g_enqueues = 0;
-
-int g_enq_x = 0;
-
-int g_enq_y = 0;
 
 int g_q_before = -1;
 
 int g_q_after = -1;
-
-int g_readback = -1;
 
 int g_readback_tick = -1;
 
@@ -250,10 +225,6 @@ int tnx_queue_count(uintptr_t *mgrOut) {
 uintptr_t g_pred_last = 0;
 
 int g_predict_logs = 0;
-
-uint64_t g_pred_calls = 0;
-
-uint64_t g_pred_fails = 0;
 
 int tnx_predict(int32_t x, int32_t y) {
     uintptr_t battleFn = tnx_entry_2(TNX_GETBATTLE_RVA);
@@ -658,16 +629,6 @@ const char *tnx_state_y(int32_t v) {
     return "other";
 }
 
-uintptr_t g_wit_elem = 0;
-
-int32_t g_wit_x0 = 0;
-
-int32_t g_wit_y0 = 0;
-
-int32_t g_wit_x1 = 0;
-
-int32_t g_wit_y1 = 0;
-
 int32_t g_own_held_x = 0;
 
 int32_t g_own_held_y = 0;
@@ -675,8 +636,6 @@ int32_t g_own_held_y = 0;
 int32_t g_own_flag = -1;
 
 int g_have_wit = 0;
-
-int g_active = 0;
 
 int g_calls = 0;
 
@@ -687,25 +646,6 @@ int g_wit_logs = 0;
 int g_own_logs_3 = 0;
 
 int g_probe_done = 0;
-
-int64_t g_moves = 0;
-
-int64_t g_elem_moves = 0;
-
-int tnx_witness(int32_t *x, int32_t *y) {
-    int32_t wx = 0;
-    int32_t wy = 0;
-
-    if (x) *x = 0;
-    if (y) *y = 0;
-
-    if (!tnx_interp(&wx, &wy)) return 0;
-
-    if (x) *x = wx;
-    if (y) *y = wy;
-
-    return 1;
-}
 
 void tnx_probe(void) {
     uintptr_t ctrl = tnx_client();
@@ -758,131 +698,6 @@ void tnx_probe(void) {
              (unsigned long long)TNX_CTRL_RAW_X_OFF,
              (unsigned long long)TNX_CTRL_RAW_Y_OFF, (unsigned long long)0x7b9050ULL,
              (unsigned long long)TNX_CTRL_APPLIED_X_OFF);
-}
-
-int tnx_resolve_own(const tnx_obj_t *objects, int usable, int *indexOut,
-                                const char **fromOut) {
-    int32_t wx = 0;
-    int32_t wy = 0;
-    int32_t wantGid = -1;
-    uintptr_t slotOwn = 0;
-    int32_t slotGid = 0;
-    int hasWit = 0;
-    int best = -1;
-    int64_t bestD = 0;
-    int i;
-
-    if (indexOut) *indexOut = -1;
-    if (fromOut) *fromOut = "none";
-
-    if (!objects || usable <= 0) return 0;
-
-    {
-        uintptr_t minOwn = 0;
-        int32_t minGid = 0;
-
-        if (g_score_logs_2 < 8) {
-            g_score_logs_2++;
-
-            TNX_LOGX("score enter arr=%p n=%d g_arr=%p g_n=%d tick_arr=%p tick_n=%d",
-                     (void *)g_tick_array, g_tick_count, (void *)g_players_array,
-                     g_players_count, (void *)g_tick_array, g_tick_count);
-        }
-
-        if (tnx_own_by_min_gid(g_tick_array, g_tick_count, &minOwn, &minGid) &&
-            minOwn) {
-            for (i = 0; i < usable; i++) {
-                if (objects[i].object != minOwn) continue;
-
-                if (indexOut) *indexOut = i;
-                if (fromOut) *fromOut = "v134-min";
-
-                return 1;
-            }
-        }
-    }
-
-    if (tnx_own_from_slot(&slotOwn, &slotGid) && slotOwn) {
-        for (i = 0; i < usable; i++) {
-            if (objects[i].object != slotOwn) continue;
-            if (objects[i].gid < TNX_GID_FLOOR || objects[i].gid >= TNX_GID_MAX) continue;
-
-            if (indexOut) *indexOut = i;
-            if (fromOut) *fromOut = "v129-slot";
-
-            return 1;
-        }
-    }
-
-    if (g_own_gid > 0) {
-        wantGid = g_own_gid;
-    } else if (slotGid > 0) {
-        wantGid = slotGid;
-    } else if (g_own_ptr_2) {
-        wantGid = tnx_gid((uintptr_t)g_own_ptr_2, NULL);
-    }
-
-    for (i = 0; i < usable; i++) {
-        if (objects[i].x <= -TNX_COORD_MAX || objects[i].x >= TNX_COORD_MAX) continue;
-        if (objects[i].y <= -TNX_COORD_MAX || objects[i].y >= TNX_COORD_MAX) continue;
-        if (objects[i].x == 0 && objects[i].y == 0) continue;
-
-        if (wantGid > 0 && objects[i].gid == wantGid) {
-            if (indexOut) *indexOut = i;
-            if (fromOut) *fromOut = "v129-gid";
-
-            TNX_LOGX("own-gid idx=%d gid=%d pos=(%d,%d) wantGid=%d slotIdx=%d",
-                     i, objects[i].gid, objects[i].x, objects[i].y, wantGid, g_own_slot_idx);
-
-            return 1;
-        }
-    }
-
-    if (tnx_own_from_list(objects, usable, indexOut, fromOut)) return 1;
-
-    hasWit = tnx_witness(&wx, &wy) && !(wx == 0 && wy == 0);
-
-    if (!hasWit) {
-        TNX_LOGX("own-none usable=%d wantGid=%d slotOwn=%p slotIdx=%d interpUnusable=1",
-                 usable, wantGid, (void *)slotOwn, g_own_slot_idx);
-
-        return 0;
-    }
-
-    for (i = 0; i < usable; i++) {
-        int64_t dx = 0;
-        int64_t dy = 0;
-        int64_t d = 0;
-
-        if (objects[i].x <= -TNX_COORD_MAX || objects[i].x >= TNX_COORD_MAX) continue;
-        if (objects[i].y <= -TNX_COORD_MAX || objects[i].y >= TNX_COORD_MAX) continue;
-        if (objects[i].x == 0 && objects[i].y == 0) continue;
-
-        dx = (int64_t)objects[i].x - (int64_t)wx;
-        dy = (int64_t)objects[i].y - (int64_t)wy;
-        d = dx * dx + dy * dy;
-
-        if (best < 0 || d < bestD) {
-            best = i;
-            bestD = d;
-        }
-    }
-
-    if (best < 0) return 0;
-
-    if (indexOut) *indexOut = best;
-    if (fromOut) *fromOut = "v129-near";
-
-    if (g_own_logs_3 < TNX_OWN_LOGS_2) {
-        g_own_logs_3++;
-
-        TNX_LOGX("own-near idx=%d gid=%d pos=(%d,%d) interp=(%d,%d) d2=%lld wantGid=%d",
-                 best, objects[best].gid, objects[best].x, objects[best].y, wx, wy, (long long)bestD,
-                 wantGid, (unsigned long long)TNX_CLIENT_POS_X_OFF,
-                 (unsigned long long)TNX_CLIENT_POS_Y_OFF);
-    }
-
-    return 1;
 }
 
 void tnx_actuate(void) {
@@ -1004,396 +819,6 @@ void tnx_actuate(void) {
                  TNX_MODE_SETTER, TNX_MODE_BOTH, TNX_DX, TNX_DY,
                  TNX_RAW_X, TNX_RAW_Y);
     }
-}
-
-void tnx_witness_line(int plus) {
-    int32_t wx = 0;
-    int32_t wy = 0;
-    int32_t ex = -1;
-    int32_t ey = -1;
-    int32_t app_x = -1;
-    int32_t app_y = -1;
-    int32_t raw_x = 0;
-    int32_t raw_y = 0;
-    uintptr_t ctrl = tnx_client();
-    int moved = 0;
-    int elemMoved = 0;
-
-    if (!g_active) return;
-    if (g_wit_logs >= TNX_WIT_LOGS) return;
-
-    g_wit_logs++;
-
-    tnx_witness(&wx, &wy);
-
-    if (g_wit_elem) {
-        if (!tnx_read_i32(g_wit_elem + TNX_OBJ_X_OFF, &ex)) ex = -1;
-        if (!tnx_read_i32(g_wit_elem + TNX_OBJ_Y_OFF, &ey)) ey = -1;
-    }
-
-    if (ctrl) {
-        if (!tnx_read_i32(ctrl + TNX_CTRL_RAW_X_OFF, &raw_x)) raw_x = 0;
-        if (!tnx_read_i32(ctrl + TNX_CTRL_RAW_Y_OFF, &raw_y)) raw_y = 0;
-        if (!tnx_read_i32(ctrl + TNX_CTRL_APPLIED_X_OFF, &app_x)) app_x = -1;
-        if (!tnx_read_i32(ctrl + TNX_CTRL_APPLIED_Y_OFF, &app_y)) app_y = -1;
-    }
-
-    moved = (wx != g_wit_x0 || wy != g_wit_y0) ? 1 : 0;
-    elemMoved = (ex != g_wit_x1 || ey != g_wit_y1) ? 1 : 0;
-
-    if (moved) g_moves++;
-    if (elemMoved) g_elem_moves++;
-
-    TNX_LOGX("witness +%d interp=(%d,%d) was=(%d,%d) moved=%d moves=%lld | elem=%p pos=(%d,%d) was=(%d,%d) elemMoved=%d elemMoves=%lld | scene raw+%#llx=(%d,%d) applied+%#llx=(%d,%d)",
-             plus, wx, wy, g_wit_x0, g_wit_y0, moved, (long long)g_moves,
-             (void *)g_wit_elem, ex, ey, g_wit_x1, g_wit_y1, elemMoved,
-             (long long)g_elem_moves, (unsigned long long)TNX_CTRL_RAW_X_OFF, raw_x, raw_y,
-             (unsigned long long)TNX_CTRL_APPLIED_X_OFF, app_x, app_y,
-             (unsigned long long)TNX_CLIENT_POS_X_OFF,
-             (unsigned long long)TNX_CLIENT_POS_Y_OFF);
-
-    g_wit_x0 = wx;
-    g_wit_y0 = wy;
-    g_wit_x1 = ex;
-    g_wit_y1 = ey;
-}
-
-int tnx_fields_pair(uintptr_t *srcOut, int32_t *xOut, int32_t *yOut) {
-    uintptr_t own = tnx_own_obj();
-    uintptr_t src = own ? own : (uintptr_t)g_scene_object;
-    int32_t x = 0;
-    int32_t y = 0;
-
-    if (srcOut) *srcOut = 0;
-    if (xOut) *xOut = 0;
-    if (yOut) *yOut = 0;
-
-    if (!src) return 0;
-    if (!tnx_read_i32(src + TNX_INPUT_X_OFF, &x)) return 0;
-    if (!tnx_read_i32(src + TNX_INPUT_Y_OFF, &y)) return 0;
-
-    if (srcOut) *srcOut = src;
-    if (xOut) *xOut = x;
-    if (yOut) *yOut = y;
-
-    return 1;
-}
-
-int tnx_fields(void) {
-    uintptr_t src = 0;
-    int32_t x = 0;
-    int32_t y = 0;
-
-    if (!tnx_fields_pair(&src, &x, &y)) return -1;
-
-    return (x == g_enq_x && y == g_enq_y) ? 1 : 0;
-}
-
-void tnx_frame_window(void) {
-    uint64_t d = 0;
-    int32_t inX = 0;
-    int32_t inY = 0;
-
-    if (!g_push_frame) return;
-
-    d = g_ticks_3 - g_push_frame;
-
-    if (d > TNX_FRAME_WINDOW) return;
-    if (g_frame_logs >= 40) return;
-
-    g_frame_logs++;
-
-    if (g_scene_object) {
-        tnx_read_i32(tnx_client() + TNX_INPUT_X_OFF, &inX);
-        tnx_read_i32(tnx_client() + TNX_INPUT_Y_OFF, &inY);
-    }
-
-    {
-        uintptr_t client = tnx_client();
-        int32_t cx = 0;
-        int32_t cy = 0;
-        int32_t ck = 0;
-
-        if (client) {
-            tnx_read_i32(client + TNX_CLIENT_POS_X_OFF, &cx);
-            tnx_read_i32(client + TNX_CLIENT_POS_Y_OFF, &cy);
-        }
-
-        tnx_read_i32(tnx_client() + TNX_INPUT_K_OFF, &ck);
-
-        TNX_LOGX("frame tick=%llu frame=+%llu qcount=%d mode=%d gate=%d inner=%d in10c=%d(%s) in110=%d(%s) in114=%d client80=%d client84=%d",
-                 (unsigned long long)g_tick_2, (unsigned long long)d, tnx_queue_count(NULL),
-                 tnx_mode(), tnx_gate(), tnx_inner(), inX, tnx_state_x(inX),
-                 inY, tnx_state_y(inY), ck, cx, cy, (unsigned long long)TNX_READER_RVA,
-                 TNX_MODE_TARGET, (unsigned long long)TNX_INPUT_X_OFF, TNX_MODE_TARGET,
-                 (unsigned long long)TNX_GATE_PTR_OFF, (unsigned)TNX_GATE_BYTE_OFF,
-                 (unsigned long long)0xa26890ULL, (unsigned long long)TNX_CLIENT_POS_X_OFF);
-    }
-}
-
-void tnx_window(int plus) {
-    int32_t inX = 0;
-    int32_t inY = 0;
-    int32_t inK = 0;
-
-    if (plus % TNX_FRAME_EVERY) return;
-    if (g_window_logs >= 12) return;
-
-    g_window_logs++;
-
-    if (g_scene_object) {
-        tnx_read_i32(tnx_client() + TNX_INPUT_X_OFF, &inX);
-        tnx_read_i32(tnx_client() + TNX_INPUT_Y_OFF, &inY);
-        tnx_read_i32(tnx_client() + TNX_INPUT_K_OFF, &inK);
-    }
-
-    TNX_LOGX("window tick=+%d qcount=%d in10c=%d in110=%d in114=%d want=(%d,%d) match=%d",
-             plus, tnx_queue_count(NULL), inX, inY, inK, g_enq_x, g_enq_y,
-             tnx_fields(), TNX_FRAME_EVERY);
-}
-
-void tnx_test(const tnx_obj_t *objects, int usable, int ownIndex) {
-    int32_t x = 0;
-    int32_t y = 0;
-    int qnow = -1;
-    const char *verdict = "readback-unreadable";
-
-    if (!objects || usable <= 0) return;
-    if (g_test_state_2 >= 4) return;
-    if (!g_scene_object) return;
-
-    if (ownIndex < 0 || ownIndex >= usable) ownIndex = 0;
-
-    if (!g_test_tickbase) g_test_tickbase = g_tick_2;
-
-    {
-        int mode = tnx_mode();
-
-        if (mode > g_mode_max) g_mode_max = mode;
-        if (mode == TNX_MODE_TARGET) g_mode_seen7 = 1;
-        if (tnx_gate() == 1) g_gate_seen = 1;
-    }
-
-    if (!TNX_TEST_ENABLE) {
-        if (g_test_state_2 == 0 && (g_tick_2 - g_test_tickbase) >= TNX_MODE_WAIT) {
-            g_test_state_2 = 4;
-            g_tested_2 = 1;
-
-            TNX_LOGX("notest mode_max=%d saw7=%d gateSeen=%d gate=%d",
-                     g_mode_max, g_mode_seen7, g_gate_seen, tnx_gate(),
-                     (unsigned long long)TNX_READER_RVA, TNX_MODE_TARGET,
-                     (unsigned long long)0xa26890ULL);
-        }
-
-        return;
-    }
-
-    if (g_test_state_2 == 0) {
-
-        g_test_state_2 = 1;
-        g_test_tick = g_tick_2;
-        g_test_before_x = objects[ownIndex].x;
-        g_test_before_y = objects[ownIndex].y;
-
-        tnx_chain();
-
-        if (!tnx_witness(&g_wit_x0, &g_wit_y0)) {
-            g_wit_x0 = objects[ownIndex].x;
-            g_wit_y0 = objects[ownIndex].y;
-        } else {
-            g_have_wit = 1;
-        }
-
-        g_wit_elem = objects[ownIndex].object;
-        g_wit_x1 = objects[ownIndex].x;
-        g_wit_y1 = objects[ownIndex].y;
-        g_calls = 0;
-        g_moves = 0;
-        g_elem_moves = 0;
-
-        g_enq_x = g_wit_x0 + TNX_DX;
-        g_enq_y = g_wit_y0 + TNX_DY;
-
-        if (TNX_MODE == TNX_MODE_CHAIN) {
-            g_test_state_2 = 4;
-            g_tested_2 = 1;
-
-            TNX_LOGX("chain-only mode=%d own=%p ownFromWitness=(%d,%d) elem=%p elemPos=(%d,%d) slotOwn=%p slotIdx=%d slotGid=%d expect=%d queue=%d",
-                     TNX_MODE, (void *)tnx_own_obj(), g_wit_x0, g_wit_y0,
-                     (void *)g_wit_elem, g_wit_x1, g_wit_y1, (void *)g_own_slot,
-                     g_own_slot_idx, g_own_slot_gid, TNX_OWN_EXPECT_GID,
-                     tnx_queue_count(NULL), (unsigned long long)TNX_CTRL_RAW_X_OFF);
-
-            return;
-        }
-
-        g_active = 1;
-
-        g_scene_before_x = 0;
-        g_scene_before_y = 0;
-
-        if (g_scene_object) {
-            tnx_read_i32(tnx_client() + TNX_INPUT_X_OFF, &g_scene_before_x);
-            tnx_read_i32(tnx_client() + TNX_INPUT_Y_OFF, &g_scene_before_y);
-        }
-
-        g_watch_from = 0;
-        g_watch_logs = 0;
-
-        g_pre_reloads = g_reloads;
-        g_pre_frames = g_ticks_3;
-
-        g_push_frame_2 = g_ticks_3;
-        g_win_stage = 0;
-        g_win_reloads = g_reloads;
-
-        if (TNX_MODE == TNX_MODE_BOTH) {
-            tnx_enqueue(g_enq_x, g_enq_y);
-
-            g_q_before = g_q_before_2;
-            g_q_after = g_q_after_2;
-        }
-
-        tnx_setter(g_enq_x + TNX_DX_SETTER, g_enq_y + TNX_DY_SETTER);
-        tnx_elem_write(objects[ownIndex].object,
-                            g_enq_x + TNX_DX_ELEM, g_enq_y + TNX_DY_ELEM);
-
-        tnx_probe();
-        tnx_actuate();
-
-        TNX_LOGX("test mode=%d pair=(%d,%d) enum dest=(%d,%d) enq=%d seq %d->%d q %d->%d qLast=%p | write=%d setter=%d scene=%p rawOff=%#llx setterFn=%#llx own=%p | witnesses elem=%p (%d,%d) interp=(%d,%d)",
-                 TNX_MODE, g_enq_x, g_enq_y, g_wit_x0, g_wit_y0,
-                 g_wit_x0 + TNX_DX, g_wit_y0 + TNX_DY,
-                 g_enq_ok, g_seq_before, g_seq_after, g_q_before_2, g_q_after_2,
-                 g_q_last, (void *)g_scene_object,
-                 (unsigned long long)TNX_CTRL_RAW_X_OFF,
-                 (unsigned long long)TNX_SETPRED4_RVA, (void *)tnx_own_obj(),
-                 (void *)g_wit_elem, g_wit_x1, g_wit_y1, g_wit_x0, g_wit_y0,
-                 TNX_MODE_WRITE, TNX_MODE_SETTER, TNX_MODE_BOTH);
-
-        tnx_window(0);
-
-        return;
-    }
-
-    if (g_test_state_2 == 1) {
-        int plus = (int)(g_tick_2 - g_test_tick);
-
-        tnx_actuate();
-        tnx_witness_line(plus);
-
-        if (g_readback < 0 && tnx_fields() == 1) {
-            g_readback = 1;
-            g_readback_tick = plus;
-        }
-
-        if (plus < TNX_READBACK_TICKS) {
-            tnx_window(plus);
-
-            return;
-        }
-
-        tnx_readback(plus);
-
-        g_test_state_2 = 2;
-
-        if (g_readback < 0) g_readback = 0;
-
-        qnow = tnx_queue_count(NULL);
-
-        TNX_LOGX("test short before=(%d,%d) after=(%d,%d) qAfter=%d qNow=%d readback=%d atTick=%d",
-                 g_test_before_x, g_test_before_y, objects[ownIndex].x, objects[ownIndex].y,
-                 g_q_after, qnow, g_readback, g_readback_tick,
-                 (unsigned long long)TNX_OBJ_X_OFF, (unsigned long long)TNX_OBJ_Y_OFF);
-
-        return;
-    }
-
-    if (g_tick_2 - g_test_tick < TNX_LONG_TICKS) {
-        tnx_actuate();
-        tnx_witness_line((int)(g_tick_2 - g_test_tick));
-
-        return;
-    }
-
-    g_test_state_2 = 4;
-    g_tested_2 = 1;
-    g_active = 0;
-
-    x = objects[ownIndex].x;
-    y = objects[ownIndex].y;
-    g_test_after_x_2 = x;
-    g_test_after_y_2 = y;
-    g_moved_2 = (x != g_test_before_x || y != g_test_before_y) ? 1 : 0;
-    g_moved2_2 = g_moved_2;
-    g_kept_2 = (g_readback == 1 && tnx_fields() == 1) ? 1 : 0;
-
-    if (tnx_fields() < 0) {
-        verdict = "readback-unreadable";
-    } else if (g_q_before >= 0 && g_q_after >= 0 && g_q_after <= g_q_before) {
-        verdict = "enqueue-failed";
-    } else if (g_readback == 0 && g_gate_seen == 0) {
-        verdict = "reader-gated";
-    } else if (g_readback == 0) {
-        verdict = "enqueue-ok-not-consumed";
-    } else if (g_readback == 1 && !g_kept_2) {
-        verdict = "client-only";
-    } else if (g_readback == 1 && g_kept_2) {
-        verdict = "real";
-    }
-
-    TNX_LOGX("summary calls=%d haveWit=%d interp=(%d,%d) interpMoves=%lld elem=%p elemPos=(%d,%d) elemMoves=%lld ownFlag=%d ownPair=(%d,%d)",
-             g_calls, g_have_wit, g_wit_x0, g_wit_y0, (long long)g_moves,
-             (void *)g_wit_elem, g_wit_x1, g_wit_y1, (long long)g_elem_moves,
-             g_own_flag, g_own_held_x, g_own_held_y,
-             (unsigned long long)TNX_CLIENT_POS_X_OFF,
-             (unsigned long long)TNX_CLIENT_POS_Y_OFF,
-             (unsigned long long)TNX_SETPRED4_RVA);
-
-    TNX_LOGX("test long before=(%d,%d) after2=(%d,%d) moved=%d kept=%d verdict=%s mode_max=%d saw7=%d gateSeen=%d gate1=%d gate2=%d qBefore=%d qAfter=%d qNow=%d readback=%d atTick=%d rowCount=%d",
-             g_test_before_x, g_test_before_y, x, y, g_moved_2, g_kept_2, verdict,
-             g_mode_max, g_mode_seen7, g_gate_seen,
-             (tnx_mode() == TNX_MODE_TARGET) ? 1 : 0, (tnx_inner() == 1) ? 1 : 0,
-             g_q_before, g_q_after, tnx_queue_count(NULL), g_readback,
-             g_readback_tick, usable);
-}
-
-void tnx_queue_line(void) {
-    uintptr_t mgr = 0;
-    int count = tnx_queue_count(&mgr);
-    int32_t inX = 0;
-    int32_t inY = 0;
-    int32_t inK = 0;
-
-    if (g_tick_2 % TNX_QUEUE_EVERY) return;
-    if (g_queue_logs >= 240) return;
-
-    g_queue_logs++;
-
-    if (g_queue_logs == 1) {
-        TNX_LOGX("statics: reader branch %#llx sits in the mode update %#llx which is a per frame "
-                 "update called from exactly one site %#llx as mode->update(dt, elapsed) with x0 = "
-                 "[obj+0x28], so the +0xac branch is not dead code and consumed=0 can only mean the "
-                 "branch gates closed on this object; the object forwarded to %#llx is the loop body at "
-                 "0xac277c stored to the local [sp+0x40] and reloaded into x22 and then x25, so it is the "
-                 "iterated battle entity and not a fixed offset on the scene",
-                 (unsigned long long)TNX_READER_RVA,
-                 (unsigned long long)TNX_READER_ENTRY_RVA,
-                 (unsigned long long)TNX_READER_CALLER_RVA,
-                 (unsigned long long)0x9fe350ULL);
-    }
-
-    if (g_scene_object) {
-        tnx_read_i32(tnx_client() + TNX_INPUT_X_OFF, &inX);
-        tnx_read_i32(tnx_client() + TNX_INPUT_Y_OFF, &inY);
-        tnx_read_i32(tnx_client() + TNX_INPUT_K_OFF, &inK);
-    }
-
-    TNX_LOGX("queue tick=%llu count=%d mode=%d gate=%d mgr=%p sceneState=%d flags=%llu ac=%d in10c=%d in110=%d in114=%d resetSentinel=%d",
-             (unsigned long long)g_tick_2, count, tnx_mode(), tnx_gate(), (void *)mgr,
-             g_prev_state, (unsigned long long)g_enqueues, tnx_read_flag(), inX, inY, inK,
-             (inY == -1) ? 1 : 0, (unsigned long long)TNX_READER_RVA,
-             (unsigned long long)TNX_ADDINPUT_RVA, (unsigned)0x528);
 }
 
 void tnx_hop2(void) {
@@ -1527,15 +952,9 @@ uint64_t g_joystick_writes = 0;
 
 uint64_t g_joystick_took = 0;
 
-int32_t g_stick_x = 0;
-
-int32_t g_stick_y = 0;
-
 int g_stick_hold = 0;
 
 uint64_t g_stick_tick = 0;
-
-int g_engaged_ticks = 0;
 
 long long g_sum_x = 0;
 
@@ -1670,173 +1089,6 @@ void tnx_snapshot_3(void) {
     if (g_proofs < TNX_PROOF) g_proofs++;
 
     if (g_proofs >= TNX_PROOF) g_accepted = 1;
-}
-
-void tnx_drag(int engaged, int haveOwn, int32_t ownX, int32_t ownY, float dirX, float dirY) {
-    (void)engaged;
-    (void)haveOwn;
-    (void)ownX;
-    (void)ownY;
-    (void)dirX;
-    (void)dirY;
-}
-
-void tnx_stick(int engaged, float dirX, float dirY) {
-    if (!TNX_V245_STICK && !TNX_JS_STICK) return;
-    uintptr_t ctrl = tnx_controller();
-    int32_t wx = 0;
-    int32_t wy = 0;
-    int32_t ownX = 0;
-    int32_t ownY = 0;
-    int want = 0;
-    int haveOwn = 0;
-    float len = 0.0f;
-
-    haveOwn = tnx_own(&ownX, &ownY);
-    tnx_drag(engaged, haveOwn, ownX, ownY, dirX, dirY);
-
-    if (!TNX_RAW_STICK) return;
-    if (!tnx_ctrl_ok(ctrl)) return;
-
-    if (engaged) {
-        len = sqrtf(dirX * dirX + dirY * dirY);
-
-        if (len >= 0.0001f) {
-            want = 1;
-
-            if (TNX_PAIR_RAW && !TNX_JS_STICK) {
-                double scale = 1.0;
-
-                if ((double)len > (double)TNX_PAIR_MAX) {
-                    scale = (double)TNX_PAIR_MAX / (double)len;
-                }
-
-                wx = (int32_t)((double)dirX * scale);
-                wy = (int32_t)((double)dirY * scale);
-            } else {
-                wx = (int32_t)((double)dirX / (double)len * (double)TNX_JOY_MAG);
-                wy = (int32_t)((double)dirY / (double)len * (double)TNX_JOY_MAG);
-            }
-
-            g_stick_hold = 1;
-            g_stick_tick = g_ticks_3;
-            g_engaged_ticks++;
-            g_sum_x += wx;
-            g_sum_y += wy;
-        }
-    }
-
-    if (!want) {
-        uintptr_t relCtrl = tnx_controller();
-        int32_t relX = 0;
-        int32_t relY = 0;
-
-        if (!g_stick_hold) return;
-        if (TNX_JS_STICK && g_ticks_3 < g_stick_tick + TNX_JS_HOLD) return;
-        if (!TNX_RAGE && g_stick_tick + TNX_STICK_TTL > g_ticks_3) return;
-
-        g_stick_hold = 0;
-
-        if (relCtrl && tnx_read_i32(relCtrl + TNX_CTRL_RAW_X_OFF, &relX) &&
-            tnx_read_i32(relCtrl + TNX_CTRL_RAW_Y_OFF, &relY)) {
-            if (relX != g_stick_x || relY != g_stick_y) return;
-        }
-    }
-
-    g_stick_x = wx;
-    g_stick_y = wy;
-
-    if (TNX_STICK_RAW_WRITE && !(TNX_RETIRE && g_accepted && !TNX_JS_STICK)) {
-        if (!tnx_write_bytes(ctrl + TNX_CTRL_RAW_X_OFF, &wx, sizeof(wx))) return;
-
-        tnx_write_bytes(ctrl + TNX_CTRL_RAW_Y_OFF, &wy, sizeof(wy));
-    }
-
-    {
-        static int stickLogs = 0;
-
-        if (stickLogs < 6) {
-            int32_t backX = 0;
-            int32_t backY = 0;
-
-            stickLogs++;
-
-            tnx_read_i32(ctrl + TNX_CTRL_RAW_X_OFF, &backX);
-            tnx_read_i32(ctrl + TNX_CTRL_RAW_Y_OFF, &backY);
-
-            TNX_LOGX("stick write #%d ctrl=%p want=(%d,%d) back=(%d,%d) kept=%d engaged=%d",
-                     stickLogs, (void *)ctrl, wx, wy, backX, backY,
-                     (backX == wx && backY == wy) ? 1 : 0, want);
-        }
-    }
-}
-
-void tnx_route(int engaged) {
-    uintptr_t ctrl = tnx_controller();
-    int32_t ownX = 0;
-    int32_t ownY = 0;
-    int32_t backX = 0;
-    int32_t backY = 0;
-    int32_t appX = 0;
-    int32_t appY = 0;
-    int dx = 0;
-    int dy = 0;
-    int moved = 0;
-    int ours = g_engaged_ticks;
-    long long sumX = 0;
-    long long sumY = 0;
-    float sLen = 0.0f;
-    float mLen = 0.0f;
-    float dot = 0.0f;
-    const char *align = "no-move";
-
-    if ((g_ticks_3 % 60) != 0) return;
-    if (!tnx_own(&ownX, &ownY)) return;
-
-    g_engaged_ticks = 0;
-
-    if (ctrl) {
-        tnx_read_i32(ctrl + TNX_CTRL_RAW_X_OFF, &backX);
-        tnx_read_i32(ctrl + TNX_CTRL_RAW_Y_OFF, &backY);
-        tnx_read_i32(ctrl + TNX_CTRL_APPLIED_X_OFF, &appX);
-        tnx_read_i32(ctrl + TNX_CTRL_APPLIED_Y_OFF, &appY);
-    }
-
-    if (g_route_seeded) {
-        dx = (int)(ownX - g_last_own_x);
-        dy = (int)(ownY - g_last_own_y);
-
-        moved = (int)sqrtf((float)(dx * dx + dy * dy));
-    }
-
-    sumX = g_sum_x;
-    sumY = g_sum_y;
-    g_sum_x = 0;
-    g_sum_y = 0;
-
-    sLen = sqrtf((float)(sumX * sumX + sumY * sumY));
-    mLen = sqrtf((float)(dx * dx + dy * dy));
-
-    if (sLen > 0.5f && mLen > 0.5f) {
-        dot = ((float)sumX / sLen) * ((float)dx / mLen) + ((float)sumY / sLen) * ((float)dy / mLen);
-
-        if (dot > 0.7f) align = "same";
-        else if (dot < -0.7f) align = "opposite";
-        else align = "unrelated";
-    }
-
-    g_route_seeded = 1;
-    g_last_own_x = ownX;
-    g_last_own_y = ownY;
-
-    TNX_LOGX("route engaged=%d stick=(%d,%d) back=(%d,%d) applied=(%d,%d) own=(%d,%d) movedLastSecond=%d stickSum=(%lld,%lld) stickDir=(%.2f,%.2f) moveDir=(%.2f,%.2f) dot=%+.2f aligned=%s engagedTicks=%d queue=%d",
-             engaged, g_stick_x, g_stick_y, backX, backY, appX, appY, ownX, ownY, moved,
-             sumX, sumY,
-             (double)(sLen > 0.5f ? (float)sumX / sLen : 0.0f),
-             (double)(sLen > 0.5f ? (float)sumY / sLen : 0.0f),
-             (double)(mLen > 0.5f ? (float)dx / mLen : 0.0f),
-             (double)(mLen > 0.5f ? (float)dy / mLen : 0.0f),
-             (double)dot, align, ours, tnx_queue_count(NULL));
 }
 
 void tnx_threats(void) {

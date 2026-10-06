@@ -187,4 +187,72 @@ void tnx_autododge_v48(void);
 void tnx_dodge_plan(uintptr_t manager, int32_t team);
 void tnx_dodge_all_teams(uintptr_t manager);
 
+extern float g_own_r;
+
+extern int g_own_r_cfg_logs;
+
+extern int g_own_r_logs;
+
+extern int g_own_r_n;
+
+extern int g_pick_key_c;
+
+extern int g_pick_key_t;
+
+extern int g_side_flips;
+
+extern int g_side_last;
+
+extern int g_side_picks;
+
+extern int g_side_tick;
+
+extern uint64_t g_stat_side;
+
+extern float g_tti_min;
+
+float tnx_clear_at(float px, float py, int i);
+
+int tnx_key_c(int n);
+
+int tnx_key_t(float tti);
+
+float tnx_learn_rate(int c, int t, int side);
+
+int tnx_ok(float v, float lo, float hi);
+
+extern float g_last_dist;
+extern float g_rad_est;
+extern float g_track_min[TNX_SEG_MAX];
+extern float g_track_rad[TNX_SEG_MAX];
+extern float g_track_ux[TNX_SEG_MAX];
+extern float g_track_uy[TNX_SEG_MAX];
+extern int g_cal_miss;
+extern int g_cal_off_seen;
+extern int g_clip_test_win;
+extern int g_clip_win;
+extern int g_crit_reaction;
+extern int g_rad_bad;
+extern int g_rad_off;
+extern int g_shot_key[TNX_SEG_MAX];
+extern int g_snap_calls;
+extern int g_snap_live;
+extern int g_snap_logs;
+extern int g_snap_off_logs;
+extern int g_track_gid[TNX_SEG_MAX];
+extern int g_track_hit[TNX_SEG_MAX];
+extern int g_track_pside[TNX_SEG_MAX];
+extern uint64_t g_howto_logs;
+extern uint64_t g_last_stat;
+extern uint64_t g_react_max;
+extern uint64_t g_react_min;
+extern uint64_t g_react_n;
+extern uint64_t g_react_sum;
+extern uint64_t g_stat_commit;
+extern uint64_t g_stat_picks;
+extern uint64_t g_stat_reset;
+extern uint64_t g_wall_stops;
+float tnx_all_clear(float x, float y);
+int tnx_wall_blocked(float x0, float y0, float x1, float y1);
+
 #endif

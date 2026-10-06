@@ -146,4 +146,9 @@ void tnx_threats(void);
 int tnx_body_blocked(float x, float y, float ownX, float ownY);
 uintptr_t tnx_client(void);
 
+extern int g_enq_stop_1;
+extern int g_enq_stop_2;
+extern int g_enq_stop_3;
+extern int g_enq_stop_5;
+
 #endif

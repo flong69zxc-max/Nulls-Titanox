@@ -2,6 +2,7 @@
 #define TITANOX_H
 
 #include "core/config.h"
+#include "core/tuning.h"
 #include "core/types.h"
 #include "core/crash.h"
 #include "core/hooks.h"
@@ -15,10 +16,18 @@
 #include "dodge/dodge_profiles.h"
 #include "input/move.h"
 #include "scan/scan.h"
+#include "players/players.h"
 #include "dodge/autododge.h"
 #include "learning/report.h"
 #include "scan/walls.h"
 #include "input/sign.h"
 #include "learning/sd.h"
+
+#include "core/objc.h"
+#include "core/starts.h"
+#include "diag/diag.h"
+#include "input/drive.h"
+#include "learning/learn.h"
+#include "ui/overlay.h"
 
 #endif

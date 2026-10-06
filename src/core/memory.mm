@@ -42,12 +42,6 @@ const tnx_rva_entry_t g_rvas[32] = {
     { NULL, 0 }
 };
 
-uintptr_t g_base = 0;
-
-uintptr_t *g_starts = NULL;
-
-size_t g_starts_count = 0;
-
 FILE *g_log = NULL;
 
 long g_log_written = 0;
@@ -84,8 +78,6 @@ int tnx_verified_vtable(uintptr_t vtable) {
     return -1;
 }
 
-uintptr_t g_scene_object = 0;
-
 BOOL g_mode_strong = NO;
 
 int g_mode_best_objects = 0;
@@ -93,8 +85,6 @@ int g_mode_best_objects = 0;
 int g_mode_last_types = 0;
 
 int g_mode_verified_hits = 0;
-
-uintptr_t g_players_object = 0;
 
 int g_manager_count = 0;
 
@@ -162,10 +152,6 @@ int g_objvote_max_votes = 0;
 
 unsigned long long g_objvote_shaped = 0;
 
-tnx_vtcensus_t g_vtcensus[TNX_VTCENSUS_MAX];
-
-int g_vtcensus_used = 0;
-
 unsigned long long g_vtcensus_total = 0;
 
 int g_heap_big_skip = 0;
@@ -201,8 +187,6 @@ BOOL g_snapshot_first = NO;
 BOOL g_snapshot_second = NO;
 
 double g_snapshot_start = 0.0;
-
-tnx_objc_hook_t g_objc_hooks[OBJC_HOOK_MAX];
 
 int g_objc_armed = 0;
 
@@ -304,8 +288,6 @@ uintptr_t g_slot_object[TNX_SLOT_COUNT] = { 0 };
 
 uintptr_t g_slot_arg1[TNX_SLOT_COUNT] = { 0 };
 
-uint64_t g_slot_hits[TNX_SLOT_COUNT] = { 0 };
-
 uint64_t g_slot_hits_total = 0;
 
 int g_slot_installed[TNX_SLOT_COUNT] = { -1, -1, -1, -1, -1, -1, -1,
@@ -354,10 +336,6 @@ uintptr_t g_sig_last = 0;
 
 int g_trail_refusals = 0;
 
-uintptr_t g_players_array = 0;
-
-int g_players_count = 0;
-
 int g_players_cap = 0;
 
 int g_field_scans = 0;
@@ -375,8 +353,6 @@ int g_walk_count = -1;
 int g_coord_fixed_logged = 0;
 
 int g_class_pass = 0;
-
-int g_alerts_off = 0;
 
 const char *g_mode_source_2 = "none";
 
@@ -746,11 +722,7 @@ int g_ag_installed = -1;
 
 uint64_t g_ag_hits = 0;
 
-uintptr_t g_ag_manager = 0;
-
 uintptr_t g_ag_objects[TNX_AG_OBJECT_MAX] = { 0 };
-
-int g_ag_objectCount = 0;
 
 BOOL tnx_query_region(uintptr_t address,
                              vm_prot_t *protection,
@@ -1111,8 +1083,6 @@ BOOL find_game_image(uintptr_t *out_base) {
 
     return NO;
 }
-
-UILabel *g_overlay = NULL;
 
 double g_overlay_last = 0.0;
 
@@ -1521,8 +1491,6 @@ int tnx_write_i32(uintptr_t address, int32_t value) {
 
     return tnx_write_bytes(address, &value, sizeof(value)) ? 1 : 0;
 }
-
-uintptr_t g_own_elem_2 = 0;
 
 uintptr_t g_enemy_elem = 0;
 

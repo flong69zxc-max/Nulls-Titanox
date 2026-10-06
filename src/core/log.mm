@@ -198,6 +198,19 @@ void tnx_logf(const char *format, ...) {
     vsnprintf(buffer, sizeof(buffer), format, args);
     va_end(args);
 
+    {
+        int n = (int)strlen(buffer);
+        int i = 0;
+
+        for (i = 24; i + 2 < n; i++) {
+            if (buffer[i] == ' ' && buffer[i + 1] == '-' && buffer[i + 2] == ' ') {
+                buffer[i] = 0;
+
+                break;
+            }
+        }
+    }
+
     tnx_write_line(buffer);
 }
 

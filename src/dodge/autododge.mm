@@ -386,6 +386,13 @@ float tnx_proj_radius(const tnx_proj_t *p, float speed) {
 
     base = p->elem;
 
+    {
+        void *def = NULL;
+
+        if (tnx_read_ptr(p->elem + (uintptr_t)TNX_ELEM_DEF_OFF, &def) && def)
+            base = (uintptr_t)def;
+    }
+
     if (t_rad_off >= 0) {
         float r = 0.0f;
 
@@ -1513,7 +1520,17 @@ static int tnx_js_collect(void) {
         dx = (float)(p->x - p->px);
         dy = (float)(p->y - p->py);
         len = sqrtf(dx * dx + dy * dy);
-        if (len < 6.0f) continue;
+
+        if (len < 6.0f) {
+            float ang = 0.0f;
+
+            if (!tnx_read_f32(p->elem + (uintptr_t)TNX_PROJ_ANGLE_OFF, &ang)) continue;
+            if (ang < -7.0f || ang > 7.0f) continue;
+
+            dx = cosf(ang);
+            dy = sinf(ang);
+            len = 1.0f;
+        }
 
         dt = (p->ptick > 0 && t_ticks_3 > p->ptick) ? (t_ticks_3 - p->ptick) : 1;
 
@@ -1521,8 +1538,14 @@ static int tnx_js_collect(void) {
         t_js_projs[n].y = (float)p->y;
         t_js_projs[n].dx = dx / len;
         t_js_projs[n].dy = dy / len;
-        t_js_projs[n].speed = (len / (float)dt) * 60.0f;
-        t_js_projs[n].radius = TNX_PROJ_RADIUS;
+        t_js_projs[n].speed = (len > 1.5f) ? ((len / (float)dt) * 60.0f) : TNX_JS_SPEED_FALLBACK;
+        t_js_projs[n].radius = TNX_JS_RADIUS_FALLBACK;
+
+        {
+            float rr = tnx_proj_radius(p, t_js_projs[n].speed);
+
+            if (rr > 0.0f) t_js_projs[n].radius = rr;
+        }
         t_js_projs[n].gid = p->gid;
         n++;
     }
@@ -1891,7 +1914,7 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
         desiredDeg = t_angle * 180.0f / 3.14159265358979f;
     }
 
-    if (threatened) {
+    {
         int jsUrgent = 0;
         float jsX = 0.0f;
         float jsY = 0.0f;
@@ -1905,6 +1928,11 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
             t_js_urgent = jsUrgent;
             t_js_picks++;
         }
+    }
+
+    threatened = t_js_picked;
+
+    if (threatened && !t_js_picked) {
 
         if (picked) {
             float sx = tx;

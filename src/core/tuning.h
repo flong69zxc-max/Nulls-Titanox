@@ -3,6 +3,19 @@
 
 #ifndef TNX_DODGE_PROJ_ONLY
 #define TNX_DODGE_PROJ_ONLY 1
+
+#ifndef TNX_PROJ_ANGLE_OFF
+#define TNX_PROJ_ANGLE_OFF 0xb8
+#endif
+
+#ifndef TNX_JS_SPEED_FALLBACK
+#define TNX_JS_SPEED_FALLBACK 1200.0f
+#endif
+
+#ifndef TNX_JS_RADIUS_FALLBACK
+#define TNX_JS_RADIUS_FALLBACK 8.0f
+#endif
+
 #endif
 #ifndef TNX_HIT_MARGIN
 #define TNX_HIT_MARGIN 60.0f

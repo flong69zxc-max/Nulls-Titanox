@@ -2428,6 +2428,7 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
         tnx_enqueue((int32_t)tx, (int32_t)ty);
         tnx_move_to((int32_t)tx, (int32_t)ty, px, py);
         tnx_joy_set(t_js_dir_x, t_js_dir_y, 1);
+        tnx_input_apply(t_js_dir_x, t_js_dir_y, (int32_t)px, (int32_t)py);
 
         if (t_new_tick >= 0) {
             uint64_t react = t_ticks_3 - (uint64_t)t_new_tick;
@@ -2473,6 +2474,8 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
         t_ty_2 = py;
     }
 
+    if (!t_js_picked) tnx_input_clear((int32_t)px, (int32_t)py);
+
     if ((t_ticks_3 % 10) == 0) {
         t_logs_4++;
 
@@ -2484,7 +2487,9 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
                  "heading actually written towards in degrees, counted from the positive x axis, so "
                  "two consecutive lines with the same way is the character holding one direction; "
                  "moveN is how many times the engine move setter was called on the own character and "
-                 "moveOwn is the object it was called on",
+                 "moveOwn is the object it was called on; inN counts the input pushes written straight "
+                 "into the carrier the engine reads and inStuck counts the ones that read back"
+                 " inN=%d inStuck=%d inOn=%d",
                  t_seg_count, threatened, picked, t_js_n, t_dodge_mates, t_dodge_foes, t_dodge_unk, t_life_3, t_dodge_ox, t_dodge_oy, t_dodge_ohit, t_pick_src, t_js_urgent, t_js_vo,
                  (double)t_tx_2, (double)t_ty_2,
                  (double)sqrtf((t_tx_2 - px) * (t_tx_2 - px) +
@@ -2492,7 +2497,8 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
                  (double)(atan2f(t_ty_2 - py, t_tx_2 - px) * 180.0f / 3.14159265358979f),
                  stick, (double)desiredDeg, TNX_JOY_WRITE, t_snap_live, t_moving,
                  t_move_n, t_move_ok, (void *)t_move_own, (double)t_meas_tps,
-                 TNX_AIM, t_aim_idx, t_aim_shots, t_aim_ok);
+                 TNX_AIM, t_aim_idx, t_aim_shots, t_aim_ok,
+                 t_inapply_n, t_inapply_stuck, t_inapply_on);
     }
 
 

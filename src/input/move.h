@@ -118,6 +118,15 @@ int tnx_enqueue(int x, int y);
 
 int tnx_enqueue_type(int x, int y, int type);
 int tnx_move_to(int32_t x, int32_t y, float ox, float oy);
+int tnx_input_apply(float dirX, float dirY, int32_t px, int32_t py);
+void tnx_input_clear(int32_t px, int32_t py);
+extern int t_inapply_n;
+extern int t_inapply_stuck;
+extern int t_inapply_rej;
+extern int t_inapply_on;
+extern int32_t t_inapply_tx;
+extern int32_t t_inapply_ty;
+extern uintptr_t t_inapply_ctrl;
 void tnx_move_locate(float ox, float oy);
 int tnx_move_pair_ok(uintptr_t obj, int32_t *outX, int32_t *outY);
 int tnx_move_near_own(uintptr_t obj, float ox, float oy, int32_t *outX, int32_t *outY);

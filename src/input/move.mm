@@ -929,6 +929,173 @@ int tnx_move_to(int32_t x, int32_t y, float ox, float oy) {
     return 1;
 }
 
+int t_inapply_n = 0;
+
+int t_inapply_stuck = 0;
+
+int t_inapply_rej = 0;
+
+int t_inapply_logs = 0;
+
+int t_inapply_on = 0;
+
+int32_t t_inapply_tx = 0;
+
+int32_t t_inapply_ty = 0;
+
+uintptr_t t_inapply_ctrl = 0;
+
+static int tnx_input_pair(uintptr_t ctrl, int32_t *rawX, int32_t *rawY, int32_t *appX,
+                          int32_t *appY, int32_t *dirty) {
+    if (!tnx_read_i32(ctrl + (uintptr_t)TNX_INPUT_RAW_X_OFF, rawX)) return 0;
+    if (!tnx_read_i32(ctrl + (uintptr_t)TNX_INPUT_RAW_Y_OFF, rawY)) return 0;
+    if (!tnx_read_i32(ctrl + (uintptr_t)TNX_INPUT_APPLIED_X_OFF, appX)) return 0;
+    if (!tnx_read_i32(ctrl + (uintptr_t)TNX_INPUT_APPLIED_Y_OFF, appY)) return 0;
+    if (!tnx_read_i32(ctrl + (uintptr_t)TNX_INPUT_DIRTY_OFF, dirty)) return 0;
+
+    return 1;
+}
+
+static void tnx_input_write(uintptr_t ctrl, uintptr_t setFn, int32_t rawX, int32_t rawY,
+                            int32_t appX, int32_t appY) {
+    tnx_write_i32(ctrl + (uintptr_t)TNX_INPUT_RAW_X_OFF, rawX);
+    tnx_write_i32(ctrl + (uintptr_t)TNX_INPUT_RAW_Y_OFF, rawY);
+    tnx_write_i32(ctrl + (uintptr_t)TNX_INPUT_APPLIED_X_OFF, appX);
+    tnx_write_i32(ctrl + (uintptr_t)TNX_INPUT_APPLIED_Y_OFF, appY);
+    tnx_write_i32(ctrl + (uintptr_t)TNX_INPUT_DIRTY_OFF, TNX_CTRL_DIRTY_VAL);
+
+    ((void (*)(uintptr_t, int, int, int))setFn)(ctrl, (int)appX, (int)appY, (int)TNX_INPUT_MOVE_FLAG);
+}
+
+static void tnx_input_log(const char *why, uintptr_t ctrl, int32_t rawX, int32_t rawY,
+                          int32_t appX, int32_t appY) {
+    int32_t backRawX = 0;
+    int32_t backRawY = 0;
+    int32_t backAppX = 0;
+    int32_t backAppY = 0;
+    int32_t backDirty = 0;
+    int32_t backKey = 0;
+    int32_t backArm = 0;
+    int stuck = 0;
+
+    if (!tnx_input_pair(ctrl, &backRawX, &backRawY, &backAppX, &backAppY, &backDirty)) {
+        TNX_LOGX("inapply %s ctrl=%p unreadable after the write n=%d on=%d",
+                 why, (void *)ctrl, t_inapply_n, t_inapply_on);
+
+        return;
+    }
+
+    tnx_read_i32(ctrl + (uintptr_t)TNX_MOVE_KEY_OFF, &backKey);
+    tnx_read_i32(ctrl + (uintptr_t)TNX_MOVE_ARM_OFF, &backArm);
+
+    if (backRawX == rawX && backRawY == rawY) {
+        stuck = 1;
+
+        t_inapply_stuck++;
+    }
+
+    TNX_LOGX("inapply %s ctrl=%p raw=(%d,%d) applied=(%d,%d) back=(%d,%d)/(%d,%d) dirty=%d key=%d "
+             "arm=%d n=%d stuck=%d on=%d flag=%d",
+             why, (void *)ctrl, rawX, rawY, appX, appY, backRawX, backRawY, backAppX, backAppY,
+             backDirty, backKey, backArm, t_inapply_n, t_inapply_stuck, t_inapply_on,
+             (int)TNX_INPUT_MOVE_FLAG);
+}
+
+int tnx_input_apply(float dirX, float dirY, int32_t px, int32_t py) {
+    uintptr_t ctrl = tnx_controller();
+    uintptr_t setFn = tnx_entry_2(TNX_INPUT_SET_RVA);
+    float len = 0.0f;
+    float unitX = 0.0f;
+    float unitY = 0.0f;
+    int32_t rawX = 0;
+    int32_t rawY = 0;
+    int32_t appX = 0;
+    int32_t appY = 0;
+
+    t_inapply_ctrl = ctrl;
+
+    if (!TNX_INPUT_APPLY) return 0;
+
+    if (!ctrl || !setFn) {
+        if (t_inapply_rej < TNX_INPUT_LOGS) {
+            t_inapply_rej++;
+
+            TNX_LOGX("inapply skip ctrl=%p setFn=%p reason=%s rej=%d",
+                     (void *)ctrl, (void *)setFn, !ctrl ? "no-carrier" : "no-setter", t_inapply_rej);
+        }
+
+        return 0;
+    }
+
+    if (!tnx_ctrl_ok(ctrl)) {
+        if (t_inapply_rej < TNX_INPUT_LOGS) {
+            int32_t rawX0 = 0;
+            int32_t rawY0 = 0;
+            int32_t appX0 = 0;
+            int32_t appY0 = 0;
+            int32_t dirty0 = 0;
+
+            t_inapply_rej++;
+
+            tnx_input_pair(ctrl, &rawX0, &rawY0, &appX0, &appY0, &dirty0);
+
+            TNX_LOGX("inapply skip ctrl=%p reason=carrier-rejected raw=(%d,%d) applied=(%d,%d) dirty=%d rej=%d",
+                     (void *)ctrl, rawX0, rawY0, appX0, appY0, dirty0, t_inapply_rej);
+        }
+
+        return 0;
+    }
+
+    len = sqrtf(dirX * dirX + dirY * dirY);
+
+    if (!(len > TNX_INPUT_DIRT_MIN)) return 0;
+
+    unitX = dirX / len;
+    unitY = dirY / len;
+
+    rawX = (int32_t)((double)unitX * (double)TNX_INPUT_APPLY_MAG);
+    rawY = (int32_t)((double)unitY * (double)TNX_INPUT_APPLY_MAG);
+    appX = px + (int32_t)((double)unitX * (double)TNX_INPUT_APPLY_REACH);
+    appY = py + (int32_t)((double)unitY * (double)TNX_INPUT_APPLY_REACH);
+
+    if (appX < -TNX_MOVE_COORD_LIMIT || appX > TNX_MOVE_COORD_LIMIT) return 0;
+    if (appY < -TNX_MOVE_COORD_LIMIT || appY > TNX_MOVE_COORD_LIMIT) return 0;
+
+    tnx_input_write(ctrl, setFn, rawX, rawY, appX, appY);
+
+    t_inapply_n++;
+    t_inapply_on = 1;
+    t_inapply_tx = appX;
+    t_inapply_ty = appY;
+
+    if (t_inapply_logs < TNX_INPUT_LOGS) {
+        t_inapply_logs++;
+
+        tnx_input_log("push", ctrl, rawX, rawY, appX, appY);
+    } else if ((t_inapply_n % TNX_INPUT_LOG_EVERY) == 0) {
+        tnx_input_log("push", ctrl, rawX, rawY, appX, appY);
+    }
+
+    return 1;
+}
+
+void tnx_input_clear(int32_t px, int32_t py) {
+    uintptr_t ctrl = tnx_controller();
+    uintptr_t setFn = tnx_entry_2(TNX_INPUT_SET_RVA);
+
+    if (!TNX_INPUT_APPLY) return;
+    if (!t_inapply_on) return;
+
+    t_inapply_on = 0;
+
+    if (!ctrl || !setFn) return;
+    if (!tnx_ctrl_ok(ctrl)) return;
+
+    tnx_input_write(ctrl, setFn, 0, 0, px, py);
+
+    tnx_input_log("clear", ctrl, 0, 0, px, py);
+}
+
 
 int32_t t_own_held_x = 0;
 

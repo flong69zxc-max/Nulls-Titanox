@@ -1,0 +1,421 @@
+diff --git a/src/core/log.mm b/src/core/log.mm
+index 1e45de0..52d836b 100644
+--- a/src/core/log.mm
++++ b/src/core/log.mm
+@@ -4,7 +4,7 @@ FILE *tnx_log_handle(void) {
+     if (!t_log) {
+         NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+         if (paths.count > 0) {
+-            NSString *logPath = [paths[0] stringByAppendingPathComponent:@"Titanox.log"];
++            NSString *logPath = [paths[0] stringByAppendingPathComponent:@"Titanox_logs.txt"];
+             t_log = fopen(logPath.UTF8String, "a");
+         }
+ 
+@@ -123,7 +123,7 @@ void tnx_log_roll(void) {
+ 
+     if (paths.count == 0) return;
+ 
+-    t_log = fopen([paths[0] stringByAppendingPathComponent:@"Titanox.log"].UTF8String, "w");
++    t_log = fopen([paths[0] stringByAppendingPathComponent:@"Titanox_logs.txt"].UTF8String, "w");
+ 
+     if (!t_log) return;
+ 
+diff --git a/src/dodge/autododge.h b/src/dodge/autododge.h
+index ca67d4b..7f1d0a3 100644
+--- a/src/dodge/autododge.h
++++ b/src/dodge/autododge.h
+@@ -75,6 +75,12 @@ extern uint64_t t_last_danger;
+ extern int32_t t_tx;
+ extern int32_t t_ty;
+ extern int t_active_2;
++
++extern int t_js_live;
++
++extern uint64_t t_js_tick;
++
++int tnx_js_owns_3(void);
+ extern tnx_seg_t t_seg[TNX_SEG_MAX];
+ extern int t_seg_count;
+ extern int t_build_tick;
+@@ -163,7 +169,6 @@ float tnx_clearance_2(float x, float y);
+ float tnx_eta_ms(float x, float y);
+ int tnx_imminent(float x, float y);
+ int tnx_flee(float px, float py, float *tx, float *ty);
+-void tnx_predict_2(int32_t ownX, int32_t ownY, float tx, float ty);
+ void tnx_precision(int32_t ownX, int32_t ownY, float dirX, float dirY, int escape);
+ int tnx_body_blocked_2(float px, float py, float dirX, float dirY, float len);
+ float tnx_body_score(float px, float py, float dirX, float dirY, float len);
+diff --git a/src/dodge/autododge.mm b/src/dodge/autododge.mm
+index a2121b1..5210cec 100644
+--- a/src/dodge/autododge.mm
++++ b/src/dodge/autododge.mm
+@@ -138,6 +138,17 @@ int32_t t_ty = 0;
+ 
+ int t_active_2 = 0;
+ 
++int t_js_live = 0;
++
++uint64_t t_js_tick = 0;
++
++int tnx_js_owns_3(void) {
++    if (!t_js_live) return 0;
++    if (t_ticks_3 > t_js_tick && (t_ticks_3 - t_js_tick) > 2) return 0;
++
++    return 1;
++}
++
+ int t_build_tick = -1;
+ 
+ uint64_t t_escapes = 0;
+@@ -1967,6 +1978,9 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
+     int safeOk = 0;
+     float desiredDeg = 0.0f;
+ 
++    t_js_live = 0;
++    t_js_tick = t_ticks_3;
++
+     tnx_arm(px, py);
+     tnx_stats();
+ 
+@@ -2039,6 +2053,7 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
+     }
+ 
+     threatened = t_js_picked;
++    t_js_live = t_js_picked;
+ 
+     if (t_js_picked) {
+         t_tx_2 = tx;
+@@ -2106,9 +2121,6 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
+                  stick, (double)desiredDeg, TNX_JOY_WRITE, t_snap_live, t_moving);
+     }
+ 
+-    if (t_moving) tnx_snap(t_tx_2 - px, t_ty_2 - py);
+-
+-    tnx_predict_2(ownX, ownY, t_tx_2, t_ty_2);
+ 
+     tnx_stat_report();
+ 
+diff --git a/src/hooks/slots.mm b/src/hooks/slots.mm
+index a8abb32..b0775a0 100644
+--- a/src/hooks/slots.mm
++++ b/src/hooks/slots.mm
+@@ -445,7 +445,7 @@ void tnx_battle_write(const char *utf8, size_t len) {
+ 
+         if (paths.count == 0) return;
+ 
+-        NSString *path = [paths[0] stringByAppendingPathComponent:@"Titanox.battle.log"];
++        NSString *path = [paths[0] stringByAppendingPathComponent:@"Titanox_logs.txt"];
+         t_battle_log = fopen(path.UTF8String, "a");
+     }
+ 
+diff --git a/src/input/drive.h b/src/input/drive.h
+index a9a1013..1870bd5 100644
+--- a/src/input/drive.h
++++ b/src/input/drive.h
+@@ -16,10 +16,8 @@ int tnx_drive(void);
+ int tnx_joy_angle(float *outAngle);
+ int tnx_joy_read(uintptr_t bs, float *ax, float *ay, float *bx, float *by, uint32_t *mode, float *cs, float *sn);
+ void tnx_precision(int32_t ownX, int32_t ownY, float dirX, float dirY, int escape);
+-void tnx_predict_2(int32_t ownX, int32_t ownY, float tx, float ty);
+ void tnx_route(int engaged);
+ void tnx_select(float px, float py);
+-int tnx_snap(float dx, float dy);
+ float tnx_speed(void);
+ void tnx_stick(int engaged, float dirX, float dirY);
+ 
+diff --git a/src/input/drive.mm b/src/input/drive.mm
+index 29edf7c..4d3bee6 100644
+--- a/src/input/drive.mm
++++ b/src/input/drive.mm
+@@ -220,13 +220,14 @@ int tnx_drive(void) {
+         t_queue_calls++;
+     } else if (!TNX_PAIR_ONLY) {
+         if (TNX_STICK_ONLY) t_pos_skips++;
++        else if (tnx_js_owns_3()) t_queue_skips_2++;
+         else tnx_enqueue(tx, ty);
+         t_queue_calls++;
+     } else {
+         t_queue_skips++;
+     }
+ 
+-    if (!TNX_STICK_ONLY && !TNX_JS_NOPREDICT) {
++    if (!TNX_STICK_ONLY && !TNX_JS_NOPREDICT && !tnx_js_owns_3()) {
+         tnx_predict(tx, ty);
+     }
+ 
+@@ -340,160 +341,6 @@ int tnx_drive(void) {
+ 
+     return 1;
+ }
+-
+-int tnx_snap(float dx, float dy) {
+-    static int off_logs = 0;
+-
+-#if TNX_SNAP_HARD_OFF
+-    if (off_logs < 4) {
+-        off_logs++;
+-
+-        TNX_LOGX("snap off v36 dir=(%.0f,%.0f) - the call is not made at all in this build and no pair "
+-                 "leaves it: the crash address was exactly the pair this function handed the engine, "
+-                 "with pc and lr both inside the game, so the engine stored our vector in a slot of the "
+-                 "container element and its own code later read that slot back as a pointer; the move "
+-                 "is carried by the prediction call on the logic client and by the input message, which "
+-                 "run on the same frame, and the flag sits at the top of the function so a define from "
+-                 "outside cannot turn it back on",
+-                 (double)dx, (double)dy);
+-    }
+-
+-    (void)dx;
+-    (void)dy;
+-
+-    return 0;
+-#else
+-    uintptr_t fn = tnx_entry_2(TNX_SETPRED4_RVA);
+-    uintptr_t own = tnx_own_obj();
+-    uintptr_t dst = tnx_controller();
+-    float len = sqrtf(dx * dx + dy * dy);
+-    int32_t ownX = 0;
+-    int32_t ownY = 0;
+-    int32_t vx = 0;
+-    int32_t vy = 0;
+-
+-    t_snap_live = 0;
+-
+-    if (!TNX_SNAP) {
+-        if (t_snap_off_logs < 4) {
+-            t_snap_off_logs++;
+-
+-            TNX_LOGX("snap off elem=%p client=%p mag=%.0f - this was the only call that handed the "
+-                     "engine move function the container element as the receiver together with a "
+-                     "direction of magnitude %.0f, and the crash addresses carried exactly that value "
+-                     "in one half of a pointer, so the move is left to tnx_pred_set alone, which is "
+-                     "the same engine call made on the logic client with a destination, so one frame "
+-                     "carries two actions instead of three",
+-                     (void *)own, (void *)tnx_controller(), (double)TNX_SNAP_MAG,
+-                     (double)TNX_SNAP_MAG);
+-        }
+-
+-        return 0;
+-    }
+-
+-    if (!fn || !dst || !own) return 0;
+-    if (!tnx_ok(len, 0.001f, 1.0e9f)) return 0;
+-    if (!tnx_own(&ownX, &ownY)) return 0;
+-
+-#if TNX_SNAP_DELTA
+-    vx = (int32_t)((double)dx / (double)len * (double)TNX_SNAP_MAG);
+-    vy = (int32_t)((double)dy / (double)len * (double)TNX_SNAP_MAG);
+-#else
+-    vx = ownX + (int32_t)((double)dx / (double)len * (double)tnx_step());
+-    vy = ownY + (int32_t)((double)dy / (double)len * (double)tnx_step());
+-#endif
+-
+-    if (!tnx_valid_point((float)vx, (float)vy)) return 0;
+-
+-    ((void (*)(uintptr_t, int, int, int))fn)(dst, vx, vy, TNX_SETFLAG);
+-
+-    t_snap_calls++;
+-    t_snap_live = 1;
+-
+-    if (t_snap_logs < TNX_SNAP_LOGS || (t_ticks_3 % 180) == 0) {
+-        t_snap_logs++;
+-
+-        TNX_LOGX("snap dst=%p sent=(%d,%d) own=(%d,%d) dir=(%.0f,%.0f) len=%.0f step=%.0f delta=%d "
+-                 "elem=%p mag=%.0f - the receiver is the logic client the prediction call uses and the "
+-                 "argument is a destination in the same units as the pick, while the previous form "
+-                 "handed the same function the container element and a %.0f unit delta: the crash "
+-                 "address was exactly that pair with pc and lr both inside the game, so the engine "
+-                 "wrote our vector into a slot of the element and its own code read that slot back as "
+-                 "a pointer, which is what the receiver change removes; delta=1 restores the old form",
+-                 (void *)dst, vx, vy, ownX, ownY, (double)dx, (double)dy, (double)len,
+-                 (double)tnx_step(), (int)TNX_SNAP_DELTA, (void *)own, (double)TNX_SNAP_MAG,
+-                 (double)TNX_SNAP_MAG);
+-    }
+-
+-    return 1;
+-#endif
+-}
+-
+-void tnx_predict_2(int32_t ownX, int32_t ownY, float tx, float ty) {
+-    int i = 0;
+-    int best = -1;
+-    float px = (float)ownX;
+-    float py = (float)ownY;
+-    float bestMs = 1.0e9f;
+-    float qx = 0.0f;
+-    float qy = 0.0f;
+-    float d = 0.0f;
+-    int react = -1;
+-
+-    if (t_logs_8 >= TNX_LOGS_4) return;
+-    if (TNX_EVERY_2 > 0 && (t_ticks_3 % (uint64_t)TNX_EVERY_2) != 0) return;
+-
+-    for (i = 0; i < t_seg_count; i++) {
+-        const tnx_seg_t *s = &t_seg[i];
+-        float abx = s->bx - s->ax;
+-        float aby = s->by - s->ay;
+-        float den = abx * abx + aby * aby;
+-        float t = 0.0f;
+-        float ms = 0.0f;
+-
+-        if (den > 0.0001f) t = ((px - s->ax) * abx + (py - s->ay) * aby) / den;
+-
+-        if (t < 0.0f) t = 0.0f;
+-        if (t > 1.0f) t = 1.0f;
+-
+-        ms = sqrtf((s->ax + abx * t - px) * (s->ax + abx * t - px) +
+-                   (s->ay + aby * t - py) * (s->ay + aby * t - py)) - s->inflatedR;
+-
+-        if (ms < 0.0f) ms = 0.0f;
+-        if (s->speed > 1.0f) ms = ms / s->speed * 1000.0f;
+-
+-        if (ms < bestMs) {
+-            bestMs = ms;
+-            best = i;
+-            qx = s->ax + abx * t;
+-            qy = s->ay + aby * t;
+-        }
+-    }
+-
+-    if (t_new_tick >= 0) react = (int)((int64_t)t_ticks_3 - (int64_t)t_new_tick);
+-
+-    t_logs_8++;
+-
+-    if (best < 0) {
+-        TNX_LOGX("predict tick=%llu own=(%d,%d) tgt=(%.0f,%.0f) threats=0 react=%d flees=%llu - "
+-                 "no segment is live, so there is nothing to lead and the pick is a plain step",
+-                 (unsigned long long)t_ticks_3, ownX, ownY, (double)tx, (double)ty, react,
+-                 (unsigned long long)t_flees);
+-
+-        return;
+-    }
+-
+-    d = sqrtf((qx - px) * (qx - px) + (qy - py) * (qy - py));
+-
+-    TNX_LOGX("predict tick=%llu own=(%d,%d) tgt=(%.0f,%.0f) threats=%d react=%d gid=%d "
+-             "impact=(%.0f,%.0f) lead=(%.0f,%.0f) d=%.0f eta=%.0fms spd=%.0f ms=%.0f - impact is the "
+-             "closest point of the nearest flight to own, lead is the offset own has to clear, and a "
+-             "react above one tick means the pick was made a frame or more after the threat appeared",
+-             (unsigned long long)t_ticks_3, ownX, ownY, (double)tx, (double)ty, t_seg_count,
+-             react, t_seg[best].gid, (double)qx, (double)qy, (double)(qx - px), (double)(qy - py),
+-             (double)d, (double)bestMs, (double)t_seg[best].speed, (double)(d / (t_seg[best].speed > 1.0f ? t_seg[best].speed : 1.0f) * 1000.0f));
+-}
+-
+ void tnx_precision(int32_t ownX, int32_t ownY, float dirX, float dirY, int escape) {
+     uintptr_t ctrl = 0;
+     int32_t ax = 0;
+diff --git a/src/scan/scan.h b/src/scan/scan.h
+index ad634fa..13d3017 100644
+--- a/src/scan/scan.h
++++ b/src/scan/scan.h
+@@ -253,7 +253,7 @@ extern const uintptr_t t_mode_vtables[36];
+ extern int t_proj_skipped;
+ extern int t_tnx_verbose;
+ extern tnx_trail_t t_trail[TNX_TRAIL_MAX];
+-int tnx_ctrl_bounds(uintptr_t base, int32_t *wOut, int32_t *hOut);
++int tnx_ctrl_bounds_2(uintptr_t base, int32_t *wOut, int32_t *hOut);
+ void tnx_paircal(void);
+ void tnx_probe_3(uintptr_t manager, uintptr_t mode, int verbose);
+ 
+diff --git a/src/scan/scan.mm b/src/scan/scan.mm
+index f99f353..038cd46 100644
+--- a/src/scan/scan.mm
++++ b/src/scan/scan.mm
+@@ -1835,7 +1835,7 @@ static int t_ctrl_logs = 0;
+ 
+ int t_ctrl_pick = 0;
+ 
+-static int tnx_bounds_try(uintptr_t receiver, int32_t *wOut, int32_t *hOut) {
++static int tnx_bounds_try_2(uintptr_t receiver, int32_t *wOut, int32_t *hOut) {
+     uintptr_t bounds = 0;
+     int32_t w = 0;
+     int32_t h = 0;
+@@ -1843,7 +1843,13 @@ static int tnx_bounds_try(uintptr_t receiver, int32_t *wOut, int32_t *hOut) {
+     if (!receiver) return 0;
+     if (!tnx_pointer_plausible(receiver)) return 0;
+ 
+-    bounds = ((uintptr_t (*)(uintptr_t))(t_base + TNX_BOUNDS_RVA))(receiver);
++    {
++        void *box = NULL;
++
++        if (!tnx_read_ptr(receiver + (uintptr_t)TNX_BOX_PTR_OFF, &box)) return 0;
++
++        bounds = (uintptr_t)box;
++    }
+ 
+     if (!bounds || (bounds & 7)) return 0;
+     if (!tnx_addr_readable(bounds, 0x100)) return 0;
+@@ -1857,12 +1863,11 @@ static int tnx_bounds_try(uintptr_t receiver, int32_t *wOut, int32_t *hOut) {
+     return 1;
+ }
+ 
+-int tnx_ctrl_bounds(uintptr_t base, int32_t *wOut, int32_t *hOut) {
++int tnx_ctrl_bounds_2(uintptr_t base, int32_t *wOut, int32_t *hOut) {
+     if (!base) return 0;
+     if (!tnx_pointer_plausible(base)) return 0;
+-    if (!tnx_callable(TNX_BOUNDS_RVA)) return 0;
+ 
+-    return tnx_bounds_try(base, wOut, hOut);
++    return tnx_bounds_try_2(base, wOut, hOut);
+ }
+ 
+ uintptr_t tnx_controller(void) {
+@@ -1870,7 +1875,7 @@ uintptr_t tnx_controller(void) {
+     int32_t cw = 0;
+     int32_t ch = 0;
+ 
+-    if (client && tnx_ctrl_bounds(client, &cw, &ch)) {
++    if (client && tnx_ctrl_bounds_2(client, &cw, &ch)) {
+         t_ctrl_pick = 1;
+ 
+         return client;
+diff --git a/src/utils/geometry.h b/src/utils/geometry.h
+index 56ccce9..3c0b9c5 100644
+--- a/src/utils/geometry.h
++++ b/src/utils/geometry.h
+@@ -22,7 +22,7 @@ int tnx_small(long value);
+ float tnx_as_float(uint32_t bits);
+ void tnx_discriminate(uintptr_t manager);
+ void tnx_probe_3(uintptr_t manager, uintptr_t mode, int verbose);
+-uintptr_t tnx_bounds_obj(uintptr_t receiver);
++uintptr_t tnx_bounds_obj_2(uintptr_t receiver);
+ int tnx_clamp(int32_t *x, int32_t *y);
+ uint64_t tnx_us(void);
+ void tnx_paircal(void);
+diff --git a/src/utils/geometry.mm b/src/utils/geometry.mm
+index acb8c90..b5ffbdc 100644
+--- a/src/utils/geometry.mm
++++ b/src/utils/geometry.mm
+@@ -454,24 +454,22 @@ int32_t t_max_x = 0;
+ 
+ int32_t t_max_y = 0;
+ 
+-uintptr_t tnx_bounds_obj(uintptr_t receiver) {
+-    uintptr_t out = 0;
++uintptr_t tnx_bounds_obj_2(uintptr_t receiver) {
++    void *out = NULL;
+ 
+     if (!receiver) return 0;
+     if (!tnx_pointer_plausible(receiver)) return 0;
+-    if (!tnx_callable(TNX_BOUNDS_RVA)) return 0;
++    if (!tnx_read_ptr(receiver + (uintptr_t)TNX_BOX_PTR_OFF, &out)) return 0;
++    if (!out) return 0;
++    if (((uintptr_t)out & 7) != 0) return 0;
++    if (!tnx_addr_readable((uintptr_t)out, 0x100)) return 0;
+ 
+-    out = ((uintptr_t (*)(uintptr_t))(t_base + TNX_BOUNDS_RVA))(receiver);
+-
+-    if (!out || (out & 7)) return 0;
+-    if (!tnx_addr_readable(out, 0x100)) return 0;
+-
+-    return out;
++    return (uintptr_t)out;
+ }
+ 
+ int tnx_clamp(int32_t *x, int32_t *y) {
+     uintptr_t receiver = tnx_controller();
+-    uintptr_t bounds = tnx_bounds_obj(receiver);
++    uintptr_t bounds = tnx_bounds_obj_2(receiver);
+     int32_t maxX = 0;
+     int32_t maxY = 0;
+     int32_t ox = *x;

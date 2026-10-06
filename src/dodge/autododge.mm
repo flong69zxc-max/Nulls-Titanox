@@ -1504,6 +1504,8 @@ static float t_js_dir_y = 0.0f;
 
 int t_aim_shots = 0;
 
+uint64_t t_aim_frames_3 = 0;
+
 int t_aim_hits = 0;
 
 static float t_js3_oy = 0.0f;
@@ -2127,9 +2129,12 @@ int tnx_aim_4(void) {
     int i = 0;
 
     if (!TNX_AIM) return 0;
+
+    t_aim_frames_3++;
+
     if (t_life_3 != 1) return 0;
     if (!t_enemy_n) return 0;
-    if ((t_ticks_3 % TNX_AIM_INTERVAL) != 0) return 0;
+    if ((t_aim_frames_3 % TNX_AIM_INTERVAL) != 0) return 0;
 
     mx = (int32_t)t_js3_ox;
     my = (int32_t)t_js3_oy;
@@ -2320,7 +2325,7 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
         tnx_joy_set_4(0.0f, 0.0f, 0);
     }
 
-    if (t_logs_4 < 24 && (t_ticks_3 % 60) == 0) {
+    if ((t_ticks_3 % 10) == 0) {
         t_logs_4++;
 
         TNX_LOGX("dodge segs=%d threatened=%d picked=%d jsProj=%d jsMate=%d jsFoe=%d jsUnk=%d life=%d jsOwn=(%.0f,%.0f) jsOwnOk=%d pickSrc=%d jsUrgent=%d jsVo=%d target=(%.0f,%.0f) dist=%.0f way=%.0f "
@@ -3343,8 +3348,18 @@ int tnx_body_blocked(float x, float y, float ownX, float ownY) {
 }
 
 float tnx_own_radius(void) {
+    float r = 0.0f;
+
     if (!TNX_GEOM) return 0.0f;
-    if (t_own_r > 1.0f) return t_own_r;
+
+    if (t_own_r > 1.0f) {
+        r = t_own_r;
+
+        if (r > TNX_OWN_RADIUS_MAX) r = TNX_OWN_RADIUS_MAX;
+        if (r < TNX_OWN_RADIUS_MIN) r = TNX_OWN_RADIUS_MIN;
+
+        return r;
+    }
 
     if (t_own_r_cfg_logs < 4) {
         t_own_r_cfg_logs++;
@@ -3363,10 +3378,14 @@ void tnx_contact_note(float dist, float projR) {
     float r = dist - projR;
 
     if (!TNX_GEOM) return;
-    if (!tnx_ok(r, 10.0f, TNX_RADIUS_MAX)) return;
+    if (!(projR >= TNX_PROJ_RADIUS_MIN)) return;
+    if (!tnx_ok(r, TNX_OWN_RADIUS_MIN, TNX_OWN_RADIUS_MAX)) return;
 
     if (t_own_r_n == 0) t_own_r = r;
     else t_own_r = t_own_r * 0.75f + r * 0.25f;
+
+    if (t_own_r > TNX_OWN_RADIUS_MAX) t_own_r = TNX_OWN_RADIUS_MAX;
+    if (t_own_r < TNX_OWN_RADIUS_MIN) t_own_r = TNX_OWN_RADIUS_MIN;
 
     t_own_r_n++;
 

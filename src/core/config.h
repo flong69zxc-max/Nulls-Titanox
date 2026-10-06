@@ -261,7 +261,7 @@
 #define TNX_MAP_DUMPS 3
 #define TNX_LOGS_2 12
 #define TNX_DIRS 48
-#define TNX_REACH 700.0f
+#define TNX_REACH 600.0f
 #define TNX_ENGAGE 1000.0f
 #define TNX_KEEP_BAND 0.0f
 #define TNX_LOCK_MS 130

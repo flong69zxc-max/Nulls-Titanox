@@ -3,9 +3,11 @@
 
 #include "core/imports.h"
 
-#define LOG_MAX_BYTES (4 * 1024 * 1024)
+#define LOG_MAX_BYTES (20 * 1024 * 1024)
 #define TNX_LOG_ROLL 1
 #define TNX_LOG_FILTER 1
+
+#define TNX_LOG_WHITELIST 0
 #define TNX_APPLIED 0
 #define TNX_DRIVE_LOGS_2 24
 #define TNX_MOVE_MIN 3
@@ -210,11 +212,25 @@
 #define TNX_PLAYER_SPEED 7200.0f
 #define TNX_JOY_SCALE 100.0f
 #define TNX_SEG_MAX 32
+#define TNX_JOY_DRIVE 0
+
+#define TNX_JOY_RADIUS 275.0f
+
+#define TNX_JOY_MODE_ON 2
+
+#define TNX_JOY_MODE_OFF 0
+
 #define TNX_BS_AX 0x9b8
 #define TNX_BS_AY 0x9bc
 #define TNX_BS_BX 0x9c0
 #define TNX_BS_BY 0x9c4
 #define TNX_BS_MODE 0x8ac
+#define TNX_JOY_ALT_CUR_X 0x9d0
+#define TNX_JOY_ALT_CUR_Y 0x9d4
+#define TNX_JOY_ALT_CEN_X 0x9d8
+#define TNX_JOY_ALT_CEN_Y 0x9dc
+#define TNX_JOY_ALT_DRAG 0xee8
+#define TNX_JOY_DEEP 0
 #define TNX_BS_COS 0x8f4
 #define TNX_BS_SIN 0x8f8
 #define TNX_WIN 0x1000
@@ -222,9 +238,9 @@
 #define TNX_BASES 5
 #define TNX_MAX_LINES 4
 #define TNX_BUCKET_TICKS 60
-#define TNX_RAW_STICK 0
+#define TNX_RAW_STICK 1
 #define TNX_RAW_SWAP 0
-#define TNX_PRED_SET 1
+#define TNX_PRED_SET 0
 #define TNX_PRED_FLAG 1
 #define TNX_LOGS_3 12
 #define TNX_PLAYER_GID 1000000
@@ -335,6 +351,8 @@
 #define TNX_SLOT_WIDE 100
 #define TNX_DROP_TICKS 60
 #define TNX_IMAGE_SPAN 0x1164000ULL
+#define TNX_HEAP_MIN 0x100000000ULL
+#define TNX_HEAP_MAX 0x800000000000ULL
 #define TNX_HB_TICKS 5
 #define TNX_BUCKET_TICKS_2 10
 #define TNX_D6_WAIT_SECS 15

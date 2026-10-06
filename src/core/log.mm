@@ -4,7 +4,7 @@ FILE *tnx_log_handle(void) {
     if (!t_log) {
         NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
         if (paths.count > 0) {
-            NSString *logPath = [paths[0] stringByAppendingPathComponent:@"Titanox.log"];
+            NSString *logPath = [paths[0] stringByAppendingPathComponent:@"Titanox.txt"];
             t_log = fopen(logPath.UTF8String, "a");
         }
 
@@ -123,7 +123,7 @@ void tnx_log_roll(void) {
 
     if (paths.count == 0) return;
 
-    t_log = fopen([paths[0] stringByAppendingPathComponent:@"Titanox.log"].UTF8String, "w");
+    t_log = fopen([paths[0] stringByAppendingPathComponent:@"Titanox.txt"].UTF8String, "w");
 
     if (!t_log) return;
 

@@ -1527,12 +1527,12 @@ static void tnx_js3_norm(float x, float y, float *ox, float *oy) {
 }
 
 static void tnx_js3_speed_probe(void) {
-    uintptr_t def = 0;
+    void *def = NULL;
     int32_t raw = 0;
 
     if (!t_own_elem) return;
     if (!tnx_read_ptr(t_own_elem + (uintptr_t)TNX_ELEM_DEF_OFF, &def) || !def) return;
-    if (!tnx_read_i32(def + (uintptr_t)OFF_CHARDATA_SPEED, &raw)) return;
+    if (!tnx_read_i32((uintptr_t)def + (uintptr_t)OFF_CHARDATA_SPEED, &raw)) return;
     if (raw < TNX_JS3_SPEED_MIN || raw > TNX_JS3_SPEED_MAX) return;
 
     t_js3_speed = (float)raw;

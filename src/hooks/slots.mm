@@ -445,7 +445,7 @@ void tnx_battle_write(const char *utf8, size_t len) {
 
         if (paths.count == 0) return;
 
-        NSString *path = [paths[0] stringByAppendingPathComponent:@"Titanox.battle.log"];
+        NSString *path = [paths[0] stringByAppendingPathComponent:@"Titanox.battle.txt"];
         t_battle_log = fopen(path.UTF8String, "a");
     }
 

@@ -1,0 +1,86 @@
+diff --git a/.github/workflows/titanox.yml b/.github/workflows/titanox.yml
+index 3acc171..d31a1d0 100644
+--- a/.github/workflows/titanox.yml
++++ b/.github/workflows/titanox.yml
+@@ -13,6 +13,7 @@ on:
+ 
+ permissions:
+   contents: read
++  actions: write
+ 
+ concurrency:
+   group: titanox-${{ github.ref }}
+@@ -79,6 +80,19 @@ jobs:
+           cp "$dylib" out/Titanox.dylib
+           file out/Titanox.dylib
+ 
++      - name: Drop old artifacts
++        continue-on-error: true
++        env:
++          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++          REPO: ${{ github.repository }}
++          NAME: Titanox
++        run: |
++          gh api "repos/${REPO}/actions/artifacts?per_page=100" \
++            --jq ".artifacts[] | select(.name==\"${NAME}\") | .id" \
++            | while read -r id; do
++                gh api -X DELETE "repos/${REPO}/actions/artifacts/${id}"
++              done
++
+       - name: Upload Titanox.dylib
+         uses: actions/upload-artifact@v4
+         with:
+diff --git a/src/core/log.mm b/src/core/log.mm
+index 1e45de0..82972d6 100644
+--- a/src/core/log.mm
++++ b/src/core/log.mm
+@@ -4,7 +4,7 @@ FILE *tnx_log_handle(void) {
+     if (!t_log) {
+         NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+         if (paths.count > 0) {
+-            NSString *logPath = [paths[0] stringByAppendingPathComponent:@"Titanox.log"];
++            NSString *logPath = [paths[0] stringByAppendingPathComponent:@"Titanox.txt"];
+             t_log = fopen(logPath.UTF8String, "a");
+         }
+ 
+@@ -123,7 +123,7 @@ void tnx_log_roll(void) {
+ 
+     if (paths.count == 0) return;
+ 
+-    t_log = fopen([paths[0] stringByAppendingPathComponent:@"Titanox.log"].UTF8String, "w");
++    t_log = fopen([paths[0] stringByAppendingPathComponent:@"Titanox.txt"].UTF8String, "w");
+ 
+     if (!t_log) return;
+ 
+diff --git a/src/dodge/autododge.mm b/src/dodge/autododge.mm
+index a2121b1..d64b992 100644
+--- a/src/dodge/autododge.mm
++++ b/src/dodge/autododge.mm
+@@ -1527,12 +1527,12 @@ static void tnx_js3_norm(float x, float y, float *ox, float *oy) {
+ }
+ 
+ static void tnx_js3_speed_probe(void) {
+-    uintptr_t def = 0;
++    void *def = NULL;
+     int32_t raw = 0;
+ 
+     if (!t_own_elem) return;
+     if (!tnx_read_ptr(t_own_elem + (uintptr_t)TNX_ELEM_DEF_OFF, &def) || !def) return;
+-    if (!tnx_read_i32(def + (uintptr_t)OFF_CHARDATA_SPEED, &raw)) return;
++    if (!tnx_read_i32((uintptr_t)def + (uintptr_t)OFF_CHARDATA_SPEED, &raw)) return;
+     if (raw < TNX_JS3_SPEED_MIN || raw > TNX_JS3_SPEED_MAX) return;
+ 
+     t_js3_speed = (float)raw;
+diff --git a/src/hooks/slots.mm b/src/hooks/slots.mm
+index a8abb32..f6cfa44 100644
+--- a/src/hooks/slots.mm
++++ b/src/hooks/slots.mm
+@@ -445,7 +445,7 @@ void tnx_battle_write(const char *utf8, size_t len) {
+ 
+         if (paths.count == 0) return;
+ 
+-        NSString *path = [paths[0] stringByAppendingPathComponent:@"Titanox.battle.log"];
++        NSString *path = [paths[0] stringByAppendingPathComponent:@"Titanox.battle.txt"];
+         t_battle_log = fopen(path.UTF8String, "a");
+     }
+ 

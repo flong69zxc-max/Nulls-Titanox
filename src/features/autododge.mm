@@ -36,12 +36,36 @@
 #define TNX_HORIZON_S 1.0f
 #endif
 
-#ifndef TNX_MOMENTUM
-#define TNX_MOMENTUM 100.0f
+#ifndef TNX_DATA_MOMENTUM
+#define TNX_DATA_MOMENTUM 300.0f
 #endif
 
 #ifndef TNX_WALL_PENALTY
 #define TNX_WALL_PENALTY 9000.0f
+#endif
+
+#ifndef TNX_DATA_SPEED
+#define TNX_DATA_SPEED 750.0f
+#endif
+
+#ifndef TNX_DATA_OWN_R
+#define TNX_DATA_OWN_R 120.0f
+#endif
+
+#ifndef TNX_DATA_PROJ_R
+#define TNX_DATA_PROJ_R 150.0f
+#endif
+
+#ifndef TNX_DATA_HOLD
+#define TNX_DATA_HOLD 10
+#endif
+
+#ifndef TNX_DATA_BAND
+#define TNX_DATA_BAND 300.0f
+#endif
+
+#ifndef TNX_DATA_CRIT_EVERY
+#define TNX_DATA_CRIT_EVERY 4
 #endif
 
 #ifndef TNX_JS_CLEAR_STEPS
@@ -770,6 +794,12 @@ float g_mom_live = 0.0f;
 
 int g_crit_reaction = 0;
 
+uint64_t g_crit_last = 0;
+
+int g_own_r_cfg_logs = 0;
+
+int g_proj_r_cfg_logs = 0;
+
 float g_tti_min = 0.0f;
 
 uint64_t g_crit_took = 0;
@@ -914,7 +944,7 @@ int tnx_drive(void) {
         g_ty_3 = g_ty;
         g_hold = g_ticks_3;
         held = 1;
-    } else if (!g_crit_reaction && g_hold && (g_ticks_3 - g_hold) <= TNX_HOLD_TICKS) {
+    } else if (!g_crit_reaction && g_hold && (g_ticks_3 - g_hold) <= TNX_DATA_HOLD) {
         held = 1;
     }
 
@@ -1149,7 +1179,7 @@ int tnx_drive(void) {
                  (double)sqrtf((float)(g_sent_dx * g_sent_dx +
                                        g_sent_dy * g_sent_dy)),
                  g_stick_x, g_stick_y, (unsigned long long)g_queue_calls,
-                 (unsigned long long)g_queue_skips, TNX_PAIR_ONLY, TNX_HOLD_TICKS);
+                 (unsigned long long)g_queue_skips, TNX_PAIR_ONLY, TNX_DATA_HOLD);
     }
 
     return 1;
@@ -1414,7 +1444,7 @@ void tnx_drift(void) {
              (int)sqrtf((float)((ownX - g_decide_x) * (ownX - g_decide_x) +
                                 (ownY - g_decide_y) * (ownY - g_decide_y))),
              (int)g_decide_x, (int)g_decide_y, ownX, ownY, g_last_tx_2,
-             g_last_ty_2, (double)TNX_STEP_3, TNX_HOLD_TICKS);
+             g_last_ty_2, (double)TNX_STEP_3, TNX_DATA_HOLD);
 }
 
 void tnx_dump(void) {
@@ -1640,7 +1670,17 @@ float tnx_own_radius(void) {
     if (!TNX_GEOM) return 0.0f;
     if (g_own_r > 1.0f) return g_own_r;
 
-    return 0.0f;
+    if (g_own_r_cfg_logs < 4) {
+        g_own_r_cfg_logs++;
+
+        TNX_LOGX("own radius cfg=%.0f - the contact average has not produced a value yet, so the hit "
+                 "test uses the radius taken from the character table instead of zero: the table gives "
+                 "120 for 101 of 127 heroes and 145 for 20, and a zero here makes every shot pass at a "
+                 "distance no smaller than the shot itself",
+                 (double)TNX_DATA_OWN_R);
+    }
+
+    return TNX_DATA_OWN_R;
 }
 
 void tnx_contact_note(float dist, float projR) {
@@ -1750,7 +1790,16 @@ float tnx_proj_radius(const tnx_proj_t *p, float speed) {
                  TNX_CAL_STEP, (int)TNX_CAL_TICKS);
     }
 
-    return 0.0f;
+    if (g_proj_r_cfg_logs < 4) {
+        g_proj_r_cfg_logs++;
+
+        TNX_LOGX("proj radius cfg=%.0f - the offset search did not find the radius in the shot object, "
+                 "so the advertised fallback is used instead of zero: the projectile table gives 150 as "
+                 "the median radius over 505 projectiles, 100 for 73 of them and 50 for 65",
+                 (double)TNX_DATA_PROJ_R);
+    }
+
+    return TNX_DATA_PROJ_R;
 }
 
 int tnx_snap(float dx, float dy) {
@@ -1924,7 +1973,7 @@ void tnx_build(void) {
             float cx = rx + rvx * tStar;
             float cy = ry + rvy * tStar;
             float miss = sqrtf(cx * cx + cy * cy);
-            float reach = TNX_PLAYER_RADIUS + TNX_PROJ_RADIUS + TNX_INFLATE;
+            float reach = TNX_DATA_OWN_R + TNX_DATA_PROJ_R + TNX_INFLATE;
             float dist2own = sqrtf(rx * rx + ry * ry);
             float flightTicks = rem / (speed / 60.0f);
             float ix = (float)p->x + nx * speed / 60.0f * tStar;
@@ -2468,7 +2517,7 @@ void tnx_unblock(float px, float py, float len, float *dirX, float *dirY) {
     bestY = baseY;
 
     if (g_last_ok) {
-        bestScore += TNX_MOMENTUM * (base * g_last_x_3 + baseY * g_last_y_3);
+        bestScore += TNX_DATA_MOMENTUM * (base * g_last_x_3 + baseY * g_last_y_3);
         baseScore = bestScore;
     }
 
@@ -2480,7 +2529,7 @@ void tnx_unblock(float px, float py, float len, float *dirX, float *dirY) {
         float ry = base * sn + baseY * c;
         float score = tnx_score(px, py, rx, ry, len);
 
-        if (g_last_ok) score += TNX_MOMENTUM * (rx * g_last_x_3 + ry * g_last_y_3);
+        if (g_last_ok) score += TNX_DATA_MOMENTUM * (rx * g_last_x_3 + ry * g_last_y_3);
 
         if (score > bestScore) {
             bestScore = score;
@@ -2491,8 +2540,8 @@ void tnx_unblock(float px, float py, float len, float *dirX, float *dirY) {
 
     if (g_last_ok && bestX != base &&
         (bestScore - (tnx_score(px, py, base, baseY, len) +
-                      TNX_MOMENTUM * (base * g_last_x_3 + baseY * g_last_y_3))) <
-            TNX_KEEP_BAND_2) {
+                      TNX_DATA_MOMENTUM * (base * g_last_x_3 + baseY * g_last_y_3))) <
+            TNX_DATA_BAND) {
         bestX = base;
         bestY = baseY;
         g_keeps++;
@@ -2546,9 +2595,9 @@ int tnx_valid_point(float x, float y) {
 }
 
 int tnx_walk_into_bullet(float px, float py, float dirX, float dirY, float travel) {
-    float pvx = dirX * TNX_PLAYER_SPEED;
-    float pvy = dirY * TNX_PLAYER_SPEED;
-    float horizon = travel / TNX_PLAYER_SPEED;
+    float pvx = dirX * TNX_DATA_SPEED;
+    float pvy = dirY * TNX_DATA_SPEED;
+    float horizon = travel / TNX_DATA_SPEED;
     int i;
 
     for (i = 0; i < g_seg_count; i++) {
@@ -2771,9 +2820,12 @@ void tnx_crit_probe(float px, float py) {
 
     g_tti_min = best;
 
-    if (TNX_REACT_CRIT && best < TNX_CRITICAL_MS) g_crit_reaction = 1;
+    if (TNX_REACT_CRIT && best < TNX_CRITICAL_MS && (g_ticks_3 - g_crit_last) >= TNX_DATA_CRIT_EVERY) {
+        g_crit_reaction = 1;
+        g_crit_last = g_ticks_3;
+    }
 
-    g_mom_live = g_crit_reaction ? 0.0f : TNX_MOMENTUM;
+    g_mom_live = g_crit_reaction ? 0.0f : TNX_DATA_MOMENTUM;
 
     if (g_crit_reaction && g_tti_logs < TNX_SEG_TTI_LOGS) {
         g_tti_logs++;
@@ -2790,7 +2842,7 @@ int tnx_freest(float px, float py, float *tx, float *ty) {
     int i = 0;
     int n = TNX_JS_DODGE ? TNX_DIR_COUNT : TNX_FREEST_ANGLES;
     float radius = TNX_JS_DODGE ? TNX_REACH : TNX_STEP_2;
-    float speed = TNX_PLAYER_SPEED;
+    float speed = TNX_DATA_SPEED;
     float nowClear = tnx_js_clear(px, py, 0.0f, 0.0f);
     float bestScore = -1.0e18f;
     float bestEta = 0.0f;
@@ -3121,7 +3173,7 @@ static void tnx_stat_tick(float px, float py) {
 
             if (g_howto_logs < TNX_HOWTO_LOGS) {
                 float need = 0.0f - g_track_min[i];
-                float ownSpd = TNX_PLAYER_SPEED / 60.0f;
+                float ownSpd = TNX_DATA_SPEED / 60.0f;
                 float frames = (ownSpd > 0.5f) ? (need / ownSpd) : 0.0f;
                 float ux = g_track_ux[i];
                 float uy = g_track_uy[i];
@@ -3431,7 +3483,10 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
         g_new_tick = (int)g_ticks_3;
         g_prev_seg = g_seg_count;
 
-        if (TNX_REACT_CRIT) g_crit_reaction = 1;
+        if (TNX_REACT_CRIT && (g_ticks_3 - g_crit_last) >= TNX_DATA_CRIT_EVERY) {
+            g_crit_reaction = 1;
+            g_crit_last = g_ticks_3;
+        }
     }
 
     tnx_crit_probe(px, py);
@@ -3577,16 +3632,18 @@ void tnx_autododge_v48(void) {
     if (!tagOnce) {
         tagOnce = 1;
 
-        TNX_LOGX("build v36 snap=%d delta=%d hardOff=%d rawStick=%d joyMag=%.0f snapMag=%.0f reach=%.0f "
-                 "dodgeStep=%.0f - the build tag and the state of every move writer: hardOff=%d means "
-                 "the pair call is not made at all, so no vector of a few hundred units can leave this "
-                 "binary, while delta=%d means the call would go to the logic client with a destination "
-                 "instead of the element with a vector; the move itself comes from predSet on the client "
-                 "and from the input message on the same frame; when this line is absent the binary is "
-                 "older than the drop that added it",
-                 (int)TNX_SNAP, (int)TNX_SNAP_DELTA, (int)TNX_SNAP_HARD_OFF, (int)TNX_RAW_STICK,
-                 (double)TNX_JOY_MAG, (double)TNX_SNAP_MAG, (double)TNX_REACH, (double)DODGE_STEP,
-                 (int)TNX_SNAP_HARD_OFF, (int)TNX_SNAP_DELTA);
+        TNX_LOGX("build v37 hardOff=%d speed=%.0f ownR=%.0f projR=%.0f momentum=%.0f hold=%d band=%.0f "
+                 "critEvery=%d dirs=%d reach=%.0f step=%.0f - every setting printed here is taken from "
+                 "the game tables rather than from a hardcoded guess: speed 750 is what 61 of the 127 "
+                 "heroes move at, ownR 120 is the collision radius of 101 of 127, projR 150 is the "
+                 "median over 505 projectiles, while momentum, hold and critEvery exist because the "
+                 "critical path used to drop the momentum and bypass the hold on nearly every frame, "
+                 "which let the ring pick a fresh heading forty-eight ways each frame and that is what "
+                 "made the body twitch in place",
+                 (int)TNX_SNAP_HARD_OFF, (double)TNX_DATA_SPEED, (double)TNX_DATA_OWN_R,
+                 (double)TNX_DATA_PROJ_R, (double)TNX_DATA_MOMENTUM, (int)TNX_DATA_HOLD,
+                 (double)TNX_DATA_BAND, (int)TNX_DATA_CRIT_EVERY, (int)TNX_DIR_COUNT,
+                 (double)TNX_REACH, (double)DODGE_STEP);
     }
 
     tnx_input_release();
@@ -4179,7 +4236,7 @@ void tnx_autododge_v48(void) {
                      "frame: tti=%.0fms crit=%d criticalPicks=%llu",
                      ownX, ownY, g_tx, g_ty, g_side_projs, g_live_threats,
                      g_prev_idx, (double)TNX_REACH, (double)TNX_ENGAGE, TNX_DIRS,
-                     TNX_LOCK_MS, (double)TNX_KEEP_BAND, (int)TNX_CRITICAL_MS,
+                     TNX_LOCK_MS, (double)TNX_DATA_BAND, (int)TNX_CRITICAL_MS,
                      (double)g_tti_min, g_crit_reaction, (unsigned long long)g_crit_took);
         }
     }

@@ -17,7 +17,7 @@
 #define TNX_ENEMY_MARGIN 60.0f
 #define TNX_TRUST_LOGS 8
 #define TNX_ROSTER_LOGS 10
-#define TNX_PREDICT 1
+#define TNX_PREDICT 0
 #define TNX_BODY_CLEAR 180.0f
 #define TNX_TOUCH_FLAG 1
 #define TNX_FLAG_LOGS 8

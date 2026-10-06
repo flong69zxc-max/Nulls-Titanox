@@ -226,23 +226,13 @@ int t_predict_logs = 0;
 
 int tnx_predict(int32_t x, int32_t y) {
     uintptr_t battleFn = tnx_entry_2(TNX_GETBATTLE_RVA);
-    uintptr_t battle = 0;
-    uintptr_t inner = 0;
-    uintptr_t cand[TNX_PRED_CAND];
-    uintptr_t obj = 0;
-    int i = 0;
-    int ok = 0;
-    int32_t px = 0;
-    int32_t py = 0;
+    void *battle = NULL;
 
     if (!TNX_PREDICT) return 0;
     if (!t_addr_setprediction) return 0;
     if (!battleFn) return 0;
 
-    cand[0] = 0;
-    cand[1] = 0;
-
-    battle = ((uintptr_t (*)(void))battleFn)();
+    battle = ((void *(*)(void))battleFn)();
 
     if (!battle) {
         t_pred_fails++;
@@ -250,66 +240,51 @@ int tnx_predict(int32_t x, int32_t y) {
         return 0;
     }
 
-    cand[0] = tnx_controller();
+    ((void (*)(void *, int, int, int))t_addr_setprediction)(battle, x, y, TNX_PREDICT_FLAG);
 
-    if (tnx_read_ptr(battle + TNX_MODE_INNER_OFF, (void **)&inner) && inner) {
-        cand[1] = inner;
-    }
+    {
+        int32_t px = 0;
+        int32_t py = 0;
 
-    for (i = 0; i < TNX_PRED_CAND; i++) {
-        obj = cand[i];
+        tnx_read_i32((uintptr_t)battle + TNX_MODE_PREDICTX_OFF, &px);
+        tnx_read_i32((uintptr_t)battle + TNX_MODE_PREDICTY_OFF, &py);
 
-        if (!obj) continue;
-        if (!tnx_read_i32(obj + TNX_MODE_PREDICTX_OFF, &px)) continue;
-        if (!tnx_read_i32(obj + TNX_MODE_PREDICTY_OFF, &py)) continue;
+        if (TNX_GATE_WRITE) {
+            uint8_t one = 1;
+            uint8_t back = 0;
 
-        ((void (*)(uintptr_t, int, int, int))t_addr_setprediction)(obj, x, y, TNX_PREDICT_FLAG);
+            tnx_write_bytes((uintptr_t)battle + TNX_GATE_OFF, &one, sizeof(one));
+            t_gate_writes_2++;
 
-        t_pred_calls++;
-
-        if (!tnx_read_i32(obj + TNX_MODE_PREDICTX_OFF, &px)) continue;
-        if (!tnx_read_i32(obj + TNX_MODE_PREDICTY_OFF, &py)) continue;
-
-        if (px == x && py == y) {
-            t_pred_took++;
-            t_pred_last = obj;
-            ok = 1;
-        } else {
-            t_pred_miss++;
+            if (tnx_read_bytes((uintptr_t)battle + TNX_GATE_OFF, &back, sizeof(back)) &&
+                back == 1) {
+                t_gate_held++;
+            }
         }
+
+        if (px == x && py == y) t_pred_took++;
+        else t_pred_miss++;
 
         if (t_pred_logs < TNX_PRED_LOGS) {
             t_pred_logs++;
 
-            TNX_LOGX("predict i=%d obj=%p sent=(%d,%d) read=(%d,%d) took=%llu miss=%llu",
-                     i, (void *)obj, x, y, px, py, (unsigned long long)t_pred_took,
-                     (unsigned long long)t_pred_miss);
-        }
-
-        if (ok) break;
-    }
-
-    if (TNX_GATE_WRITE) {
-        uint8_t one = 1;
-        uint8_t back = 0;
-
-        tnx_write_bytes(battle + TNX_GATE_OFF, &one, sizeof(one));
-        t_gate_writes_2++;
-
-        if (tnx_read_bytes(battle + TNX_GATE_OFF, &back, sizeof(back)) && back == 1) {
-            t_gate_held++;
+            TNX_LOGX("predict battle=%p sent=(%d,%d) read=(%d,%d) took=%llu miss=%llu", battle, x, y, px, py,
+                     (unsigned long long)t_pred_took, (unsigned long long)t_pred_miss);
         }
     }
+
+    t_pred_last = (uintptr_t)battle;
+    t_pred_calls++;
 
     if (t_predict_logs < TNX_PREDICT_LOGS) {
         t_predict_logs++;
 
-        TNX_LOGX("predict call=%llu battle=%p c0=%p c1=%p target=(%d,%d) ok=%d fn=%p",
-                 (unsigned long long)t_pred_calls, (void *)battle, (void *)cand[0], (void *)cand[1],
-                 x, y, ok, (void *)t_addr_setprediction);
+        TNX_LOGX("predict call=%llu battle=%p target=(%d,%d) fn=%p",
+                 (unsigned long long)t_pred_calls, battle, x, y, (void *)t_addr_setprediction,
+                 (unsigned long long)TNX_MGR_OFF);
     }
 
-    return ok;
+    return 1;
 }
 
 int tnx_pending(int want, uint64_t *mask) {

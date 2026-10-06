@@ -272,13 +272,14 @@ int tnx_drive(void) {
         t_queue_calls++;
     } else if (!TNX_PAIR_ONLY) {
         if (TNX_STICK_ONLY) t_pos_skips++;
+        else if (tnx_js_owns_3()) t_queue_skips_2++;
         else tnx_enqueue(tx, ty);
         t_queue_calls++;
     } else {
         t_queue_skips++;
     }
 
-    if (!TNX_STICK_ONLY && !TNX_JS_NOPREDICT) {
+    if (!TNX_STICK_ONLY && !TNX_JS_NOPREDICT && !tnx_js_owns_3()) {
         tnx_predict(tx, ty);
     }
 

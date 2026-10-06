@@ -75,6 +75,12 @@ extern uint64_t t_last_danger;
 extern int32_t t_tx;
 extern int32_t t_ty;
 extern int t_active_2;
+
+extern int t_js_live;
+
+extern uint64_t t_js_tick;
+
+int tnx_js_owns_3(void);
 extern tnx_seg_t t_seg[TNX_SEG_MAX];
 extern int t_seg_count;
 extern int t_build_tick;
@@ -163,7 +169,6 @@ float tnx_clearance_2(float x, float y);
 float tnx_eta_ms(float x, float y);
 int tnx_imminent(float x, float y);
 int tnx_flee(float px, float py, float *tx, float *ty);
-void tnx_predict_2(int32_t ownX, int32_t ownY, float tx, float ty);
 void tnx_precision(int32_t ownX, int32_t ownY, float dirX, float dirY, int escape);
 int tnx_body_blocked_2(float px, float py, float dirX, float dirY, float len);
 float tnx_body_score(float px, float py, float dirX, float dirY, float len);

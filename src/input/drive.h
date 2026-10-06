@@ -16,10 +16,8 @@ int tnx_drive(void);
 int tnx_joy_angle(float *outAngle);
 int tnx_joy_read(uintptr_t bs, float *ax, float *ay, float *bx, float *by, uint32_t *mode, float *cs, float *sn);
 void tnx_precision(int32_t ownX, int32_t ownY, float dirX, float dirY, int escape);
-void tnx_predict_2(int32_t ownX, int32_t ownY, float tx, float ty);
 void tnx_route(int engaged);
 void tnx_select(float px, float py);
-int tnx_snap(float dx, float dy);
 float tnx_speed(void);
 void tnx_stick(int engaged, float dirX, float dirY);
 

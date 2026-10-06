@@ -438,30 +438,6 @@ void tnx_slot_pump(void) {
     }
 
 }
-
-void tnx_battle_write(const char *utf8, size_t len) {
-    if (!t_battle_log) {
-        NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
-
-        if (paths.count == 0) return;
-
-        NSString *path = [paths[0] stringByAppendingPathComponent:@"Titanox.battle.txt"];
-        t_battle_log = fopen(path.UTF8String, "a");
-    }
-
-    if (!t_battle_log) return;
-
-    if (!t_battle_header) {
-        t_battle_header = YES;
-
-        const char *header = "---- battle capture started ----\n";
-        fwrite(header, 1, strlen(header), t_battle_log);
-    }
-
-    fwrite(utf8, 1, len, t_battle_log);
-    fflush(t_battle_log);
-}
-
 tnx_slot_fn_t t_slot_orig[TNX_SLOT_COUNT] = { NULL };
 
 int t_slot_installed[TNX_SLOT_COUNT] = { -1, -1, -1, -1, -1, -1, -1,

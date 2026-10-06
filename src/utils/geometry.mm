@@ -454,24 +454,22 @@ int32_t t_max_x = 0;
 
 int32_t t_max_y = 0;
 
-uintptr_t tnx_bounds_obj(uintptr_t receiver) {
-    uintptr_t out = 0;
+uintptr_t tnx_bounds_obj_2(uintptr_t receiver) {
+    void *out = NULL;
 
     if (!receiver) return 0;
     if (!tnx_pointer_plausible(receiver)) return 0;
-    if (!tnx_callable(TNX_BOUNDS_RVA)) return 0;
+    if (!tnx_read_ptr(receiver + (uintptr_t)TNX_BOX_PTR_OFF, &out)) return 0;
+    if (!out) return 0;
+    if (((uintptr_t)out & 7) != 0) return 0;
+    if (!tnx_addr_readable((uintptr_t)out, 0x100)) return 0;
 
-    out = ((uintptr_t (*)(uintptr_t))(t_base + TNX_BOUNDS_RVA))(receiver);
-
-    if (!out || (out & 7)) return 0;
-    if (!tnx_addr_readable(out, 0x100)) return 0;
-
-    return out;
+    return (uintptr_t)out;
 }
 
 int tnx_clamp(int32_t *x, int32_t *y) {
     uintptr_t receiver = tnx_controller();
-    uintptr_t bounds = tnx_bounds_obj(receiver);
+    uintptr_t bounds = tnx_bounds_obj_2(receiver);
     int32_t maxX = 0;
     int32_t maxY = 0;
     int32_t ox = *x;

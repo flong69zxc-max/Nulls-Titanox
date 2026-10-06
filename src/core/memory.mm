@@ -235,12 +235,6 @@ uintptr_t tnx_strip_imp(IMP imp) {
     return (uintptr_t)imp;
 }
 
-FILE *t_battle_log = NULL;
-
-BOOL t_battle_capture = NO;
-
-BOOL t_battle_header = NO;
-
 uintptr_t t_addr[TNX_JOURNAL];
 
 uint32_t t_value[TNX_JOURNAL];

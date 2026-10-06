@@ -1835,7 +1835,7 @@ static int t_ctrl_logs = 0;
 
 int t_ctrl_pick = 0;
 
-static int tnx_bounds_try(uintptr_t receiver, int32_t *wOut, int32_t *hOut) {
+static int tnx_bounds_try_2(uintptr_t receiver, int32_t *wOut, int32_t *hOut) {
     uintptr_t bounds = 0;
     int32_t w = 0;
     int32_t h = 0;
@@ -1843,7 +1843,13 @@ static int tnx_bounds_try(uintptr_t receiver, int32_t *wOut, int32_t *hOut) {
     if (!receiver) return 0;
     if (!tnx_pointer_plausible(receiver)) return 0;
 
-    bounds = ((uintptr_t (*)(uintptr_t))(t_base + TNX_BOUNDS_RVA))(receiver);
+    {
+        void *box = NULL;
+
+        if (!tnx_read_ptr(receiver + (uintptr_t)TNX_BOX_PTR_OFF, &box)) return 0;
+
+        bounds = (uintptr_t)box;
+    }
 
     if (!bounds || (bounds & 7)) return 0;
     if (!tnx_addr_readable(bounds, 0x100)) return 0;
@@ -1857,12 +1863,11 @@ static int tnx_bounds_try(uintptr_t receiver, int32_t *wOut, int32_t *hOut) {
     return 1;
 }
 
-int tnx_ctrl_bounds(uintptr_t base, int32_t *wOut, int32_t *hOut) {
+int tnx_ctrl_bounds_2(uintptr_t base, int32_t *wOut, int32_t *hOut) {
     if (!base) return 0;
     if (!tnx_pointer_plausible(base)) return 0;
-    if (!tnx_callable(TNX_BOUNDS_RVA)) return 0;
 
-    return tnx_bounds_try(base, wOut, hOut);
+    return tnx_bounds_try_2(base, wOut, hOut);
 }
 
 uintptr_t tnx_controller(void) {
@@ -1870,7 +1875,7 @@ uintptr_t tnx_controller(void) {
     int32_t cw = 0;
     int32_t ch = 0;
 
-    if (client && tnx_ctrl_bounds(client, &cw, &ch)) {
+    if (client && tnx_ctrl_bounds_2(client, &cw, &ch)) {
         t_ctrl_pick = 1;
 
         return client;

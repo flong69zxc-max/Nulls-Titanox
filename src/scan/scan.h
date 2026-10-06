@@ -253,7 +253,7 @@ extern const uintptr_t t_mode_vtables[36];
 extern int t_proj_skipped;
 extern int t_tnx_verbose;
 extern tnx_trail_t t_trail[TNX_TRAIL_MAX];
-int tnx_ctrl_bounds(uintptr_t base, int32_t *wOut, int32_t *hOut);
+int tnx_ctrl_bounds_2(uintptr_t base, int32_t *wOut, int32_t *hOut);
 void tnx_paircal(void);
 void tnx_probe_3(uintptr_t manager, uintptr_t mode, int verbose);
 

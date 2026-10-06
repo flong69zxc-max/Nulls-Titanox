@@ -220,13 +220,14 @@ int tnx_drive(void) {
         t_queue_calls++;
     } else if (!TNX_PAIR_ONLY) {
         if (TNX_STICK_ONLY) t_pos_skips++;
+        else if (tnx_js_owns_3()) t_queue_skips_2++;
         else tnx_enqueue(tx, ty);
         t_queue_calls++;
     } else {
         t_queue_skips++;
     }
 
-    if (!TNX_STICK_ONLY && !TNX_JS_NOPREDICT) {
+    if (!TNX_STICK_ONLY && !TNX_JS_NOPREDICT && !tnx_js_owns_3()) {
         tnx_predict(tx, ty);
     }
 
@@ -340,160 +341,6 @@ int tnx_drive(void) {
 
     return 1;
 }
-
-int tnx_snap(float dx, float dy) {
-    static int off_logs = 0;
-
-#if TNX_SNAP_HARD_OFF
-    if (off_logs < 4) {
-        off_logs++;
-
-        TNX_LOGX("snap off v36 dir=(%.0f,%.0f) - the call is not made at all in this build and no pair "
-                 "leaves it: the crash address was exactly the pair this function handed the engine, "
-                 "with pc and lr both inside the game, so the engine stored our vector in a slot of the "
-                 "container element and its own code later read that slot back as a pointer; the move "
-                 "is carried by the prediction call on the logic client and by the input message, which "
-                 "run on the same frame, and the flag sits at the top of the function so a define from "
-                 "outside cannot turn it back on",
-                 (double)dx, (double)dy);
-    }
-
-    (void)dx;
-    (void)dy;
-
-    return 0;
-#else
-    uintptr_t fn = tnx_entry_2(TNX_SETPRED4_RVA);
-    uintptr_t own = tnx_own_obj();
-    uintptr_t dst = tnx_controller();
-    float len = sqrtf(dx * dx + dy * dy);
-    int32_t ownX = 0;
-    int32_t ownY = 0;
-    int32_t vx = 0;
-    int32_t vy = 0;
-
-    t_snap_live = 0;
-
-    if (!TNX_SNAP) {
-        if (t_snap_off_logs < 4) {
-            t_snap_off_logs++;
-
-            TNX_LOGX("snap off elem=%p client=%p mag=%.0f - this was the only call that handed the "
-                     "engine move function the container element as the receiver together with a "
-                     "direction of magnitude %.0f, and the crash addresses carried exactly that value "
-                     "in one half of a pointer, so the move is left to tnx_pred_set alone, which is "
-                     "the same engine call made on the logic client with a destination, so one frame "
-                     "carries two actions instead of three",
-                     (void *)own, (void *)tnx_controller(), (double)TNX_SNAP_MAG,
-                     (double)TNX_SNAP_MAG);
-        }
-
-        return 0;
-    }
-
-    if (!fn || !dst || !own) return 0;
-    if (!tnx_ok(len, 0.001f, 1.0e9f)) return 0;
-    if (!tnx_own(&ownX, &ownY)) return 0;
-
-#if TNX_SNAP_DELTA
-    vx = (int32_t)((double)dx / (double)len * (double)TNX_SNAP_MAG);
-    vy = (int32_t)((double)dy / (double)len * (double)TNX_SNAP_MAG);
-#else
-    vx = ownX + (int32_t)((double)dx / (double)len * (double)tnx_step());
-    vy = ownY + (int32_t)((double)dy / (double)len * (double)tnx_step());
-#endif
-
-    if (!tnx_valid_point((float)vx, (float)vy)) return 0;
-
-    ((void (*)(uintptr_t, int, int, int))fn)(dst, vx, vy, TNX_SETFLAG);
-
-    t_snap_calls++;
-    t_snap_live = 1;
-
-    if (t_snap_logs < TNX_SNAP_LOGS || (t_ticks_3 % 180) == 0) {
-        t_snap_logs++;
-
-        TNX_LOGX("snap dst=%p sent=(%d,%d) own=(%d,%d) dir=(%.0f,%.0f) len=%.0f step=%.0f delta=%d "
-                 "elem=%p mag=%.0f - the receiver is the logic client the prediction call uses and the "
-                 "argument is a destination in the same units as the pick, while the previous form "
-                 "handed the same function the container element and a %.0f unit delta: the crash "
-                 "address was exactly that pair with pc and lr both inside the game, so the engine "
-                 "wrote our vector into a slot of the element and its own code read that slot back as "
-                 "a pointer, which is what the receiver change removes; delta=1 restores the old form",
-                 (void *)dst, vx, vy, ownX, ownY, (double)dx, (double)dy, (double)len,
-                 (double)tnx_step(), (int)TNX_SNAP_DELTA, (void *)own, (double)TNX_SNAP_MAG,
-                 (double)TNX_SNAP_MAG);
-    }
-
-    return 1;
-#endif
-}
-
-void tnx_predict_2(int32_t ownX, int32_t ownY, float tx, float ty) {
-    int i = 0;
-    int best = -1;
-    float px = (float)ownX;
-    float py = (float)ownY;
-    float bestMs = 1.0e9f;
-    float qx = 0.0f;
-    float qy = 0.0f;
-    float d = 0.0f;
-    int react = -1;
-
-    if (t_logs_8 >= TNX_LOGS_4) return;
-    if (TNX_EVERY_2 > 0 && (t_ticks_3 % (uint64_t)TNX_EVERY_2) != 0) return;
-
-    for (i = 0; i < t_seg_count; i++) {
-        const tnx_seg_t *s = &t_seg[i];
-        float abx = s->bx - s->ax;
-        float aby = s->by - s->ay;
-        float den = abx * abx + aby * aby;
-        float t = 0.0f;
-        float ms = 0.0f;
-
-        if (den > 0.0001f) t = ((px - s->ax) * abx + (py - s->ay) * aby) / den;
-
-        if (t < 0.0f) t = 0.0f;
-        if (t > 1.0f) t = 1.0f;
-
-        ms = sqrtf((s->ax + abx * t - px) * (s->ax + abx * t - px) +
-                   (s->ay + aby * t - py) * (s->ay + aby * t - py)) - s->inflatedR;
-
-        if (ms < 0.0f) ms = 0.0f;
-        if (s->speed > 1.0f) ms = ms / s->speed * 1000.0f;
-
-        if (ms < bestMs) {
-            bestMs = ms;
-            best = i;
-            qx = s->ax + abx * t;
-            qy = s->ay + aby * t;
-        }
-    }
-
-    if (t_new_tick >= 0) react = (int)((int64_t)t_ticks_3 - (int64_t)t_new_tick);
-
-    t_logs_8++;
-
-    if (best < 0) {
-        TNX_LOGX("predict tick=%llu own=(%d,%d) tgt=(%.0f,%.0f) threats=0 react=%d flees=%llu - "
-                 "no segment is live, so there is nothing to lead and the pick is a plain step",
-                 (unsigned long long)t_ticks_3, ownX, ownY, (double)tx, (double)ty, react,
-                 (unsigned long long)t_flees);
-
-        return;
-    }
-
-    d = sqrtf((qx - px) * (qx - px) + (qy - py) * (qy - py));
-
-    TNX_LOGX("predict tick=%llu own=(%d,%d) tgt=(%.0f,%.0f) threats=%d react=%d gid=%d "
-             "impact=(%.0f,%.0f) lead=(%.0f,%.0f) d=%.0f eta=%.0fms spd=%.0f ms=%.0f - impact is the "
-             "closest point of the nearest flight to own, lead is the offset own has to clear, and a "
-             "react above one tick means the pick was made a frame or more after the threat appeared",
-             (unsigned long long)t_ticks_3, ownX, ownY, (double)tx, (double)ty, t_seg_count,
-             react, t_seg[best].gid, (double)qx, (double)qy, (double)(qx - px), (double)(qy - py),
-             (double)d, (double)bestMs, (double)t_seg[best].speed, (double)(d / (t_seg[best].speed > 1.0f ? t_seg[best].speed : 1.0f) * 1000.0f));
-}
-
 void tnx_precision(int32_t ownX, int32_t ownY, float dirX, float dirY, int escape) {
     uintptr_t ctrl = 0;
     int32_t ax = 0;

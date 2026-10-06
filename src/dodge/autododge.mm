@@ -138,6 +138,17 @@ int32_t t_ty = 0;
 
 int t_active_2 = 0;
 
+int t_js_live = 0;
+
+uint64_t t_js_tick = 0;
+
+int tnx_js_owns_3(void) {
+    if (!t_js_live) return 0;
+    if (t_ticks_3 > t_js_tick && (t_ticks_3 - t_js_tick) > 2) return 0;
+
+    return 1;
+}
+
 int t_build_tick = -1;
 
 uint64_t t_escapes = 0;
@@ -1967,6 +1978,9 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
     int safeOk = 0;
     float desiredDeg = 0.0f;
 
+    t_js_live = 0;
+    t_js_tick = t_ticks_3;
+
     tnx_arm(px, py);
     tnx_stats();
 
@@ -2039,6 +2053,7 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
     }
 
     threatened = t_js_picked;
+    t_js_live = t_js_picked;
 
     if (t_js_picked) {
         t_tx_2 = tx;
@@ -2106,9 +2121,6 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
                  stick, (double)desiredDeg, TNX_JOY_WRITE, t_snap_live, t_moving);
     }
 
-    if (t_moving) tnx_snap(t_tx_2 - px, t_ty_2 - py);
-
-    tnx_predict_2(ownX, ownY, t_tx_2, t_ty_2);
 
     tnx_stat_report();
 

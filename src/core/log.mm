@@ -1,14 +1,32 @@
 #include "titanox.h"
 
+void tnx_log_purge_legacy_3(void) {
+    NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+    NSFileManager *fm = nil;
+    NSArray *names = nil;
+    NSUInteger i = 0;
+
+    if (paths.count == 0) return;
+
+    fm = [NSFileManager defaultManager];
+    names = @[ @"Titanox.log", @"Titanox.txt", @"Titanox.battle.log", @"Titanox.battle.txt" ];
+
+    for (i = 0; i < names.count; i++) {
+        NSString *p = [paths[0] stringByAppendingPathComponent:names[i]];
+
+        if ([fm fileExistsAtPath:p]) [fm removeItemAtPath:p error:NULL];
+    }
+}
+
 FILE *tnx_log_handle(void) {
     if (!t_log) {
         NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
         if (paths.count > 0) {
-            NSString *logPath = [paths[0] stringByAppendingPathComponent:@"Titanox.txt"];
+            NSString *logPath = [paths[0] stringByAppendingPathComponent:@"Titanox_logs.txt"];
             t_log = fopen(logPath.UTF8String, "a");
         }
 
-        if (t_log) t_battle_capture = YES;
+        if (t_log) tnx_log_purge_legacy_3();
     }
 
     return t_log;
@@ -123,7 +141,7 @@ void tnx_log_roll(void) {
 
     if (paths.count == 0) return;
 
-    t_log = fopen([paths[0] stringByAppendingPathComponent:@"Titanox.txt"].UTF8String, "w");
+    t_log = fopen([paths[0] stringByAppendingPathComponent:@"Titanox_logs.txt"].UTF8String, "w");
 
     if (!t_log) return;
 
@@ -165,10 +183,6 @@ void tnx_write_line(const char *text) {
     fflush(handle);
 
     t_log_written += (long)len;
-
-    if (t_battle_capture && t_log_written < LOG_MAX_BYTES) {
-        tnx_battle_write(utf8, len);
-    }
 }
 
 void tlog(NSString *msg) {

@@ -22,7 +22,7 @@ int tnx_small(long value);
 float tnx_as_float(uint32_t bits);
 void tnx_discriminate(uintptr_t manager);
 void tnx_probe_3(uintptr_t manager, uintptr_t mode, int verbose);
-uintptr_t tnx_bounds_obj(uintptr_t receiver);
+uintptr_t tnx_bounds_obj_2(uintptr_t receiver);
 int tnx_clamp(int32_t *x, int32_t *y);
 uint64_t tnx_us(void);
 void tnx_paircal(void);

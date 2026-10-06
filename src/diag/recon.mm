@@ -179,6 +179,31 @@ void tnx_recon_live_3(void) {
         }
     }
 
+    if (t_own_elem) {
+        int32_t rawTeam = 0;
+
+        tnx_read_i32(t_own_elem + (uintptr_t)TNX_OBJ_TEAM_OFF, &rawTeam);
+
+        tnx_logf("recon ownteam elem=%#llx raw=%d t3=%d t4=%d ownX=%d ownY=%d ownObj=%#llx",
+                 (unsigned long long)t_own_elem, rawTeam, t_own_team_3, t_own_team_4,
+                 t_own_x, t_own_y, (unsigned long long)t_own_obj);
+    }
+
+    for (i = 0; i < TNX_PROJ_MAX && i < 6; i++) {
+        int32_t f40 = 0;
+        int32_t f8 = 0;
+
+        if (!t_projs[i].elem) continue;
+
+        tnx_read_i32(t_projs[i].elem + (uintptr_t)TNX_OBJ_TEAM_OFF, &f40);
+        tnx_read_i32(t_projs[i].elem + 8, &f8);
+
+        tnx_logf("recon projteam i=%d elem=%#llx t40=%d gid8=%d pteam=%d", i,
+                 (unsigned long long)t_projs[i].elem, f40, f8, t_projs[i].team);
+
+        tnx_recon_words_3("projHead", t_projs[i].elem, 0x0, 0x60);
+    }
+
     memset(objects, 0, sizeof(objects));
 
     usable = tnx_collect(t_manager, objects, TNX_OBJECT_MAX, &rejected);

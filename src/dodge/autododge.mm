@@ -1511,6 +1511,26 @@ static uint64_t t_js_picks = 0;
 static int t_js3_mates = 0;
 static int t_js3_foes = 0;
 static int t_js3_unk = 0;
+static float t_js3_ox = 0.0f;
+static float t_js3_oy = 0.0f;
+static int t_js3_ohit = 0;
+
+static int tnx_js3_own_pos_3(float *ox, float *oy) {
+    int32_t x = 0;
+    int32_t y = 0;
+
+    if (!t_own_elem) return 0;
+    if (!tnx_read_i32(t_own_elem + (uintptr_t)OFF_GAMEOBJ_X, &x)) return 0;
+    if (!tnx_read_i32(t_own_elem + (uintptr_t)OFF_GAMEOBJ_Y, &y)) return 0;
+    if (x < -200000 || x > 200000) return 0;
+    if (y < -200000 || y > 200000) return 0;
+    if (x == 0 && y == 0) return 0;
+
+    *ox = (float)x;
+    *oy = (float)y;
+
+    return 1;
+}
 
 static tnx_js3_proj_t t_js3_projs[TNX_PROJ_MAX];
 static tnx_js3_proj_t t_js3_prev[TNX_PROJ_MAX];
@@ -1613,19 +1633,15 @@ static void tnx_js3_collect(float px, float py) {
         float len = 0.0f;
         uint64_t dt;
         float speed;
+        float pr = TNX_JS_RADIUS_FALLBACK;
 
         if (!p->elem) continue;
 
         if (myTeam < 0) myTeam = tnx_js3_my_team();
 
         if (p->team == 0 || p->team == 1) {
-            if (myTeam >= 0 && p->team == myTeam) {
-                t_js3_mates++;
-
-                continue;
-            }
-
-            t_js3_foes++;
+            if (myTeam >= 0 && p->team == myTeam) t_js3_mates++;
+            else t_js3_foes++;
         } else {
             t_js3_unk++;
         }
@@ -1675,9 +1691,21 @@ static void tnx_js3_collect(float px, float py) {
         if (speed < 1.0f) speed = TNX_JS_SPEED_FALLBACK;
 
         {
-            float toward = mx * dx + my * dy;
+            float rr = tnx_proj_radius(p, speed);
+            float toward = 0.0f;
+            float r = 0.0f;
+            float lateral = 0.0f;
+
+            if (rr > 0.0f) pr = rr;
+
+            toward = mx * dx + my * dy;
 
             if (toward >= 0.0f) continue;
+
+            r = tnx_own_radius() + pr + TNX_JS3_SAFETY;
+            lateral = mx * mx + my * my - toward * toward;
+
+            if (lateral > r * r) continue;
 
             if (sqrtf(mx * mx + my * my) / speed > TNX_JS3_T_FIELD * 2.0f) continue;
         }
@@ -1688,14 +1716,8 @@ static void tnx_js3_collect(float px, float py) {
         q->dx = dx;
         q->dy = dy;
         q->speed = speed;
-        q->radius = TNX_JS_RADIUS_FALLBACK;
+        q->radius = pr;
         q->gid = p->gid;
-
-        {
-            float rr = tnx_proj_radius(p, speed);
-
-            if (rr > 0.0f) q->radius = rr;
-        }
 
         n++;
     }
@@ -1981,13 +2003,17 @@ static int tnx_js3_decide(float px, float py, float *outX, float *outY, int *urg
     if (urgentOut) *urgentOut = 0;
     if (voOut) *voOut = 0;
 
-    tnx_js3_collect(px, py);
+    t_js3_ox = px;
+    t_js3_oy = py;
+    t_js3_ohit = tnx_js3_own_pos_3(&t_js3_ox, &t_js3_oy);
+
+    tnx_js3_collect(t_js3_ox, t_js3_oy);
 
     mr = tnx_own_radius();
 
     if (mr <= 0.0f) mr = TNX_DATA_OWN_R;
 
-    if (!tnx_js3_danger(px, py, mr)) {
+    if (!tnx_js3_danger(t_js3_ox, t_js3_oy, mr)) {
         tnx_js3_commit();
 
         return 0;
@@ -1999,11 +2025,11 @@ static int tnx_js3_decide(float px, float py, float *outX, float *outY, int *urg
         haveIntent = 1;
     }
 
-    urgent = tnx_js3_urgent_dir(px, py, mr, haveIntent, iX, iY, &baseX, &baseY);
+    urgent = tnx_js3_urgent_dir(t_js3_ox, t_js3_oy, mr, haveIntent, iX, iY, &baseX, &baseY);
 
-    if (urgent == 0) tnx_js3_best_dir(px, py, mr, haveIntent, iX, iY, &baseX, &baseY);
+    if (urgent == 0) tnx_js3_best_dir(t_js3_ox, t_js3_oy, mr, haveIntent, iX, iY, &baseX, &baseY);
 
-    vo = tnx_js3_apply(baseX, baseY, px, py, mr, haveIntent, iX, iY, &safeX, &safeY);
+    vo = tnx_js3_apply(baseX, baseY, t_js3_ox, t_js3_oy, mr, haveIntent, iX, iY, &safeX, &safeY);
 
     t_js3_last_x = safeX;
     t_js3_last_y = safeY;
@@ -2037,8 +2063,12 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
 
     t_life_3 = tnx_life_3(px, py);
 
+    tnx_recon_3();
+
     if (t_life_3 != 1) {
         t_moving = 0;
+        t_released = 1;
+        t_commit_until = 0;
 
         return 0;
     }
@@ -2168,14 +2198,14 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
     if (t_logs_4 < 24 && (t_ticks_3 % 60) == 0) {
         t_logs_4++;
 
-        TNX_LOGX("dodge segs=%d threatened=%d picked=%d jsProj=%d jsMate=%d jsFoe=%d jsUnk=%d life=%d jsUrgent=%d jsVo=%d target=(%.0f,%.0f) dist=%.0f way=%.0f "
+        TNX_LOGX("dodge segs=%d threatened=%d picked=%d jsProj=%d jsMate=%d jsFoe=%d jsUnk=%d life=%d jsOwn=(%.0f,%.0f) jsOwnOk=%d jsUrgent=%d jsVo=%d target=(%.0f,%.0f) dist=%.0f way=%.0f "
                  "stick=%d angle=%.1f joyw=%d snap=%d moving=%d - the threat segments start where "
                  "each shot is NOW and run along its own flight, so a shot that already passed is "
                  "behind the segment and not a reason to run; the directions are walked outward from "
                  "the stick angle so a safe heading near the one the player holds wins; way is the "
                  "heading actually written towards in degrees, counted from the positive x axis, so "
                  "two consecutive lines with the same way is the character holding one direction",
-                 t_seg_count, threatened, picked, t_js_n, t_js3_mates, t_js3_foes, t_js3_unk, t_life_3, t_js_urgent, t_js_vo,
+                 t_seg_count, threatened, picked, t_js_n, t_js3_mates, t_js3_foes, t_js3_unk, t_life_3, t_js3_ox, t_js3_oy, t_js3_ohit, t_js_urgent, t_js_vo,
                  (double)t_tx_2, (double)t_ty_2,
                  (double)sqrtf((t_tx_2 - px) * (t_tx_2 - px) +
                                (t_ty_2 - py) * (t_ty_2 - py)),

@@ -1374,23 +1374,6 @@ int tnx_wall_blocked(float x0, float y0, float x1, float y1) {
     return tnx_clip_walk((int32_t)x0, (int32_t)y0, (int32_t)x1, (int32_t)y1,
                          (int32_t)TNX_TILE_SIZE, t_grid, t_w, t_h, &ox, &oy);
 }
-
-static int tnx_point_clear(float px, float py, float x, float y) {
-    int i = 0;
-    float mx = (px + x) * 0.5f;
-    float my = (py + y) * 0.5f;
-
-    if (!tnx_valid_point(x, y)) return 0;
-
-    for (i = 0; i < t_seg_count; i++) {
-        if (tnx_clear_at(px, py, i) < 0.0f) return 0;
-        if (tnx_clear_at(x, y, i) < 0.0f) return 0;
-        if (tnx_clear_at(mx, my, i) < 0.0f) return 0;
-    }
-
-    return 1;
-}
-
                                                                                                                                                                                                                                                                                                 
 
                                                                                                                                                                                                                                                                                                                                                                                                                                        
@@ -1517,6 +1500,14 @@ static int t_js3_unk = 0;
 static float t_js3_ox = 0.0f;
 static float t_js_dir_x = 0.0f;
 static float t_js_dir_y = 0.0f;
+
+int t_aim_shots = 0;
+
+int t_aim_hits = 0;
+
+int32_t t_aim_tx = 0;
+
+int32_t t_aim_ty = 0;
 static float t_js3_oy = 0.0f;
 static int t_js3_ohit = 0;
 static int t_js3_rej_team = 0;
@@ -1595,19 +1586,6 @@ static void tnx_js3_speed_probe(void) {
 
     t_js3_speed = (float)raw;
 }
-
-static int tnx_js3_prev_slot(int32_t gid) {
-    int i;
-
-    if (gid == 0) return -1;
-
-    for (i = 0; i < t_js3_prev_n; i++) {
-        if (t_js3_prev[i].gid == gid) return i;
-    }
-
-    return -1;
-}
-
 static int tnx_js3_my_team(void) {
     int32_t v = 0;
 
@@ -1655,12 +1633,15 @@ static void tnx_js3_collect(float px, float py) {
 
         if (myTeam < 0) myTeam = tnx_js3_my_team();
 
-        if (p->team == 0 || p->team == 1) {
-            if (myTeam >= 0 && p->team == myTeam) t_js3_mates++;
-            else t_js3_foes++;
-        } else {
-            t_js3_unk++;
+        if (p->team >= 0 && (p->team == t_own_team_3 || (myTeam >= 0 && p->team == myTeam))) {
+            t_js3_mates++;
+            t_js3_rej_team++;
+
+            continue;
         }
+
+        if (p->team == 0 || p->team == 1) t_js3_foes++;
+        else t_js3_unk++;
 
         if (!tnx_read_u8(p->elem + (uintptr_t)TNX_OBJ_DEADFLAG_OFF, &dead)) continue;
         if (dead != 0) continue;
@@ -1688,6 +1669,24 @@ static void tnx_js3_collect(float px, float py) {
 
             if (br < TNX_OWN_RADIUS_MIN) br = TNX_DATA_OWN_R;
             if (sqrtf(bx * bx + by * by) < br) continue;
+        }
+
+        {
+            float lx = (float)t_aim_tx - px;
+            float ly = (float)t_aim_ty - py;
+            float ll = sqrtf(lx * lx + ly * ly);
+
+            if (ll > 1.0f && sqrtf(mx * mx + my * my) < TNX_AIM_HIT_DIST) {
+                float aimDot = (dx * lx + dy * ly) / ll;
+
+                if (aimDot > TNX_AIM_DOT_MIN) {
+                    t_aim_hits++;
+
+                    tnx_logf("aimhit gid=%d from=(%.0f,%.0f) dir=(%.2f,%.2f) target=(%d,%d) dot=%.2f hits=%d",
+                             p->gid, (double)px, (double)py, (double)dx, (double)dy,
+                             t_aim_tx, t_aim_ty, (double)aimDot, t_aim_hits);
+                }
+            }
         }
 
         dt = (p->ptick > 0 && t_ticks_3 > p->ptick) ? (t_ticks_3 - p->ptick) : 1;
@@ -1719,7 +1718,7 @@ static void tnx_js3_collect(float px, float py) {
                 if (sqrtf(((float)p->spawnX - px) * ((float)p->spawnX - px) +
                           ((float)p->spawnY - py) * ((float)p->spawnY - py)) <=
                     tnx_own_radius() + TNX_JS3_SPAWN_MARGIN) verdict = "own-spawn";
-                else if (p->team == myTeam && myTeam >= 0) verdict = "own-side";
+                else if (p->team >= 0 && (p->team == t_own_team_3 || (myTeam >= 0 && p->team == myTeam))) verdict = "own-side";
                 else if (toward >= 0.0f) verdict = "away";
                 else if (lateral > r * r * TNX_JS3_CONE) verdict = "wide";
                 else if (dist / speed > TNX_JS3_T_FIELD * TNX_JS3_REACH) verdict = "far";
@@ -2113,8 +2112,6 @@ static int tnx_js3_decide(float px, float py, float *outX, float *outY, int *urg
 
     return 1;
 }
-
-int t_aim_shots = 0;
 
 int t_aim_ok = 0;
 

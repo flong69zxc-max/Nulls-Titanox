@@ -324,31 +324,6 @@ static inline BOOL tnx_looks_like_function(uintptr_t address) {
 
     return NO;
 }
-
-static inline BOOL tnx_callable_target(uintptr_t imageBase, uintptr_t address) {
-    if (!address) return NO;
-    if (!tnx_addr_executable(address)) return NO;
-    if (!tnx_image_text_contains(imageBase, address)) return NO;
-    return tnx_looks_like_function(address);
-}
-
-static inline BOOL tnx_patchable_target(uintptr_t imageBase, uintptr_t address) {
-    if (!imageBase || !address) return NO;
-    if (address & 3) return NO;
-
-    uintptr_t start = 0;
-    uintptr_t end = 0;
-    uint32_t prot = 0;
-
-    if (!tnx_image_segment_contains(imageBase, address, YES, &start, &end, &prot)) return NO;
-    if ((address + 16) > end) return NO;
-
-    uint32_t word = 0;
-    if (!tnx_read_u32(address, &word)) return NO;
-
-    return YES;
-}
-
 static inline BOOL tnx_object_plausible(void *object) {
     if (!object) return NO;
 
@@ -369,11 +344,6 @@ static inline BOOL tnx_object_plausible(void *object) {
 
     return tnx_addr_executable(firstEntry);
 }
-
-static inline NSString *tnx_host_description(void) {
-    return tnx_host_is_livecontainer() ? @"livecontainer" : @"native";
-}
-
 static inline BOOL tnx_image_owns_address(uintptr_t imageBase, uintptr_t address) {
     return tnx_image_segment_contains(imageBase, address, NO, NULL, NULL, NULL);
 }
@@ -404,36 +374,4 @@ static inline Class tnx_object_class(void *object) {
 #else
     return object_getClass((id)object);
 #endif
-}
-
-static inline NSString *tnx_object_class_name(void *object) {
-    Class cls = tnx_object_class(object);
-    if (!cls) return nil;
-
-    const char *name = class_getName(cls);
-    if (!name) return nil;
-
-    return [NSString stringWithUTF8String:name];
-}
-
-static inline BOOL tnx_object_is_class_named(void *object, const char *expected) {
-    if (!expected) return NO;
-
-    Class cls = tnx_object_class(object);
-    if (!cls) return NO;
-
-    const char *name = class_getName(cls);
-    if (!name) return NO;
-
-    return strcmp(name, expected) == 0 ? YES : NO;
-}
-
-static inline NSString *tnx_isa_owner_description(uintptr_t imageBase, void *object) {
-    Class cls = tnx_object_class(object);
-    if (!cls) return @"no-class";
-
-    if (tnx_image_owns_address(imageBase, (uintptr_t)cls)) return @"game-image";
-    if (tnx_isa_in_image_data(imageBase, (uintptr_t)cls)) return @"game-data";
-
-    return @"foreign";
 }

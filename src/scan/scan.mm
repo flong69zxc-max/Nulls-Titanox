@@ -1,5 +1,9 @@
 #include "titanox.h"
 
+int32_t t_state_prev_x = 0;
+
+int32_t t_state_prev_y = 0;
+
 uintptr_t t_mgr = 0;
 
 int t_mgr_logs = 0;
@@ -2208,7 +2212,7 @@ void tnx_state(void) {
             tnx_read_i32(st + TNX_MOVE_ARM_OFF, &sta);
             if (tnx_read_ptr(st, (void **)&stv) && stv >= t_base) stv -= t_base;
 
-            TNX_LOGX("inputstate obj=%p vtRva=%#llx x+%#llx=%d y+%#llx=%d key+%#llx=%d arm+%#llx=%d seen=(%d,%d) "
+            TNX_LOGX("inputstate obj=%p vtRva=%#llx x+%#llx=%d y+%#llx=%d key+%#llx=%d arm+%#llx=%d "
                      "prev=(%d,%d) moved=%d qLast=%p - the pair the engine holds for the input read from [scene+%#llx], "
                      "and it is the same pair the engine setter writes, so while the player walks it has to track the "
                      "walk and then writing there steers the body instead of corrupting a pointer",
@@ -2228,14 +2232,6 @@ void tnx_state(void) {
     tnx_sd_log();
 
 }
-
-int32_t t_state_prev_x = 0;
-
-int32_t t_state_prev_y = 0;
-
-int32_t t_state_seen_x = 0;
-
-int32_t t_state_seen_y = 0;
 
 uint64_t tnx_word_2(uintptr_t address) {
     uint64_t value = 0;

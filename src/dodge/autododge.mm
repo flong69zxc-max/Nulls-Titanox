@@ -1671,7 +1671,7 @@ static void tnx_dodge_collect(float px, float py) {
 
             t_dodge_detail_3++;
 
-            TNX_LOGX("proj i=%d obj=%p vtRva=%#llx gid=%u rawTeam+%#llx=%d pTeam=%d myTeam=%d ownTeam=%d ownFrom=%s "
+            TNX_LOGX("proj i=%d obj=%p vtRva=%#llx gid=%d rawTeam+%#llx=%d pTeam=%d myTeam=%d ownTeam=%d ownFrom=%s "
                      "pos=(%d,%d) prev=(%d,%d) me=(%.0f,%.0f) hasPrev=%d - the raw value of the team field of every "
                      "projectile before any filter runs, so it is visible whether the shots that hit me carry my own "
                      "team value or whether my own shots carry the enemy one",

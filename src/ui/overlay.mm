@@ -1,42 +1,5 @@
 #include "titanox.h"
 
-void tnx_overlay_attach(NSString *text) {
-    UIWindow *window = nil;
-
-    for (UIWindow *candidate in [UIApplication sharedApplication].windows) {
-        if (candidate.isKeyWindow) {
-            window = candidate;
-            break;
-        }
-    }
-
-    if (!window) window = [UIApplication sharedApplication].keyWindow;
-    if (!window) return;
-
-    if (t_overlay && t_overlay.superview != window) {
-        [t_overlay removeFromSuperview];
-        t_overlay = nil;
-    }
-
-    if (!t_overlay) {
-        UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(10.0, 44.0, 520.0, 36.0)];
-
-        label.font = [UIFont monospacedSystemFontOfSize:12.0 weight:UIFontWeightBold];
-        label.textColor = [UIColor colorWithRed:1.0 green:0.32 blue:0.32 alpha:1.0];
-        label.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.55];
-        label.userInteractionEnabled = NO;
-        label.numberOfLines = 2;
-
-        t_overlay = label;
-    }
-
-    t_overlay.text = text;
-
-    if (!t_overlay.superview) [window addSubview:t_overlay];
-
-    [t_overlay.superview bringSubviewToFront:t_overlay];
-}
-
 void tnx_overlay_update(void) {
     char text[192];
     double now = CFAbsoluteTimeGetCurrent();

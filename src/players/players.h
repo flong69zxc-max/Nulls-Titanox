@@ -78,4 +78,6 @@ float tnx_side_score(float px, float py, float x, float y, int near);
 int tnx_take_own(const tnx_obj_t *objects, int usable, int *indexOut, const char **fromOut);
 int tnx_team_at(const tnx_obj_t *objects, int index);
 
+int tnx_object_live(uintptr_t object);
+
 #endif

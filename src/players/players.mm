@@ -15,23 +15,6 @@ int tnx_own_ok(int32_t x, int32_t y) {
     return 1;
 }
 
-float tnx_own_radius(void) {
-    if (!TNX_GEOM) return 0.0f;
-    if (t_own_r > 1.0f) return t_own_r;
-
-    if (t_own_r_cfg_logs < 4) {
-        t_own_r_cfg_logs++;
-
-        TNX_LOGX("own radius cfg=%.0f - the contact average has not produced a value yet, so the hit "
-                 "test uses the radius taken from the character table instead of zero: the table gives "
-                 "120 for 101 of 127 heroes and 145 for 20, and a zero here makes every shot pass at a "
-                 "distance no smaller than the shot itself",
-                 (double)TNX_DATA_OWN_R);
-    }
-
-    return TNX_DATA_OWN_R;
-}
-
 int tnx_own_side_spawn(int32_t sx, int32_t sy) {
     int i = 0;
     int best = -1;
@@ -251,28 +234,6 @@ void tnx_respawn_event(int32_t x, int32_t y, int32_t px, int32_t py) {
                  (int)sqrtf((float)((x - px) * (x - px) + (y - py) * (y - py))),
                  t_pre[0], t_pre[1], t_pre[2],
                  tnx_cand_name(t_dead_slot), t_dead_value, TNX_HOLD_FRAMES);
-    }
-}
-
-void tnx_contact_note(float dist, float projR) {
-    float r = dist - projR;
-
-    if (!TNX_GEOM) return;
-    if (!tnx_ok(r, 10.0f, TNX_RADIUS_MAX)) return;
-
-    if (t_own_r_n == 0) t_own_r = r;
-    else t_own_r = t_own_r * 0.75f + r * 0.25f;
-
-    t_own_r_n++;
-
-    if (t_own_r_logs < TNX_CONTACT_LOGS) {
-        t_own_r_logs++;
-
-        TNX_LOGX("contact dist=%.0f projR=%.0f ownR=%.0f n=%d - own took a body while the nearest "
-                 "live shot was this far from its centre, so subtracting the projectile radius "
-                 "read out of that shot leaves own collision radius: the value kept is an average "
-                 "over every contact seen and it is what the hit test inflates with from now on",
-                 (double)dist, (double)projR, (double)t_own_r, t_own_r_n);
     }
 }
 
@@ -1653,6 +1614,25 @@ int tnx_own(int32_t *xOut, int32_t *yOut) {
     if (!own) return 0;
     if (!tnx_read_i32(own + TNX_OBJ_X_OFF, xOut)) return 0;
     if (!tnx_read_i32(own + TNX_OBJ_Y_OFF, yOut)) return 0;
+
+    return 1;
+}
+
+int tnx_object_live(uintptr_t object) {
+    int32_t gid = 0;
+    int32_t team = 0;
+    int32_t x = 0;
+    int32_t y = 0;
+
+    if (!tnx_gameobject_shape(object)) return 0;
+    if (!tnx_read_i32(object + TNX_OBJ_GLOBALID_OFF, &gid)) return 0;
+    if (gid <= 0 || gid >= TNX_GID_MAX) return 0;
+    if (!tnx_read_i32(object + TNX_OBJ_TEAM_OFF, &team)) return 0;
+    if (team < 0 || team > TNX_TEAM_MAX_2) return 0;
+    if (!tnx_read_i32(object + tnx_coord_x_off(), &x)) return 0;
+    if (!tnx_read_i32(object + tnx_coord_y_off(), &y)) return 0;
+    if (x <= -TNX_COORD_MAX || x >= TNX_COORD_MAX) return 0;
+    if (y <= -TNX_COORD_MAX || y >= TNX_COORD_MAX) return 0;
 
     return 1;
 }

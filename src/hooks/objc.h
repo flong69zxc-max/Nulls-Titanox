@@ -1,5 +1,5 @@
-#ifndef TITANOX_CORE_OBJC_H
-#define TITANOX_CORE_OBJC_H
+#ifndef TITANOX_HOOKS_OBJC_H
+#define TITANOX_HOOKS_OBJC_H
 
 #include "core/types.h"
 

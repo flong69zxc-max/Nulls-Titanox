@@ -1963,50 +1963,6 @@ void tnx_alive(int32_t ownX, int32_t ownY) {
 
 int t_map_dumps = 0;
 
-void tnx_census(void) {
-    void *array = NULL;
-    int32_t count = 0;
-    int32_t i = 0;
-    int players = 0;
-    int shots = 0;
-    int other = 0;
-    int projClass = 0;
-
-    if ((t_ticks_3 % 60) != 0) return;
-    if (!t_manager) return;
-    if (!tnx_read_i32(t_manager + TNX_MGR_COUNT_OFF, &count)) return;
-    if (count <= 0 || count > TNX_COUNT_MAX) return;
-    if (!tnx_read_ptr(t_manager + TNX_MGR_ARRAY_OFF, &array) || !array) return;
-
-    for (i = 0; i < count; i++) {
-        void *element = NULL;
-        int32_t gid = 0;
-
-        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * 8, &element) || !element) continue;
-
-        gid = tnx_gid((uintptr_t)element, NULL);
-
-        {
-            void *vtx = NULL;
-
-            if (tnx_read_ptr((uintptr_t)element, &vtx) && vtx &&
-                ((uintptr_t)vtx - t_base) == (uintptr_t)TNX_CLASS_PROJ_RVA) projClass++;
-        }
-
-        if (gid >= TNX_SHOT_GID && gid < TNX_SHOT_GID_MAX) shots++;
-        else if (gid >= TNX_PLAYER_GID && gid < TNX_SHOT_GID) players++;
-        else other++;
-    }
-
-    TNX_LOGX("census count=%d players=%d shots=%d other=%d projClass=%d skipped=%d manager=%p - one line a second with "
-             "the container split by gid band, so a dodge that reports segs=0 says whether there was "
-             "anything to dodge at all: the 17:53 run held only players and two objects in the four "
-             "million band, one of them standing still and one moving at two units a frame, while the "
-             "projectiles that were recognised in the 17:12 and 17:45 runs carry gids in the %d band",
-             count, players, shots, other, projClass, t_proj_skipped, (void *)t_manager,
-             TNX_SHOT_GID);
-}
-
 int32_t t_prev_x_3 = 0;
 
 int32_t t_prev_y_3 = 0;
@@ -2106,24 +2062,6 @@ int tnx_proj_mine(const tnx_proj_t *p) {
     }
 
     return bestMine;
-}
-
-uint64_t tnx_upd_delta(void) {
-    uint64_t now = t_update_hits;
-    uint64_t d = now - t_prev_upd;
-
-    t_prev_upd = now;
-
-    return d;
-}
-
-uint64_t tnx_rend_delta(void) {
-    uint64_t now = (uint64_t)t_render_calls;
-    uint64_t d = now - t_prev_rend;
-
-    t_prev_rend = now;
-
-    return d;
 }
 
 void tnx_state(void) {
@@ -2291,4 +2229,230 @@ uintptr_t tnx_coord_x_off(void) {
 
 uintptr_t tnx_coord_y_off(void) {
     return TNX_OBJ_Y_OFF;
+}
+
+int32_t t_gid_lo = 0;
+
+int32_t t_gid_hi = 0;
+
+const uintptr_t t_mode_vtables[36] = {
+    0x10012c8, 0x1001318, 0x1001368, 0x10013b8,
+    0x1001408, 0x1001458, 0x10014a8, 0x10014f8, 0x1001548, 0x1001598, 0x10015e8, 0x10016e0,
+    0x10017d8, 0x10018c0, 0x1001908, 0x10019d0, 0x1001ac8, 0x1001bc0, 0x1001cb8, 0x1001d80,
+    0x1001e48, 0x1001f10, 0x10022f0, 0x10023b8, 0x1002480, 0x1002548, 0x1002610,
+    0x10026d8, 0x10027a0, 0x1002868, 0x1002930, 0x10029f8, 0x1002ac0, 0x1002b88, 0x1002d18,
+    0,
+};
+
+tnx_trail_t t_trail[TNX_TRAIL_MAX];
+
+void tnx_probe_3(uintptr_t manager, uintptr_t mode, int verbose) {
+    tnx_obj_t objects[TNX_OBJECT_MAX];
+    int rejected = 0;
+    int usable = 0;
+    int inRange = 0;
+    int distinct = 0;
+    int teamsOld[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+    int teamsNew[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+    int distinctOld = 0;
+    int distinctNew = 0;
+
+    memset(objects, 0, sizeof(objects));
+
+    t_probe_done_2 = 1;
+
+    if (mode) tnx_read_map(mode);
+
+    {
+        static int v142_walk_logs = 0;
+
+        if (v142_walk_logs < 12 || (v142_walk_logs % 128) == 0) {
+            v142_walk_logs++;
+
+            tnx_logf("walk enter arr=%p n=%d g_arr=%p g_n=%d tick_arr=%p tick_n=%d manager=%p", (void *)t_tick_array,
+                     t_tick_count, (void *)t_players_array, t_players_count,
+                     (void *)t_tick_array, t_tick_count, (void *)manager);
+        }
+    }
+
+    usable = tnx_collect(manager, objects, TNX_OBJECT_MAX, &rejected);
+
+    {
+        static int v142_leave_logs = 0;
+
+        if (v142_leave_logs < 12 || (v142_leave_logs % 128) == 0) {
+            v142_leave_logs++;
+
+            tnx_logf("walk leave arr=%p n=%d g_arr=%p g_n=%d aborted=%d abortI=%d usable=%d rejected=%d", (void *)t_walk_arr, t_walk_n,
+                     (void *)t_pub_array, t_pub_count, t_walk_aborted,
+                     t_walk_abort_i, usable, rejected);
+        }
+    }
+
+    for (int i = 0; i < usable; i++) {
+        if (objects[i].x > -TNX_COORD_ABS_MAX && objects[i].x < TNX_COORD_ABS_MAX &&
+            objects[i].y > -TNX_COORD_ABS_MAX && objects[i].y < TNX_COORD_ABS_MAX) {
+            inRange++;
+        }
+
+        if (objects[i].teamOld >= 0 && objects[i].teamOld < 8) teamsOld[objects[i].teamOld] = 1;
+        if (objects[i].teamNew >= 0 && objects[i].teamNew < 8) teamsNew[objects[i].teamNew] = 1;
+
+        {
+            int seen = 0;
+
+            for (int j = 0; j < i; j++) {
+                if (objects[j].x == objects[i].x && objects[j].y == objects[i].y) { seen = 1; break; }
+            }
+
+            if (!seen) distinct++;
+        }
+    }
+
+    for (int i = 0; i < 8; i++) {
+        if (teamsOld[i]) distinctOld++;
+        if (teamsNew[i]) distinctNew++;
+    }
+
+    t_team_off = (int)TNX_OBJ_TEAM_OFF;
+
+    {
+        char reasons[320];
+
+        tnx_logf("man walk mode=%p manager=%p usable=%d rejected=%d (%s) mapOk=%d mapW=%d "
+                 "mapH=%d inRange=%d distinct=%d teamsOld=%d teamsNew=%d teamOff=0x%x",
+                 (void *)mode, (void *)manager, usable, rejected,
+                 tnx_reject_text(reasons, sizeof(reasons)), t_map_ok, t_map_w,
+                 t_map_h, inRange, distinct, distinctOld, distinctNew, t_team_off);
+    }
+
+    tnx_logf("walk team reverted to +0x%x with distinct(+0x40)=%d distinct(+0x4c)=%d",
+             t_team_off, distinctOld, distinctNew);
+
+    tnx_logf("walk offsets team=+0x%x distinctOld=%d distinctNew=%d coord=+0x%llx/+0x%llx usable=%d distinct=%d inRange=%d",
+             t_team_off, distinctOld, distinctNew,
+             (unsigned long long)tnx_coord_x_off(), (unsigned long long)tnx_coord_y_off(),
+             usable, distinct, inRange);
+
+    if (!TNX_DEAD_ONCE || !t_dead_probe_done) {
+        t_dead_probe_done = 1;
+    }
+
+    if (verbose) {
+        tnx_logf("offsets obj off=0x%llx/0x%llx x=0x%llx y=0x%llx teamOld=0x%llx teamNew=0x%llx "
+                 "owner=0x%llx dead=0x%llx active=0x%llx tilemap=0x%llx w=0x%llx",
+                 TNX_MGR_ARRAY_OFF, TNX_MGR_COUNT_OFF, TNX_OBJ_X_OFF, TNX_OBJ_Y_OFF,
+                 TNX_OBJ_TEAM_OFF, TNX_OBJ_TEAMENGINE_OFF, TNX_OBJ_OWNERINDEX_OFF,
+                 TNX_OBJ_DEADFLAG_OFF, TNX_OBJ_ACTIVEFLAG_OFF,
+                 TNX_MODE_TILEMAP_OFF, TNX_TILEMAP_WIDTH_OFF);
+
+        for (int i = 0; i < usable && i < 16; i++) {
+            tnx_logf("player[%02d] at=%p gid=%d pos=(%d,%d) team40=%d own=%d dead=%d active=%d",
+                     i, (void *)objects[i].object, objects[i].gid, objects[i].x, objects[i].y,
+                     objects[i].teamOld, objects[i].ownerIndex, objects[i].dead,
+                     objects[i].activeFlag & 1, (unsigned long long)TNX_OBJ_X_OFF,
+                     (unsigned long long)TNX_OBJ_Y_OFF, (unsigned long long)TNX_OBJ_TEAM_OFF);
+        }
+    }
+
+    t_coord_usable = usable;
+    t_coord_distinct = distinct;
+
+    {
+        int unique = 0;
+
+        for (int i = 0; i < usable; i++) {
+            int seen = 0;
+
+            for (int j = 0; j < i; j++) {
+                if (objects[j].gid == objects[i].gid) {
+                    seen = 1;
+                    break;
+                }
+            }
+
+            if (!seen) unique++;
+        }
+
+        tnx_logf("gid unique=%d of usable=%d distinct=%d",
+                 unique, usable, distinct);
+    }
+
+    tnx_team_dump(objects, usable);
+    tnx_class_dump(objects, usable);
+
+    t_coord_ok = (usable >= 2 && inRange == usable && distinct >= 2 &&
+                      (distinctOld >= 2 || distinctNew >= 2)) ? 1 : 0;
+
+    tnx_logf("coords ok=%d (need >=2 objects, all in range, >=2 distinct positions, "
+             "and a team field that splits them)",
+             t_coord_ok);
+
+    {
+        int back = 0;
+        int backRead = 0;
+
+        for (int i = 0; i < usable; i++) {
+            void *backPtr = NULL;
+
+            if (!tnx_read_ptr(objects[i].object + TNX_ELEM_BACK_OFF, &backPtr)) continue;
+
+            backRead++;
+
+            if ((uintptr_t)backPtr == manager) back++;
+        }
+
+        tnx_logf("membership manager=%p usable=%d back=%d read=%d",
+                 (void *)manager, usable, back, backRead,
+                 (unsigned long long)TNX_ELEM_BACK_OFF,
+                 (unsigned long long)TNX_MODE_MANAGER_OFF);
+    }
+}
+
+void tnx_paircal(void) {
+    uintptr_t ctrl = tnx_pair_base();
+    int32_t ownX = 0;
+    int32_t ownY = 0;
+    int32_t px = 0;
+    int32_t py = 0;
+    int dx = 0;
+    int dy = 0;
+    float pLen = 0.0f;
+    float mLen = 0.0f;
+    float dot = 0.0f;
+    float angPair = 0.0f;
+    float angMove = 0.0f;
+
+    if ((t_ticks_3 % 60) != 0) return;
+    if (t_logs_5 >= TNX_LOGS_3) return;
+    if (t_stick_hold) return;
+    if (!ctrl) return;
+    if (!tnx_own(&ownX, &ownY)) return;
+    if (!tnx_read_i32(ctrl + TNX_CTRL_RAW_X_OFF, &px)) return;
+    if (!tnx_read_i32(ctrl + TNX_CTRL_RAW_Y_OFF, &py)) return;
+
+    if (t_seeded) {
+        dx = (int)(ownX - t_last_x_2);
+        dy = (int)(ownY - t_last_y_2);
+    }
+
+    t_seeded = 1;
+    t_last_x_2 = ownX;
+    t_last_y_2 = ownY;
+
+    pLen = sqrtf((float)(px * px + py * py));
+    mLen = sqrtf((float)(dx * dx + dy * dy));
+
+    if (pLen < 1.0f || mLen < 1.0f) return;
+
+    t_logs_5++;
+
+    dot = ((float)px / pLen) * ((float)dx / mLen) + ((float)py / pLen) * ((float)dy / mLen);
+    angPair = atan2f((float)py, (float)px) * 57.2958f;
+    angMove = atan2f((float)dy, (float)dx) * 57.2958f;
+
+    tnx_logf("paircal pair=(%d,%d) len=%.0f move=(%d,%d) len=%.0f dot=%+.2f angPair=%.1f angMove=%.1f angDelta=%.1f own=(%d,%d)",
+             px, py, (double)pLen, dx, dy, (double)mLen, (double)dot, (double)angPair, (double)angMove,
+             (double)(angMove - angPair), ownX, ownY,
+             (unsigned long long)TNX_CTRL_RAW_X_OFF);
 }

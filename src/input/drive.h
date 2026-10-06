@@ -23,4 +23,7 @@ int tnx_snap(float dx, float dy);
 float tnx_speed(void);
 void tnx_stick(int engaged, float dirX, float dirY);
 
+extern long long t_sum_x;
+extern long long t_sum_y;
+
 #endif

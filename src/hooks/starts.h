@@ -1,5 +1,5 @@
-#ifndef TITANOX_CORE_STARTS_H
-#define TITANOX_CORE_STARTS_H
+#ifndef TITANOX_HOOKS_STARTS_H
+#define TITANOX_HOOKS_STARTS_H
 
 #include "core/types.h"
 

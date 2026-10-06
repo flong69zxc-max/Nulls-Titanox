@@ -69,4 +69,27 @@ int tnx_witness(int32_t *x, int32_t *y);
 void tnx_witness_line(int plus);
 void tnx_write_test(const tnx_obj_t *objects, int usable, int ownIndex);
 
+extern uint64_t t_engage_last;
+extern uint64_t t_engage_start;
+extern int t_gate2_seen;
+extern int t_gate3_seen;
+extern uint64_t t_move_tick;
+extern int32_t t_own_x_2;
+extern int32_t t_own_y_2;
+extern int32_t t_pick_x;
+extern int32_t t_pick_y;
+void tnx_census(void);
+void tnx_crit_probe(float px, float py);
+void tnx_drive_note(int32_t ownX, int32_t ownY, int32_t tx, int32_t ty, int32_t appX, int32_t appY, int32_t pairX, int32_t pairY);
+void tnx_frame(void);
+void tnx_hop2(void);
+int tnx_interp(int32_t *x, int32_t *y);
+void tnx_interp_line(void);
+int tnx_pred_probe(uintptr_t pred, int *alignOut, int *readOut, int *writeOut, int *vtOut);
+void tnx_probe(void);
+uint64_t tnx_rend_delta(void);
+void tnx_snapshot_3(void);
+const char *tnx_state_name(void);
+uint64_t tnx_upd_delta(void);
+
 #endif

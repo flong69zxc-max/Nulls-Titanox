@@ -126,16 +126,6 @@ int t_flag_logs = 0;
 
 uint64_t t_dead_picks = 0;
 
-const char *tnx_state_name(void) {
-    if (t_state == TNX_STATE_DEAD) return "DEAD";
-    if (t_state == TNX_STATE_RESPAWN) return "respawn";
-    if (t_state == TNX_STATE_ALIVE) return "alive";
-
-    return "init";
-}
-
-                                                                                                                                                                                                                                                            
-
 int t_prev_idx = -1;
 
 uint64_t t_hold_until = 0;
@@ -1213,49 +1203,6 @@ static float tnx_js_clear(float px, float py, float mvx, float mvy) {
     return best;
 }
 
-void tnx_crit_probe(float px, float py) {
-    float best = 1.0e9f;
-    int i = 0;
-
-    t_crit_reaction = 0;
-    t_tti_min = best;
-
-    for (i = 0; i < t_seg_count; i++) {
-        const tnx_seg_t *s = &t_seg[i];
-        float d = 0.0f;
-        float ms = 0.0f;
-
-        if (s->speed <= 1.0f) continue;
-
-        d = tnx_seg_dist(px, py, s->ax, s->ay, s->bx, s->by) - s->inflatedR;
-
-        if (d < 0.0f) d = 0.0f;
-
-        ms = d / s->speed * 1000.0f;
-
-        if (ms < best) best = ms;
-    }
-
-    t_tti_min = best;
-
-    if (TNX_REACT_CRIT && best < TNX_CRITICAL_MS && (t_ticks_3 - t_crit_last) >= TNX_DATA_CRIT_EVERY) {
-        t_crit_reaction = 1;
-        t_crit_last = t_ticks_3;
-    }
-
-    t_mom_live = t_crit_reaction ? 0.0f : TNX_DATA_MOMENTUM;
-
-    if (t_crit_reaction && t_tti_logs < TNX_SEG_TTI_LOGS) {
-        t_tti_logs++;
-
-        TNX_LOGX("crit tti=%.0fms segs=%d own=(%.0f,%.0f) - an impact inside %dms drops the "
-                 "momentum term and takes the best heading even when it does not beat standing "
-                 "still, because on these frames the point is leaving the line now rather than "
-                 "holding a heading that is already the wrong one",
-                 (double)best, t_seg_count, (double)px, (double)py, (int)TNX_CRITICAL_MS);
-    }
-}
-
 int tnx_freest(float px, float py, float *tx, float *ty) {
     int i = 0;
     int n = TNX_JS_DODGE ? TNX_DIR_COUNT : TNX_FREEST_ANGLES;
@@ -1426,7 +1373,7 @@ static void tnx_state_reset(void) {
     t_stat_reset++;
 }
 
-static void tnx_state_tick(float px, float py) {
+static void tnx_dodge_state_tick(float px, float py) {
     uintptr_t own = tnx_own_obj();
 
     if (t_prev_own_tick != 0 && t_ticks_3 > t_prev_own_tick) {
@@ -1531,7 +1478,7 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
 
     tnx_crit_probe(px, py);
 
-    tnx_state_tick(px, py);
+    tnx_dodge_state_tick(px, py);
 
     tnx_stat_tick(px, py);
 
@@ -2565,5 +2512,138 @@ void tnx_dodge_all_teams(uintptr_t manager) {
             tnx_dodge_plan(manager, t);
             planned++;
         }
+    }
+}
+
+int t_dodge_probe_usable = 0;
+
+float tnx_speed(void) {
+    float v = t_walk_step * 60.0f;
+
+    if (v < 120.0f) v = 120.0f;
+    if (v > 1200.0f) v = 1200.0f;
+
+    return v;
+}
+
+float tnx_seg_dist(float ax, float ay, float bx, float by, float px, float py) {
+    float vx = bx - ax;
+    float vy = by - ay;
+    float wx = px - ax;
+    float wy = py - ay;
+    float len2 = vx * vx + vy * vy;
+    float t = 0.0f;
+    float dx = 0.0f;
+    float dy = 0.0f;
+
+    if (len2 > 0.001f) t = (wx * vx + wy * vy) / len2;
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+
+    dx = px - (ax + t * vx);
+    dy = py - (ay + t * vy);
+
+    return sqrtf(dx * dx + dy * dy);
+}
+
+void tnx_threats(void) {
+    int k = 0;
+
+    if ((t_ticks_3 % 60) != 0) return;
+
+    for (k = 0; k < TNX_PROJ_MAX; k++) {
+        const tnx_proj_t *p = &t_projs[k];
+        float vx = 0.0f;
+        float vy = 0.0f;
+        const char *verdict = "threat";
+
+        if (!p->elem) continue;
+
+        if (!tnx_proj_vel(p, &vx, &vy)) {
+            verdict = p->hasPrev ? "vel-unreadable" : "one-sample";
+        } else if (TNX_TEAM_FILTER && t_own_team_seen && p->team == t_own_team_3) {
+            verdict = "own-team";
+        } else if (sqrtf(vx * vx + vy * vy) < TNX_MIN_PROJ_SPEED) {
+            verdict = "still";
+        }
+
+        TNX_LOGX("threat gid=%d elem=%p at=(%d,%d) prev=(%d,%d) dt=%llu vel=(%.1f,%.1f) team=%d verdict=%s ownTeam=%d armed=%d",
+                 p->gid, (void *)p->elem, p->x, p->y, p->px, p->py,
+                 (unsigned long long)(p->qtick - p->ptick), (double)vx, (double)vy, p->team, verdict,
+                 t_own_team_3, t_own_team_seen);
+    }
+}
+
+int tnx_body_blocked(float x, float y, float ownX, float ownY) {
+    int i = 0;
+
+    if (t_pl_n <= 0) return 0;
+
+    for (i = 0; i < t_pl_n; i++) {
+        float px = 0.0f;
+        float py = 0.0f;
+
+        if (t_pl_mine[i]) continue;
+
+        px = (float)t_pl_x[i];
+        py = (float)t_pl_y[i];
+
+        if (tnx_seg_dist(ownX, ownY, x, y, px, py) < TNX_BODY_CLEAR) {
+            t_body_blocks++;
+
+            if (t_pl_mine[i]) t_body_mine++;
+            else t_body_enemy++;
+
+            if (t_body_logs < TNX_BODY_LOGS) {
+                t_body_logs++;
+
+                TNX_LOGX("body in the way body=(%d,%d) mine=%d own=(%d,%d) candidate=(%d,%d) off=%d blocks=%d", (int)px, (int)py, t_pl_mine[i], (int)ownX,
+                         (int)ownY, (int)x, (int)y,
+                         (int)tnx_seg_dist(ownX, ownY, x, y, px, py), t_body_blocks);
+            }
+
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+float tnx_own_radius(void) {
+    if (!TNX_GEOM) return 0.0f;
+    if (t_own_r > 1.0f) return t_own_r;
+
+    if (t_own_r_cfg_logs < 4) {
+        t_own_r_cfg_logs++;
+
+        TNX_LOGX("own radius cfg=%.0f - the contact average has not produced a value yet, so the hit "
+                 "test uses the radius taken from the character table instead of zero: the table gives "
+                 "120 for 101 of 127 heroes and 145 for 20, and a zero here makes every shot pass at a "
+                 "distance no smaller than the shot itself",
+                 (double)TNX_DATA_OWN_R);
+    }
+
+    return TNX_DATA_OWN_R;
+}
+
+void tnx_contact_note(float dist, float projR) {
+    float r = dist - projR;
+
+    if (!TNX_GEOM) return;
+    if (!tnx_ok(r, 10.0f, TNX_RADIUS_MAX)) return;
+
+    if (t_own_r_n == 0) t_own_r = r;
+    else t_own_r = t_own_r * 0.75f + r * 0.25f;
+
+    t_own_r_n++;
+
+    if (t_own_r_logs < TNX_CONTACT_LOGS) {
+        t_own_r_logs++;
+
+        TNX_LOGX("contact dist=%.0f projR=%.0f ownR=%.0f n=%d - own took a body while the nearest "
+                 "live shot was this far from its centre, so subtracting the projectile radius "
+                 "read out of that shot leaves own collision radius: the value kept is an average "
+                 "over every contact seen and it is what the hit test inflates with from now on",
+                 (double)dist, (double)projR, (double)t_own_r, t_own_r_n);
     }
 }

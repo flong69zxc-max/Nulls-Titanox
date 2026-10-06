@@ -747,15 +747,10 @@ void tnx_route(int engaged) {
              (double)dot, align, ours, tnx_queue_count(NULL));
 }
 
-float tnx_speed(void) {
-    float v = t_walk_step * 60.0f;
-
-    if (v < 120.0f) v = 120.0f;
-    if (v > 1200.0f) v = 1200.0f;
-
-    return v;
-}
-
 float t_walk_step = TNX_STEP_3;
 
 uint64_t t_ticks_3 = 0;
+
+long long t_sum_x = 0;
+
+long long t_sum_y = 0;

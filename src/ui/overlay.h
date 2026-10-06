@@ -8,7 +8,6 @@ extern UILabel * t_overlay;
 void tnx_alert_battle_check(void);
 void tnx_alert_menu(NSString *info);
 void tnx_battle_alert(uintptr_t scene, uintptr_t scenePrev);
-void tnx_overlay_attach(NSString *text);
 void tnx_overlay_update(void);
 void tnx_render_watermark(void);
 

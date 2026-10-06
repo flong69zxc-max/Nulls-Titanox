@@ -17,4 +17,7 @@ float tnx_learn_rate(int c, int t, int side);
 void tnx_stat_report(void);
 void tnx_stat_tick(float px, float py);
 
+extern uint64_t t_learn_loss[3][3][2];
+extern uint64_t t_learn_win[3][3][2];
+
 #endif

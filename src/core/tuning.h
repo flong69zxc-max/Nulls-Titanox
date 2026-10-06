@@ -162,4 +162,8 @@
 #define TNX_STICK_RAW_WRITE 1
 #define TNX_PRED_SPAN 0x118
 #endif
+#ifndef TNX_LOG_PLANS
+#define TNX_LOG_PLANS 0
+#endif
+
 #endif

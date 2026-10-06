@@ -1740,3 +1740,579 @@ int tnx_trail_verdict(const tnx_trail_t *entry, char *buf, size_t size) {
 
     return 0;
 }
+
+int t_gate2_seen = 0;
+
+int t_gate3_seen = 0;
+
+int tnx_interp(int32_t *x, int32_t *y) {
+    uintptr_t client = tnx_client();
+    int32_t cx = 0;
+    int32_t cy = 0;
+
+    if (x) *x = 0;
+    if (y) *y = 0;
+    if (!client) return 0;
+    if (!tnx_read_i32(client + TNX_CLIENT_POS_X_OFF, &cx)) return 0;
+    if (!tnx_read_i32(client + TNX_CLIENT_POS_Y_OFF, &cy)) return 0;
+
+    if (x) *x = cx;
+    if (y) *y = cy;
+
+    return 1;
+}
+
+void tnx_frame(void) {
+    int mode = tnx_mode();
+
+    if (mode >= 0 && mode < TNX_HIST_MODES) t_mode_hist[mode]++;
+
+    if (tnx_inner() == 1 && mode == TNX_MODE_TARGET) t_gate2_seen++;
+    if (tnx_src(TNX_GATE3_PTR_OFF, NULL, NULL, NULL)) t_gate3_seen++;
+
+    if (mode != t_last_mode) {
+        if (t_hist_logs < TNX_HIST_LOGS) {
+            t_hist_logs++;
+
+            {
+                int32_t e0 = -1;
+
+                if (t_scene_object) {
+                    tnx_read_i32((uintptr_t)t_scene_object + TNX_SCENE_E0_OFF, &e0);
+                }
+
+                tnx_logf("mode change tick=%llu frames=%llu mode: %lld -> %d e0=%d from=unavail - "
+                         "this line fires the moment setMode ran, so a momentary 7 in a transition frame "
+                         "is caught instead of being averaged away by mode_max; the caller cannot be "
+                         "named because setMode %#llx and its two sites %#llx and %#llx have no data slot "
+                         "in __DATA_CONST or __DATA, so only the +0xe0 side effect is left as a "
+                         "discriminator and e0=0 right at a change points at the %#llx site",
+                         (unsigned long long)t_tick_2, (unsigned long long)t_ticks_3,
+                         (long long)t_last_mode, mode, e0, (unsigned long long)0xac3a70ULL,
+                         (unsigned long long)0x760cdcULL, (unsigned long long)0x764350ULL,
+                         (unsigned long long)0x764350ULL);
+            }
+        }
+
+        t_last_mode = mode;
+    }
+}
+
+void tnx_interp_line(void) {
+    int32_t x = 0;
+    int32_t y = 0;
+    int moved = 0;
+
+    if (!tnx_interp(&x, &y)) return;
+    if (t_tick_2 - t_interp_tick < TNX_INTERP_TICKS) return;
+
+    t_interp_tick = t_tick_2;
+    t_interp_checks++;
+
+    if (t_interp_have) moved = (x != t_interp_prev_x || y != t_interp_prev_y) ? 1 : 0;
+    if (moved) t_interp_moves++;
+
+    {
+        int32_t s30x = 0;
+        int32_t s30y = 0;
+        int f30 = -1;
+        int32_t s38x = 0;
+        int32_t s38y = 0;
+        int f38 = -1;
+
+        tnx_src(TNX_GATE_PTR_OFF, &s30x, &s30y, &f30);
+        tnx_src(TNX_GATE3_PTR_OFF, &s38x, &s38y, &f38);
+
+        uintptr_t p30 = tnx_mode_ptr(TNX_GATE_PTR_OFF);
+        uintptr_t p38 = tnx_mode_ptr(TNX_GATE3_PTR_OFF);
+        int32_t dx = s30x - s38x;
+        int32_t dy = s30y - s38y;
+        int s30moved = 0;
+        int s38moved = 0;
+
+        if (t_src30_have) s30moved = (s30x != t_src30_prev_x || s30y != t_src30_prev_y) ? 1 : 0;
+        if (t_src38_have) s38moved = (s38x != t_src38_prev_x || s38y != t_src38_prev_y) ? 1 : 0;
+        if (s30moved) t_src30_moves++;
+        if (s38moved) t_src38_moves++;
+
+        if (dx < 0) dx = -dx;
+        if (dy < 0) dy = -dy;
+
+        t_w_eq_x = (dx < TNX_DENOM_MIN) ? -999 : tnx_weq(s30x, s38x, x, (s30x - s38x));
+        t_w_eq_y = (dy < TNX_DENOM_MIN) ? -999 : tnx_weq(s30y, s38y, y, (s30y - s38y));
+
+        tnx_logf("src30=(%d,%d) f30=%d src38=(%d,%d) f38=%d srcEq=%d denomX=%d denomY=%d dCX=%d dCY=%d d38X=%d "
+                 "d38Y=%d wEqX=%d wEqY=%d "
+                 "s30moved=%d s38moved=%d src30Moves=%llu src38Moves=%llu client=(%d,%d) gate2Seen=%d "
+                 "gate3Seen=%d - w28 itself is a register inside the mode update and no hook can reach it "
+                 "because %#llx has no data slot, but the effective weight is recoverable from the three "
+                 "pairs: wEq~1000 means the client sits on src30, wEq~0 means it sits on src38, wEq=-999 means denom "
+                 "was under %d so no weight is claimed at all, and the raw dC/d38 columns are printed so "
+                 "a real 500 cannot be mistaken for rounding noise; srcEq=1 makes the lerp meaningless "
+                 "because both ends are one pointer",
+                 s30x, s30y, f30, s38x, s38y, f38, (p30 == p38) ? 1 : 0, dx, dy, x - s30x, y - s30y,
+                 x - s38x, y - s38y, t_w_eq_x, t_w_eq_y, s30moved, s38moved,
+                 (unsigned long long)t_src30_moves, (unsigned long long)t_src38_moves, x, y,
+                 t_gate2_seen, t_gate3_seen, (unsigned long long)0xa26890ULL,
+                 TNX_DENOM_MIN);
+
+        t_src30_prev_x = s30x;
+        t_src30_prev_y = s30y;
+        t_src38_prev_x = s38x;
+        t_src38_prev_y = s38y;
+        t_src30_have = 1;
+        t_src38_have = 1;
+    }
+
+    tnx_logf("ownInterp prev=(%d,%d) now=(%d,%d) delta=%d moves=%llu checks=%llu mode=%d gate=%d - "
+             "the pair at client+%#llx/+%#llx is written every frame by %#llx inside the mode gate, so it "
+             "is the live own position: delta=1 with no test at all already means the engine moves own and "
+             "the walk pair at +%#llx/+%#llx was never the position",
+             t_interp_prev_x, t_interp_prev_y, x, y, moved,
+             (unsigned long long)t_interp_moves, (unsigned long long)t_interp_checks,
+             tnx_mode(), tnx_gate(), (unsigned long long)TNX_CLIENT_POS_X_OFF,
+             (unsigned long long)TNX_CLIENT_POS_Y_OFF, (unsigned long long)0xa26890ULL,
+             (unsigned long long)TNX_OBJ_X_OFF, (unsigned long long)TNX_OBJ_Y_OFF);
+
+    t_interp_prev_x = x;
+    t_interp_prev_y = y;
+    t_interp_have = 1;
+}
+
+uint64_t t_engage_start = 0;
+
+uint64_t t_engage_last = 0;
+
+uint64_t t_move_tick = 0;
+
+int32_t t_own_x_2 = 0;
+
+int32_t t_own_y_2 = 0;
+
+int32_t t_pick_x = 0;
+
+int32_t t_pick_y = 0;
+
+void tnx_drive_note(int32_t ownX, int32_t ownY, int32_t tx, int32_t ty, int32_t appX,
+                                int32_t appY, int32_t pairX, int32_t pairY) {
+    int64_t dx = 0;
+    int64_t dy = 0;
+
+    if (t_engaged && (t_ticks_3 - t_engage_last) > 30) {
+        tnx_engage_report("engage end");
+
+        t_engaged = 0;
+    }
+
+    if (!t_engaged) {
+        t_engaged = 1;
+        t_engage_start = t_ticks_3;
+        t_engage_writes = 0;
+        t_move_tick = 0;
+        t_applied_match = 0;
+        t_applied_miss = 0;
+        t_prev_valid_2 = 0;
+        t_lifetime = 0;
+        t_max_frame = 0;
+        t_traveled = 0;
+        t_pair_dot_sum = 0.0f;
+        t_pair_dot_n = 0;
+        t_human_live = 0;
+    }
+
+    t_engage_last = t_ticks_3;
+    t_engage_writes++;
+    t_lifetime++;
+    t_own_x_2 = ownX;
+    t_own_y_2 = ownY;
+    t_pick_x = tx;
+    t_pick_y = ty;
+
+    if (t_prev_valid_2) {
+        int64_t d2 = 0;
+
+        dx = (int64_t)ownX - (int64_t)t_prev_x_2;
+        dy = (int64_t)ownY - (int64_t)t_prev_y_2;
+        d2 = dx * dx + dy * dy;
+
+        if (!t_move_tick && d2 >= (int64_t)(TNX_MOVE_MIN * TNX_MOVE_MIN)) {
+            t_move_tick = t_ticks_3;
+        }
+
+        if ((uint64_t)sqrtf((float)d2) > t_max_frame) {
+            t_max_frame = (uint64_t)sqrtf((float)d2);
+        }
+
+        t_traveled += (uint64_t)sqrtf((float)d2);
+
+        if (pairX || pairY) {
+            float dot = 0.0f;
+            float plen = sqrtf((float)(pairX * pairX + pairY * pairY));
+            float mlen = sqrtf((float)d2);
+
+            if (plen > 1.0f && mlen > 0.5f) {
+                dot = (float)(pairX * dx + pairY * dy) / (plen * mlen);
+            }
+
+            t_pair_dot_sum += dot;
+            t_pair_dot_n++;
+        }
+    }
+
+    t_prev_x_2 = ownX;
+    t_prev_y_2 = ownY;
+    t_prev_valid_2 = 1;
+
+    if (appX == tx && appY == ty) t_applied_match++;
+    else t_applied_miss++;
+
+    if ((pairX || pairY) && !(pairX == t_stick_x && pairY == t_stick_y)) {
+        t_human_live++;
+    }
+
+    if (appX == TNX_APPLIED_IDLE && appY == TNX_APPLIED_IDLE) t_applied_idle++;
+
+    if ((t_lifetime % 30) == 0) {
+        tnx_logf("engage running frames=%llu writes=%llu movedAfter=%llu traveled=%llu pairDot=%+.2f "
+                 "sent=(%d,%d) pair=(%d,%d) own=(%d,%d) applied=(%d,%d) appliedIdle=%llu appliedWrite=%d - "
+                 "pairDot is the angle between the frame's own displacement and the stick this build "
+                 "wrote, so +1.00 is the body walking the way it was told and a value near zero on a "
+                 "frame that moved is the slide; applied is printed beside it because the 20:46 run "
+                 "walked at 1157 units a second on frames where applied was still the engine's no "
+                 "touch sentinel, which is what retired that field as a lead",
+                 (unsigned long long)(t_ticks_3 - t_engage_start),
+                 (unsigned long long)t_engage_writes,
+                 (unsigned long long)(t_move_tick ? t_move_tick - t_engage_start : 0),
+                 (unsigned long long)t_traveled,
+                 (double)(t_pair_dot_n ? t_pair_dot_sum / (float)t_pair_dot_n : 0.0f),
+                 tx, ty, pairX, pairY, ownX, ownY, appX, appY,
+                 (unsigned long long)t_applied_idle, TNX_APPLIED);
+    }
+}
+
+const char *tnx_state_name(void) {
+    if (t_state == TNX_STATE_DEAD) return "DEAD";
+    if (t_state == TNX_STATE_RESPAWN) return "respawn";
+    if (t_state == TNX_STATE_ALIVE) return "alive";
+
+    return "init";
+}
+
+void tnx_crit_probe(float px, float py) {
+    float best = 1.0e9f;
+    int i = 0;
+
+    t_crit_reaction = 0;
+    t_tti_min = best;
+
+    for (i = 0; i < t_seg_count; i++) {
+        const tnx_seg_t *s = &t_seg[i];
+        float d = 0.0f;
+        float ms = 0.0f;
+
+        if (s->speed <= 1.0f) continue;
+
+        d = tnx_seg_dist(px, py, s->ax, s->ay, s->bx, s->by) - s->inflatedR;
+
+        if (d < 0.0f) d = 0.0f;
+
+        ms = d / s->speed * 1000.0f;
+
+        if (ms < best) best = ms;
+    }
+
+    t_tti_min = best;
+
+    if (TNX_REACT_CRIT && best < TNX_CRITICAL_MS && (t_ticks_3 - t_crit_last) >= TNX_DATA_CRIT_EVERY) {
+        t_crit_reaction = 1;
+        t_crit_last = t_ticks_3;
+    }
+
+    t_mom_live = t_crit_reaction ? 0.0f : TNX_DATA_MOMENTUM;
+
+    if (t_crit_reaction && t_tti_logs < TNX_SEG_TTI_LOGS) {
+        t_tti_logs++;
+
+        TNX_LOGX("crit tti=%.0fms segs=%d own=(%.0f,%.0f) - an impact inside %dms drops the "
+                 "momentum term and takes the best heading even when it does not beat standing "
+                 "still, because on these frames the point is leaving the line now rather than "
+                 "holding a heading that is already the wrong one",
+                 (double)best, t_seg_count, (double)px, (double)py, (int)TNX_CRITICAL_MS);
+    }
+}
+
+int tnx_pred_probe(uintptr_t pred, int *alignOut, int *readOut, int *writeOut, int *vtOut) {
+    void *vtRaw = NULL;
+    uintptr_t vt = 0;
+
+    if (alignOut) *alignOut = 0;
+    if (readOut) *readOut = 0;
+    if (writeOut) *writeOut = 0;
+    if (vtOut) *vtOut = 0;
+
+    if (!pred) return 0;
+    if ((pred & 7) != 0) return 0;
+
+    if (alignOut) *alignOut = 1;
+
+    if (!tnx_addr_readable(pred, TNX_PRED_SPAN)) return 0;
+
+    if (readOut) *readOut = 1;
+
+    if (!tnx_addr_writable(pred, TNX_PRED_SPAN)) return 0;
+
+    if (writeOut) *writeOut = 1;
+
+    if (!tnx_read_ptr(pred, &vtRaw)) return 0;
+
+    vt = (uintptr_t)vtRaw;
+
+    if (!vt) return 0;
+
+    if (vtOut) *vtOut = 1;
+
+    return 1;
+}
+
+void tnx_probe(void) {
+    uintptr_t ctrl = tnx_client();
+    uintptr_t own = tnx_own_obj();
+    void *container = NULL;
+    void *hop = NULL;
+    int32_t raw_x = 0;
+    int32_t raw_y = 0;
+    int32_t dirty = 0;
+    int32_t alive = 0;
+    int32_t id = 0;
+    int32_t gate = 0;
+    int32_t app_x = 0;
+    int32_t app_y = 0;
+    int32_t own_flag = -1;
+    int32_t own_mode = -1;
+
+    if (t_probe_done) return;
+    if (!ctrl) return;
+
+    t_probe_done = 1;
+
+    if (!tnx_read_i32(ctrl + TNX_CTRL_RAW_X_OFF, &raw_x)) raw_x = 0;
+    if (!tnx_read_i32(ctrl + TNX_CTRL_RAW_Y_OFF, &raw_y)) raw_y = 0;
+    if (!tnx_read_i32(ctrl + TNX_CTRL_DIRTY_OFF, &dirty)) dirty = 0;
+    if (!tnx_read_i32(ctrl + TNX_CTRL_ALIVE_OFF, &alive)) alive = 0;
+    if (!tnx_read_i32(ctrl + TNX_CTRL_ID_OFF, &id)) id = 0;
+    if (!tnx_read_i32(ctrl + TNX_CTRL_GATE_OFF, &gate)) gate = 0;
+    if (!tnx_read_i32(ctrl + TNX_CTRL_APPLIED_X_OFF, &app_x)) app_x = 0;
+    if (!tnx_read_i32(ctrl + TNX_CTRL_APPLIED_Y_OFF, &app_y)) app_y = 0;
+
+    if (own) {
+        if (!tnx_read_i32(own + TNX_GATE_FLAG_OFF, &own_flag)) own_flag = -1;
+        if (!tnx_read_i32(own + TNX_MODE_OFF, &own_mode)) own_mode = -1;
+    }
+
+    if (tnx_read_ptr(ctrl + TNX_CLIENT_OFF, &container) && container) {
+        tnx_read_ptr((uintptr_t)container + TNX_CLIENT_OFF, &hop);
+    }
+
+    TNX_LOGX("probe scene=%p own=%p hop0=%p hop1=%p raw+%#llx=(%d,%d) dirty+%#llx=%d alive+%#llx=%d id+%#llx=%d gate+%#llx=%d applied+%#llx=(%d,%d) ownFlag+%#llx=%d ownMode+%#llx=%d",
+             (void *)ctrl, (void *)own, container, hop, (unsigned long long)TNX_CTRL_RAW_X_OFF,
+             raw_x, raw_y, (unsigned long long)TNX_CTRL_DIRTY_OFF, dirty,
+             (unsigned long long)TNX_CTRL_ALIVE_OFF, alive,
+             (unsigned long long)TNX_CTRL_ID_OFF, id,
+             (unsigned long long)TNX_CTRL_GATE_OFF, gate,
+             (unsigned long long)TNX_CTRL_APPLIED_X_OFF, app_x, app_y,
+             (unsigned long long)TNX_GATE_FLAG_OFF, own_flag,
+             (unsigned long long)TNX_MODE_OFF, own_mode, (unsigned long long)0x79d594ULL,
+             (unsigned long long)TNX_CTRL_RAW_X_OFF,
+             (unsigned long long)TNX_CTRL_RAW_Y_OFF, (unsigned long long)0x7b9050ULL,
+             (unsigned long long)TNX_CTRL_APPLIED_X_OFF);
+}
+
+void tnx_hop2(void) {
+    void *outer = NULL;
+    void *inner = NULL;
+    void *list = NULL;
+    void *e0 = NULL;
+    void *vt0 = NULL;
+    uintptr_t vt0Rva = 0;
+    int32_t count = 0;
+
+    if (!t_scene_object) return;
+    if (t_hop2_filled) return;
+
+    if (!tnx_read_ptr((uintptr_t)t_scene_object + TNX_HOP2_OWNER_OFF, &outer) || !outer) return;
+    if (!tnx_read_ptr((uintptr_t)outer + TNX_HOP2_INNER_OFF, &inner) || !inner) return;
+
+    t_hop2 = (uintptr_t)inner;
+
+    if (!tnx_read_ptr((uintptr_t)inner + TNX_MGR_ARRAY_OFF, &list) || !list) {
+        if (t_tick_2 % 10 != 0) return;
+        if (t_tick_2 > TNX_HOP2_WAIT) return;
+        if (t_hop2_logs >= 6) return;
+
+        t_hop2_logs++;
+
+        TNX_LOGX("hop2 tick=%llu at=%p array=null",
+                 (unsigned long long)t_tick_2, inner,
+                 (unsigned long long)TNX_HOP2_OWNER_OFF,
+                 (unsigned long long)TNX_HOP2_INNER_OFF, TNX_HOP2_WAIT);
+
+        return;
+    }
+
+    t_hop2_filled = 1;
+    tnx_read_i32((uintptr_t)inner + TNX_MGR_COUNT_OFF, &count);
+
+    if (tnx_read_ptr((uintptr_t)list, &e0) && e0) {
+        if (tnx_read_ptr((uintptr_t)e0, &vt0) && vt0) vt0Rva = (uintptr_t)vt0 - t_base;
+    }
+
+    TNX_LOGX("hop2 FILLED tick=%llu container=%p count=%d elem0=%p elem0vt=%#llx",
+             (unsigned long long)t_tick_2, inner, count, e0, (unsigned long long)vt0Rva,
+             (unsigned long long)TNX_HOP2_OWNER_OFF,
+             (unsigned long long)TNX_HOP2_INNER_OFF);
+
+}
+
+void tnx_snapshot_3(void) {
+    uintptr_t ctrl = tnx_controller();
+    int32_t rawX = 0;
+    int32_t rawY = 0;
+    int32_t appX = 0;
+    int32_t appY = 0;
+    uint8_t precond = 0;
+    uint8_t gate = 0;
+    uint8_t touch = 0;
+    float mark = 0.0f;
+    float len = 0.0f;
+    float dot = 0.0f;
+    float dragX = 0.0f;
+    float dragY = 0.0f;
+    float dragOx = 0.0f;
+    float dragOy = 0.0f;
+
+    if (!TNX_DRAG) return;
+    if (!ctrl) return;
+    if (!tnx_read_i32(ctrl + TNX_CTRL_RAW_X_OFF, &rawX)) return;
+    if (!tnx_read_i32(ctrl + TNX_CTRL_RAW_Y_OFF, &rawY)) return;
+    if (!tnx_read_i32(ctrl + TNX_CTRL_APPLIED_X_OFF, &appX)) return;
+    if (!tnx_read_i32(ctrl + TNX_CTRL_APPLIED_Y_OFF, &appY)) return;
+    if (!tnx_read_bytes(ctrl + TNX_PRECOND_OFF, &precond, sizeof(precond))) return;
+    if (!tnx_read_bytes(ctrl + TNX_GATE_OFF_2, &gate, sizeof(gate))) return;
+
+    tnx_read_f32(ctrl + TNX_MARK_OFF, &mark);
+
+    t_raw_x = rawX;
+    t_raw_y = rawY;
+    t_app_x = appX;
+    t_app_y = appY;
+    t_precond = (int)precond;
+    t_gate = (int)(gate & 1);
+    t_mark = mark;
+
+    if (!TNX_HUMAN) return;
+
+    if (!tnx_read_f32(ctrl + TNX_CUR_X_OFF, &dragX) || !tnx_read_f32(ctrl + TNX_CUR_Y_OFF, &dragY)) return;
+    if (!tnx_read_f32(ctrl + TNX_ORG_X_OFF, &dragOx) || !tnx_read_f32(ctrl + TNX_ORG_Y_OFF, &dragOy)) return;
+    if (!tnx_read_bytes(ctrl + TNX_TOUCH_GATE_OFF, &touch, sizeof(touch))) return;
+
+    t_moved_3 = 0;
+
+    if (fabsf(dragX - t_cur_x) > TNX_EPS) t_moved_3 = 1;
+    if (fabsf(dragY - t_cur_y) > TNX_EPS) t_moved_3 = 1;
+    if (fabsf(dragOx - t_org_x) > TNX_EPS) t_moved_3 = 1;
+    if (fabsf(dragOy - t_org_y) > TNX_EPS) t_moved_3 = 1;
+
+    t_touch = (int)(touch & 1);
+    t_human_2 = (t_touch || t_moved_3) ? 1 : 0;
+
+    if (t_drove && t_drive_tick + 1 < t_ticks_3 && !t_human_2) {
+        tnx_write_f32(ctrl + TNX_CUR_X_OFF, t_org_x);
+        tnx_write_f32(ctrl + TNX_CUR_Y_OFF, t_org_y);
+        t_cur_x = t_org_x;
+        t_cur_y = t_org_y;
+        t_drove = 0;
+        t_stops++;
+    }
+
+    if (!t_drove) return;
+    if (t_last_dx == 0.0f && t_last_dy == 0.0f) return;
+
+    len = sqrtf((float)(rawX * rawX + rawY * rawY));
+
+    if (len < 1.0f) return;
+
+    dot = ((float)rawX * t_last_dx + (float)rawY * t_last_dy) / len;
+    t_dot = dot;
+
+    if (fabsf(dot) < TNX_ALIGN) {
+        t_proofs = 0;
+
+        return;
+    }
+
+    if (t_proofs < TNX_PROOF) t_proofs++;
+
+    if (t_proofs >= TNX_PROOF) t_accepted = 1;
+}
+
+void tnx_census(void) {
+    void *array = NULL;
+    int32_t count = 0;
+    int32_t i = 0;
+    int players = 0;
+    int shots = 0;
+    int other = 0;
+    int projClass = 0;
+
+    if ((t_ticks_3 % 60) != 0) return;
+    if (!t_manager) return;
+    if (!tnx_read_i32(t_manager + TNX_MGR_COUNT_OFF, &count)) return;
+    if (count <= 0 || count > TNX_COUNT_MAX) return;
+    if (!tnx_read_ptr(t_manager + TNX_MGR_ARRAY_OFF, &array) || !array) return;
+
+    for (i = 0; i < count; i++) {
+        void *element = NULL;
+        int32_t gid = 0;
+
+        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * 8, &element) || !element) continue;
+
+        gid = tnx_gid((uintptr_t)element, NULL);
+
+        {
+            void *vtx = NULL;
+
+            if (tnx_read_ptr((uintptr_t)element, &vtx) && vtx &&
+                ((uintptr_t)vtx - t_base) == (uintptr_t)TNX_CLASS_PROJ_RVA) projClass++;
+        }
+
+        if (gid >= TNX_SHOT_GID && gid < TNX_SHOT_GID_MAX) shots++;
+        else if (gid >= TNX_PLAYER_GID && gid < TNX_SHOT_GID) players++;
+        else other++;
+    }
+
+    TNX_LOGX("census count=%d players=%d shots=%d other=%d projClass=%d skipped=%d manager=%p - one line a second with "
+             "the container split by gid band, so a dodge that reports segs=0 says whether there was "
+             "anything to dodge at all: the 17:53 run held only players and two objects in the four "
+             "million band, one of them standing still and one moving at two units a frame, while the "
+             "projectiles that were recognised in the 17:12 and 17:45 runs carry gids in the %d band",
+             count, players, shots, other, projClass, t_proj_skipped, (void *)t_manager,
+             TNX_SHOT_GID);
+}
+
+uint64_t tnx_upd_delta(void) {
+    uint64_t now = t_update_hits;
+    uint64_t d = now - t_prev_upd;
+
+    t_prev_upd = now;
+
+    return d;
+}
+
+uint64_t tnx_rend_delta(void) {
+    uint64_t now = (uint64_t)t_render_calls;
+    uint64_t d = now - t_prev_rend;
+
+    t_prev_rend = now;
+
+    return d;
+}

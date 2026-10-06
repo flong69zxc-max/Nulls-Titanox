@@ -27,4 +27,6 @@ int tnx_clamp(int32_t *x, int32_t *y);
 uint64_t tnx_us(void);
 void tnx_paircal(void);
 
+uintptr_t tnx_pair_base(void);
+
 #endif

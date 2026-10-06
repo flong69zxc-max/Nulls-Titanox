@@ -247,4 +247,14 @@ const char *tnx_header_reason(uintptr_t manager, int32_t *countOut, int32_t *cap
 uintptr_t tnx_coord_x_off(void);
 uintptr_t tnx_coord_y_off(void);
 
+extern int32_t t_gid_hi;
+extern int32_t t_gid_lo;
+extern const uintptr_t t_mode_vtables[36];
+extern int t_proj_skipped;
+extern int t_tnx_verbose;
+extern tnx_trail_t t_trail[TNX_TRAIL_MAX];
+int tnx_ctrl_bounds(uintptr_t base, int32_t *wOut, int32_t *hOut);
+void tnx_paircal(void);
+void tnx_probe_3(uintptr_t manager, uintptr_t mode, int verbose);
+
 #endif

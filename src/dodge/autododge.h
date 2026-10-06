@@ -251,4 +251,35 @@ extern uint64_t t_wall_stops;
 float tnx_all_clear(float x, float y);
 int tnx_wall_blocked(float x0, float y0, float x1, float y1);
 
+extern int t_cal_n;
+extern float t_cal_rad_seen;
+extern uint64_t t_commit_until;
+extern uint64_t t_crit_last;
+extern uint64_t t_crit_took;
+extern int t_dodge_probe_usable;
+extern float t_mom_live;
+extern uint64_t t_no_threat_since;
+extern uint64_t t_own_obj_last;
+extern float t_own_vx;
+extern float t_own_vy;
+extern uint64_t t_prev_own_tick;
+extern float t_prev_own_x;
+extern float t_prev_own_y;
+extern int t_proj_r_cfg_logs;
+extern int t_rad_logs;
+extern int t_rad_n;
+extern uint64_t t_rad_test;
+extern int t_released;
+extern int t_scene_skip;
+extern uint64_t t_shot_logs;
+extern float t_shot_speed[TNX_PROJ_MAX];
+extern int t_stat_skip;
+extern int t_tti_logs;
+int tnx_body_blocked(float x, float y, float ownX, float ownY);
+void tnx_contact_note(float dist, float projR);
+float tnx_own_radius(void);
+float tnx_proj_radius(const tnx_proj_t *p, float speed);
+float tnx_seg_dist(float ax, float ay, float bx, float by, float px, float py);
+void tnx_threats(void);
+
 #endif

@@ -185,7 +185,7 @@ void tnx_recon_live_3(void) {
             void *next = NULL;
 
             if (!base) break;
-            if (!tnx_read_ptr(base + (uintptr_t)TNX_SCENE_OFF, &next) || !next) break;
+            if (!tnx_read_ptr(base + (uintptr_t)TNX_MODE_MANAGER_OFF, &next) || !next) break;
 
             hop = next;
 

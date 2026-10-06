@@ -1,0 +1,83 @@
+diff --git a/src/diag/recon.mm b/src/diag/recon.mm
+index a3343ae..1b05eea 100644
+--- a/src/diag/recon.mm
++++ b/src/diag/recon.mm
+@@ -185,7 +185,7 @@ void tnx_recon_live_3(void) {
+             void *next = NULL;
+ 
+             if (!base) break;
+-            if (!tnx_read_ptr(base + (uintptr_t)TNX_SCENE_OFF, &next) || !next) break;
++            if (!tnx_read_ptr(base + (uintptr_t)TNX_MODE_MANAGER_OFF, &next) || !next) break;
+ 
+             hop = next;
+ 
+diff --git a/src/dodge/autododge.mm b/src/dodge/autododge.mm
+index 3bfe449..be4b740 100644
+--- a/src/dodge/autododge.mm
++++ b/src/dodge/autododge.mm
+@@ -1498,6 +1498,7 @@ static int t_js3_mates = 0;
+ static int t_js3_foes = 0;
+ static int t_js3_unk = 0;
+ static float t_js3_ox = 0.0f;
++static int t_pick_src = 0;
+ static float t_js_dir_x = 0.0f;
+ static float t_js_dir_y = 0.0f;
+ 
+@@ -1505,10 +1506,11 @@ int t_aim_shots = 0;
+ 
+ int t_aim_hits = 0;
+ 
++static float t_js3_oy = 0.0f;
++
+ int32_t t_aim_tx = 0;
+ 
+ int32_t t_aim_ty = 0;
+-static float t_js3_oy = 0.0f;
+ static int t_js3_ohit = 0;
+ static int t_js3_rej_team = 0;
+ static int t_js3_rej_dir = 0;
+@@ -2117,10 +2119,6 @@ int t_aim_ok = 0;
+ 
+ int t_aim_idx = -1;
+ 
+-int32_t t_aim_tx = 0;
+-
+-int32_t t_aim_ty = 0;
+-
+ int tnx_aim_4(void) {
+     float bestD2 = TNX_AIM_RANGE * TNX_AIM_RANGE;
+     int32_t mx = 0;
+@@ -2263,6 +2261,7 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
+ 
+             t_js_dir_x = jsX;
+             t_js_dir_y = jsY;
++            t_pick_src = 1;
+         }
+     }
+ 
+@@ -2297,6 +2296,8 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
+ 
+         if (!safeOk && TNX_FLEE) {
+             if (tnx_flee(px, py, &t_tx_2, &t_ty_2)) t_moving = 1;
++
++            t_pick_src = 2;
+         }
+ 
+         if (safeOk) {
+@@ -2322,14 +2323,14 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
+     if (t_logs_4 < 24 && (t_ticks_3 % 60) == 0) {
+         t_logs_4++;
+ 
+-        TNX_LOGX("dodge segs=%d threatened=%d picked=%d jsProj=%d jsMate=%d jsFoe=%d jsUnk=%d life=%d jsOwn=(%.0f,%.0f) jsOwnOk=%d jsUrgent=%d jsVo=%d target=(%.0f,%.0f) dist=%.0f way=%.0f "
++        TNX_LOGX("dodge segs=%d threatened=%d picked=%d jsProj=%d jsMate=%d jsFoe=%d jsUnk=%d life=%d jsOwn=(%.0f,%.0f) jsOwnOk=%d pickSrc=%d jsUrgent=%d jsVo=%d target=(%.0f,%.0f) dist=%.0f way=%.0f "
+                  "stick=%d angle=%.1f joyw=%d snap=%d moving=%d - the threat segments start where "
+                  "each shot is NOW and run along its own flight, so a shot that already passed is "
+                  "behind the segment and not a reason to run; the directions are walked outward from "
+                  "the stick angle so a safe heading near the one the player holds wins; way is the "
+                  "heading actually written towards in degrees, counted from the positive x axis, so "
+                  "two consecutive lines with the same way is the character holding one direction",
+-                 t_seg_count, threatened, picked, t_js_n, t_js3_mates, t_js3_foes, t_js3_unk, t_life_3, t_js3_ox, t_js3_oy, t_js3_ohit, t_js_urgent, t_js_vo,
++                 t_seg_count, threatened, picked, t_js_n, t_js3_mates, t_js3_foes, t_js3_unk, t_life_3, t_js3_ox, t_js3_oy, t_js3_ohit, t_pick_src, t_js_urgent, t_js_vo,
+                  (double)t_tx_2, (double)t_ty_2,
+                  (double)sqrtf((t_tx_2 - px) * (t_tx_2 - px) +
+                                (t_ty_2 - py) * (t_ty_2 - py)),

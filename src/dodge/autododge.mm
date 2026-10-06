@@ -1585,6 +1585,36 @@ static int tnx_js_urgent(const tnx_js_proj_t *p, float mx, float my, float mr) {
     return (ddx * ddx + ddy * ddy) <= r * r;
 }
 
+static float tnx_js_enemy_penalty(float dirX, float dirY, float mx, float my) {
+    int i;
+    float best = 1e18f;
+    float bx = 0.0f;
+    float by = 0.0f;
+    float d;
+    float closing;
+
+    for (i = 0; i < t_enemy_n && i < TNX_PLAYER_MAX; i++) {
+        float dx = (float)t_enemy_x[i] - mx;
+        float dy = (float)t_enemy_y[i] - my;
+        float d2 = dx * dx + dy * dy;
+
+        if (d2 < best) {
+            best = d2;
+            bx = dx;
+            by = dy;
+        }
+    }
+
+    if (best > 1e17f || best < 1.0f) return 0.0f;
+
+    d = sqrtf(best);
+    closing = (dirX * bx + dirY * by) / d;
+
+    if (closing <= 0.0f) return 0.0f;
+
+    return closing * TNX_JS_ENEMY_W;
+}
+
 static float tnx_js_score(float dirX, float dirY, float mx, float my, float mr,
                           int haveIntent, float ix, float iy) {
     int i;
@@ -1618,6 +1648,8 @@ static float tnx_js_score(float dirX, float dirY, float mx, float my, float mr,
     }
 
     if (haveIntent) score -= (dirX * ix + dirY * iy) * TNX_JS_INTENT_W * 15.0f;
+
+    score += tnx_js_enemy_penalty(dirX, dirY, mx, my);
 
     if (t_js_have_last && (t_ticks_3 - t_js_last_tick) < TNX_JS_INERTIA_TICKS) {
         score -= (dirX * t_js_last_x + dirY * t_js_last_y) * 45.0f;

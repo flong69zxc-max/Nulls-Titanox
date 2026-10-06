@@ -6,6 +6,11 @@
 
 #ifndef TNX_PROJ_ANGLE_OFF
 #define TNX_PROJ_ANGLE_OFF 0xb8
+
+#ifndef TNX_JS_ENEMY_W
+#define TNX_JS_ENEMY_W 300.0f
+#endif
+
 #endif
 
 #ifndef TNX_JS_SPEED_FALLBACK

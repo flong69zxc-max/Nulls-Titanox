@@ -1,5 +1,5 @@
-#ifndef TITANOX_FEATURES_SIGN_H
-#define TITANOX_FEATURES_SIGN_H
+#ifndef TITANOX_INPUT_SIGN_H
+#define TITANOX_INPUT_SIGN_H
 
 #include "core/types.h"
 #include "core/offsets.h"

@@ -1,5 +1,5 @@
-#ifndef TITANOX_HELPERS_SCAN_H
-#define TITANOX_HELPERS_SCAN_H
+#ifndef TITANOX_SCAN_SCAN_H
+#define TITANOX_SCAN_SCAN_H
 
 #include "core/types.h"
 

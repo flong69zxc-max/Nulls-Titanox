@@ -1,5 +1,5 @@
-#ifndef TITANOX_FEATURES_REPORT_H
-#define TITANOX_FEATURES_REPORT_H
+#ifndef TITANOX_LEARNING_REPORT_H
+#define TITANOX_LEARNING_REPORT_H
 
 #include "core/types.h"
 

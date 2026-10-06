@@ -1,5 +1,5 @@
-#ifndef TITANOX_FEATURES_SD_H
-#define TITANOX_FEATURES_SD_H
+#ifndef TITANOX_LEARNING_SD_H
+#define TITANOX_LEARNING_SD_H
 
 #include "core/types.h"
 #include "core/offsets.h"

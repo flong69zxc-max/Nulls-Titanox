@@ -1,5 +1,5 @@
-#ifndef TITANOX_HELPERS_MOVE_H
-#define TITANOX_HELPERS_MOVE_H
+#ifndef TITANOX_INPUT_MOVE_H
+#define TITANOX_INPUT_MOVE_H
 
 #include "core/types.h"
 

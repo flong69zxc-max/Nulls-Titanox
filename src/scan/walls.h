@@ -1,5 +1,5 @@
-#ifndef TITANOX_FEATURES_WALLS_H
-#define TITANOX_FEATURES_WALLS_H
+#ifndef TITANOX_SCAN_WALLS_H
+#define TITANOX_SCAN_WALLS_H
 
 #include "core/types.h"
 #include "core/config.h"

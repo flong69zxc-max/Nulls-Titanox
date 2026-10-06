@@ -21,7 +21,7 @@
 #include "learning/sd.h"
 
 #include "diag/diag.h"
-#include "input/drive.h"
+#include "input/joystick.h"
 #include "learning/learn.h"
 #include "ui/overlay.h"
 

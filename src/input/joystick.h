@@ -26,14 +26,12 @@ extern int t_joy_drive_on;
 
 extern int t_joy_drive_ok;
 
-int tnx_joy_drive_4(float dirX, float dirY, int on);
+int tnx_joy_set_4(float dirX, float dirY, int on);
 
 int tnx_joy_read(uintptr_t bs, float *ax, float *ay, float *bx, float *by, uint32_t *mode, float *cs, float *sn);
 void tnx_precision(int32_t ownX, int32_t ownY, float dirX, float dirY, int escape);
-void tnx_route(int engaged);
 void tnx_select(float px, float py);
 float tnx_speed(void);
-void tnx_stick(int engaged, float dirX, float dirY);
 
 extern long long t_sum_x;
 extern long long t_sum_y;

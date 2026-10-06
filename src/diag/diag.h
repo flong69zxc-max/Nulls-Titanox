@@ -93,3 +93,11 @@ const char *tnx_state_name(void);
 uint64_t tnx_upd_delta(void);
 
 #endif
+
+void tnx_recon_3(void);
+
+void tnx_recon_vtable_3(const char *tag, uintptr_t vtRva, int slots);
+
+void tnx_recon_words_3(const char *tag, uintptr_t obj, int from, int to);
+
+void tnx_recon_calls_3(const char *tag, uintptr_t fnRva, int bytes);

@@ -546,6 +546,8 @@ void tnx_dump(void) {
 void tnx_core(void) {
     if ((t_ticks_3 % 60) != 0) return;
 
+    tnx_recon_3();
+
     TNX_LOGX("core tick=%llu own=(%d,%d) ownOk=%d team=%d mates=%d enemies=%d trust=%d "
              "players=%d segs=%d trackedOwn=%d trackedOther=%d oneshot=%d body=%d enemyBlock=%d "
              "mateBlock=%d gate=%llu pred=%llu/%llu deadPick=%llu human=%llu driveWrites=%llu "

@@ -39,7 +39,7 @@ const char *t_log_drop[64] = {
     "classdump", "trail", "state", "modeslot", "hooks",
     "scene", "heap", "fields", "write", "slot",
     "setprediction", "scan", "route", "modesig", "hop",
-    "battle", "named", "offsets",
+    "battle", "named", "offsets", "recon",
     NULL
 };
 

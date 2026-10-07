@@ -24,20 +24,16 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/theos
-          key: theos-${{ runner.os }}-v3
+          key: theos-${{ runner.os }}-v4
 
       - name: Build
         run: |
           set -euo pipefail
           export THEOS="$HOME/theos"
-          if [ ! -f "$THEOS/makefiles/common.mk" ]; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq build-essential fakeroot rsync curl perl zip git libtinfo6 libxml2-16
-            sudo update-alternatives --set fakeroot /usr/bin/fakeroot-sysv
-            git clone -q --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
-            mkdir -p "$THEOS/toolchain"
-            curl -sL "https://github.com/L1ghtmann/llvm-project/releases/latest/download/iOSToolchain-$(uname -m).tar.xz" | tar -xJ - -C "$THEOS/toolchain/"
-            "$THEOS/bin/install-sdk" latest
+          if [ ! -f "$THEOS/makefiles/common.mk" ] || [ -z "$(ls -A "$THEOS/toolchain/linux/iphone" 2>/dev/null)" ]; then
+            curl -fsSL -o /tmp/theos-install https://raw.githubusercontent.com/theos/theos/master/bin/install-theos
+            sed -i 's/\blibxml2\b/libxml2-16/' /tmp/theos-install
+            bash /tmp/theos-install </dev/null
             lib="$(dpkg -L libxml2-16 | grep 'libxml2\.so\.16$' | head -1)"
             [ -n "$lib" ] && sudo ln -sf "$lib" "$(dirname "$lib")/libxml2.so.2"
           fi

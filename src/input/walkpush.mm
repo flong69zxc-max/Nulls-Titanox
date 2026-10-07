@@ -52,6 +52,12 @@ static uint64_t t_walk_gate_logs_10 = 0;
 
 static uintptr_t t_walk_mode_fn_10 = 0;
 
+static float t_walk_dead_11 = 0.0f;
+
+static uintptr_t t_walk_dead_a_11 = 0;
+
+static uintptr_t t_walk_dead_b_11 = 0;
+
 static int32_t t_ent_prev_10[TNX_ENT_SLOTS_10];
 
 static int32_t t_ent_cur_10[TNX_ENT_SLOTS_10];
@@ -309,6 +315,7 @@ void tnx_walk_pump_10(void) {
     float knobY = 0.0f;
     float sign = 1.0f;
     float curBefore = 0.0f;
+    float knobR = 0.0f;
     uint8_t gF78 = 0;
     uint8_t one = 1;
     uint8_t gF9E = 0;
@@ -501,8 +508,38 @@ void tnx_walk_pump_10(void) {
         flip = tnx_walk_flip_10();
         sign = flip ? -1.0f : 1.0f;
 
-        knobX = orgX + dx * sign * TNX_WALK_KNOB_RADIUS_10;
-        knobY = orgY + dy * sign * TNX_WALK_KNOB_RADIUS_10;
+        if (t_walk_dead_11 <= 0.0f) {
+            int da = 0;
+            int db = 0;
+
+            if (!t_walk_dead_a_11) {
+                t_walk_dead_a_11 = tnx_entry_2(RVA_DEAD_A_11);
+
+                if (!t_walk_dead_a_11 && t_base) t_walk_dead_a_11 = t_base + RVA_DEAD_A_11;
+            }
+
+            if (!t_walk_dead_b_11) {
+                t_walk_dead_b_11 = tnx_entry_2(RVA_DEAD_B_11);
+
+                if (!t_walk_dead_b_11 && t_base) t_walk_dead_b_11 = t_base + RVA_DEAD_B_11;
+            }
+
+            if (t_walk_dead_a_11 && t_walk_dead_b_11) {
+                da = ((int (*)(void))t_walk_dead_a_11)();
+                db = ((int (*)(void))t_walk_dead_b_11)();
+            }
+
+            if (da > 0 && db > 0) t_walk_dead_11 = TNX_DEAD_CONST_11 / (1.0f + (float)da / (float)db);
+            else t_walk_dead_11 = 12.0f;
+        }
+
+        knobR = t_walk_dead_11 * TNX_WALK_DEAD_GAIN_11 + TNX_WALK_DEAD_PAD_11;
+
+        if (knobR < 10.0f) knobR = 10.0f;
+        if (knobR > 60.0f) knobR = 60.0f;
+
+        knobX = orgX + dx * sign * knobR;
+        knobY = orgY + dy * sign * knobR;
 
         if (!t_walk_knob_own_10) {
             t_walk_save_f78_10 = gF78;
@@ -580,7 +617,7 @@ void tnx_walk_pump_10(void) {
 
         TNX_LOGX("walkpush n=%llu mgr=%p ent=%p own=(%d,%d) want=(%d,%d) dir=(%d,%d) span=%d goal=(%d,%d) "
                  "applied=(%d,%d) jump=%lld sent=%d wrote=%d knobWrote=%d knobHeld=%d flip=%llu "
-                 "curBefore=%g org=(%g,%g) cur=(%g,%g) hold=%d/%d sav=%d/%d hsBefore=(%d,%d,%g,%d) hsAfter=(%d,%d,%g,%d) scans=%llu "
+                 "curBefore=%g org=(%g,%g) cur=(%g,%g) rad=%g dead=%g hold=%d/%d sav=%d/%d hsBefore=(%d,%d,%g,%d) hsAfter=(%d,%d,%g,%d) scans=%llu "
                  "sends=%llu near=%llu hand=%llu knobWrites=%llu knobBacks=%llu - while the touch pair is at rest "
                  "it is displaced so the engine walk routine reads the wanted direction itself, and when the "
                  "finger already holds the pair the raw pair and the commit are used instead, and the sign comes "
@@ -589,6 +626,7 @@ void tnx_walk_pump_10(void) {
                  t_walk_dir_10[0], t_walk_dir_10[1], span, t_walk_goal_10[0], t_walk_goal_10[1], appX, appY,
                  (long long)jump, sent, wrote, knobWrote, knobHeld, (unsigned long long)flip,
                  (double)curBefore, (double)orgX, (double)orgY, (double)curX, (double)curY,
+                 (double)knobR, (double)t_walk_dead_11,
                  (int)gF78, (int)gF7F, (int)t_walk_save_f78_10, (int)t_walk_save_f7f_10,
                  (int)latchB, (int)dirtyB, (double)timerB, (int)holdB,
                  (int)latch, (int)dirty, (double)timer, (int)hold,

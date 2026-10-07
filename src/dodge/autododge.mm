@@ -1462,6 +1462,7 @@ static void tnx_dodge_state_tick(float px, float py) {
 }
 
 #define TNX_DODGE_SAFETY 28.0f
+#define TNX_DODGE_NEAR_11 600.0f
 #define TNX_DODGE_T_URGENT 0.9f
 #define TNX_DODGE_T_FIELD 1.8f
 #define TNX_DODGE_DIRS 64
@@ -1967,6 +1968,7 @@ static int tnx_dodge_danger(float mx, float my, float mr) {
         float tHit;
 
         if (distSq <= r * r) return 1;
+        if (distSq <= TNX_DODGE_NEAR_11 * TNX_DODGE_NEAR_11) return 1;
 
         vx = p->dx * p->speed;
         vy = p->dy * p->speed;

@@ -17,6 +17,12 @@ static uintptr_t t_mirror_addr(uintptr_t base, int slot) {
     return base + 0xe00 + (uintptr_t)(slot - 160) * 4;
 }
 
+static unsigned long long t_mirror_off_2(int slot) {
+    if (slot < 160) return 0x880 + (unsigned long long)slot * 4;
+
+    return 0xe00 + (unsigned long long)(slot - 160) * 4;
+}
+
 static float t_mirror_f(int32_t v) {
     float f;
 
@@ -128,6 +134,54 @@ void tnx_mirror_probe_2(int dodging) {
         t_ticks_2 = 0;
         t_dumps_2++;
 
+        {
+            uintptr_t bsm = 0;
+            float v[16];
+            uint8_t dr[3];
+            int q;
+
+            for (q = 0; q < 16; q++) v[q] = 0.0f;
+            for (q = 0; q < 3; q++) dr[q] = 0;
+
+            if (bs) tnx_read_ptr(bs + TNX_JOY_TARGET_OFF, (void **)&bsm);
+
+            if (bsm) {
+                tnx_read_f32(bsm + 0x9b8, &v[0]);
+                tnx_read_f32(bsm + 0x9bc, &v[1]);
+                tnx_read_f32(bsm + 0x9c0, &v[2]);
+                tnx_read_f32(bsm + 0x9c4, &v[3]);
+                tnx_read_f32(bsm + 0x9d0, &v[4]);
+                tnx_read_f32(bsm + 0x9d4, &v[5]);
+                tnx_read_f32(bsm + 0x9d8, &v[6]);
+                tnx_read_f32(bsm + 0x9dc, &v[7]);
+                tnx_read_f32(bsm + 0xa20, &v[8]);
+                tnx_read_f32(bsm + 0xa24, &v[9]);
+                tnx_read_f32(bsm + 0xa40, &v[10]);
+                tnx_read_f32(bsm + 0xa44, &v[11]);
+                tnx_read_f32(bsm + 0xa48, &v[12]);
+                tnx_read_f32(bsm + 0xa4c, &v[13]);
+                tnx_read_f32(bsm + 0xa28, &v[14]);
+                tnx_read_f32(bsm + 0xa2c, &v[15]);
+
+                tnx_read_u8(bsm + 0x8ac, &dr[0]);
+                tnx_read_u8(bsm + 0xee8, &dr[1]);
+                tnx_read_u8(bsm + 0xf48, &dr[2]);
+            }
+
+            TNX_LOGX("mirror pairs bsm=%p p1=%.2f,%.2f cen1=%.2f,%.2f p2=%.2f,%.2f cen2=%.2f,%.2f "
+                     "p3=%.2f,%.2f cur3=%.2f,%.2f org3=%.2f,%.2f cen3=%.2f,%.2f drag=%d,%d,%d "
+                     "dodging=%d - three stick records on the game own input object, each as "
+                     "current,centre pairs plus its own drag byte, so the record that tracks the "
+                     "hand while the player walks is the move stick and the one that tracks the hand "
+                     "while the player aims is the aim stick",
+                     (void *)bsm,
+                     (double)v[0], (double)v[1], (double)v[2], (double)v[3],
+                     (double)v[4], (double)v[5], (double)v[6], (double)v[7],
+                     (double)v[8], (double)v[9], (double)v[10], (double)v[11],
+                     (double)v[12], (double)v[13], (double)v[14], (double)v[15],
+                     (int)dr[0], (int)dr[1], (int)dr[2], dodging);
+        }
+
         for (rank = 0; rank < 8; rank++) {
             int bi = -1;
             int bslot = -1;
@@ -152,13 +206,13 @@ void tnx_mirror_probe_2(int dodging) {
             {
                 int32_t cur = 0;
 
-                if (!tnx_read_i32(t_mirror_seen[bi] + t_mirror_off(bslot), &cur)) cur = 0;
+                if (!tnx_read_i32(t_mirror_seen[bi] + t_mirror_off_2(bslot), &cur)) cur = 0;
 
                 TNX_LOGX("mirror top #%d obj=%s off=+0x%llx val=%d/%.4f moves=%u whileDodging=0 "
                          "moves=%u whileDodging=1 - the value says what the field is: a small float "
                          "inside -1..1 is a normalised stick, a large float is a screen or world "
                          "coordinate, and a small integer is a flag or an index",
-                         rank, t_mirror_name(bi), (unsigned long long)t_mirror_off(bslot),
+                         rank, t_mirror_name(bi), (unsigned long long)t_mirror_off_2(bslot),
                          cur, (double)t_mirror_f(cur), t_n0_2[bi][bslot], t_n1_2[bi][bslot]);
             }
 

@@ -194,6 +194,8 @@ void tnx_slot_hooks_install(void) {
 
 const int tnx_object_slots[TNX_OBJ_SLOTS] = { 2, 3, 4 };
 
+uint64_t t_slot_hits[TNX_SLOT_COUNT] = { 0 };
+
 
 
 

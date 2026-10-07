@@ -34,8 +34,12 @@ static const char *t_mirror_name(int i) {
     return n[i];
 }
 
-void tnx_mirror_probe(int dodging) {
+void tnx_mirror_probe_2(int dodging) {
     uintptr_t list[TNX_MIRROR_OBJ_MAX];
+    static uint32_t t_n0_2[TNX_MIRROR_OBJ_MAX][TNX_MIRROR_SLOT_MAX];
+    static uint32_t t_n1_2[TNX_MIRROR_OBJ_MAX][TNX_MIRROR_SLOT_MAX];
+    static int t_ticks_2 = 0;
+    static int t_dumps_2 = 0;
     uintptr_t bs = tnx_bs();
     uintptr_t scene = (uintptr_t)t_scene_object;
     uintptr_t ctrl = tnx_controller();
@@ -91,6 +95,9 @@ void tnx_mirror_probe(int dodging) {
 
                 t_mirror_prev[i][slot] = now;
 
+                if (dodging) t_n1_2[i][slot]++;
+                else t_n0_2[i][slot]++;
+
                 if (t_mirror_hit[i][slot]) continue;
 
                 t_mirror_hit[i][slot] = 1;
@@ -110,5 +117,49 @@ void tnx_mirror_probe(int dodging) {
         }
 
         t_mirror_ready[i] = 1;
+    }
+
+    t_ticks_2++;
+
+    if (t_ticks_2 >= 300 && t_dumps_2 < 14) {
+        int k;
+        int rank;
+
+        t_ticks_2 = 0;
+        t_dumps_2++;
+
+        for (rank = 0; rank < 8; rank++) {
+            int bi = -1;
+            int bslot = -1;
+            uint32_t bv = 0;
+
+            for (k = 0; k < TNX_MIRROR_OBJ_MAX; k++) {
+                int sl;
+
+                for (sl = 0; sl < TNX_MIRROR_SLOT_MAX; sl++) {
+                    uint32_t v = t_n0_2[k][sl] + t_n1_2[k][sl];
+
+                    if (v > bv) {
+                        bv = v;
+                        bi = k;
+                        bslot = sl;
+                    }
+                }
+            }
+
+            if (bi < 0 || bv < 3) break;
+
+            TNX_LOGX("mirror top #%d obj=%s off=+0x%llx moves=%u whileDodging=0 moves=%u whileDodging=1 "
+                     "- counts over the whole battle, so an offset with a high count at dodging=0 is a "
+                     "channel the game own touch path writes and a high count at dodging=1 means this "
+                     "build reaches the same field",
+                     rank, t_mirror_name(bi),
+                     (unsigned long long)(bslot < 160 ? (0x880 + (unsigned long long)bslot * 4)
+                                                      : (0xe00 + (unsigned long long)(bslot - 160) * 4)),
+                     t_n0_2[bi][bslot], t_n1_2[bi][bslot]);
+
+            t_n0_2[bi][bslot] = 0;
+            t_n1_2[bi][bslot] = 0;
+        }
     }
 }

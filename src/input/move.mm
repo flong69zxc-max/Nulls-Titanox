@@ -324,11 +324,11 @@ static int tnx_pred_ok(uintptr_t pred) {
     return tnx_pred_probe(pred, NULL, NULL, NULL, NULL);
 }
 
-int tnx_pred_set(int x, int y) {
+int tnx_pred_set_2(int x, int y) {
     uintptr_t setFn = 0;
     uintptr_t pred = 0;
 
-    if (!TNX_PRED_SET) return 0;
+    if (!TNX_PRED_SET_2) return 0;
 
     if (!t_coord_ok) {
         if (t_pred_blocked < TNX_QGUARD_LOGS) {
@@ -347,13 +347,15 @@ int tnx_pred_set(int x, int y) {
 
     if (!setFn) return 0;
 
-    pred = tnx_controller();
+    pred = tnx_hop(tnx_controller(), NULL);
 
     if (!tnx_pred_ok(pred)) {
         if (t_pred_ok < 4) {
-            TNX_LOGX("predMiss pred=%p - the receiver is the logic client itself, no hop, and a "
-                     "receiver that fails here is one the write cannot land on, so nothing of the "
-                     "local prediction follows the dodge on this frame", (void *)pred);
+            TNX_LOGX("predMiss pred=%p ctrl=%p - the engine reaches the setter through a hop of its "
+                     "own (0x7b9050: ldr x8,[x0,#0x918]; ldr x0,[x8,#0x28]) and never passes the "
+                     "logic client itself, so a write that lands on the client is a write nothing "
+                     "reads and neither the walk cycle nor the local step follows the dodge",
+                     (void *)pred, (void *)tnx_controller());
             t_pred_ok++;
         }
 
@@ -479,7 +481,7 @@ int tnx_enqueue_type(int x, int y, int type) {
         }
     }
 
-    if (type == (int)TNX_TYPE_MOVE) (void)tnx_pred_set(x, y);
+    if (type == (int)TNX_TYPE_MOVE) (void)tnx_pred_set_2(x, y);
 
     mgr = tnx_manager();
 

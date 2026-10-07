@@ -548,7 +548,8 @@ void tnx_walk_pump_10(void) {
 
         if (TNX_WALK_HOLD_10) {
             tnx_write_bytes(mgr + (uintptr_t)TNX_CTRL_MOVE_OFF, &one, sizeof(one));
-            tnx_write_bytes(mgr + (uintptr_t)TNX_TOUCH_GATE_OFF, &one, sizeof(one));
+
+            if (TNX_WALK_HOLD_GATE_12) tnx_write_bytes(mgr + (uintptr_t)TNX_TOUCH_GATE_OFF, &one, sizeof(one));
         }
 
         tnx_write_f32(mgr + (uintptr_t)TNX_JOY_CUR_X_OFF, knobX);

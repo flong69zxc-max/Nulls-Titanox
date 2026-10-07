@@ -1,5 +1,5 @@
-#ifndef RECOIL_HOOKS_STARTS_H
-#define RECOIL_HOOKS_STARTS_H
+#ifndef RECOIL_CORE_STARTS_H
+#define RECOIL_CORE_STARTS_H
 
 #include "core/types.h"
 

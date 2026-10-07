@@ -1,5 +1,5 @@
-#ifndef RECOIL_HOOKS_SLOTS_H
-#define RECOIL_HOOKS_SLOTS_H
+#ifndef RECOIL_RUNTIME_SLOTS_H
+#define RECOIL_RUNTIME_SLOTS_H
 
 #include "core/types.h"
 #include "hook.h"

@@ -19,8 +19,8 @@
 #include "learning/learn.h"
 
 #include "objc.h"
-#include "hooks/slots.h"
-#include "hooks/starts.h"
+#include "runtime/slots.h"
+#include "core/starts.h"
 #include "runtime/scene.h"
 #include "runtime/setup.h"
 #include "runtime/state.h"

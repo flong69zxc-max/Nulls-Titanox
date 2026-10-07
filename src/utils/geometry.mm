@@ -5,19 +5,16 @@ int rcl_find_joy_done = 0;
 
 uintptr_t rcl_manager_ptr = 0;
 
-int rcl_collect(uintptr_t manager, rcl_obj_t *out, int capacity, int *rejected) {
+int rcl_collect(uintptr_t manager, rcl_obj_t *out, int capacity) {
     void *data = NULL;
     int32_t count = 0;
     int usable = 0;
-    int bad = 0;
     uintptr_t gidOff = RCL_OBJ_GLOBALID_OFF;
     uint32_t walkSeq = 0;
 
-    memset(&rcl_reject, 0, sizeof(rcl_reject));
 
     rcl_gidless_scan(manager);
 
-    if (rejected) *rejected = 0;
 
     if (!manager) return 0;
     if (!rcl_read_ptr(manager + RCL_MGR_ARRAY_OFF, &data) || !data) return 0;
@@ -39,7 +36,6 @@ int rcl_collect(uintptr_t manager, rcl_obj_t *out, int capacity, int *rejected) 
 
         memset(&entry, 0, sizeof(entry));
 
-        rcl_reject.elementsRead++;
 
         if (rcl_seq != walkSeq) {
 
@@ -47,15 +43,11 @@ int rcl_collect(uintptr_t manager, rcl_obj_t *out, int capacity, int *rejected) 
         }
 
         if (!rcl_read_ptr((uintptr_t)data + (uintptr_t)i * sizeof(void *), &element)) {
-            rcl_reject.rejUnreadable++;
-            bad++;
 
             continue;
         }
 
         if (!element) {
-            rcl_reject.rejNull++;
-            bad++;
 
             continue;
         }
@@ -63,15 +55,11 @@ int rcl_collect(uintptr_t manager, rcl_obj_t *out, int capacity, int *rejected) 
         entry.object = (uintptr_t)element;
 
         if (rcl_element_ascii(entry.object)) {
-            rcl_reject.rejAscii++;
-            bad++;
 
             continue;
         }
 
         if (!rcl_read_ptr(entry.object, &vtable) || !vtable) {
-            rcl_reject.rejUnreadable++;
-            bad++;
 
             continue;
         }
@@ -79,8 +67,6 @@ int rcl_collect(uintptr_t manager, rcl_obj_t *out, int capacity, int *rejected) 
         vtRva = (uintptr_t)vtable - rcl_base;
 
         if (vtRva < RCL_DC_RVA_LO || vtRva >= RCL_DC_RVA_LO + RCL_DC_RVA_SIZE) {
-            rcl_reject.rejNoVt++;
-            bad++;
 
             continue;
         }
@@ -102,15 +88,11 @@ int rcl_collect(uintptr_t manager, rcl_obj_t *out, int capacity, int *rejected) 
             !rcl_read_int(entry.object + RCL_TEAM_OFF, &entry.teamNew) ||
             !rcl_read_byte(entry.object + RCL_OBJ_DEADFLAG_OFF, &entry.dead) ||
             !rcl_read_byte(entry.object + RCL_OBJ_ACTIVEFLAG_OFF, &entry.activeFlag)) {
-            rcl_reject.rejUnreadable++;
-            bad++;
 
             continue;
         }
 
         if (entry.gid >= RCL_PLAYER_GID_MAX) {
-            rcl_reject.rejNonPlayer++;
-            bad++;
 
             rcl_proj_track(entry.object, vtRva, entry.gid, entry.teamOld);
 
@@ -144,8 +126,6 @@ int rcl_collect(uintptr_t manager, rcl_obj_t *out, int capacity, int *rejected) 
         }
 
         if (entry.gid == 0 && !rcl_gidless) {
-            rcl_reject.rejGidZero++;
-            bad++;
 
             continue;
         }
@@ -163,8 +143,6 @@ int rcl_collect(uintptr_t manager, rcl_obj_t *out, int capacity, int *rejected) 
             }
 
             if (!RCL_COORD_SOFT) {
-                rcl_reject.rejOutOfRange++;
-                bad++;
 
                 continue;
             }
@@ -172,18 +150,14 @@ int rcl_collect(uintptr_t manager, rcl_obj_t *out, int capacity, int *rejected) 
 
         if (!((entry.teamOld >= 0 && entry.teamOld <= RCL_OBJ_TEAM_MAX) ||
               (entry.teamNew >= 0 && entry.teamNew <= RCL_OBJ_TEAM_MAX))) {
-            rcl_reject.rejTeamMissing++;
-            bad++;
 
             continue;
         }
 
-        if (entry.dead == 1) rcl_reject.deadSeen++;
 
         out[usable++] = entry;
     }
 
-    if (rejected) *rejected = bad;
 
     return usable;
 }
@@ -203,7 +177,6 @@ float rcl_as_float(uint32_t bits) {
 void rcl_discriminate(uintptr_t manager) {
     rcl_obj_t objects[RCL_OBJECT_MAX];
     uint32_t words[RCL_ELEMS][RCL_WORDS_2];
-    int rejected = 0;
     int usable = 0;
     int n = 0;
     int teamOff = -1;
@@ -217,7 +190,7 @@ void rcl_discriminate(uintptr_t manager) {
     memset(words, 0, sizeof(words));
 
 
-    usable = rcl_collect(manager, objects, RCL_OBJECT_MAX, &rejected);
+    usable = rcl_collect(manager, objects, RCL_OBJECT_MAX);
 
     rcl_dodge_probe_usable = usable;
     if (usable > 0) memcpy(rcl_dodge_probe_list, objects, (size_t)usable * sizeof(rcl_dodge_probe_list[0]));

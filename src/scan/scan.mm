@@ -47,20 +47,13 @@ int rcl_floor_logged = 0;
 int rcl_fallback_logged = 0;
 
 
-int rcl_elem_dumps = 0;
-
-int rcl_hop2_census = 0;
-
-int rcl_type3_floats = 0;
-
-uintptr_t rcl_census_container = 0;
 
 
-uintptr_t rcl_census_array = 0;
 
-uintptr_t rcl_census_first = 0;
 
-uint64_t rcl_census_ms = 0;
+
+
+
 
 
 
@@ -199,267 +192,28 @@ int rcl_element_type(uintptr_t vt, uintptr_t *wordOut) {
     }
 }
 
-void rcl_container_census(uintptr_t array, int32_t count, uintptr_t container) {
-    int accepted = 0;
-    int typed = 0;
-    int types = 0;
-    int typeMask = 0;
-    int teams = 0;
-    int teamMask = 0;
-    int gidSeen = 0;
-    int classSeen = -1;
-    int back = 0;
-    uintptr_t histRva[RCL_HIST_MAX];
-    uintptr_t histWord[RCL_HIST_MAX];
-    int histCount[RCL_HIST_MAX];
-    int histN = 0;
-    int32_t v70lo = 0;
-    int32_t v70hi = 0;
-    int v70n = 0;
-    char histText[768];
-    int h = 0;
 
-    if (!array || count <= 0) return;
-
-    {
-        void *firstPtr = NULL;
-        uintptr_t first = 0;
-        uint64_t nowMs = (uint64_t)(CFAbsoluteTimeGetCurrent() * 1000.0);
-        int same = (container == rcl_census_container &&
-                    (uintptr_t)array == rcl_census_array);
-        int firstChanged = 0;
-
-        if (rcl_read_ptr(array, &firstPtr) && firstPtr) first = (uintptr_t)firstPtr;
-        firstChanged = (first != rcl_census_first);
-
-        if (same && !firstChanged && rcl_census_ms &&
-            nowMs - rcl_census_ms < RCL_CENSUS_MS) {
-            return;
-        }
-
-
-        rcl_census_container = container;
-        rcl_census_array = (uintptr_t)array;
-        rcl_census_first = (uintptr_t)first;
-        rcl_census_ms = nowMs;
-    }
-
-    if (count > RCL_DUMP_QWORDS) count = RCL_DUMP_QWORDS;
-
-    for (h = 0; h < RCL_HIST_MAX; h++) {
-        histRva[h] = 0;
-        histWord[h] = 0;
-        histCount[h] = 0;
-    }
-
-    for (int32_t i = 0; i < count; i++) {
-        uintptr_t at = array + (uintptr_t)i * sizeof(void *);
-        void *element = NULL;
-        void *vt = NULL;
-        void *def = NULL;
-        char why[160] = { 0 };
-        char typeText[16] = { 0 };
-        uintptr_t classRva = 0;
-        uintptr_t typeWord = 0;
-        int32_t team = 0;
-        int32_t gid = 0;
-        int32_t kind = 0;
-        int32_t kind68 = 0;
-        int32_t teamHyp = 0;
-        int32_t byte48 = 0;
-        void *backPtr = NULL;
-        int elementBack = 0;
-        int type = -1;
-        int ok = 0;
-
-        if (!rcl_read_ptr(at, &element) || !element) {
-            continue;
-        }
-
-        rcl_read_ptr((uintptr_t)element, &vt);
-        rcl_read_int((uintptr_t)element + RCL_OBJ_TEAM_OFF, &team);
-        rcl_read_int((uintptr_t)element + RCL_OBJ_GLOBALID_OFF, &gid);
-
-        if (gid >= RCL_GID_FLOOR && gid < RCL_PLAYER_GID_MAX &&
-            team >= 0 && team <= RCL_TEAM_MAX_2) {
-            ok = 1;
-            snprintf(why, sizeof(why), "gid=%d in [%d,%d) and team=%d in range - accepted on the id "
-                     "the engine itself assigns, with no definition pointer read at all",
-                     gid, RCL_GID_FLOOR, RCL_GID_MAX, team);
-        } else {
-            ok = 0;
-            snprintf(why, sizeof(why), "gid=%d outside [%d,%d) or team=%d outside 0..%d - refused "
-                     "with no definition pointer read at all, because the v127 run showed the def "
-                     "field empty at the moment the census looks at it and every element was called "
-                     "unaccepted on that empty field while carrying a real id",
-                     gid, RCL_GID_FLOOR, RCL_GID_MAX, team, RCL_TEAM_MAX_2);
-        }
-        rcl_read_int((uintptr_t)element + RCL_HYP_TEAM_OFF, &teamHyp);
-        rcl_read_int((uintptr_t)element + RCL_HYP_BYTE_OFF, &byte48);
-        if (rcl_read_ptr((uintptr_t)element + RCL_ELEM_BACK_OFF, &backPtr) &&
-            (uintptr_t)backPtr == container) {
-            elementBack = 1;
-            back++;
-        }
-        if (rcl_read_ptr((uintptr_t)element + RCL_ELEM_DEF_OFF, &def) && def) {
-            rcl_read_int((uintptr_t)def + RCL_KIND_OFF, &kind);
-            rcl_read_int((uintptr_t)def + RCL_DEF_68_OFF, &kind68);
-        }
-
-        type = rcl_element_type((uintptr_t)vt, &typeWord);
-
-        if (type < 0) snprintf(typeText, sizeof(typeText), "unknown");
-        else snprintf(typeText, sizeof(typeText), "%d", type);
-
-        classRva = rcl_strip_ptr((uintptr_t)vt) - rcl_base;
-
-        if (classSeen < 0) classSeen = (int)classRva;
-        else if (classSeen != (int)classRva) classSeen = -2;
-
-        for (h = 0; h < histN; h++) {
-            if (histRva[h] == classRva) break;
-        }
-
-        if (h < histN) {
-            histCount[h]++;
-        } else if (histN < RCL_HIST_MAX) {
-            histRva[histN] = classRva;
-            histWord[histN] = typeWord;
-            histCount[histN] = 1;
-            histN++;
-        }
-
-        if (ok) {
-            int32_t v70 = 0;
-
-            if (rcl_read_int((uintptr_t)element + RCL_OFF, &v70)) {
-                if (v70 != 0 && v70 > -RCL_COORD_MAX && v70 < RCL_COORD_MAX) {
-                    if (v70n == 0 || v70 < v70lo) v70lo = v70;
-                    if (v70n == 0 || v70 > v70hi) v70hi = v70;
-                    v70n++;
-                }
-            }
-
-            if (gid > 0) {
-                if (rcl_gid_lo == 0 || gid < rcl_gid_lo) rcl_gid_lo = gid;
-                if (gid > rcl_gid_hi) rcl_gid_hi = gid;
-            }
-        }
-
-        if (i == 0 && type == RCL_TYPE3_CODE) rcl_type3_floats = 1;
-
-        if (ok) accepted++;
-
-        if (type >= 0) {
-            typed++;
-
-            if (type < 32 && !(typeMask & (1 << type))) {
-                typeMask |= (1 << type);
-                types++;
-            }
-        }
-
-        if (teamHyp >= 0 && teamHyp < RCL_TEAM_SLOTS && !(teamMask & (1 << teamHyp))) {
-            teamMask |= (1 << teamHyp);
-            teams++;
-        }
-
-        if (gid > 0) gidSeen++;
-
-
-        if (type == RCL_TYPE3_CODE) {
-            float f10 = 0.0f;
-            float f1c = 0.0f;
-            float f100 = 0.0f;
-            float f104 = 0.0f;
-
-            rcl_read_float((uintptr_t)element + RCL_FLOAT_LO, &f10);
-            rcl_read_float((uintptr_t)element + RCL_FLOAT_LO2, &f1c);
-            rcl_read_float((uintptr_t)element + RCL_FLOAT_HI, &f100);
-            rcl_read_float((uintptr_t)element + RCL_FLOAT_HI2, &f104);
-
-        }
-
-        if (rcl_elem_dumps < RCL_ELEM_DUMPS_2) {
-            rcl_elem_dumps++;
-
-
-            if (type == RCL_TYPE3_CODE) {
-                float h10 = 0.0f;
-                float h1c = 0.0f;
-                float h100 = 0.0f;
-                float h104 = 0.0f;
-
-                rcl_read_float((uintptr_t)element + RCL_FLOAT_LO, &h10);
-                rcl_read_float((uintptr_t)element + RCL_FLOAT_LO2, &h1c);
-                rcl_read_float((uintptr_t)element + RCL_FLOAT_HI, &h100);
-                rcl_read_float((uintptr_t)element + RCL_FLOAT_HI2, &h104);
-
-            }
-        }
-
-    }
-
-    rcl_census_container = container;
-
-    histText[0] = 0;
-
-    for (h = 0; h < histN; h++) {
-        char one[96];
-        const char *seg = rcl_image_segment_name(rcl_base + histRva[h]);
-
-        snprintf(one, sizeof(one), "%s%#llx(%s)x%d word=%#llx", h ? " " : "",
-                 (unsigned long long)histRva[h], seg ? seg : "-", histCount[h],
-                 (unsigned long long)histWord[h]);
-
-        strncat(histText, one, sizeof(histText) - strlen(histText) - 1);
-    }
-
-
-}
 
 uintptr_t rcl_hop_scene = 0;
 
 int rcl_container_header(uintptr_t object, uintptr_t *arrayOut, int32_t *countOut,
-                                    int32_t *capOut, char *why, size_t whyLen) {
-    const char *reason = NULL;
+                                    int32_t *capOut) {
     void *array = NULL;
 
     if (arrayOut) *arrayOut = 0;
     if (countOut) *countOut = 0;
     if (capOut) *capOut = 0;
 
-    if (!object) {
-        snprintf(why, whyLen, "null");
-        return 0;
-    }
-
-    reason = rcl_header_reason(object, countOut, capOut);
-
-    if (reason) {
-        snprintf(why, whyLen, "%s", reason);
-        return 0;
-    }
-
-    if (!rcl_read_ptr(object + RCL_MGR_ARRAY_OFF, &array) || !array) {
-        snprintf(why, whyLen, "array-null");
-        return 0;
-    }
-
-    if (!rcl_heap_resident((uintptr_t)array)) {
-        snprintf(why, whyLen, "array-not-heap");
-        return 0;
-    }
+    if (!object) return 0;
+    if (rcl_header_reason(object, countOut, capOut)) return 0;
+    if (!rcl_read_ptr(object + RCL_MGR_ARRAY_OFF, &array) || !array) return 0;
+    if (!rcl_heap_resident((uintptr_t)array)) return 0;
 
     if (arrayOut) *arrayOut = (uintptr_t)array;
-
-    snprintf(why, whyLen, "ok array=%p count=%d cap=%d", array,
-             countOut ? *countOut : 0, capOut ? *capOut : 0);
 
     return 1;
 }
 
-int rcl_gid_logs = 0;
 
 int rcl_coord_logs = 0;
 
@@ -488,16 +242,6 @@ int32_t rcl_gid(uintptr_t element, int32_t *offOut) {
 
     if (rcl_read_int(element + RCL_GID_FALLBACK_OFF, &alt) && alt) {
         if (offOut) *offOut = (int32_t)RCL_GID_FALLBACK_OFF;
-
-        if (rcl_gid_logs < 6) {
-            void *vtable = NULL;
-            uintptr_t vtRva = 0;
-
-            rcl_gid_logs++;
-
-            if (rcl_read_ptr(element, &vtable) && vtable) vtRva = (uintptr_t)vtable - rcl_base;
-
-        }
 
         return alt;
     }
@@ -1420,10 +1164,6 @@ int rcl_proj_mine(const rcl_proj_t *p) {
 }
 
 void rcl_state(void) {
-    rcl_census_container = 0;
-    rcl_census_array = 0;
-    rcl_census_first = 0;
-    rcl_census_ms = 0;
 
 
     {
@@ -1534,9 +1274,7 @@ uintptr_t rcl_coord_y_off(void) {
     return RCL_OBJ_Y_OFF;
 }
 
-int32_t rcl_gid_lo = 0;
 
-int32_t rcl_gid_hi = 0;
 
 const uintptr_t rcl_mode_vtables[36] = {
     0x10012c8, 0x1001318, 0x1001368, 0x10013b8,
@@ -1551,7 +1289,6 @@ rcl_trail_t rcl_trail[RCL_TRAIL_MAX];
 
 void rcl_probe(uintptr_t manager, uintptr_t mode, int verbose) {
     rcl_obj_t objects[RCL_OBJECT_MAX];
-    int rejected = 0;
     int usable = 0;
     int inRange = 0;
     int distinct = 0;
@@ -1571,7 +1308,7 @@ void rcl_probe(uintptr_t manager, uintptr_t mode, int verbose) {
 
     }
 
-    usable = rcl_collect(manager, objects, RCL_OBJECT_MAX, &rejected);
+    usable = rcl_collect(manager, objects, RCL_OBJECT_MAX);
 
     {
         static int v142_leave_logs = 0;

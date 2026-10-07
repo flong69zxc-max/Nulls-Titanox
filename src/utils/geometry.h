@@ -13,7 +13,7 @@ extern int rcl_seeded;
 extern int32_t rcl_last_x_a;
 extern int32_t rcl_last_y_a;
 
-int rcl_collect(uintptr_t manager, rcl_obj_t *out, int capacity, int *rejected);
+int rcl_collect(uintptr_t manager, rcl_obj_t *out, int capacity);
 int rcl_small(long value);
 float rcl_as_float(uint32_t bits);
 void rcl_discriminate(uintptr_t manager);

@@ -61,7 +61,7 @@ void rcl_own_probe(void);
 float rcl_own_radius(void);
 int rcl_own_scan(void);
 int rcl_own_side_spawn(int32_t sx, int32_t sy);
-int rcl_own_verdict(uintptr_t element, char *why, size_t whyLen);
+int rcl_own_verdict(uintptr_t element);
 void rcl_publish_own(uintptr_t elem, const char *from);
 int rcl_resolve_own(const rcl_obj_t *objects, int usable, int *indexOut, const char **fromOut);
 int rcl_resolve_own_2(const rcl_obj_t *objects, int usable, int *indexOut, const char **fromOut);

@@ -2131,7 +2131,6 @@ void rcl_autododge(void) {
     int sourceIsMode = 0;
     int32_t predictX = 0;
     int32_t predictY = 0;
-    int rejected = 0;
     int usable = 0;
     int ownIndex = -1;
     int32_t ownTeam = 0;
@@ -2348,7 +2347,7 @@ void rcl_autododge(void) {
     memset(objects, 0, sizeof(objects));
 
 
-    usable = rcl_collect(rcl_manager_ptr, objects, RCL_OBJECT_MAX, &rejected);
+    usable = rcl_collect(rcl_manager_ptr, objects, RCL_OBJECT_MAX);
 
     if (usable < RCL_MIN_USABLE_2) {
 

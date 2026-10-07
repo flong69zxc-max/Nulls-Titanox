@@ -4,7 +4,6 @@
 #include "core/types.h"
 
 extern uint64_t rcl_ticks_b;
-extern rcl_reject_t rcl_reject;
 
 int rcl_ascii_word(uintptr_t address);
 int rcl_word_ascii(uint64_t value);

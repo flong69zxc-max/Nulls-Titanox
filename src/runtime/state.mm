@@ -26,7 +26,6 @@ int rcl_state_tick(void) {
     int32_t hopCap[RCL_HOPS] = { 0 };
     int hopOk[RCL_HOPS] = { 0 };
     int score[RCL_HOPS];
-    char hopWhy[RCL_HOPS][96] = { { 0 } };
     int chosen = -1;
 
     if (slot) rcl_read_int(slot + RCL_STATE_ENUM_OFF, &state);
@@ -72,10 +71,8 @@ int rcl_state_tick(void) {
 
     inner = (uintptr_t)value;
 
-    hopOk[0] = rcl_container_header(client, &hopArray[0], &hopCount[0], &hopCap[0], hopWhy[0],
-                                        sizeof(hopWhy[0]));
-    hopOk[1] = rcl_container_header(inner, &hopArray[1], &hopCount[1], &hopCap[1], hopWhy[1],
-                                        sizeof(hopWhy[1]));
+    hopOk[0] = rcl_container_header(client, &hopArray[0], &hopCount[0], &hopCap[0]);
+    hopOk[1] = rcl_container_header(inner, &hopArray[1], &hopCount[1], &hopCap[1]);
 
     score[0] = hopOk[0] ? rcl_container_score(client) : -1;
     score[1] = hopOk[1] ? rcl_container_score(inner) : -1;
@@ -160,14 +157,6 @@ int rcl_state_tick(void) {
     if (count > 0 && count <= RCL_MANAGER_MAX_OBJECTS && capacity > 0 &&
         capacity <= RCL_MGR_CAP_MAX && array) {
 
-        if (rcl_hop_chosen == 1) {
-            if (!rcl_hop2_census && players != rcl_census_container) {
-                rcl_hop2_census = 1;
-
-            }
-
-            rcl_container_census((uintptr_t)array, count, players);
-        }
     }
 
     return 1;

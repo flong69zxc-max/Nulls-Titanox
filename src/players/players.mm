@@ -685,7 +685,7 @@ void rcl_own_dump(uintptr_t element) {
 
 }
 
-int rcl_own_verdict(uintptr_t element, char *why, size_t whyLen) {
+int rcl_own_verdict(uintptr_t element) {
     void *vtable = NULL;
     uintptr_t vtRva = 0;
     int32_t gid = 0;
@@ -695,28 +695,13 @@ int rcl_own_verdict(uintptr_t element, char *why, size_t whyLen) {
     int32_t teamNew = 0;
     uint8_t dead = 0;
 
-    if (why) why[0] = 0;
-    if (!element) {
-        if (why) snprintf(why, whyLen, "null");
-        return 0;
-    }
-
-    if (rcl_element_ascii(element)) {
-        if (why) snprintf(why, whyLen, "ascii");
-        return 0;
-    }
-
-    if (!rcl_read_ptr(element, &vtable) || !vtable) {
-        if (why) snprintf(why, whyLen, "noVtRead");
-        return 0;
-    }
+    if (!element) return 0;
+    if (rcl_element_ascii(element)) return 0;
+    if (!rcl_read_ptr(element, &vtable) || !vtable) return 0;
 
     vtRva = (uintptr_t)vtable - rcl_base;
 
-    if (vtRva < RCL_DC_RVA_LO || vtRva >= RCL_DC_RVA_LO + RCL_DC_RVA_SIZE) {
-        if (why) snprintf(why, whyLen, "vtOutsideImage vtRva=%#llx", (unsigned long long)vtRva);
-        return 0;
-    }
+    if (vtRva < RCL_DC_RVA_LO || vtRva >= RCL_DC_RVA_LO + RCL_DC_RVA_SIZE) return 0;
 
     gid = rcl_gid(element, NULL);
 
@@ -725,19 +710,12 @@ int rcl_own_verdict(uintptr_t element, char *why, size_t whyLen) {
         !rcl_read_int(element + RCL_OBJ_TEAM_OFF, &teamOld) ||
         !rcl_read_int(element + RCL_TEAM_OFF, &teamNew) ||
         !rcl_read_byte(element + RCL_OBJ_DEADFLAG_OFF, &dead)) {
-        if (why) snprintf(why, whyLen, "unreadable vtRva=%#llx", (unsigned long long)vtRva);
         return 0;
     }
 
     if (x <= -RCL_COORD_ABS_MAX || x >= RCL_COORD_ABS_MAX ||
         y <= -RCL_COORD_ABS_MAX || y >= RCL_COORD_ABS_MAX) {
-        if (why) snprintf(why, whyLen, "coordsOutOfRange gid=%d pos=(%d,%d)", gid, x, y);
         return 0;
-    }
-
-    if (why) {
-        snprintf(why, whyLen, "ok gid=%d pos=(%d,%d) t40=%d t4c=%d dead=%d gidZeroTaken=%d",
-                 gid, x, y, teamOld, teamNew, dead, gid ? 0 : 1);
     }
 
     return 1;
@@ -763,7 +741,6 @@ void rcl_own_probe(void) {
         int32_t elemGid = 0;
         int32_t gidOff = 0;
         const char *sigField = (const char *)"none";
-        char why[128];
         int sig = 0;
         int valid = 0;
 
@@ -800,9 +777,7 @@ void rcl_own_probe(void) {
             }
         }
 
-        if (sig) valid = rcl_own_verdict((uintptr_t)elem, why, sizeof(why));
-        else snprintf(why, sizeof(why), "noSignature idx=%d eid=%d ownTeam=%d elemTeam=%d",
-                      idx, eid, team, eteam);
+        if (sig) valid = rcl_own_verdict((uintptr_t)elem);
 
 
         if (sig && valid && !taken) {

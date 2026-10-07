@@ -39,43 +39,8 @@ typedef struct {
     int ownerClass;
 } rcl_objhit_t;
 
-typedef struct {
-    uintptr_t rva;
-    int seg;
-    unsigned long long count;
-    unsigned long long shaped;
-    unsigned long long ownerEqVt;
-    uintptr_t first;
-    uintptr_t inst[RCL_VTCENSUS_INST];
-    int instCount;
-} rcl_vtcensus_t;
-
 typedef uint64_t (*rcl_slot_fn_t)(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                   uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7);
-
-typedef struct {
-    uintptr_t base;
-    int used;
-    int have;
-    uint32_t prev[RCL_FLOATS];
-} rcl_slot_t;
-
-typedef struct {
-    int sampled;
-    int ascii;
-    int noVt;
-    int teamDistinct;
-    int posDistinct;
-} rcl_measure_t;
-
-typedef struct {
-    int elements;
-    int live;
-    int teamCount;
-    int distinctGids;
-    int deadOk;
-    uintptr_t vt0;
-} rcl_facts_t;
 
 typedef struct {
     uintptr_t low;
@@ -99,18 +64,6 @@ typedef struct {
     int refused;
 } rcl_trail_t;
 
-typedef struct {
-    uintptr_t address;
-    int32_t count;
-    int pass;
-} rcl_seen_t;
-
-typedef struct {
-    const char *label;
-    const char *value;
-    const char *provenance;
-} rcl_fact_t;
-
 typedef void (*rcl_setpred_t)(void *self, int x, int y);
 
 typedef struct {
@@ -125,19 +78,6 @@ typedef struct {
     uint8_t   dead;
     uint8_t   activeFlag;
 } rcl_obj_t;
-
-typedef struct {
-    int elementsRead;
-    int rejNull;
-    int rejUnreadable;
-    int rejAscii;
-    int rejNoVt;
-    int rejGidZero;
-    int rejNonPlayer;
-    int rejOutOfRange;
-    int rejTeamMissing;
-    int deadSeen;
-} rcl_reject_t;
 
 typedef struct {
     uintptr_t elem;
@@ -167,12 +107,5 @@ typedef struct {
     float remaining;
     int32_t gid;
 } rcl_seg_t;
-
-typedef struct {
-    uintptr_t base;
-    int have;
-    uint32_t prev[RCL_WORDS];
-    uint16_t hot[RCL_WORDS];
-} rcl_win_t;
 
 #endif

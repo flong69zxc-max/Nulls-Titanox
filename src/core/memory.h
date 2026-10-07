@@ -58,8 +58,6 @@ extern uint64_t rcl_time;
 extern uint64_t rcl_slow;
 extern uint64_t rcl_drain;
 extern uint64_t rcl_q_max;
-extern int32_t rcl_gid_lo;
-extern int32_t rcl_gid_hi;
 extern uintptr_t rcl_owner;
 extern int rcl_wired;
 extern dispatch_source_t rcl_scan_timer;

@@ -41,4 +41,3 @@ int rcl_element_ascii(uintptr_t element) {
 
     return rcl_word_ascii((uint64_t)element) == 8 ? 1 : 0;
 }
-rcl_reject_t rcl_reject;

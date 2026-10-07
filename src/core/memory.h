@@ -117,14 +117,14 @@ BOOL rcl_vtable_in_image(uintptr_t vtable);
 uintptr_t rcl_strip_ptr(uintptr_t value);
 void poll_for_game(int tick);
 
-static inline BOOL rcl_region_flags(uintptr_t address, uint32_t *flags) {
+static inline BOOL rcl_region_flags(uintptr_t address, vm_prot_t *flags) {
     vm_prot_t protection = 0;
 
     if (flags) *flags = 0;
 
     if (!rcl_query_region(address, &protection, NULL, NULL, NULL)) return NO;
 
-    if (flags) *flags = (uint32_t)protection;
+    if (flags) *flags = protection;
 
     return YES;
 }

@@ -10,3 +10,4 @@ derived/
 *.a
 *.log
 *.patch
+out/

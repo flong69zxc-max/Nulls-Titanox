@@ -4,7 +4,6 @@
 #include "../core/types.h"
 
 void setup(void);
-void rcl_run_autoaim(void);
 void rcl_run_autododge(int from_update);
 
 #define RCL_MANAGER_MIN_OBJECTS 3

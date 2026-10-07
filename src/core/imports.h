@@ -19,7 +19,7 @@
 #import <string.h>
 #import <unistd.h>
 #import <signal.h>
-#import "offsets.h"
+#import "./offsets.h"
 #include "hook.h"
 #if __has_include(<ptrauth.h>)
 #import <ptrauth.h>

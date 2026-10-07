@@ -8,7 +8,7 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = Recoil
 
 Recoil_FILES = $(shell find src -name "*.mm")
-Recoil_FILES += $(RECOIL)/recoil_hook/hook.c
+Recoil_FILES += $(shell find $(RECOIL)/recoil_hook -name "*.c" -o -name "*.mm" 2>/dev/null | sort)
 
 COMMON_INCLUDES = \
 	-Isrc \

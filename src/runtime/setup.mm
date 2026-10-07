@@ -110,6 +110,14 @@ void rcl_run_autoaim(void) {
     *(int32_t *)fireY = targetY;
 }
 
+static void rcl_objc_body(void) {
+    if (rcl_inside_hook) return;
+
+    rcl_inside_hook = YES;
+    rcl_run_workload();
+    rcl_inside_hook = NO;
+}
+
 void setup(void) {
     if (rcl_setup_done) return;
     rcl_setup_done = YES;
@@ -119,18 +127,10 @@ void setup(void) {
 
     rcl_resolve_addresses();
 
-    rcl_objc_arm("MetalView", "render");
-    rcl_objc_arm("NullView", "render");
+    rcl_objc_arm(rcl_base, "MetalView", "render", rcl_objc_body);
+    rcl_objc_arm(rcl_base, "NullView", "render", rcl_objc_body);
 
     rcl_slot_hooks_install();
-
-    int buildControls = 0;
-
-    for (int i = 0; i < RCL_SLOT_COUNT; i++) {
-        if (rcl_slot_specs[i].control) buildControls++;
-    }
-
-
 
 
     rcl_start_timer();

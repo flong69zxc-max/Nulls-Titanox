@@ -155,15 +155,6 @@ uintptr_t rcl_addr_battlescreen = 0;
 
 
 
-uintptr_t rcl_strip_imp(IMP imp) {
-#if defined(__has_feature)
-#if __has_feature(ptrauth_calls)
-    return (uintptr_t)ptrauth_strip((void *)imp, ptrauth_key_function_pointer);
-#endif
-#endif
-    return (uintptr_t)imp;
-}
-
 
 
 

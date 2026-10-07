@@ -148,28 +148,6 @@ void rcl_load_function_starts(void) {
     rcl_starts_count = count;
 
 }
-const char *rcl_skip_compound(const char *p) {
-    char open = *p;
-    char close = (open == '{') ? '}' : ((open == '(') ? ')' : ']');
-    int depth = 0;
-
-    while (*p) {
-        if (*p == open) {
-            depth++;
-        } else if (*p == close) {
-            depth--;
-            if (depth == 0) {
-                p++;
-                break;
-            }
-        }
-
-        p++;
-    }
-
-    return p;
-}
-
 int rcl_word(uintptr_t address, uint32_t *out) {
     if (!out) return 0;
     if (address & 3ULL) return 0;

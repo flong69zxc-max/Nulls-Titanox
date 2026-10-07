@@ -117,69 +117,10 @@ uint64_t rcl_idle_start = 0;
 int rcl_idle_logged = 0;
 
 
-void rcl_slot_install_one(int index) {
-    uintptr_t target = 0;
-    int slots = 0;
-
-    if (index < 0 || index >= RCL_SLOT_COUNT) return;
-
-    rcl_slot_installed[index] = 0;
-
-    if (!rcl_slot_specs[index].rva && !rcl_slot_specs[index].slotRva) return;
-
-    target = rcl_base + rcl_slot_specs[index].rva;
-
-    if (!target) return;
-
-    slots = hook_probe(target);
-
-    if (slots > RCL_MAX_SLOTS) {
-
-        return;
-    }
-
-    {
-        uint32_t w = 0;
-        int prologue = 0;
-
-        if (rcl_read_word(target, &w)) {
-            if ((w & 0xFFC003FFu) == 0xD10003FFu) prologue = 1;
-            if ((w & 0xFF4003E0u) == 0xA90003E0u) prologue = 1;
-            if ((w & 0xFF4003E0u) == 0xA80003E0u) prologue = 1;
-            if (w == 0xD503237Fu) prologue = 1;
-            if (w == 0xD503245Fu) prologue = 1;
-            if (w == 0xD65F03C0u) prologue = 1;
-            if (w == 0x910003FDu) prologue = 1;
-            if ((w & 0xFF000000u) == 0x14000000u) prologue = 1;
-            if ((w & 0x9F000000u) == 0x10000000u) prologue = 1;
-        }
-
-        if (!prologue) {
-
-            return;
-        }
-    }
-
-    if (slots <= 0) {
-
-        return;
-    }
-
-    if (!brk_install((void *)target, (void *)rcl_slot_specs[index].replacement)) {
-
-        return;
-    }
-
-    rcl_slot_orig[index] = (rcl_slot_fn_t)brk_original_ptr((void *)target);
-    rcl_slot_installed[index] = 1;
-
-}
-
 void rcl_slot_hooks_install(void) {
     if (!rcl_base) return;
 
-    for (int i = 0; i < RCL_SLOT_COUNT; i++) rcl_slot_install_one(i);
-
+    rcl_hooks_install(rcl_base, rcl_slot_specs, RCL_SLOT_COUNT, (void **)rcl_slot_orig);
 }
 
 
@@ -250,12 +191,6 @@ void rcl_slot_pump(void) {
 }
 
 rcl_slot_fn_t rcl_slot_orig[RCL_SLOT_COUNT] = { NULL };
-
-int rcl_slot_installed[RCL_SLOT_COUNT] = { -1, -1, -1, -1, -1, -1, -1,
-                                               -1, -1, -1, -1, -1, -1, -1,
-                                               -1, -1, -1, -1, -1, -1, -1,
-                                               -1, -1, -1, -1, -1, -1, -1,
-                                               -1, -1, -1, -1 };
 
 uint64_t rcl_slot_repl_0(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                 uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
@@ -565,52 +500,50 @@ uint64_t rcl_slot_repl_33(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
     return r;
 }
 
-const struct rcl_t_g_slot_specs rcl_slot_specs[RCL_SLOT_COUNT] = {
+const rcl_hook_t rcl_slot_specs[RCL_SLOT_COUNT] = {
 
-    { "A1/vt1002548+10/ad4ed0", "A1", 0x00ad4ed0ULL, 0x01002598ULL, rcl_slot_repl_0, 0 },
-    { "A2/vt1002548+07/ad521c", "A2", 0x00ad521cULL, 0x01002580ULL, rcl_slot_repl_1, 0 },
+    { 0x00ad4ed0ULL, (void *)rcl_slot_repl_0, 0 },
+    { 0x00ad521cULL, (void *)rcl_slot_repl_1, 0 },
 
-    { "B1/off-vt0ff5720-no-data-slot", "B1", 0, 0, rcl_slot_repl_2, 0 },
+    { 0, (void *)rcl_slot_repl_2, 0 },
 
-    { "B2/off-vt0ff5720-no-data-slot", "B2", 0, 0, rcl_slot_repl_3, 0 },
-    { "B3/off-vt0ff5720-no-data-slot", "B3", 0, 0, rcl_slot_repl_4, 0 },
+    { 0, (void *)rcl_slot_repl_3, 0 },
+    { 0, (void *)rcl_slot_repl_4, 0 },
 
-    { "C1/Stage::addChild @c33690", "C1", 0x00c33690ULL, 0x01011f50ULL, rcl_slot_repl_5, 1 },
-    { "C2/hotflag @b9dc24", "C2", 0x00b9dc24ULL, 0, rcl_slot_repl_6, 1 },
+    { 0x00c33690ULL, (void *)rcl_slot_repl_5, 1 },
+    { 0x00b9dc24ULL, (void *)rcl_slot_repl_6, 1 },
 
-    { "P1/disabled-no-data-slot", "P1", 0, 0, rcl_slot_repl_7, 0 },
-    { "D2/disabled-fewer-noisy-slots", "D2", 0, 0, rcl_slot_repl_8, 0 },
-    { "P2/disabled-no-data-slot", "P2", 0, 0, rcl_slot_repl_9, 0 },
-    { "D4/disabled-fewer-noisy-slots", "D4", 0, 0, rcl_slot_repl_10, 0 },
-    { "V6/vt0fe9d00+68/8c7fbc", "V6", 0x008c7fbcULL, 0x00fe9d68ULL, rcl_slot_repl_11, 0 },
-    { "D6/table1009290 slot1 @bad4ec", "D6", 0x00000000ULL, 0, rcl_slot_repl_12, 1 },
+    { 0, (void *)rcl_slot_repl_7, 0 },
+    { 0, (void *)rcl_slot_repl_8, 0 },
+    { 0, (void *)rcl_slot_repl_9, 0 },
+    { 0, (void *)rcl_slot_repl_10, 0 },
+    { 0x008c7fbcULL, (void *)rcl_slot_repl_11, 0 },
+    { 0x00000000ULL, (void *)rcl_slot_repl_12, 1 },
 
-    { "E1/table100a770 slot0 @bcfbe8", "E1", 0x00bcfbe8ULL, 0, rcl_slot_repl_13, 0 },
-    { "E2/table100a770 slot1 @bcfc28", "E2", 0x00bcfc28ULL, 0, rcl_slot_repl_14, 0 },
-    { "V1/disabled-fewer-noisy-slots", "V1", 0, 0, rcl_slot_repl_15, 0 },
-    { "V2/vt0fe9d00+40/8c6150", "V2", 0x008c6150ULL, 0x00fe9d40ULL, rcl_slot_repl_16, 0 },
-    { "E5/logicPredictMoveSet @ac3f20", "E5", 0x00ac3f20ULL, 0, rcl_slot_repl_17, 1 },
-    { "E6/clientInputManagerUpdate @746898", "E6", 0x00746898ULL, 0, rcl_slot_repl_18, 1 },
+    { 0x00bcfbe8ULL, (void *)rcl_slot_repl_13, 0 },
+    { 0x00bcfc28ULL, (void *)rcl_slot_repl_14, 0 },
+    { 0, (void *)rcl_slot_repl_15, 0 },
+    { 0x008c6150ULL, (void *)rcl_slot_repl_16, 0 },
+    { 0x00ac3f20ULL, (void *)rcl_slot_repl_17, 1 },
+    { 0x00746898ULL, (void *)rcl_slot_repl_18, 1 },
 
-    { "D7/table10086c0 slot2 @b8ae88", "D7", 0x00b8ae88ULL, 0, rcl_slot_repl_19, 0 },
-    { "D8/table10086c0 slot3 @b8ac7c", "D8", 0x00b8ac7cULL, 0, rcl_slot_repl_20, 0 },
-    { "D9/disabled-fewer-noisy-slots", "D9", 0, 0, rcl_slot_repl_21, 0 },
-    { "D10/disabled-fewer-noisy-slots", "D10", 0, 0, rcl_slot_repl_22, 0 },
-    { "D11/table10086c0 slot8 @b85fe0", "D11", 0x00b85fe0ULL, 0, rcl_slot_repl_23, 0 },
-    { "D12/table10086c0 slot9 @b867d8", "D12", 0x00b867d8ULL, 0, rcl_slot_repl_24, 0 },
-    { "D13/table10086c0 slot10 @b9e188", "D13", 0x00b9e188ULL, 0, rcl_slot_repl_25, 0 },
-    { "D14/table10086c0 slot11 @b9dc8c", "D14", 0x00b9dc8cULL, 0, rcl_slot_repl_26, 0 },
+    { 0x00b8ae88ULL, (void *)rcl_slot_repl_19, 0 },
+    { 0x00b8ac7cULL, (void *)rcl_slot_repl_20, 0 },
+    { 0, (void *)rcl_slot_repl_21, 0 },
+    { 0, (void *)rcl_slot_repl_22, 0 },
+    { 0x00b85fe0ULL, (void *)rcl_slot_repl_23, 0 },
+    { 0x00b867d8ULL, (void *)rcl_slot_repl_24, 0 },
+    { 0x00b9e188ULL, (void *)rcl_slot_repl_25, 0 },
+    { 0x00b9dc8cULL, (void *)rcl_slot_repl_26, 0 },
 
-    { "V3/disabled-fewer-noisy-slots", "V3", 0, 0, rcl_slot_repl_27, 0 },
-    { "V4/vt0fe9d00+50/8c7f9c", "V4", 0x008c7f9cULL, 0x00fe9d50ULL, rcl_slot_repl_28, 0 },
-    { "V5/vt0fe9d00+58/8c7fac", "V5", 0x008c7facULL, 0x00fe9d58ULL, rcl_slot_repl_29, 0 },
-    { "D15/table10086c0 slot21 @b898e8", "D15", 0x00b898e8ULL, 0, rcl_slot_repl_30, 0 },
-    { "D16/table10086c0 slot23 @b89c10", "D16", 0x00b89c10ULL, 0, rcl_slot_repl_31, 0 },
+    { 0, (void *)rcl_slot_repl_27, 0 },
+    { 0x008c7f9cULL, (void *)rcl_slot_repl_28, 0 },
+    { 0x008c7facULL, (void *)rcl_slot_repl_29, 0 },
+    { 0x00b898e8ULL, (void *)rcl_slot_repl_30, 0 },
+    { 0x00b89c10ULL, (void *)rcl_slot_repl_31, 0 },
 
-    { "U1/LogicBattleModeClient::update", "U1", RVA_LOGICBATTLEMODECLIENT_UPDATE, 0,
-      rcl_slot_repl_32, 0 },
-    { "U2/BattleScreen::updateMovement", "U2", RVA_BATTLESCREEN__UPDATEMOVEMENT, 0,
-      rcl_slot_repl_33, 0 },
+    { RVA_LOGICBATTLEMODECLIENT_UPDATE, (void *)rcl_slot_repl_32, 0 },
+    { RVA_BATTLESCREEN__UPDATEMOVEMENT, (void *)rcl_slot_repl_33, 0 },
 };
 
 void rcl_slot_note(int index, void *self, uint64_t arg1) {

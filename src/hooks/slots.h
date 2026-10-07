@@ -2,6 +2,7 @@
 #define RECOIL_HOOKS_SLOTS_H
 
 #include "core/types.h"
+#include "hook.h"
 
 void rcl_slot_note(int index, void *self, uint64_t arg1);
 uint64_t rcl_hook_dispatches(void);
@@ -25,9 +26,8 @@ extern int rcl_scan_armed;
 extern volatile uint32_t rcl_seq;
 extern uintptr_t rcl_setpred;
 extern uintptr_t rcl_site;
-extern int rcl_slot_installed[RCL_SLOT_COUNT];
 extern rcl_slot_fn_t rcl_slot_orig[RCL_SLOT_COUNT];
-extern const struct rcl_t_g_slot_specs rcl_slot_specs[RCL_SLOT_COUNT];
+extern const rcl_hook_t rcl_slot_specs[RCL_SLOT_COUNT];
 extern int rcl_state_2;
 extern uintptr_t rcl_tick_array;
 extern int32_t rcl_tick_count;
@@ -35,7 +35,6 @@ extern uintptr_t rcl_tick_object;
 extern const int rcl_object_slots[RCL_OBJ_SLOTS];
 void rcl_publish(uintptr_t object, uintptr_t array, int32_t count, int32_t cap, const char *why);
 void rcl_slot_hooks_install(void);
-void rcl_slot_install_one(int index);
 void rcl_slot_pump(void);
 uint64_t rcl_slot_repl_0(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7);
 uint64_t rcl_slot_repl_1(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7);
@@ -75,21 +74,12 @@ int rcl_snapshot(uintptr_t *objectOut, uintptr_t *arrayOut, int32_t *countOut);
 void rcl_tick_begin(void);
 
 
-struct rcl_t_g_slot_specs {
-    const char *tag;
-    const char *shortTag;
-    uintptr_t rva;
-    uintptr_t slotRva;
-    rcl_slot_fn_t replacement;
-    int control;
-};
 extern rcl_slot_fn_t rcl_slot_orig[RCL_SLOT_COUNT];
 extern uintptr_t rcl_slot_object[RCL_SLOT_COUNT];
 extern uintptr_t rcl_slot_arg[RCL_SLOT_COUNT];
 extern uint64_t rcl_slot_hits[RCL_SLOT_COUNT];
-extern int rcl_slot_installed[RCL_SLOT_COUNT];
 extern uintptr_t rcl_slot_adopted;
-extern const struct rcl_t_g_slot_specs rcl_slot_specs[RCL_SLOT_COUNT];
+extern const rcl_hook_t rcl_slot_specs[RCL_SLOT_COUNT];
 uint64_t rcl_slot_repl_0(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7);
 uint64_t rcl_slot_repl_1(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7);
 uint64_t rcl_slot_repl_2(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7);

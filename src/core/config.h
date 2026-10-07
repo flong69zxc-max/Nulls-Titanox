@@ -53,8 +53,6 @@
 #define RCL_CLUSTER 700.0f
 #define RCL_FREEST_ANGLES 32
 #define RCL_FREEST_MIN 120.0f
-#define OBJC_HOOK_MAX 32
-#define WANTED_MAX 4
 #define SCAN_MAX 256
 #define DODGE_STEP 600.0f
 #define RCL_MGR_CAP_MAX 4096
@@ -73,7 +71,6 @@
 #define RCL_QUEUE_GUARD_MGR 0
 #define RCL_QGUARD_LOGS 3
 #define RCL_DEAD_ONCE 1
-#define RCL_MAX_SLOTS 32
 #define RCL_TYPE_MOVE 0x2
 #define RCL_GIDLESS 1
 #define RCL_POS_BONUS 8

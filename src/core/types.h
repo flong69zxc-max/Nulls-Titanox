@@ -29,19 +29,6 @@ typedef struct {
 } rcl_rva_entry_t;
 
 typedef struct {
-    __unsafe_unretained Class cls;
-    __unsafe_unretained Class wanted[WANTED_MAX];
-    int wantedCount;
-    SEL sel;
-    IMP original;
-    IMP replacement;
-    const char *selName;
-    const char *signature;
-    int hits;
-    BOOL used;
-} rcl_objc_hook_t;
-
-typedef struct {
     uintptr_t at;
     uintptr_t vt;
     uintptr_t owner;

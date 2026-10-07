@@ -18,7 +18,7 @@
 #include "input/joystick.h"
 #include "learning/learn.h"
 
-#include "hooks/objc.h"
+#include "objc.h"
 #include "hooks/slots.h"
 #include "hooks/starts.h"
 #include "runtime/scene.h"

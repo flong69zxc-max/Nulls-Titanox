@@ -36,7 +36,6 @@ extern double rcl_votescan_last;
 extern BOOL rcl_snapshot_first;
 extern BOOL rcl_snapshot_second;
 extern double rcl_snapshot_start;
-extern rcl_objc_hook_t rcl_objc_hooks[OBJC_HOOK_MAX];
 extern uintptr_t rcl_addr_getinstance;
 extern uintptr_t rcl_addr_getownchar;
 extern uintptr_t rcl_addr_getteam;
@@ -84,7 +83,6 @@ extern int32_t rcl_tx_b;
 extern int32_t rcl_ty_b;
 extern uint64_t rcl_hold;
 
-uintptr_t rcl_strip_imp(IMP imp);
 BOOL rcl_query_region(uintptr_t address, vm_prot_t *protection, vm_prot_t *maxProtection, mach_vm_size_t *regionSize, uintptr_t *regionStart);
 BOOL rcl_addr_writable(uintptr_t address, size_t length);
 BOOL rcl_read_bytes(uintptr_t address, void *out, size_t length);
@@ -319,10 +317,6 @@ static inline BOOL rcl_object_plausible(void *object) {
     if (!firstEntry) return NO;
 
     return rcl_addr_executable(firstEntry);
-}
-
-static inline BOOL rcl_image_owns_address(uintptr_t imageBase, uintptr_t address) {
-    return rcl_image_segment_contains(imageBase, address, NO, NULL, NULL, NULL);
 }
 
 #endif

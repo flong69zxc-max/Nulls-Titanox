@@ -681,6 +681,7 @@ void tnx_joy_knob(float dirX, float dirY, int on) {
 }
 
 void tnx_applied_2(int32_t ax, int32_t ay) {
+    if (!TNX_APPLY_WRITE_2) return;
     uintptr_t ctrl = tnx_controller();
     int32_t backX = 0;
     int32_t backY = 0;

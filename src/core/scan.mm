@@ -1758,6 +1758,13 @@ void rcl_roster(uintptr_t ownElem, int ownIndex, int ownTeam,
     }
 
     {
+        int ownSpawn = -1;
+        int k = 0;
+
+        for (k = 0; k < rcl_pl_n; k++) {
+            if (rcl_pl_mine[k]) { ownSpawn = k; break; }
+        }
+
         {
             int same = 1;
 

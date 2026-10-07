@@ -2426,7 +2426,7 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
         t_commit_until = t_ticks_3;
 
         tnx_enqueue((int32_t)tx, (int32_t)ty);
-        tnx_move_to((int32_t)tx, (int32_t)ty, px, py);
+        tnx_move_to_2((int32_t)tx, (int32_t)ty, px, py);
         tnx_joy_set(t_js_dir_x, t_js_dir_y, 1);
 
         if (t_new_tick >= 0) {
@@ -2466,7 +2466,7 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
         t_commit_until = 0;
 
         tnx_enqueue((int32_t)px, (int32_t)py);
-        tnx_move_to((int32_t)px, (int32_t)py, px, py);
+        tnx_move_to_2((int32_t)px, (int32_t)py, px, py);
         tnx_joy_set(0.0f, 0.0f, 0);
     } else {
         t_tx_2 = px;

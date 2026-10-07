@@ -117,7 +117,8 @@ int tnx_pending(int want, uint64_t *mask);
 int tnx_enqueue(int x, int y);
 
 int tnx_enqueue_type(int x, int y, int type);
-int tnx_move_to(int32_t x, int32_t y, float ox, float oy);
+int tnx_move_to_2(int32_t x, int32_t y, float ox, float oy);
+uintptr_t tnx_move_carrier_2(void);
 void tnx_move_locate(float ox, float oy);
 int tnx_move_pair_ok(uintptr_t obj, int32_t *outX, int32_t *outY);
 int tnx_move_near_own(uintptr_t obj, float ox, float oy, int32_t *outX, int32_t *outY);

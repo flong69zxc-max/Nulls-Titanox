@@ -206,7 +206,7 @@
 
 #define TNX_AIM_RANGE 3000.0f
 
-#define TNX_MOVE_ON 0
+#define TNX_MOVE_ON 1
 
 #define TNX_DODGE_DETAIL_MAX 12
 

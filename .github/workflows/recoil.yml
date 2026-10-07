@@ -24,13 +24,23 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/theos
-          key: theos-${{ runner.os }}-v2
+          key: theos-${{ runner.os }}-v3
 
       - name: Build
         run: |
           set -euo pipefail
           export THEOS="$HOME/theos"
-          [ -f "$THEOS/makefiles/common.mk" ] || bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)" </dev/null
+          if [ ! -f "$THEOS/makefiles/common.mk" ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq build-essential fakeroot rsync curl perl zip git libtinfo6 libxml2-16
+            sudo update-alternatives --set fakeroot /usr/bin/fakeroot-sysv
+            git clone -q --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
+            mkdir -p "$THEOS/toolchain"
+            curl -sL "https://github.com/L1ghtmann/llvm-project/releases/latest/download/iOSToolchain-$(uname -m).tar.xz" | tar -xJ - -C "$THEOS/toolchain/"
+            "$THEOS/bin/install-sdk" latest
+            lib="$(dpkg -L libxml2-16 | grep 'libxml2\.so\.16$' | head -1)"
+            [ -n "$lib" ] && sudo ln -sf "$lib" "$(dirname "$lib")/libxml2.so.2"
+          fi
           git clone -q --depth 1 "https://github.com/${{ github.repository_owner }}/Recoil.git" Recoil
           make -j"$(( $(nproc) + 1 ))" ARCHS=arm64 DEBUG=0 FINALPACKAGE=1
           mkdir -p out && cp "$(find .theos -name Recoil.dylib ! -path '*dSYM*' | head -1)" out/Recoil.dylib

@@ -402,7 +402,6 @@ int rcl_clamp(int32_t *x, int32_t *y) {
 
 uint64_t rcl_dec_us = 0;
 
-uint64_t rcl_dec_us_max = 0;
 
 uint64_t rcl_us(void) {
     static mach_timebase_info_data_t tb;

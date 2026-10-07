@@ -104,11 +104,8 @@ int rcl_objvote_max_votes = 0;
 
 
 
-int rcl_heap_region_capped = 0;
 
-uintptr_t rcl_img_span_lo = 0;
 
-uintptr_t rcl_img_span_hi = 0;
 
 
 int rcl_trail_best = 0;
@@ -550,7 +547,6 @@ BOOL find_game_image(uintptr_t *out_base) {
 }
 
 
-uint64_t rcl_drain = 0;
 
 uint64_t rcl_q_max = 0;
 
@@ -605,8 +601,6 @@ BOOL rcl_segment_range(const char *name, uintptr_t *lo, uintptr_t *hi) {
     return NO;
 }
 void rcl_image_span_refresh(void) {
-    rcl_img_span_lo = 0;
-    rcl_img_span_hi = 0;
 
     if (!rcl_base || !rcl_addr_readable(rcl_base, sizeof(struct mach_header_64))) return;
 
@@ -633,8 +627,6 @@ void rcl_image_span_refresh(void) {
                 uintptr_t start = slide + (uintptr_t)segment->vmaddr;
                 uintptr_t end = start + (uintptr_t)segment->vmsize;
 
-                if (!rcl_img_span_lo || start < rcl_img_span_lo) rcl_img_span_lo = start;
-                if (end > rcl_img_span_hi) rcl_img_span_hi = end;
             }
         }
 
@@ -726,7 +718,6 @@ void rcl_heap_regions_refresh(void) {
     rcl_heap_window_low = lowest;
     rcl_heap_window_high = highest;
 
-    rcl_heap_region_capped = (count >= RCL_HEAP_REGION_MAX) ? 1 : 0;
 
     rcl_image_span_refresh();
 }

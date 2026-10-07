@@ -7,7 +7,6 @@ extern int rcl_find_joy_done;
 extern uint64_t rcl_ticks_a;
 extern uintptr_t rcl_manager_ptr;
 extern uint64_t rcl_dec_us;
-extern uint64_t rcl_dec_us_max;
 extern int rcl_logs_a;
 extern int rcl_seeded;
 extern int32_t rcl_last_x_a;

@@ -36,16 +36,12 @@ static int rcl_dodge_is_proj(uintptr_t obj) {
 #endif
 }
 
-uint64_t rcl_drop_slow = 0;
 
-uint64_t rcl_drop_fast = 0;
 
 uint64_t rcl_drop_blink = 0;
 
 
-float rcl_spd_min = 0.0f;
 
-float rcl_spd_max = 0.0f;
 
 
 
@@ -85,7 +81,6 @@ int rcl_mates = 0;
 
 int rcl_enemies = 0;
 
-int rcl_agree = -1;
 
 
 
@@ -198,9 +193,7 @@ float rcl_shot_speed[RCL_PROJ_MAX];
 
 
 
-uint64_t rcl_react_min = 0;
 
-uint64_t rcl_react_max = 0;
 
 
 int rcl_track_gid[RCL_SEG_MAX];
@@ -430,8 +423,6 @@ void rcl_build(void) {
             continue;
         }
 
-        if (rcl_spd_min < 1.0f || speed < rcl_spd_min) rcl_spd_min = speed;
-        if (speed > rcl_spd_max) rcl_spd_max = speed;
 
         rem = speed * (RCL_PROJ_LIFE_MS / 1000.0f);
 
@@ -481,8 +472,6 @@ void rcl_build(void) {
                      rem < RCL_BLINK_REM) rule = 3;
 
             if (rule) {
-                if (rule == 1) rcl_drop_slow++;
-                else if (rule == 2) rcl_drop_fast++;
                 else rcl_drop_blink++;
 
 
@@ -2064,8 +2053,6 @@ int rcl_decide(int32_t ownX, int32_t ownY) {
         if (rcl_new_tick >= 0) {
             uint64_t react = rcl_ticks_a - (uint64_t)rcl_new_tick;
 
-            if (rcl_react_min == 0 || react < rcl_react_min) rcl_react_min = react;
-            if (react > rcl_react_max) rcl_react_max = react;
         }
     } else if (rcl_moving && rcl_passed(px, py)) {
         rcl_moving = 0;

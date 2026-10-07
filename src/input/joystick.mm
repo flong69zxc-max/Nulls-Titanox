@@ -305,7 +305,6 @@ void rcl_precision(int32_t ownX, int32_t ownY, float dirX, float dirY, int escap
 
         rcl_dec_us = (now >= rcl_time) ? (now - rcl_time) : 0;
 
-        if (rcl_dec_us > rcl_dec_us_max) rcl_dec_us_max = rcl_dec_us;
         if (rcl_dec_us > RCL_SLOW_US) rcl_slow++;
     }
 

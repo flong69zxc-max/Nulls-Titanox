@@ -9,6 +9,9 @@
 
 
 
+int rcl_qguard_probe = 0;
+int rcl_qguard_skip = 0;
+
 static uint32_t rcl_ci_table[RCL_CI_TABLE_TYPES];
 
 static uint8_t rcl_ci_inner[RCL_CI_HASH_MASK_SIZE];
@@ -178,7 +181,6 @@ int rcl_enqueue_type(int x, int y, int type) {
     rcl_read_int((uintptr_t)mgr + RCL_MGR_SEQ_OFF, &rcl_seq_after);
     rcl_q_after = rcl_queue_count(NULL);
     if (RCL_QUEUE) {
-        if (rcl_q_after <= 0) rcl_drain++;
         if ((uint64_t)(rcl_q_after > 0 ? rcl_q_after : 0) > rcl_q_max) {
             rcl_q_max = (uint64_t)rcl_q_after;
         }
@@ -193,5 +195,3 @@ int rcl_enqueue(int x, int y) {
     return rcl_enqueue_type(x, y, (int)RCL_TYPE_MOVE);
 }
 
-int rcl_qguard_probe = 0;
-int rcl_qguard_skip = 0;

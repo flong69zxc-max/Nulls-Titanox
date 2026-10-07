@@ -82,7 +82,6 @@ int rcl_check_done = 0;
 
 
 
-uint64_t rcl_pred_took = 0;
 
 uint64_t rcl_pred_miss = 0;
 
@@ -438,7 +437,6 @@ int rcl_team_off = (int)RCL_OBJ_TEAM_OFF;
 
 
 
-int rcl_map_ok = 0;
 
 
 
@@ -476,7 +474,6 @@ void rcl_read_map(uintptr_t mode) {
     int32_t width = 0;
     int32_t height = 0;
 
-    rcl_map_ok = 0;
 
     if (!mode) return;
 
@@ -566,7 +563,6 @@ int rcl_dead = 0;
 
 int rcl_own_team_a = -1;
 
-int rcl_proj_own = 0;
 
 int rcl_proj_other = 0;
 
@@ -795,7 +791,6 @@ void rcl_state_note(int state) {
         rcl_own_index = -1;
         rcl_own_ptr = 0;
         rcl_own_ptr_a = 0;
-        rcl_own_from_a = "v103-reset";
 
     }
 
@@ -830,7 +825,6 @@ int rcl_proj_scan(uintptr_t manager, int32_t count) {
         rcl_projs[k].classRva = (uintptr_t)-1;
     }
 
-    rcl_proj_own = 0;
     rcl_proj_other = 0;
 
     for (i = 0; i < count && found < RCL_PROJ_MAX; i++) {
@@ -937,7 +931,6 @@ int rcl_proj_scan(uintptr_t manager, int32_t count) {
             }
 
             if (rcl_projs[slot].team >= 0) {
-                if (rcl_projs[slot].team == rcl_own_team_a) rcl_proj_own++;
                 else rcl_proj_other++;
             }
 
@@ -1600,7 +1593,6 @@ void rcl_own_index_probe(void) {
 
 }
 
-const char *rcl_own_from_b = "none";
 
 void rcl_publish_own(uintptr_t elem, const char *from) {
     uintptr_t vt = 0;
@@ -1613,7 +1605,6 @@ void rcl_publish_own(uintptr_t elem, const char *from) {
 
     rcl_own_elem = elem;
     rcl_own_stamp = rcl_tick_stamp;
-    rcl_own_from_b = from ? from : "?";
 
     if (rcl_pub_logs < RCL_PUB_LOGS) {
         uintptr_t cls = (vt >= rcl_base) ? (vt - rcl_base) : 0;
@@ -1855,7 +1846,6 @@ void rcl_roster(uintptr_t ownElem, int ownIndex, int ownTeam,
         }
     }
 
-    rcl_agree = (rcl_mates == rcl_mate_n && rcl_enemies == rcl_enemy_n) ? 1 : 0;
 
 
 }
@@ -2091,7 +2081,6 @@ uintptr_t rcl_own_ptr_a = 0;
 
 
 
-const char *rcl_own_from_a = "none";
 
 uintptr_t rcl_own_ptr_b = 0;
 
@@ -2195,14 +2184,12 @@ void rcl_own_probe(void) {
         if (sig && valid && !taken) {
             taken = 1;
             rcl_own_ptr_a = (uintptr_t)elem;
-            rcl_own_from_a = (b == 0) ? "container+e0" : "scene+e0";
 
         }
     }
 
     if (!taken) {
         rcl_own_ptr_a = 0;
-        rcl_own_from_a = "v102-none";
     }
 }
 int rcl_own_latch(const rcl_obj_t *objects, int usable, int *indexOut,
@@ -2236,7 +2223,6 @@ uintptr_t rcl_own_obj(void) {
 
     if (rcl_own_elem) {
         if (rcl_cand_ok(rcl_own_elem, &why, &vt)) {
-            rcl_own_from_b = (rcl_own_stamp == rcl_tick_stamp) ? "published" : "published-old";
 
             return rcl_own_elem;
         }
@@ -2247,7 +2233,6 @@ uintptr_t rcl_own_obj(void) {
         uintptr_t cand = rcl_hop((uintptr_t)rcl_scene_object, NULL);
 
         if (cand && rcl_cand_ok(cand, NULL, &vt)) {
-            rcl_own_from_b = "engine-chain";
 
             return cand;
         }
@@ -2255,13 +2240,11 @@ uintptr_t rcl_own_obj(void) {
         cand = rcl_hop((uintptr_t)rcl_players_object, NULL);
 
         if (cand && rcl_cand_ok(cand, NULL, &vt)) {
-            rcl_own_from_b = "players-chain";
 
             return cand;
         }
     }
 
-    rcl_own_from_b = "none";
 
     return 0;
 }

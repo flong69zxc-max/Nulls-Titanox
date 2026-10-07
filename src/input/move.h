@@ -34,6 +34,7 @@ uintptr_t rcl_entry_2(uintptr_t rva);
 void *rcl_manager(void);
 int rcl_queue_count(uintptr_t *mgrOut);
 int rcl_predict(int32_t x, int32_t y);
+int rcl_pred_set(int x, int y);
 
 int rcl_move_to(int32_t x, int32_t y, float ox, float oy);
 uintptr_t rcl_move_carrier(void);
@@ -41,7 +42,6 @@ void rcl_move_locate(float ox, float oy);
 int rcl_move_pair_ok(uintptr_t obj, int32_t *outX, int32_t *outY);
 int rcl_move_near_own(uintptr_t obj, float ox, float oy, int32_t *outX, int32_t *outY);
 extern int rcl_move_probe_count;
-extern int rcl_move_ok;
 int rcl_witness(int32_t *x, int32_t *y);
 int rcl_resolve_own(const rcl_obj_t *objects, int usable, int *indexOut, const char **fromOut);
 float rcl_seg_dist(float ax, float ay, float bx, float by, float px, float py);

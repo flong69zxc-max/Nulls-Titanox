@@ -158,7 +158,6 @@ int rcl_predict(int32_t x, int32_t y) {
             }
         }
 
-        if (px == x && py == y) rcl_pred_took++;
         else rcl_pred_miss++;
 
     }
@@ -232,7 +231,6 @@ int rcl_pred_set(int x, int y) {
 
 int rcl_move_probe_count = 0;
 
-int rcl_move_ok = 0;
 
 int32_t rcl_move_before_x = 0;
 
@@ -520,7 +518,6 @@ int rcl_move_to(int32_t x, int32_t y, float ox, float oy) {
     rcl_read_int(own + RCL_MOVE_KEY_OFF, &rcl_move_after_k);
     rcl_read_int(own + RCL_MOVE_ARM_OFF, &rcl_move_after_arm);
 
-    if (rcl_move_after_x == x && rcl_move_after_y == y) rcl_move_ok = 1;
 
     rcl_read_byte(rcl_move_stick + 0xf78, &a78);
     rcl_read_byte(rcl_move_stick + 0xf7f, &a7f);

@@ -1462,7 +1462,7 @@ static void tnx_dodge_state_tick(float px, float py) {
 }
 
 #define TNX_DODGE_SAFETY 28.0f
-#define TNX_DODGE_NEAR_12 900.0f
+#define TNX_DODGE_NEAR_12 2500.0f
 #define TNX_DODGE_T_URGENT 0.9f
 #define TNX_DODGE_T_FIELD 1.8f
 #define TNX_DODGE_DIRS 64

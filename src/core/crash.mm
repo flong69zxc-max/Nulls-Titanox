@@ -193,7 +193,7 @@ void start(void) {
     tnx_install();
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        tlog(@"=== titanox started v90 (no touch gate) ===");
+        tlog(@"=== titanox started v92 (no stick) ===");
         poll_for_game(0);
     });
 }

@@ -1,7 +1,6 @@
-#ifndef RECOIL_SCAN_WALLS_H
-#define RECOIL_SCAN_WALLS_H
+#ifndef RECOIL_UTILS_WALLS_H
+#define RECOIL_UTILS_WALLS_H
 
-#include "core/config.h"
 #include "core/config.h"
 #include "core/offsets.h"
 

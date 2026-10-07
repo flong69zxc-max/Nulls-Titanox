@@ -646,4 +646,7 @@ typedef struct {
     int32_t gid;
 } rcl_seg_t;
 
+
+#define RCL_LOGS_ON 0
+
 #endif

@@ -1,5 +1,5 @@
-#ifndef RECOIL_INPUT_SIGN_H
-#define RECOIL_INPUT_SIGN_H
+#ifndef RECOIL_UTILS_SIGN_H
+#define RECOIL_UTILS_SIGN_H
 
 #include "core/config.h"
 #include "core/offsets.h"

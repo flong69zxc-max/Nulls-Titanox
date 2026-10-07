@@ -122,6 +122,9 @@ void setup(void) {
     if (rcl_setup_done) return;
     rcl_setup_done = YES;
 
+    rcl_log_set_enabled(RCL_LOGS_ON);
+    rcl_log_info("setup base=%#llx", (unsigned long long)rcl_base);
+
 
     rcl_load_function_starts();
 

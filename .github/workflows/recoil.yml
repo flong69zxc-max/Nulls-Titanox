@@ -65,8 +65,7 @@ jobs:
       - name: Deps
         run: |
           set -euo pipefail
-          mkdir -p deps
-          git clone -q --depth 1 "https://github.com/${{ github.repository_owner }}/${DEPS_REPO}.git" deps/Recoil
+          git clone -q --depth 1 "https://github.com/${{ github.repository_owner }}/${DEPS_REPO}.git" Recoil
 
       - name: Build
         run: |
@@ -89,4 +88,3 @@ jobs:
           path: out/Recoil.dylib
           if-no-files-found: error
           compression-level: 1
-          retention-days: 3

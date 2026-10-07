@@ -236,8 +236,6 @@ int rcl_objc_arm(const char *clsName, const char *selName) {
 
         uintptr_t originalRaw = rcl_strip_imp(previous);
 
-        rt_dump_target(clsName, originalRaw);
-
         BOOL originalExact = NO;
         size_t originalIndex = rcl_start_index(originalRaw, &originalExact);
 

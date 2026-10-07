@@ -1191,7 +1191,6 @@ static void rcl_dodge_state_tick(float px, float py) {
 #define RCL_DODGE_SPEED_MIN 300
 #define RCL_DODGE_SPEED_MAX 8500
 #define RCL_DODGE_DIRT_MIN 6.0f
-#define RCL_DODGE_DIRT_SPAN 1.5f
 
 typedef struct {
     float x;

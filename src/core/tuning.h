@@ -200,7 +200,6 @@
 
 #define RCL_OWN_RADIUS_MAX 200.0f
 
-#define RCL_PROJ_RADIUS_MIN 60.0f
 
 #define RCL_AIM_INTERVAL 12
 
@@ -219,9 +218,7 @@
 
 #define RCL_MOVE_HOPS 2
 
-#define RCL_MOVE_LOGS 24
 
-#define RCL_MOVE_EVERY 128
 
 #define RCL_MEAS_FPS 60.0f
 
@@ -231,11 +228,8 @@
 
 #define RCL_MEAS_SPEED_MAX 8500.0f
 
-#define RCL_MEAS_STALE_TICKS 30
 
-#define RCL_MEAS_BODY_MARGIN 1.0f
 
-#define RCL_MEAS_DIRT_MIN 6.0f
 
 #define RCL_AIM_PRED_MAX 3
 

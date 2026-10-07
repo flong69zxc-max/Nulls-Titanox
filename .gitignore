@@ -2,7 +2,7 @@
 .theos/
 theos/
 packages/
-deps/
+Recoil/
 derived/
 *.deb
 *.dylib

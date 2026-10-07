@@ -26,3 +26,24 @@ make -j"$(( $(nproc) + 1 ))" ARCHS=arm64 DEBUG=0 FINALPACKAGE=1
 
 Addresses in `src/core/offsets.h` are RVAs for that exact build. Other versions
 won't work.
+
+## Structure
+
+```
+src/core      offsets, config, memory, imports
+src/hooks     slot hooks, ObjC hooks, function starts
+src/input     movement, joystick, walk push, sign
+src/scan      pointer/image scanning, walls
+src/dodge     autododge
+src/players   roster, slot helpers
+src/runtime   setup, state, scene
+src/utils     geometry, strings, crypto
+```
+
+Hooks live in a separate repo — [Recoil](https://github.com/recode-dev/Recoil),
+`recoil_hook/hook.c`. CI pulls it into `Recoil/`; for a local build:
+
+```
+git clone --depth 1 https://github.com/recode-dev/Recoil.git Recoil
+make -j"$(( $(nproc) + 1 ))" ARCHS=arm64 DEBUG=0 FINALPACKAGE=1
+```

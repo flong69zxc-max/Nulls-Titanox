@@ -115,12 +115,6 @@ void setup(void) {
     rcl_setup_done = YES;
 
 
-    image_ref_t ref;
-    ref.base = rcl_base;
-    ref.hdr = (const struct mach_header_64 *)rcl_base;
-
-    rt_dump_image(ref);
-
     rcl_load_function_starts();
 
     rcl_resolve_addresses();

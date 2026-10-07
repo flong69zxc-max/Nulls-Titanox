@@ -709,7 +709,57 @@ void tnx_applied_2(int32_t ax, int32_t ay) {
     }
 }
 
+uint64_t t_stick_push_2 = 0;
+
+static void tnx_stick_push_2(int engaged, float dirX, float dirY) {
+    uintptr_t bs = tnx_bs();
+    uintptr_t bsm = 0;
+    float ox = 0.0f;
+    float oy = 0.0f;
+    float len = 0.0f;
+    float nx = 0.0f;
+    float ny = 0.0f;
+    float backX = 0.0f;
+    float backY = 0.0f;
+
+    if (!TNX_STICK_PUSH_2) return;
+    if (!bs) return;
+    if (!tnx_read_ptr(bs + TNX_JOY_TARGET_OFF, (void **)&bsm) || !bsm) return;
+    if (!tnx_read_f32(bsm + 0xa48, &ox)) return;
+    if (!tnx_read_f32(bsm + 0xa4c, &oy)) return;
+
+    if (engaged) {
+        len = __builtin_sqrtf(dirX * dirX + dirY * dirY);
+
+        if (len > 0.0001f) {
+            nx = dirX / len;
+            ny = dirY / len;
+        }
+    }
+
+    if (!tnx_write_f32(bsm + 0xa40, ox + nx * TNX_STICK_RADIUS_2)) return;
+    if (!tnx_write_f32(bsm + 0xa44, oy + ny * TNX_STICK_RADIUS_2)) return;
+
+    t_stick_push_2++;
+
+    if (t_stick_push_2 <= 6) {
+        tnx_read_f32(bsm + 0xa40, &backX);
+        tnx_read_f32(bsm + 0xa44, &backY);
+
+        TNX_LOGX("stickpush n=%llu bsm=%p engaged=%d org=(%.2f,%.2f) want=(%.2f,%.2f) back=(%.2f,%.2f) "
+                 "- the engine walks by cur minus org at +0xa40/+0xa44 against +0xa48/+0xa4c on this "
+                 "object, and at rest it keeps cur equal to org, so only cur is written here and org is "
+                 "left exactly as the game set it",
+                 (unsigned long long)t_stick_push_2, (void *)bsm, engaged,
+                 (double)ox, (double)oy,
+                 (double)(ox + nx * TNX_STICK_RADIUS_2), (double)(oy + ny * TNX_STICK_RADIUS_2),
+                 (double)backX, (double)backY);
+    }
+}
+
 void tnx_stick(int engaged, float dirX, float dirY) {
+    tnx_stick_push_2(engaged, dirX, dirY);
+
     if (!TNX_V245_STICK && !TNX_JS_STICK) return;
     uintptr_t ctrl = tnx_controller();
     int32_t wx = 0;

@@ -489,4 +489,7 @@
 #define TNX_JOY_KNOB_WRITE_2 0
 #define TNX_APPLY_WRITE_2 0
 
+#define TNX_STICK_PUSH_2 1
+#define TNX_STICK_RADIUS_2 60.0f
+
 #endif

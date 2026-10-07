@@ -1,7 +1,7 @@
 #ifndef RECOIL_CORE_STARTS_H
 #define RECOIL_CORE_STARTS_H
 
-#include "core/config.h"
+#include "core/types.h"
 
 extern uintptr_t * rcl_starts;
 extern size_t rcl_starts_count;

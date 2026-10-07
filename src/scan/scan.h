@@ -1,7 +1,7 @@
 #ifndef RECOIL_SCAN_SCAN_H
 #define RECOIL_SCAN_SCAN_H
 
-#include "core/config.h"
+#include "core/types.h"
 
 extern uintptr_t rcl_scene_object;
 
@@ -184,5 +184,52 @@ void rcl_roster(uintptr_t ownElem, int ownIndex, int ownTeam, const rcl_obj_t *o
 int rcl_team_at(const rcl_obj_t *objects, int index);
 
 int rcl_object_live(uintptr_t object);
+
+#define RCL_ENEMY_HARD 150.0f
+#define RCL_ENEMY_FAR 400.0f
+#define RCL_ENEMY_MARGIN 60.0f
+#define RCL_PROJ_OWNER 1
+#define RCL_SPAWN_R 520.0f
+#define RCL_WALK_MIN 1.0f
+#define RCL_WALK_MAX 60.0f
+#define RCL_WALK_EMA 0.12f
+#define RCL_CLUSTER 700.0f
+#define RCL_DEAD_ONCE 1
+#define RCL_GIDLESS 1
+#define RCL_POS_BONUS 8
+#define RCL_DIST_BONUS 6
+#define RCL_SOFT_BASE 2
+#define RCL_SOFT_MIN_POS 2
+#define RCL_SOFT_MIN_DIST 2
+#define RCL_LOGS_a 12
+#define RCL_MATE_CLEAR 240.0f
+#define RCL_ATTRIB_R (700.0f * 700.0f)
+#define RCL_ATTRIB_MARGIN 1.5f
+#define RCL_RESPAWN_JUMP 1200
+#define RCL_RESPAWN_VISIBLE 90
+#define RCL_HOLD_FRAMES 10
+#define RCL_STATE_INIT 0
+#define RCL_STATE_ALIVE 1
+#define RCL_STATE_DEAD 2
+#define RCL_STATE_RESPAWN 3
+#define RCL_PUB_LOGS 10
+#define RCL_MIN_OBJ_BYTES 0x118ULL
+#define RCL_DUMPS 3
+#define RCL_DIFF_LOGS 48
+#define RCL_MAP_MAX 512
+#define RCL_COUNT_MAX 96
+#define RCL_SCAN_QWORDS 512
+#define RCL_SCAN_BASES 3
+#define RCL_BUCKET_TICKS_2 10
+#define RCL_SCAN_FLOOR_TICKS 12
+#define RCL_SCAN_FALLBACK_TICKS 20
+#define RCL_MODESIG_TICKS 3
+#define RCL_ASCII_RATIO 30
+#define RCL_GID_MAX 10000000
+#define RCL_GID_FLOOR 1000000
+#define RCL_COORD_MAX 100000
+#define RCL_VOTESCAN_GLOBAL_EVERY 10
+#define RCL_VOTESCAN_INTERVAL 1.0
+#define RCL_VOTESCAN_ATTEMPTS 600
 
 #endif

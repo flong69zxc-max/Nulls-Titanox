@@ -1,7 +1,7 @@
 #ifndef RECOIL_UTILS_SIGN_H
 #define RECOIL_UTILS_SIGN_H
 
-#include "core/config.h"
+#include "core/types.h"
 #include "core/offsets.h"
 
 

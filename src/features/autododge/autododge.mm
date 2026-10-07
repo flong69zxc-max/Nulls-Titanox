@@ -1,5 +1,15 @@
 #include "recoil.h"
 
+#define RCL_CALL_EVERY 600
+#define RCL_CALL_LOGS 4
+#define RCL_DODGE_DETAIL_EVERY 20
+#define RCL_DODGE_DETAIL_MAX 12
+#define RCL_HOWTO_LOGS 12
+#define RCL_POS_DUMPS 8
+#define RCL_STATE_EVERY 240
+#define RCL_WALK_EVERY 5
+
+
 
 static float rcl_dodge_px = 0.0f;
 static float rcl_dodge_py = 0.0f;

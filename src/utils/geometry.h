@@ -1,7 +1,7 @@
 #ifndef RECOIL_UTILS_GEOMETRY_H
 #define RECOIL_UTILS_GEOMETRY_H
 
-#include "core/config.h"
+#include "core/types.h"
 
 extern int rcl_find_joy_done;
 extern uint64_t rcl_ticks_a;
@@ -24,5 +24,21 @@ uint64_t rcl_us(void);
 void rcl_paircal(void);
 
 uintptr_t rcl_pair_base(void);
+
+#define RCL_COORD_SOFT 0
+#define RCL_WALL_CLIP 1
+#define RCL_REBUILD_TICKS 60
+#define RCL_MIN_PASSES 3
+#define RCL_MIN_CLIP 60.0f
+#define RCL_MIN_IMG_PCT 0
+#define RCL_MAX_SOLID_PCT 60
+#define RCL_MAX_CLIP_PCT 70
+#define RCL_MIN_SEGS 4
+#define RCL_NP_DUMPS 8
+#define RCL_ELEMS 8
+#define RCL_WORDS_2 24
+#define RCL_VALUE_MAX 1000000
+#define RCL_FLOAT_MAX 10000.0f
+#define RCL_TEAM_MAX 8
 
 #endif

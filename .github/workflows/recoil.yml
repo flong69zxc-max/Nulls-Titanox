@@ -3,24 +3,10 @@ name: Recoil
 on:
   push:
     branches: [main]
-    paths:
-      - 'src/**'
-      - 'Makefile'
-      - 'control'
-      - '.github/workflows/recoil.yml'
-  pull_request:
-    paths:
-      - 'src/**'
-      - 'Makefile'
-      - 'control'
-      - '.github/workflows/recoil.yml'
   workflow_dispatch:
 
 permissions:
   contents: write
-
-env:
-  DEPS_REPO: ${{ vars.DEPS_REPO || 'Recoil' }}
 
 concurrency:
   group: recoil-${{ github.ref }}
@@ -28,58 +14,31 @@ concurrency:
 
 jobs:
   build:
-    name: Build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-
+    timeout-minutes: 10
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Cache Theos
-        uses: actions/cache@v4
+      - uses: actions/cache@v4
         with:
           path: ~/theos
-          key: theos-${{ runner.os }}-${{ hashFiles('.github/workflows/recoil.yml') }}
-          restore-keys: theos-${{ runner.os }}-
-
-      - name: Theos
-        run: |
-          set -euo pipefail
-          if [ ! -f "$HOME/theos/makefiles/common.mk" ]; then
-            export THEOS="$HOME/theos"
-            bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)" </dev/null
-          fi
-          test -f "$HOME/theos/makefiles/common.mk"
-          echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
-          echo "$HOME/theos/bin" >> "$GITHUB_PATH"
-
-      - name: Hooks
-        run: |
-          set -euo pipefail
-          git clone -q --depth 1 \
-            "https://github.com/${{ github.repository_owner }}/${DEPS_REPO}.git" Recoil
+          key: theos-${{ runner.os }}-v1
 
       - name: Build
         run: |
           set -euo pipefail
+          export THEOS="$HOME/theos"
+          [ -f "$THEOS/makefiles/common.mk" ] || bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)" </dev/null
+          git clone -q --depth 1 "https://github.com/${{ github.repository_owner }}/Recoil.git" Recoil
           make -j"$(( $(nproc) + 1 ))" ARCHS=arm64 DEBUG=0 FINALPACKAGE=1
-          mkdir -p out
-          dylib="$(find .theos -type f -name Recoil.dylib ! -path '*dSYM*' | sort | head -n 1)"
-          test -n "$dylib"
-          cp "$dylib" out/Recoil.dylib
-          file out/Recoil.dylib
+          mkdir -p out && cp "$(find .theos -name Recoil.dylib ! -path '*dSYM*' | head -1)" out/Recoil.dylib
 
-      - name: Artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: Recoil
           path: out/Recoil.dylib
-          if-no-files-found: error
-          compression-level: 1
 
-      - name: Release
+      - uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
         with:
           files: out/Recoil.dylib

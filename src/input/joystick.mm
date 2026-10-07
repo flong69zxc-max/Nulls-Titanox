@@ -638,13 +638,17 @@ void tnx_joy_knob(float dirX, float dirY, int on) {
     }
 }
 
-static void tnx_stick_arm(uintptr_t ctrl, int on) {
+static void tnx_stick_arm_2(uintptr_t ctrl, int on) {
     uint8_t v = on ? 1 : 0;
+    uint8_t latch = (uint8_t)TNX_CTRL_LATCH_VAL;
+    uint8_t dirty = (uint8_t)TNX_CTRL_DIRTY_VAL;
 
     if (!ctrl) return;
 
     tnx_write_bytes(ctrl + TNX_CTRL_MOVE_OFF, &v, sizeof(v));
     tnx_write_bytes(ctrl + TNX_CTRL_ALIVE_OFF, &v, sizeof(v));
+    tnx_write_bytes(ctrl + TNX_CTRL_LATCH_OFF, &latch, sizeof(latch));
+    tnx_write_bytes(ctrl + TNX_CTRL_DIRTY_OFF, &dirty, sizeof(dirty));
 }
 
 void tnx_stick(int engaged, float dirX, float dirY) {
@@ -717,7 +721,7 @@ void tnx_stick(int engaged, float dirX, float dirY) {
 
         tnx_write_bytes(ctrl + TNX_CTRL_RAW_Y_OFF, &wy, sizeof(wy));
 
-        tnx_stick_arm(ctrl, want);
+        tnx_stick_arm_2(ctrl, want);
 
         if (want) {
             tnx_joy_knob(dirX, dirY, 1);
@@ -736,6 +740,8 @@ void tnx_stick(int engaged, float dirX, float dirY) {
             int32_t appY = 0;
             uint8_t mv = 0;
             uint8_t al = 0;
+            uint8_t lt = 0;
+            uint8_t dt = 0;
 
             stickLogs++;
 
@@ -745,11 +751,19 @@ void tnx_stick(int engaged, float dirX, float dirY) {
             tnx_read_i32(ctrl + TNX_CTRL_APPLIED_Y_OFF, &appY);
             tnx_read_bytes(ctrl + TNX_CTRL_MOVE_OFF, &mv, sizeof(mv));
             tnx_read_bytes(ctrl + TNX_CTRL_ALIVE_OFF, &al, sizeof(al));
+            tnx_read_bytes(ctrl + TNX_CTRL_LATCH_OFF, &lt, sizeof(lt));
+            tnx_read_bytes(ctrl + TNX_CTRL_DIRTY_OFF, &dt, sizeof(dt));
 
             TNX_LOGX("stick write #%d ctrl=%p want=(%d,%d) back=(%d,%d) kept=%d engaged=%d "
-                     "applied=(%d,%d) move=%d alive=%d",
+                     "applied=(%d,%d) move=%d alive=%d latch=%d dirty=%d - the raw pair is only a "
+                     "request until the engine commits it, and the commit is the latch byte at %#llx "
+                     "set with the dirty byte at %#llx cleared, which this build had reserved and "
+                     "never written, so applied stayed at its old value while the body glided on the "
+                     "message path alone",
                      stickLogs, (void *)ctrl, wx, wy, backX, backY,
-                     (backX == wx && backY == wy) ? 1 : 0, want, appX, appY, (int)mv, (int)al);
+                     (backX == wx && backY == wy) ? 1 : 0, want, appX, appY, (int)mv, (int)al,
+                     (int)lt, (int)dt, (unsigned long long)TNX_CTRL_LATCH_OFF,
+                     (unsigned long long)TNX_CTRL_DIRTY_OFF);
         }
     }
 }

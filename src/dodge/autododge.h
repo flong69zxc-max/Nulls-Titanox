@@ -1,7 +1,7 @@
 #ifndef RECOIL_DODGE_AUTODODGE_H
 #define RECOIL_DODGE_AUTODODGE_H
 
-#include "core/types.h"
+#include "core/config.h"
 
 extern uint64_t rcl_drop_slow;
 extern uint64_t rcl_drop_fast;
@@ -177,5 +177,18 @@ float rcl_own_radius(void);
 float rcl_proj_radius(const rcl_proj_t *p, float speed);
 float rcl_seg_dist(float ax, float ay, float bx, float by, float px, float py);
 void rcl_threats(void);
+
+
+
+
+extern uint64_t rcl_bucket_abs[RCL_ADV_BUCKETS];
+extern uint64_t rcl_learn_loss[3][3][2];
+extern uint64_t rcl_learn_win[3][3][2];
+extern int rcl_stat_near;
+int rcl_blacklisted(float speed, float radius);
+void rcl_stat_tick(float px, float py);
+
+extern uint64_t rcl_learn_loss[3][3][2];
+extern uint64_t rcl_learn_win[3][3][2];
 
 #endif

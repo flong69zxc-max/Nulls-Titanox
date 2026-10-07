@@ -1,7 +1,7 @@
 #ifndef RECOIL_CORE_MEMORY_H
 #define RECOIL_CORE_MEMORY_H
 
-#include "core/types.h"
+#include "core/config.h"
 
 #import <mach-o/dyld.h>
 #import <mach-o/loader.h>

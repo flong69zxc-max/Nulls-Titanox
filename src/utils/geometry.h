@@ -1,7 +1,7 @@
 #ifndef RECOIL_UTILS_GEOMETRY_H
 #define RECOIL_UTILS_GEOMETRY_H
 
-#include "core/types.h"
+#include "core/config.h"
 
 extern int rcl_find_joy_done;
 extern uint64_t rcl_ticks_a;

@@ -1,7 +1,7 @@
 #ifndef RECOIL_UTILS_STRINGS_H
 #define RECOIL_UTILS_STRINGS_H
 
-#include "core/types.h"
+#include "core/config.h"
 
 extern uint64_t rcl_ticks_b;
 

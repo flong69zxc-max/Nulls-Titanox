@@ -1,7 +1,7 @@
 #ifndef RECOIL_RUNTIME_STATE_H
 #define RECOIL_RUNTIME_STATE_H
 
-#include "core/types.h"
+#include "core/config.h"
 
 extern int rcl_battle_active;
 extern int rcl_battle_last_tick;

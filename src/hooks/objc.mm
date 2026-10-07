@@ -117,31 +117,12 @@ BOOL tnx_objc_targets(id self, tnx_objc_hook_t *hook) {
     return NO;
 }
 
-void tnx_objc_rep0(id self, SEL _cmd) {
+void tnx_objc_rep_a(id self, SEL _cmd) {
     tnx_objc_hook_t *hook = tnx_objc_find(self, _cmd);
 
-    t_render_calls++;
 
     if (hook) hook->hits++;
 
-    if (t_render_calls <= TNX_CALL_LOGS ||
-        (t_render_calls % TNX_CALL_EVERY) == 0) {
-        tnx_logf("render CALLED n=%llu self=%p hook=%p wanted=%d targets=%d inHook=%d "
-                 "base=%p scene=%p - the workload runs on exactly this condition, so hook=0 or "
-                 "targets=0 is the whole reason a dodge line does not exist; inHook is read "
-                 "before it is set and is 0 on the outermost call by construction, it is not the "
-                 "gate; the v138 line above ",
-                 (unsigned long long)t_render_calls, (__bridge void *)self, (void *)hook,
-                 hook ? hook->wantedCount : -1, tnx_objc_targets(self, hook) ? 1 : 0,
-                 t_inside_hook, (void *)t_base, (void *)t_scene_object);
-
-        tnx_logf("render CALLED n=%llu self=%p inHook=%d base=%p scene=%p - the dodge is driven "
-                 "from this callback and nothing else, so this line is the first thing to check when "
-                 "the dodge prints nothing: if it is absent the whole workload is never entered and "
-                 "the state has nothing to do with the dodge's own gates",
-                 (unsigned long long)t_render_calls, (__bridge void *)self, t_inside_hook, (void *)t_base,
-                 (void *)t_scene_object);
-    }
 
     if (hook && !t_inside_hook && tnx_objc_targets(self, hook)) {
         t_inside_hook = YES;
@@ -154,7 +135,7 @@ void tnx_objc_rep0(id self, SEL _cmd) {
     }
 }
 
-void tnx_objc_rep1(id self, SEL _cmd, id a1) {
+void tnx_objc_rep_b(id self, SEL _cmd, id a1) {
     tnx_objc_hook_t *hook = tnx_objc_find(self, _cmd);
 
     if (hook && hook->original) {
@@ -170,7 +151,7 @@ void tnx_objc_rep1b(id self, SEL _cmd, BOOL a1) {
     }
 }
 
-void tnx_objc_rep2(id self, SEL _cmd, id a1, id a2) {
+void tnx_objc_rep_c(id self, SEL _cmd, id a1, id a2) {
     tnx_objc_hook_t *hook = tnx_objc_find(self, _cmd);
 
     if (hook && hook->original) {
@@ -209,13 +190,13 @@ int tnx_objc_arm(const char *clsName, const char *selName) {
     IMP replacement = NULL;
 
     if (argc == 3) {
-        replacement = reinterpret_cast<IMP>(tnx_objc_rep0);
+        replacement = reinterpret_cast<IMP>(tnx_objc_rep_a);
     } else if (argc == 4 && args[3] == '@') {
-        replacement = reinterpret_cast<IMP>(tnx_objc_rep1);
+        replacement = reinterpret_cast<IMP>(tnx_objc_rep_b);
     } else if (argc == 4 && args[3] == 'B') {
         replacement = reinterpret_cast<IMP>(tnx_objc_rep1b);
     } else if (argc == 5 && args[3] == '@' && args[4] == '@') {
-        replacement = reinterpret_cast<IMP>(tnx_objc_rep2);
+        replacement = reinterpret_cast<IMP>(tnx_objc_rep_c);
     } else {
         return 0;
     }
@@ -224,7 +205,6 @@ int tnx_objc_arm(const char *clsName, const char *selName) {
         if (!t_objc_hooks[i].used) continue;
         if (t_objc_hooks[i].cls != owner || t_objc_hooks[i].sel != sel) continue;
 
-        tlog([NSString stringWithFormat:@"objc hook %s -%s joined via %s", clsName, selName, class_getName(owner)]);
         return 0;
     }
 
@@ -237,7 +217,6 @@ int tnx_objc_arm(const char *clsName, const char *selName) {
 
         if (tnx_strip_imp(previous) == tnx_strip_imp(replacement)) {
             method_setImplementation(method, previous);
-            tlog([NSString stringWithFormat:@"objc hook %s -%s rejected: original is self", clsName, selName]);
             return 0;
         }
 
@@ -253,10 +232,7 @@ int tnx_objc_arm(const char *clsName, const char *selName) {
         t_objc_hooks[i].wanted[0] = owner;
         t_objc_hooks[i].wantedCount = 1;
 
-        t_objc_armed++;
 
-        tlog([NSString stringWithFormat:@"objc hook %s -%s armed via %s sig=%s orig=%p repl=%p",
-              clsName, selName, class_getName(owner), types, (void *)previous, (void *)replacement]);
 
         uintptr_t originalRaw = tnx_strip_imp(previous);
 
@@ -265,13 +241,6 @@ int tnx_objc_arm(const char *clsName, const char *selName) {
         BOOL originalExact = NO;
         size_t originalIndex = tnx_start_index(originalRaw, &originalExact);
 
-        tnx_logf("origCheck %s prologue=%s start=%d index=%d exec=%d text=%d",
-                 clsName,
-                 tnx_prologue_rule(originalRaw),
-                 originalExact ? 1 : 0,
-                 originalIndex == (size_t)-1 ? -1 : (int)originalIndex,
-                 tnx_addr_executable(originalRaw) ? 1 : 0,
-                 tnx_image_text_contains(t_base, originalRaw) ? 1 : 0);
 
         return 1;
     }

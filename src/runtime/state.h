@@ -3,7 +3,12 @@
 
 #include "core/types.h"
 
-extern uint64_t t_ticks_4;
+extern int t_battle_active;
+extern int t_battle_last_tick;
+extern int t_hb_sig_prev;
+int tnx_battle_gate(int scene);
+
+extern uint64_t t_ticks_b;
 int tnx_battle_gate_2(int v63);
 int tnx_scan_allowed(uint64_t fired, uint64_t total);
 void tnx_start_timer(void);

@@ -82,7 +82,6 @@ int t_cells = 0;
 
 int t_solid = 0;
 
-int t_move = 0;
 
 int t_img = 0;
 
@@ -92,7 +91,6 @@ int t_own_ty = -1;
 
 int t_own_proj = -1;
 
-int t_own_move = -1;
 
 int t_passes = 0;
 
@@ -100,7 +98,6 @@ int t_armed = 0;
 
 int t_live = 0;
 
-int t_fail = 0;
 
 int t_seg_test = 0;
 
@@ -108,7 +105,7 @@ int t_seg_clip = 0;
 
 int t_seg_frac = 0;
 
-int t_logs_10 = 0;
+int t_logs_b = 0;
 
 uint64_t t_built = 0;
 
@@ -129,9 +126,9 @@ void tnx_log_grid(int force) {
     int iy = 0;
     int n = 0;
 
-    if (!force && t_logs_10 >= TNX_LOGS_6) return;
+    if (!force && t_logs_b >= TNX_LOGS_b) return;
 
-    t_logs_10++;
+    t_logs_b++;
 
     for (iy = t_own_ty - 1; iy <= t_own_ty + 1; iy++) {
         if (iy > t_own_ty - 1) mask[n++] = '/';
@@ -144,12 +141,6 @@ void tnx_log_grid(int force) {
 
     mask[n] = 0;
 
-    TNX_LOGX("grid w=%d h=%d cells=%d proj=%d move=%d img=%d own=(%d,%d) ownProj=%d ownMove=%d "
-             "mask=%s passes=%d armed=%d live=%d fail=%d tested=%d clipped=%d frac=%d",
-             t_w, t_h, t_cells, t_solid, t_move, t_img,
-             t_own_tx, t_own_ty, t_own_proj, t_own_move, mask,
-             t_passes, t_armed, t_live, t_fail,
-             t_seg_test, t_seg_clip, t_seg_frac);
 }
 
 int tnx_cell(int tx, int ty, int *proj, int *move) {
@@ -212,17 +203,16 @@ int tnx_build_2(void) {
     t_h = 0;
     t_cells = 0;
     t_solid = 0;
-    t_move = 0;
     t_img = 0;
 
     if (!t_scene_object) return 0;
     if (!tnx_read_ptr((uintptr_t)t_scene_object + TNX_MAP_BASE_OFF, &client) || !client) return 0;
     if (!tnx_read_ptr((uintptr_t)client + TNX_MAP_PTR_OFF, &tileMap) || !tileMap) return 0;
-    if (!tnx_read_i32((uintptr_t)tileMap + TNX_MAP_WIDTH_OFF, &w)) return 0;
-    if (!tnx_read_i32((uintptr_t)tileMap + TNX_MAP_HEIGHT_OFF, &h)) return 0;
+    if (!tnx_read_int((uintptr_t)tileMap + TNX_MAP_WIDTH_OFF, &w)) return 0;
+    if (!tnx_read_int((uintptr_t)tileMap + TNX_MAP_HEIGHT_OFF, &h)) return 0;
     if (w < TNX_MAP_MIN || h < TNX_MAP_MIN) return 0;
     if (w > TNX_GRID_MAX || h > TNX_GRID_MAX) return 0;
-    if (!tnx_read_i32((uintptr_t)tileMap + TNX_MAP_COUNT_OFF, &count)) return 0;
+    if (!tnx_read_int((uintptr_t)tileMap + TNX_MAP_COUNT_OFF, &count)) return 0;
     if (count < w * h) return 0;
     if (!tnx_read_ptr((uintptr_t)tileMap + TNX_MAP_TILES_OFF, &tiles) || !tiles) return 0;
 
@@ -254,7 +244,6 @@ int tnx_build_2(void) {
     t_h = h;
     t_cells = cells;
     t_solid = solid;
-    t_move = move;
     t_img = img;
 
     return 1;
@@ -300,7 +289,6 @@ void tnx_arm(float ownX, float ownY) {
     if (t_seg_test >= TNX_MIN_SEGS && t_seg_frac > TNX_MAX_CLIP_PCT) {
         t_armed = 0;
         t_passes = 0;
-        t_fail++;
     }
 
     t_live = 0;
@@ -310,7 +298,7 @@ void tnx_arm(float ownX, float ownY) {
 
     if (!TNX_WALL_CLIP) return;
 
-    if (t_armed && (t_ticks_3 - t_built) < TNX_REBUILD_TICKS) {
+    if (t_armed && (t_ticks_a - t_built) < TNX_REBUILD_TICKS) {
         tnx_tile_of(ownX, ownY, &tx, &ty);
 
         if (tx == t_own_tx && ty == t_own_ty && t_own_proj == 0) {
@@ -319,12 +307,10 @@ void tnx_arm(float ownX, float ownY) {
             t_own_tx = tx;
             t_own_ty = ty;
             t_own_proj = proj;
-            t_own_move = move;
             t_live = 1;
         } else {
             t_armed = 0;
             t_passes = 0;
-            t_fail++;
             tnx_log_grid(1);
         }
 
@@ -334,13 +320,12 @@ void tnx_arm(float ownX, float ownY) {
     if (!tnx_build_2()) {
         t_armed = 0;
         t_passes = 0;
-        t_fail++;
         tnx_log_grid(1);
 
         return;
     }
 
-    t_built = t_ticks_3;
+    t_built = t_ticks_a;
 
     tnx_tile_of(ownX, ownY, &tx, &ty);
     tnx_cell(tx, ty, &proj, &move);
@@ -348,7 +333,6 @@ void tnx_arm(float ownX, float ownY) {
     t_own_tx = tx;
     t_own_ty = ty;
     t_own_proj = proj;
-    t_own_move = move;
 
     solidPct = (t_solid * 100) / t_cells;
     imgPct = (t_img * 100) / t_cells;
@@ -364,7 +348,6 @@ void tnx_arm(float ownX, float ownY) {
     } else {
         t_armed = 0;
         t_passes = 0;
-        t_fail++;
     }
 
     if (t_armed) t_live = 1;

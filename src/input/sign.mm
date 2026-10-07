@@ -6,11 +6,8 @@
 #define TNX_CI_SIGNING_ON 0
 #endif
 
-int t_ci_sign_on = TNX_CI_SIGNING_ON;
 
-uint32_t t_ci_tokens = 0;
 
-uint32_t t_ci_sign_fails = 0;
 
 static uint32_t t_ci_table[TNX_CI_TABLE_TYPES];
 
@@ -58,12 +55,10 @@ uint32_t tnx_ci_sign(void *ci, void *battle) {
     token = tnx_ci_compute_token(key, cmd, t_ci_table, t_ci_inner, t_ci_outer);
 
     if (!tnx_write_bytes((uintptr_t)ci + TNX_CI_TOKEN_OFF, &token, sizeof(token))) {
-        t_ci_sign_fails++;
 
         return 0;
     }
 
-    t_ci_tokens++;
 
     return token;
 #else

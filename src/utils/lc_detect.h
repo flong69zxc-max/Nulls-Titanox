@@ -146,7 +146,7 @@ static inline BOOL tnx_addr_readable(uintptr_t address, size_t length) {
     return cursor >= end;
 }
 
-static inline BOOL tnx_read_u32(uintptr_t address, uint32_t *out) {
+static inline BOOL tnx_read_word(uintptr_t address, uint32_t *out) {
     if (!address || (address & 3) || !out) return NO;
 
     uint32_t value = 0;
@@ -296,7 +296,7 @@ static inline BOOL tnx_image_text_contains(uintptr_t imageBase, uintptr_t addres
 static inline BOOL tnx_looks_like_function(uintptr_t address) {
     uint32_t first = 0;
 
-    if (!tnx_read_u32(address, &first)) return NO;
+    if (!tnx_read_word(address, &first)) return NO;
 
     if (first == 0xD503233F) return YES;
     if (first == 0xD503237F) return YES;
@@ -317,7 +317,7 @@ static inline BOOL tnx_looks_like_function(uintptr_t address) {
 
     if (address >= 4) {
         uint32_t previous = 0;
-        if (tnx_read_u32(address - 4, &previous) && previous == 0xD65F03C0) {
+        if (tnx_read_word(address - 4, &previous) && previous == 0xD65F03C0) {
             return YES;
         }
     }

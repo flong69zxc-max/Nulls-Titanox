@@ -9,7 +9,6 @@
 
 #define TNX_LOG_WHITELIST 0
 #define TNX_APPLIED 0
-#define TNX_DRIVE_LOGS_2 24
 #define TNX_MOVE_MIN 3
 #define TNX_ONESHOT 1
 #define TNX_ENEMY_HARD 150.0f
@@ -42,12 +41,10 @@
 #define TNX_MATE_AVOID 1
 #define TNX_MATE_CLEAR_2 700.0f
 #define TNX_QUEUE 1
-#define TNX_STEP_4 150.0f
+#define TNX_STEP_c 150.0f
 #define TNX_DEGEN 2000000
 #define TNX_SLOW_US 200
 #define TNX_DIAG_EVERY 30
-#define TNX_LAYOUT_ON_2 1
-#define TNX_LAYOUT_LOGS_2 1600
 #define TNX_MODE_TUNE 1
 #define TNX_GATE_WRITE 1
 #define TNX_HIT_ONLY 1
@@ -56,22 +53,17 @@
 #define TNX_MAX_SPEED 9000.0f
 #define TNX_BLINK_TICKS 2
 #define TNX_BLINK_REM 320.0f
-#define TNX_LOGS_5 8
 #define TNX_BODY_SCAN 1
 #define TNX_WALK_MIN 1.0f
 #define TNX_WALK_MAX 60.0f
 #define TNX_WALK_EMA 0.12f
-#define TNX_ENGAGE_2 40.0f
 #define TNX_MOMENTUM 0.0f
-#define TNX_KEEP_BAND_2 120.0f
 #define TNX_HORIZON 1.0f
 #define TNX_BODY_W 1.0f
 #define TNX_SEL_MAX 8
 #define TNX_STEPS 4
 #define TNX_FLEE 1
 #define TNX_FLEE_STEP 150.0f
-#define TNX_LOGS_4 14
-#define TNX_EVERY_2 30
 #define TNX_PRED_LOGS 6
 #define TNX_CLUSTER 700.0f
 #define TNX_FREEST_ANGLES 32
@@ -110,7 +102,6 @@
 #define TNX_HOPCHOSEN_DIRECT 2
 #define TNX_MSG_SIZE 0x48
 #define TNX_LONG_TICKS 10
-#define TNX_HOP2_WAIT 60
 #define TNX_QUEUE_EVERY 5
 #define TNX_QUEUE_GUARD 0
 #define TNX_QUEUE_GUARD_MGR 0
@@ -142,7 +133,6 @@
 #define TNX_APPLIED_IDLE (-300)
 #define TNX_ACT_LOGS 8
 #define TNX_WIT_LOGS 24
-#define TNX_OWN_LOGS_2 8
 #define TNX_MODE 1
 #define TNX_MODE_CHAIN 0
 #define TNX_MODE_WRITE 1
@@ -163,7 +153,6 @@
 #define TNX_MODE_SLOT_B 0x220ULL
 #define TNX_MODE_SLOT_C 0x228ULL
 #define TNX_BUILD_TAG "Titanox"
-#define TNX_LOGS_8 24
 #define TNX_CLEAN_LOGS 5
 #define TNX_JOURNAL 24
 #define TNX_JOURNAL_LINES 8
@@ -171,7 +160,6 @@
 #define TNX_QUIET 0
 #define TNX_HUMAN 1
 #define TNX_EPS 1.0f
-#define TNX_LOGS_7 8
 #define TNX_DRAG 0
 #define TNX_V245_STICK 0
 #define TNX_RETIRE 1
@@ -188,7 +176,7 @@
 #define TNX_MAX_SOLID_PCT 60
 #define TNX_MAX_CLIP_PCT 70
 #define TNX_MIN_SEGS 4
-#define TNX_LOGS_6 24
+#define TNX_LOGS_b 24
 #define TNX_JOY_MAG 600.0f
 #define TNX_TEAM_FILTER 0
 #define TNX_STUCK_FRAMES 30
@@ -203,7 +191,7 @@
 #define TNX_INPUT_MGR 0
 #define TNX_JOY_WRITE 0
 #define TNX_NUM_ANGLES 64
-#define TNX_STEP_2 150.0f
+#define TNX_STEP_a 150.0f
 #define TNX_MAX_DIST 1500.0f
 #define TNX_SAFETY_MARGIN 800.0f
 #define TNX_PLAYER_RADIUS 100.0f
@@ -252,22 +240,22 @@
 #define TNX_BUCKET_TICKS 60
 #define TNX_RAW_STICK 1
 #define TNX_RAW_SWAP 0
-#define TNX_PRED_SET_2 1
+#define TNX_PRED_SET 1
 #define TNX_PRED_FLAG 1
-#define TNX_LOGS_3 12
+#define TNX_LOGS_a 12
 #define TNX_PLAYER_GID 1000000
 #define TNX_SHOT_GID 2000000
 #define TNX_SHOT_GID_MAX 3000000
 #define TNX_MIN_USABLE_2 1
 #define TNX_HOLD_TICKS 1
-#define TNX_STEP_3 60.0f
+#define TNX_STEP_b 60.0f
 #define TNX_PAIR_ONLY 0
 #define TNX_STICK_ONLY 0
 #define TNX_DRIVE_FROM_UPDATE 0
 #define TNX_MATE_CLEAR 240.0f
 #define TNX_MATE_MAX 8
 #define TNX_PLAYER_MAX 12
-#define TNX_ATTRIB_R2 (700.0f * 700.0f)
+#define TNX_ATTRIB_R (700.0f * 700.0f)
 #define TNX_ATTRIB_MARGIN 1.5f
 #define TNX_ATTRIB_LOGS 8
 #define TNX_RESPAWN_JUMP 1200
@@ -287,7 +275,6 @@
 #define TNX_MIN_USABLE 1
 #define TNX_INPUT_TYPE 1
 #define TNX_MAP_DUMPS 3
-#define TNX_LOGS_2 12
 #define TNX_DIRS 48
 #define TNX_REACH 600.0f
 #define TNX_ENGAGE 1000.0f
@@ -320,7 +307,6 @@
 #define TNX_COUNT_MAX 96
 #define TNX_ELEM_DUMPS 3
 #define TNX_ELEM_QWORDS 96
-#define TNX_ELEM_QWORDS_2 9
 #define TNX_ELEM_DUMPS_2 4
 #define TNX_FLOAT_LO 0x10ULL
 #define TNX_FLOAT_LO2 0x1cULL
@@ -329,9 +315,7 @@
 #define TNX_TYPE3_CODE 3
 #define TNX_ELEM_INT_A 0x30ULL
 #define TNX_ELEM_INT_B 0x34ULL
-#define TNX_ELEM_QWORDS_3 96
 #define TNX_DEF_QWORDS 32
-#define TNX_ELEM_DUMPS_3 1
 #define TNX_WALK_EVERY 5
 #define TNX_SLOTS 3
 #define TNX_SCAN_QWORDS 512
@@ -351,11 +335,9 @@
 #define TNX_POS_DUMPS 8
 #define TNX_CLASS_QWORDS 4
 #define TNX_CLASS_DUMPS 2
-#define TNX_BASES_2 24
 #define TNX_SPAN 0x1000
 #define TNX_FLOATS (TNX_SPAN / 4)
 #define TNX_GROUP_GAP 1
-#define TNX_QUIET_2 8
 #define TNX_GROUPS_MAXLEN 8
 #define TNX_COSSIN_TOL 0.05f
 #define TNX_FORCE_SECS 30
@@ -367,7 +349,6 @@
 #define TNX_HEAP_MAX 0x800000000000ULL
 #define TNX_HB_TICKS 5
 #define TNX_BUCKET_TICKS_2 10
-#define TNX_D6_WAIT_SECS 15
 #define TNX_QUIET_SECS 10
 #define TNX_SCAN_FLOOR_TICKS 12
 #define TNX_SCAN_FALLBACK_TICKS 20
@@ -390,9 +371,7 @@
 #define TNX_GID_FLOOR 1000000
 #define TNX_COORD_MAX 100000
 #define TNX_HIST_MAX 8
-#define TNX_OWN_LOGS_3 6
 #define TNX_ALERT_GAP_MS 20000
-#define TNX_OWN_LOGS_4 6
 #define TNX_PLAYER_GID_MAX 2000000
 #define TNX_CENSUS_MS 30000
 #define TNX_CALL_LOGS 4
@@ -483,55 +462,41 @@
 #define TNX_WALL_LOGS 8
 #define TNX_TEAM_LOGS 6
 
-#define TNX_MIRROR_ON_2 0
-#define TNX_MIRROR_LOGS_2 1600
 
-#define TNX_JOY_KNOB_WRITE_2 0
-#define TNX_APPLY_WRITE_2 0
+#define TNX_JOY_KNOB_WRITE 0
+#define TNX_APPLY_WRITE 0
 
-#define TNX_STICK_PUSH_2 1
-#define TNX_STICK_RADIUS_2 60.0f
-#define TNX_STICK_KNOB_3 0
-#define TNX_STICK_INPUT_2 0
-#define TNX_STICK_KNOB_4 0
-#define TNX_STICK_HOLD_2 0
-#define TNX_STICK_HOLD_WRITE_2 0
+#define TNX_STICK_PUSH 1
+#define TNX_STICK_RADIUS 60.0f
+#define TNX_STICK_KNOB 0
+#define TNX_STICK_INPUT 0
+#define TNX_STICK_HOLD 0
+#define TNX_STICK_HOLD_WRITE 0
 
-#define TNX_BP_ON_2 1
-#define TNX_BP_LOG_2 900
 
-#define TNX_WALK_ARM_3 0
-#define TNX_WALK_RAW_3 500
-#define TNX_WALK_ARM_LOGS_3 400
 
-#define TNX_MATCH_ON_3 1
-#define TNX_MATCH_LOGS_3 4000
-#define TNX_MATCH_EVERY_3 30
 
-#define TNX_WALK_PUSH_10 1
-#define TNX_WALK_KNOB_10 0
-#define TNX_WALK_KNOB_RADIUS_10 150.0f
-#define TNX_WALK_HOLD_10 0
-#define TNX_WALK_DEAD_GAIN_11 1.6f
-#define TNX_WALK_HOLD_GATE_12 1
-#define TNX_WALK_DEAD_PAD_11 4.0f
-#define TNX_WALK_STALE_10 3
-#define TNX_WALK_GATE_LOGS_10 300
-#define TNX_ENT_WARMUP_10 90
-#define TNX_STATE_EVERY_10 240
-#define TNX_WALK_LOOKUP_10 1
-#define TNX_WALK_PUSH_LOGS_10 400
-#define TNX_ENT_PROBE_10 1
-#define TNX_ENT_PROBE_LOGS_10 900
-#define TNX_ENT_SAMPLE_10 3
-#define TNX_ENT_SUM_EVERY_10 360
-#define TNX_ENT_SUM_MIN_10 4
-#define TNX_ENT_SUM_LOGS_10 40
-#define TNX_ENT_SLOTS_10 512
-#define TNX_ENT_CHUNK_10 0x100
-#define TNX_ENT_CHUNKS_10 8
-#define TNX_WALK_OFF_LOGS_10 30
-#define TNX_WALK_HS_10 1
-#define TNX_WALK_HS_TIMER_10 0.05f
+#define TNX_WALK_PUSH 1
+#define TNX_WALK_KNOB 0
+#define TNX_WALK_HOLD 0
+#define TNX_WALK_DEAD_GAIN 1.6f
+#define TNX_WALK_HOLD_GATE 1
+#define TNX_WALK_DEAD_PAD 4.0f
+#define TNX_WALK_STALE 3
+#define TNX_WALK_GATE_LOGS 300
+#define TNX_ENT_WARMUP 90
+#define TNX_STATE_EVERY 240
+#define TNX_WALK_LOOKUP 1
+#define TNX_ENT_PROBE 1
+#define TNX_ENT_PROBE_LOGS 900
+#define TNX_ENT_SAMPLE 3
+#define TNX_ENT_SUM_EVERY 360
+#define TNX_ENT_SUM_MIN 4
+#define TNX_ENT_SUM_LOGS 40
+#define TNX_ENT_SLOTS 512
+#define TNX_ENT_CHUNK 0x100
+#define TNX_ENT_CHUNKS 8
+#define TNX_WALK_HS 1
+#define TNX_WALK_HS_TIMER 0.05f
 
 #endif

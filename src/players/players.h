@@ -3,6 +3,9 @@
 
 #include "core/types.h"
 
+extern int t_own_x;
+extern int t_own_y;
+
 extern int t_cand_changes[TNX_CAND];
 extern int t_cand_frame[TNX_CAND];
 extern int t_dead_slot;
@@ -10,27 +13,22 @@ extern int t_dead_value;
 extern int t_enemy_n;
 extern int32_t t_enemy_x[TNX_PLAYER_MAX];
 extern int32_t t_enemy_y[TNX_PLAYER_MAX];
-extern int t_inject_logs;
-extern int t_life_logs;
 extern int t_mate_n;
 extern int32_t t_mate_x[TNX_MATE_MAX];
 extern int32_t t_mate_y[TNX_MATE_MAX];
 extern uintptr_t t_own_elem;
 extern uintptr_t t_own_elem_2;
 extern const char * t_own_from;
-extern const char * t_own_from_2;
-extern const char * t_own_from_3;
+extern const char * t_own_from_a;
+extern const char * t_own_from_b;
 extern int32_t t_own_gid;
 extern int t_own_index;
-extern int t_own_index_2;
 extern int t_own_index_3;
-extern int t_own_logs;
 extern uintptr_t t_own_ptr;
-extern uintptr_t t_own_ptr_2;
-extern uintptr_t t_own_ptr_4;
-extern int32_t t_own_slot_idx;
+extern uintptr_t t_own_ptr_a;
+extern uintptr_t t_own_ptr_b;
 extern uint64_t t_own_stamp;
-extern int t_own_team_4;
+extern int t_own_team_b;
 extern int t_pending;
 extern int t_pending_tick;
 extern int t_pl_n;
@@ -47,7 +45,6 @@ extern int t_state;
 extern int t_team_trust;
 extern uint64_t t_tick_stamp;
 void tnx_clear_life(void);
-int tnx_container_has(uintptr_t container, uintptr_t own);
 void tnx_contact_note(float dist, float projR);
 int tnx_enemy_blocked(float x, float y, float ownX, float ownY);
 int tnx_inject_own(tnx_obj_t *objects, int usable, int capacity);
@@ -72,9 +69,6 @@ int tnx_resolve_own(const tnx_obj_t *objects, int usable, int *indexOut, const c
 int tnx_resolve_own_2(const tnx_obj_t *objects, int usable, int *indexOut, const char **fromOut);
 void tnx_respawn_event(int32_t x, int32_t y, int32_t px, int32_t py);
 void tnx_roster(uintptr_t ownElem, int ownIndex, int ownTeam, const tnx_obj_t *objects, int usable);
-int tnx_side_near(float px, float py);
-int tnx_side_pick(float px, float py, float *outX, float *outY);
-float tnx_side_score(float px, float py, float x, float y, int near);
 int tnx_take_own(const tnx_obj_t *objects, int usable, int *indexOut, const char **fromOut);
 int tnx_team_at(const tnx_obj_t *objects, int index);
 

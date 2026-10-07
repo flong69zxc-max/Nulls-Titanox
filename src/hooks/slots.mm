@@ -1,14 +1,11 @@
 #include "titanox.h"
 
-int t_own_team = 0;
 
 int t_own_idhit = 0;
 
 uintptr_t t_setpred = 0;
 
-int t_wide_runs = 0;
 
-int t_miss_logs = 0;
 
 int t_live_objs = 0;
 
@@ -20,7 +17,6 @@ int t_fb_logged = 0;
 
 int t_bar_logged = 0;
 
-unsigned t_vt_text_rejects = 0;
 
 unsigned long long t_obj_prev = 0;
 
@@ -38,9 +34,7 @@ uintptr_t t_pub_array = 0;
 
 int32_t t_pub_count = 0;
 
-int32_t t_pub_cap = 0;
 
-int t_pub_logs = 0;
 
 uintptr_t t_tick_object = 0;
 
@@ -48,11 +42,8 @@ uintptr_t t_tick_array = 0;
 
 int32_t t_tick_count = 0;
 
-uint64_t t_tick_logs = 0;
 
-int t_score_logs_2 = 0;
 
-uint64_t t_walk_aborts = 0;
 
 void tnx_publish(uintptr_t object, uintptr_t array, int32_t count, int32_t cap,
                              const char *why) {
@@ -65,12 +56,10 @@ void tnx_publish(uintptr_t object, uintptr_t array, int32_t count, int32_t cap,
     t_pub_object = object;
     t_pub_array = array;
     t_pub_count = count;
-    t_pub_cap = cap;
 
     t_players_object = object;
     t_players_array = array;
     t_players_count = count;
-    t_players_cap = cap;
 
     __sync_synchronize();
 
@@ -78,14 +67,6 @@ void tnx_publish(uintptr_t object, uintptr_t array, int32_t count, int32_t cap,
 
     __sync_synchronize();
 
-    if (t_pub_logs < 12) {
-        t_pub_logs++;
-
-        tnx_logf("publish why=%s object=%p array=%p count=%d cap=%d seq=%u - the whole triple "
-                 "moves under one sequence, so no reader can take the new array with the old "
-                 "count", why ? why : "?", (void *)object, (void *)array, count, cap,
-                 (unsigned)t_seq);
-    }
 }
 
 int tnx_snapshot(uintptr_t *objectOut, uintptr_t *arrayOut, int32_t *countOut) {
@@ -117,7 +98,7 @@ int tnx_snapshot(uintptr_t *objectOut, uintptr_t *arrayOut, int32_t *countOut) {
     return 0;
 }
 
-void tnx_tick_begin(const char *phase) {
+void tnx_tick_begin(void) {
     uintptr_t o = 0;
     uintptr_t a = 0;
     int32_t c = 0;
@@ -128,25 +109,13 @@ void tnx_tick_begin(const char *phase) {
     t_tick_array = a;
     t_tick_count = c;
     t_tick_stamp++;
-
-    if (t_tick_logs < 12) {
-        t_tick_logs++;
-
-        tnx_logf("tick enter phase=%s object=%p array=%p count=%d stamp=%llu - the snapshot is "
-                 "taken before any stage reads it and is what the walk, the census and the "
-                 "resolver all use, so a publish from the scan timer cannot split them",
-                 phase ? phase : "?", (void *)o, (void *)a, c,
-                 (unsigned long long)t_tick_stamp);
-    }
 }
 
 uint64_t t_idle_start = 0;
 
-int t_idle_on = 0;
 
 int t_idle_logged = 0;
 
-int t_idle_skips = 0;
 
 void tnx_slot_install_one(int index) {
     uintptr_t target = 0;
@@ -155,7 +124,6 @@ void tnx_slot_install_one(int index) {
     if (index < 0 || index >= TNX_SLOT_COUNT) return;
 
     t_slot_installed[index] = 0;
-    t_slot_slots[index] = 0;
 
     setenv("TITANOX_ALLOW_CODE_PATCH", "0", 1);
 
@@ -168,10 +136,6 @@ void tnx_slot_install_one(int index) {
     slots = hook_probe(target);
 
     if (slots > TNX_MAX_SLOTS) {
-        tnx_logf("slot %s: reject-bulk target=%p slots=%d - that many identical copies means the address is "
-                 "a shared constant duplicated across class tables and not a vtable entry, so redirecting "
-                 "it would send every original caller into a stub with the wrong arguments",
-                 t_slot_specs[index].tag, (void *)target, slots);
 
         return;
     }
@@ -180,7 +144,7 @@ void tnx_slot_install_one(int index) {
         uint32_t w = 0;
         int prologue = 0;
 
-        if (tnx_read_u32(target, &w)) {
+        if (tnx_read_word(target, &w)) {
             if ((w & 0xFFC003FFu) == 0xD10003FFu) prologue = 1;
             if ((w & 0xFF4003E0u) == 0xA90003E0u) prologue = 1;
             if ((w & 0xFF4003E0u) == 0xA80003E0u) prologue = 1;
@@ -193,38 +157,24 @@ void tnx_slot_install_one(int index) {
         }
 
         if (!prologue) {
-            tnx_logf("slot %s: reject-nonfunc target=%p firstWord=%#x - the first instruction is not a "
-                     "prologue, a leaf return, a branch or an adrp, so this is not a function entry and a "
-                     "stub placed here would be entered with the caller's scratch registers intact",
-                     t_slot_specs[index].tag, (void *)target, (unsigned)w);
 
             return;
         }
     }
 
     if (slots <= 0) {
-        tnx_logf("slot %s: not-found target=%p slots=0 in __DATA_CONST/__DATA - runtime inline "
-                 "patching is not supported, so this target needs a data slot (%s)",
-                 t_slot_specs[index].tag, (void *)target,
-                 hook_last_error() ? hook_last_error() : "-");
 
         return;
     }
 
     if (!brk_install((void *)target, (void *)t_slot_specs[index].replacement)) {
-        tnx_logf("slot %s: install failed target=%p (%s)", t_slot_specs[index].tag,
-                 (void *)target, hook_last_error() ? hook_last_error() : "-");
 
         return;
     }
 
     t_slot_orig[index] = (tnx_slot_fn_t)brk_original_ptr((void *)target);
     t_slot_installed[index] = 1;
-    t_slot_slots[index] = slots;
 
-    tnx_logf("slot %s: installed target=%p original=%p mode=pointer slots=%d liveSlots=%d",
-             t_slot_specs[index].tag, (void *)target, (void *)t_slot_orig[index], slots,
-             brk_live_slot_count());
 }
 
 void tnx_slot_hooks_install(void) {
@@ -236,79 +186,43 @@ void tnx_slot_hooks_install(void) {
 
     flag = getenv("TITANOX_ALLOW_CODE_PATCH");
 
-    tnx_logf("slot hooks: codePatch=%d flag=%s pointerSlots=%d limit=%d live=%d",
-             hook_code_patch_allowed() ? 1 : 0, flag ? flag : "-",
-             hook_pointer_count(), brk_slot_limit(), brk_live_slot_count());
 
     for (int i = 0; i < TNX_SLOT_COUNT; i++) tnx_slot_install_one(i);
 
-    tnx_slot_diag("install");
 }
 
-int t_ascii_logs = 0;
 
 const int tnx_object_slots[TNX_OBJ_SLOTS] = { 2, 3, 4 };
 
-int t_walk_aborted = 0;
 
-int t_walk_abort_i = -1;
 
-uintptr_t t_walk_arr = 0;
 
-int32_t t_walk_n = 0;
 
-int t_pub_logs_2 = 0;
+int t_pub_logs = 0;
 
-int t_stale_logs = 0;
 
-int t_actuate_logs = 0;
 
-uintptr_t t_own_slot = 0;
 
-int32_t t_own_slot_gid = 0;
 
-int t_own_slot_ok = 0;
 
-int t_own_slot_logs = 0;
 
-int32_t t_src30_prev_x = 0;
 
-int32_t t_src30_prev_y = 0;
 
-int32_t t_src38_prev_x = 0;
 
-int32_t t_src38_prev_y = 0;
 
-int t_src30_have = 0;
 
-int t_src38_have = 0;
 
-uint64_t t_src30_moves = 0;
 
-uint64_t t_src38_moves = 0;
 
-int t_w_eq_x = 0;
 
-int t_w_eq_y = 0;
 
 void tnx_slot_pump(void) {
     int first = -1;
 
     for (int i = 0; i < TNX_SLOT_COUNT; i++) {
-        uint32_t bit = (uint32_t)(1u << i);
-
         if (!t_slot_object[i]) continue;
 
         if (!t_slot_specs[i].control && first < 0) first = i;
-
-        if (t_slot_reported_mask & bit) continue;
-
-        t_slot_reported_mask |= bit;
-
-        tnx_logf("slot %s: captured this=%p arg1=%p hits=%llu%s", t_slot_specs[i].tag,
-                 (void *)t_slot_object[i], (void *)t_slot_arg1[i],
-                 (unsigned long long)t_slot_hits[i],
-                 t_slot_specs[i].control ? " CONTROL" : "");
     }
 
     if (first < 0) return;
@@ -319,125 +233,29 @@ void tnx_slot_pump(void) {
 
     t_slot_adopted = object;
 
-    int installed = 0;
-
-    for (int i = 0; i < TNX_SLOT_COUNT; i++) {
-        if (t_slot_installed[i] == 1) installed++;
-    }
-
-    tnx_logf("slot pump object=%p source=%s installed=%d/%d",
-             (void *)object, t_slot_specs[first].tag, installed, TNX_SLOT_COUNT);
-
     {
         void *vtable = NULL;
-        void *manager = NULL;
-        const char *reason = "vtable-not-in-image";
 
-        if (tnx_read_ptr(object, &vtable) && vtable &&
-            tnx_vtable_in_image((uintptr_t)vtable)) {
-            reason = (tnx_read_ptr(object + TNX_MODE_MANAGER_OFF, &manager) && manager)
-                         ? "adopt-from-slot-banned"
-                         : "no-manager-at-0x28";
-        } else if (!tnx_pointer_plausible((uintptr_t)vtable)) {
-            reason = "vtable-garbage";
+        if (!(tnx_read_ptr(object, &vtable) && vtable &&
+              tnx_vtable_in_image((uintptr_t)vtable)) &&
+            !tnx_pointer_plausible((uintptr_t)vtable)) {
+            return;
         }
-
-        tnx_logf("slot %s reject reason=%s this=%p vt=%p", t_slot_specs[first].shortTag, reason,
-                 (void *)object, vtable);
-
-        if (strcmp(reason, "vtable-garbage") == 0) return;
-    }
-
-    void *bridge = NULL;
-
-    if (tnx_read_ptr(object + TNX_SLOT_BRIDGE_OFF, &bridge) && bridge) {
-        void *bridgeManager = NULL;
-
-        tnx_logf("slot +08 bridge=%p vt=%#llx", bridge,
-                 (unsigned long long)tnx_vtable_rva(bridge));
-
-        if (tnx_read_ptr((uintptr_t)bridge + TNX_MGR_ARRAY_OFF, &bridgeManager) && bridgeManager) {
-            tnx_logf("slot bridgeMgr=%p vt=%#llx", bridgeManager,
-                     (unsigned long long)tnx_vtable_rva(bridgeManager));
-
-        }
-    }
-
-    void *list = NULL;
-    int32_t listCount = 0;
-
-    if (tnx_read_ptr(object + TNX_SLOT_LIST_OFF, &list) &&
-        tnx_read_i32(object + TNX_SLOT_LISTCOUNT_OFF, &listCount)) {
-        tnx_logf("slot +80 list=%p count=%d", list, listCount);
-    }
-
-    void *modeManager = NULL;
-
-    if (tnx_read_ptr(object + TNX_MODE_MANAGER_OFF, &modeManager) && modeManager) {
-        void *modeArray = NULL;
-        int32_t modeCount = 0;
-
-        tnx_logf("slot +28 mgr=%p vt=%#llx", modeManager,
-                 (unsigned long long)tnx_vtable_rva(modeManager));
-
-        if (tnx_read_ptr((uintptr_t)modeManager + TNX_MGR_ARRAY_OFF, &modeArray) &&
-            tnx_read_i32((uintptr_t)modeManager + TNX_MGR_COUNT_OFF, &modeCount)) {
-            tnx_logf("slot +28 arr=%p count=%d live=%d", modeArray, modeCount,
-                     tnx_manager_live_count((uintptr_t)modeManager));
-        }
-
-    }
-
-    void *inputManager = NULL;
-
-    if (tnx_read_ptr(object + TNX_MODE_INPUTMGR_OFF, &inputManager) && inputManager) {
-        tnx_logf("slot +58 inputMgr=%p vt=%#llx", inputManager,
-                 (unsigned long long)tnx_vtable_rva(inputManager));
-
-    }
-
-    if (t_slot_arg1[first]) {
-        tnx_report_manager("slot arg1", t_slot_arg1[first]);
     }
 
     void *ownerField = NULL;
 
-    if (tnx_read_ptr(object + TNX_SLOT_OWNER_OFF, &ownerField) && ownerField &&
-        (uintptr_t)ownerField != t_slot_arg1[first]) {
-        tnx_report_manager("slot +20", (uintptr_t)ownerField);
-    }
+    tnx_read_ptr(object + TNX_SLOT_OWNER_OFF, &ownerField);
 
     {
-        uintptr_t plan = t_slot_arg1[first] ? t_slot_arg1[first] : (uintptr_t)ownerField;
+        uintptr_t plan = t_slot_arg[first] ? t_slot_arg[first] : (uintptr_t)ownerField;
 
         if (plan && tnx_manager_live_count(plan) >= TNX_MANAGER_MIN_OBJECTS) {
-            int detailed = tnx_object_detail(plan, TNX_OBJECT_DETAIL_MAX);
-
-            if (detailed > 0) tnx_dodge_all_teams(plan);
+            tnx_dodge_all_teams(plan);
         }
     }
-
-    void *slotTable = NULL;
-
-    if (tnx_read_ptr(object, &slotTable) && slotTable) {
-        tnx_logf("slot vtable=%p", slotTable);
-
-        for (int k = 0; k < 40; k += 4) {
-            void *entry[4] = { NULL, NULL, NULL, NULL };
-
-            for (int j = 0; j < 4; j++) {
-                tnx_read_ptr((uintptr_t)slotTable + (uintptr_t)(k + j) * sizeof(void *), &entry[j]);
-            }
-
-            tnx_logf("slot vt[%02d..%02d] %#llx %#llx %#llx %#llx", k, k + 3,
-                     (unsigned long long)(uintptr_t)entry[0],
-                     (unsigned long long)(uintptr_t)entry[1],
-                     (unsigned long long)(uintptr_t)entry[2],
-                     (unsigned long long)(uintptr_t)entry[3]);
-        }
-    }
-
 }
+
 tnx_slot_fn_t t_slot_orig[TNX_SLOT_COUNT] = { NULL };
 
 int t_slot_installed[TNX_SLOT_COUNT] = { -1, -1, -1, -1, -1, -1, -1,
@@ -738,7 +556,6 @@ uint64_t tnx_slot_repl_32(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     uint64_t r = 0;
 
-    t_update_hits++;
 
     if (t_slot_orig[32]) r = t_slot_orig[32](a0, a1, a2, a3, a4, a5, a6, a7);
 
@@ -749,7 +566,6 @@ uint64_t tnx_slot_repl_33(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     uint64_t r = 0;
 
-    t_move_hits++;
 
     if (t_slot_orig[33]) r = t_slot_orig[33](a0, a1, a2, a3, a4, a5, a6, a7);
 
@@ -803,3 +619,90 @@ const struct tnx_t_g_slot_specs t_slot_specs[TNX_SLOT_COUNT] = {
     { "U2/BattleScreen::updateMovement", "U2", RVA_BATTLESCREEN__UPDATEMOVEMENT, 0,
       tnx_slot_repl_33, 0 },
 };
+
+void tnx_slot_note(int index, void *self, uint64_t arg1) {
+    if (index < 0 || index >= TNX_SLOT_COUNT) return;
+
+    t_slot_hits[index]++;
+
+    if (!t_slot_object[index] && self) t_slot_object[index] = (uintptr_t)self;
+
+    if (!t_slot_arg[index] && arg1) t_slot_arg[index] = (uintptr_t)arg1;
+}
+
+uint64_t tnx_hook_dispatches(void) {
+    uint64_t total = 0;
+
+    for (int i = 0; i < TNX_SLOT_COUNT; i++) total += t_slot_hits[i];
+
+    return total;
+}
+
+uint64_t tnx_object_dispatches(void) {
+    uint64_t total = 0;
+
+    for (int i = 0; i < TNX_OBJ_SLOTS; i++) total += t_slot_hits[tnx_object_slots[i]];
+
+    return total;
+}
+
+int tnx_manager_live_count(uintptr_t manager) {
+    void *array = NULL;
+    int32_t count = 0;
+    int32_t capacity = 0;
+    int live = 0;
+
+    if (!tnx_pointer_plausible(manager)) return 0;
+    if (!tnx_heap_contains(manager)) return 0;
+    if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array)) return 0;
+    if (!tnx_read_int(manager + TNX_MGR_COUNT_OFF, &count)) return 0;
+    if (!tnx_read_int(manager + TNX_MGR_CAP_OFF, &capacity)) return 0;
+
+    if (count < TNX_MANAGER_MIN_OBJECTS || count > TNX_MANAGER_MAX_OBJECTS) return 0;
+    if (!array) return 0;
+    if (!tnx_heap_contains((uintptr_t)array)) return 0;
+    if ((uintptr_t)array & 0xf) return 0;
+
+    if (capacity < count || capacity > TNX_MGR_CAP_MAX) return 0;
+
+    uintptr_t types[TNX_MODE_TYPE_MAX] = {0};
+    int typeCount = 0;
+    int nonEmpty = 0;
+
+    for (int32_t i = 0; i < count; i++) {
+        void *element = NULL;
+        void *vtable = NULL;
+
+        if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)i * sizeof(void *), &element)) break;
+        if (!element) continue;
+
+        nonEmpty++;
+
+        if (!tnx_heap_resident((uintptr_t)element)) continue;
+        if (!tnx_read_ptr((uintptr_t)element, &vtable)) continue;
+        if (!vtable) continue;
+        if (!tnx_vtable_shaped((uintptr_t)vtable)) continue;
+
+        if (!tnx_object_live((uintptr_t)element)) continue;
+
+        live++;
+
+        uintptr_t elementRva = (uintptr_t)vtable - t_base;
+        BOOL known = NO;
+
+        for (int k = 0; k < typeCount; k++) {
+            if (types[k] == elementRva) {
+                known = YES;
+                break;
+            }
+        }
+
+        if (!known && typeCount < TNX_MODE_TYPE_MAX) types[typeCount++] = elementRva;
+    }
+
+    if (typeCount < TNX_MODE_MIN_TYPES) return 0;
+
+    if (live < TNX_MANAGER_MIN_OBJECTS || live * 4 < nonEmpty * 3) return 0;
+
+    return live;
+}

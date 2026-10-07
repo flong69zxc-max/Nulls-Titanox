@@ -3,62 +3,35 @@
 
 #include "core/types.h"
 
-extern int t_actuate_logs;
-extern int t_ascii_logs;
+void tnx_slot_note(int index, void *self, uint64_t arg1);
+uint64_t tnx_hook_dispatches(void);
+uint64_t tnx_object_dispatches(void);
+int tnx_manager_live_count(uintptr_t manager);
+
 extern int t_bar_logged;
 extern int t_fb_logged;
 extern int t_fb_on;
 extern int t_idle_logged;
-extern int t_idle_on;
-extern int t_idle_skips;
 extern uint64_t t_idle_start;
 extern int t_live_objs;
 extern int t_live_teams;
-extern int t_miss_logs;
 extern unsigned long long t_obj_prev;
 extern int t_own_idhit;
-extern uintptr_t t_own_slot;
-extern int32_t t_own_slot_gid;
-extern int t_own_slot_logs;
-extern int t_own_slot_ok;
-extern int t_own_team;
 extern uintptr_t t_pub_array;
-extern int32_t t_pub_cap;
 extern int32_t t_pub_count;
 extern int t_pub_logs;
-extern int t_pub_logs_2;
 extern uintptr_t t_pub_object;
 extern int t_scan_armed;
-extern int t_score_logs_2;
 extern volatile uint32_t t_seq;
 extern uintptr_t t_setpred;
 extern uintptr_t t_site;
 extern int t_slot_installed[TNX_SLOT_COUNT];
 extern tnx_slot_fn_t t_slot_orig[TNX_SLOT_COUNT];
 extern const struct tnx_t_g_slot_specs t_slot_specs[TNX_SLOT_COUNT];
-extern int t_src30_have;
-extern uint64_t t_src30_moves;
-extern int32_t t_src30_prev_x;
-extern int32_t t_src30_prev_y;
-extern int t_src38_have;
-extern uint64_t t_src38_moves;
-extern int32_t t_src38_prev_x;
-extern int32_t t_src38_prev_y;
-extern int t_stale_logs;
 extern int t_state_2;
 extern uintptr_t t_tick_array;
 extern int32_t t_tick_count;
-extern uint64_t t_tick_logs;
 extern uintptr_t t_tick_object;
-extern unsigned t_vt_text_rejects;
-extern int t_w_eq_x;
-extern int t_w_eq_y;
-extern int t_walk_abort_i;
-extern int t_walk_aborted;
-extern uint64_t t_walk_aborts;
-extern uintptr_t t_walk_arr;
-extern int32_t t_walk_n;
-extern int t_wide_runs;
 extern const int tnx_object_slots[TNX_OBJ_SLOTS];
 void tnx_publish(uintptr_t object, uintptr_t array, int32_t count, int32_t cap, const char *why);
 void tnx_slot_hooks_install(void);
@@ -99,7 +72,7 @@ uint64_t tnx_slot_repl_7(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64
 uint64_t tnx_slot_repl_8(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7);
 uint64_t tnx_slot_repl_9(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7);
 int tnx_snapshot(uintptr_t *objectOut, uintptr_t *arrayOut, int32_t *countOut);
-void tnx_tick_begin(const char *phase);
+void tnx_tick_begin(void);
 
 
 struct tnx_t_g_slot_specs {
@@ -112,13 +85,9 @@ struct tnx_t_g_slot_specs {
 };
 extern tnx_slot_fn_t t_slot_orig[TNX_SLOT_COUNT];
 extern uintptr_t t_slot_object[TNX_SLOT_COUNT];
-extern uintptr_t t_slot_arg1[TNX_SLOT_COUNT];
+extern uintptr_t t_slot_arg[TNX_SLOT_COUNT];
 extern uint64_t t_slot_hits[TNX_SLOT_COUNT];
-extern uint64_t t_slot_hits_total;
 extern int t_slot_installed[TNX_SLOT_COUNT];
-extern int t_slot_slots[TNX_SLOT_COUNT];
-extern uint32_t t_slot_reported_mask;
-extern uint64_t t_slot_first_tick[TNX_SLOT_COUNT];
 extern uintptr_t t_slot_adopted;
 extern const struct tnx_t_g_slot_specs t_slot_specs[TNX_SLOT_COUNT];
 uint64_t tnx_slot_repl_0(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7);

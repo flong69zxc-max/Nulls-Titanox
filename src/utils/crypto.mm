@@ -140,7 +140,7 @@ static void tnx_sha_final(tnx_sha_ctx_t *c, uint8_t out[32]) {
     }
 }
 
-void tnx_sha256(const uint8_t *data, size_t length, uint8_t out[32]) {
+void tnx_sha(const uint8_t *data, size_t length, uint8_t out[32]) {
     tnx_sha_ctx_t c;
 
     tnx_sha_init(&c);
@@ -184,12 +184,12 @@ uint32_t tnx_ci_compute_token(const uint8_t key16[16], const uint8_t cmd16[16],
     tnx_ci_make_block(key16, innerMask, (uint8_t)TNX_CI_HASH_PAD_INNER, block);
     memcpy(innerBuf, block, 64);
     memcpy(innerBuf + 64, msg, TNX_CI_TOKEN_MSG_LEN);
-    tnx_sha256(innerBuf, sizeof(innerBuf), inner);
+    tnx_sha(innerBuf, sizeof(innerBuf), inner);
 
     tnx_ci_make_block(key16, outerMask, (uint8_t)TNX_CI_HASH_PAD_OUTER, block);
     memcpy(outerBuf, block, 64);
     memcpy(outerBuf + 64, inner, 32);
-    tnx_sha256(outerBuf, sizeof(outerBuf), digest);
+    tnx_sha(outerBuf, sizeof(outerBuf), digest);
 
     token = (uint32_t)digest[0] | (((uint32_t)digest[1] & (uint32_t)TNX_CI_TOKEN_MASK) << 8);
 

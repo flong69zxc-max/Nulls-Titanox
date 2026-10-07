@@ -42,15 +42,11 @@ const tnx_rva_entry_t t_rvas[32] = {
     { NULL, 0 }
 };
 
-FILE *t_log = NULL;
 
-long t_log_written = 0;
 
 BOOL t_setup_done = NO;
 
-BOOL t_wm_failed = NO;
 
-BOOL t_wm_ready = NO;
 
 BOOL t_aim_rejected = NO;
 
@@ -58,103 +54,55 @@ __thread BOOL t_inside_hook = NO;
 
 uint64_t t_dodge_calls = 0;
 
-uint64_t t_render_calls = 0;
 
 int t_dump_np = 0;
 
-uintptr_t t_prev_scene = 0;
 
-const uintptr_t t_mode_vtables_verified[3] = { 0x1002548, 0xff5720, 0 };
+const uintptr_t t_mode_vtables_verified[3] = { 0x1002548, 0xff5720, 0 };BOOL t_mode_strong = NO;
 
-int tnx_verified_vtable(uintptr_t vtable) {
-    if (!t_base || vtable <= t_base) return -1;
 
-    uintptr_t rva = vtable - t_base;
 
-    for (int i = 0; t_mode_vtables_verified[i]; i++) {
-        if (rva == t_mode_vtables_verified[i]) return i;
-    }
-
-    return -1;
-}
-
-BOOL t_mode_strong = NO;
-
-int t_mode_best_objects = 0;
-
-int t_mode_last_types = 0;
-
-int t_mode_verified_hits = 0;
 
 int t_manager_count = 0;
 
-int t_manager_probes = 0;
 
-int t_manager_probes_total = 0;
 
-int t_manager_skipped = 0;
 
-int t_manager_last_live = 0;
 
-int t_manager_last_nonempty = 0;
 
-int t_manager_last_capacity = 0;
 
-int t_manager_saw_cap = 0;
 
-int t_manager_loose_count = 0;
 
-int t_chain_checks = 0;
 
-int t_chain_probes = 0;
 
-int t_chain_skipped = 0;
 
-int t_chain_best_own = 0;
 
-int t_chain_best_gid = 0;
 
-int t_seen_stable = 0;
 
-int t_owner_vote_count = 0;
 
-unsigned long long t_objvote_hits = 0;
 
-unsigned long long t_objvote_skipped = 0;
 
-int t_objvote_dead_seen = 0;
 
 uintptr_t t_objvote_best_owner = 0;
 
-int t_objvote_best_gids = 0;
 
-int t_objvote_confirm = 0;
 
-BOOL t_objvote_owner_ok = NO;
 
-unsigned long long t_objvote_owner_img = 0;
 
-unsigned long long t_objvote_obj_img = 0;
 
 int t_objvote_best_teamcount = 0;
 
-int t_objvote_best_gids_full = 0;
 
 tnx_objhit_t t_objhits[TNX_OBJ_HIT_DUMP_MAX];
 
 int t_objhit_count = 0;
 
-unsigned long long t_objvote_owner_reg = 0;
 
-unsigned long long t_objvote_owner_above_win = 0;
 
 int t_objvote_max_votes = 0;
 
-unsigned long long t_objvote_shaped = 0;
 
-unsigned long long t_vtcensus_total = 0;
 
-int t_heap_big_skip = 0;
 
 int t_heap_region_capped = 0;
 
@@ -162,21 +110,14 @@ uintptr_t t_img_span_lo = 0;
 
 uintptr_t t_img_span_hi = 0;
 
-int t_img_span_ok = 0;
 
 int t_trail_best = 0;
 
-int t_manager_cap_rejects = 0;
 
-int t_manager_best_count = 0;
 
-int t_manager_best_live = 0;
 
-int t_heap_passes = 0;
 
-unsigned long long t_heap_covered = 0;
 
-uintptr_t t_mode_source = 0;
 
 int t_votescan_attempts = 0;
 
@@ -188,7 +129,6 @@ BOOL t_snapshot_second = NO;
 
 double t_snapshot_start = 0.0;
 
-int t_objc_armed = 0;
 
 uintptr_t t_addr_getinstance = 0;
 
@@ -202,29 +142,18 @@ uintptr_t t_addr_gety = 0;
 
 uintptr_t t_addr_setprediction = 0;
 
-uintptr_t t_addr_sendmovement = 0;
 
-uintptr_t t_addr_getclip = 0;
 
-uintptr_t t_addr_gettf = 0;
 
-uintptr_t t_addr_settext = 0;
 
-uintptr_t t_addr_setxy = 0;
 
-uintptr_t t_addr_addchild = 0;
 
 uintptr_t t_addr_battlescreen = 0;
 
-void *t_label_clip = NULL;
 
-void *t_label_tf = NULL;
 
-void *t_label_sc = NULL;
 
-char t_label_text[64] = {0};
 
-int t_label_updates = 0;
 
 uintptr_t tnx_strip_imp(IMP imp) {
 #if defined(__has_feature)
@@ -235,99 +164,66 @@ uintptr_t tnx_strip_imp(IMP imp) {
     return (uintptr_t)imp;
 }
 
-uintptr_t t_addr[TNX_JOURNAL];
 
-uint32_t t_value[TNX_JOURNAL];
 
-uint64_t t_tick_3[TNX_JOURNAL];
 
-const char *t_phase_2[TNX_JOURNAL];
 
-uint8_t t_size[TNX_JOURNAL];
 
-uint8_t t_denied[TNX_JOURNAL];
 
 volatile int t_at = 0;
 
-volatile uint64_t t_writes_2 = 0;
 
 uint64_t t_stale = 0;
 
 uintptr_t t_slot_object[TNX_SLOT_COUNT] = { 0 };
 
-uintptr_t t_slot_arg1[TNX_SLOT_COUNT] = { 0 };
+uintptr_t t_slot_arg[TNX_SLOT_COUNT] = { 0 };
 
-uint64_t t_slot_hits_total = 0;
 
-int t_slot_slots[TNX_SLOT_COUNT] = { 0 };
 
-int t_chain_rej[20] = { 0 };
 
-int t_chain_probes_pass = 0;
 
-int t_layout_logs = 0;
 
 int t_no_source_passes = 0;
 
 int t_route_logged = 0;
 
-uint32_t t_slot_reported_mask = 0;
 
-uint64_t t_slot_first_tick[TNX_SLOT_COUNT] = { 0 };
 
 uintptr_t t_slot_adopted = 0;
 
-int t_ag_adopted = 0;
 
-int t_chain_hits = 0;
 
-int t_mode_from_chain = 0;
 
-int t_idle_probe_logged = 0;
 
-uintptr_t t_last_cand = 0;
 
-uintptr_t t_last_vt = 0;
 
-char t_last_why[96] = { 0 };
 
 int t_sig_ticks = 0;
 
-int t_sig_logs = 0;
 
 uintptr_t t_sig_last = 0;
 
-int t_trail_refusals = 0;
 
-int t_players_cap = 0;
 
-int t_field_scans = 0;
 
-int t_elem_full_dumps = 0;
 
-int t_walk_relogs = 0;
 
 uint64_t t_walk_tick = 0;
 
-uint64_t t_enter_tick = 0;
 
 int t_walk_count = -1;
 
 int t_coord_fixed_logged = 0;
 
-int t_class_pass = 0;
 
-const char *t_mode_source_2 = "none";
 
-uint64_t t_t0 = 0;
+uint64_t t_time = 0;
 
 uint64_t t_slow = 0;
 
-int t_ag_installed = -1;
 
-uint64_t t_ag_hits = 0;
 
-uintptr_t t_ag_objects[TNX_AG_OBJECT_MAX] = { 0 };
 
 BOOL tnx_query_region(uintptr_t address,
                              vm_prot_t *protection,
@@ -416,26 +312,24 @@ BOOL tnx_pointer_plausible(uintptr_t value) {
     return YES;
 }
 
-BOOL tnx_read_u8(uintptr_t address, uint8_t *out) {
+BOOL tnx_read_byte(uintptr_t address, uint8_t *out) {
     return tnx_read_bytes(address, out, 1);
 }
 
-BOOL tnx_read_i32(uintptr_t address, int32_t *out) {
+BOOL tnx_read_int(uintptr_t address, int32_t *out) {
     if (!out) return NO;
     if (address & 3) return NO;
 
     return tnx_read_bytes(address, out, 4);
 }
 
-BOOL tnx_read_f32(uintptr_t address, float *out) {
+BOOL tnx_read_float(uintptr_t address, float *out) {
     if (address & 3) return NO;
 
     return tnx_read_bytes(address, out, 4);
 }
 
-uint64_t t_write_denied = 0;
 
-int t_deny_logs = 0;
 
 BOOL tnx_writable(uintptr_t address, size_t length) {
     uintptr_t end = address + length;
@@ -476,13 +370,6 @@ void tnx_note(uintptr_t address, const void *src, size_t length, int denied) {
         memcpy(&value, src, take);
     }
 
-    t_addr[n] = address;
-    t_value[n] = value;
-    t_tick_3[n] = t_stage_ticks;
-    t_phase_2[n] = t_phase;
-    t_size[n] = (uint8_t)(length > 255 ? 255 : length);
-    t_denied[n] = (uint8_t)(denied ? 1 : 0);
-    t_writes_2++;
     t_at = (n + 1) % TNX_JOURNAL;
 }
 
@@ -491,17 +378,8 @@ BOOL tnx_write_bytes(uintptr_t address, const void *src, size_t length) {
     if (!address) return NO;
 
     if (TNX_WRITE_GUARD && !tnx_writable(address, length)) {
-        t_write_denied++;
         tnx_note(address, src, length, 1);
 
-        if (t_deny_logs < TNX_DENY_LOGS) {
-            t_deny_logs++;
-
-            tnx_logf("write denied at %p len=%zu total=%llu - the target is not inside a "
-                     "writable region of this process, so the store is dropped instead of taking "
-                     "the process down with it",
-                     (void *)address, length, (unsigned long long)t_write_denied);
-        }
 
         return NO;
     }
@@ -513,7 +391,7 @@ BOOL tnx_write_bytes(uintptr_t address, const void *src, size_t length) {
     return YES;
 }
 
-BOOL tnx_write_f32(uintptr_t address, float value) {
+BOOL tnx_write_float(uintptr_t address, float value) {
     if (address & 3) return NO;
 
     return tnx_write_bytes(address, &value, sizeof(value));
@@ -552,16 +430,7 @@ uintptr_t tnx_callable(uintptr_t rva) {
     if (tnx_looks_like_start(address)) return address;
 
     return 0;
-}
-
-uintptr_t tnx_pick(uintptr_t rvaA, uintptr_t rvaB) {
-    uintptr_t a = tnx_callable(rvaA);
-    if (a) return a;
-
-    return tnx_callable(rvaB);
-}
-
-BOOL tnx_copy(uintptr_t source, void *destination, size_t length) {
+}BOOL tnx_copy(uintptr_t source, void *destination, size_t length) {
     if (!source || !destination || !length) return NO;
     if (!tnx_addr_readable(source, length)) return NO;
 
@@ -689,29 +558,20 @@ BOOL find_game_image(uintptr_t *out_base) {
     return NO;
 }
 
-int t_scan_ticks = 0;
 
 uint64_t t_drain = 0;
 
 uint64_t t_q_max = 0;
 
-uint64_t t_drag_writes = 0;
 
-uint64_t t_drag_back = 0;
 
-int t_alert_shown = 0;
 
-uint64_t t_alert_cleared_ms = 0;
 
-uintptr_t t_alert_scene = 0;
 
-uint64_t t_alert_ms = 0;
+
+
 
 uintptr_t t_owner = 0;
-
-int t_done = 0;
-
-uintptr_t t_owner_2 = 0;
 
 int t_wired = 0;
 
@@ -753,47 +613,9 @@ BOOL tnx_segment_range(const char *name, uintptr_t *lo, uintptr_t *hi) {
 
     return NO;
 }
-
-BOOL tnx_image_contains(uintptr_t value) {
-    if (!t_base || !value) return NO;
-    if (!tnx_addr_readable(t_base, sizeof(struct mach_header_64))) return NO;
-
-    const struct mach_header_64 *header = (const struct mach_header_64 *)t_base;
-
-    if (header->magic != MH_MAGIC_64) return NO;
-
-    const uint8_t *cursor = (const uint8_t *)(header + 1);
-    const uint8_t *limit = cursor + header->sizeofcmds;
-    uintptr_t slide = tnx_image_slide(t_base);
-
-    for (uint32_t i = 0; i < header->ncmds; i++) {
-        if (cursor + sizeof(struct load_command) > limit) return NO;
-
-        const struct load_command *command = (const struct load_command *)cursor;
-
-        if (command->cmdsize < sizeof(struct load_command)) return NO;
-        if (cursor + command->cmdsize > limit) return NO;
-
-        if (command->cmd == LC_SEGMENT_64 && command->cmdsize >= sizeof(struct segment_command_64)) {
-            const struct segment_command_64 *segment = (const struct segment_command_64 *)command;
-
-            if (segment->vmsize) {
-                uintptr_t start = slide + (uintptr_t)segment->vmaddr;
-
-                if (value >= start && value < (start + (uintptr_t)segment->vmsize)) return YES;
-            }
-        }
-
-        cursor += command->cmdsize;
-    }
-
-    return NO;
-}
-
 void tnx_image_span_refresh(void) {
     t_img_span_lo = 0;
     t_img_span_hi = 0;
-    t_img_span_ok = 0;
 
     if (!t_base || !tnx_addr_readable(t_base, sizeof(struct mach_header_64))) return;
 
@@ -828,16 +650,7 @@ void tnx_image_span_refresh(void) {
         cursor += command->cmdsize;
     }
 
-    t_img_span_ok = (t_img_span_hi > t_img_span_lo) ? 1 : 0;
 }
-
-BOOL tnx_in_image_span(uintptr_t value) {
-    if (!value) return NO;
-    if (!t_img_span_ok) return tnx_image_contains(value);
-
-    return (value >= t_img_span_lo && value < t_img_span_hi) ? YES : NO;
-}
-
 const char *tnx_image_segment_name(uintptr_t value) {
     if (!t_base || !value) return NULL;
     if (!tnx_addr_readable(t_base, sizeof(struct mach_header_64))) return NULL;
@@ -884,7 +697,6 @@ uintptr_t t_heap_window_low = 0;
 
 uintptr_t t_heap_window_high = 0;
 
-int t_heap_window_ok = 0;
 
 void tnx_heap_regions_refresh(void) {
     uintptr_t cursor = 0x10000;
@@ -922,7 +734,6 @@ void tnx_heap_regions_refresh(void) {
     t_heap_region_count = count;
     t_heap_window_low = lowest;
     t_heap_window_high = highest;
-    t_heap_window_ok = count > 0 ? 1 : 0;
 
     t_heap_region_capped = (count >= TNX_HEAP_REGION_MAX) ? 1 : 0;
 
@@ -971,15 +782,6 @@ BOOL tnx_heap_resident(uintptr_t value) {
 
     return tnx_image_segment_name(value) ? NO : YES;
 }
-
-BOOL tnx_owner_is_heap(uintptr_t owner) {
-    if (!owner) return NO;
-    if (tnx_in_image_span(owner)) return NO;
-    if (!tnx_heap_resident(owner)) return NO;
-
-    return tnx_heap_contains(owner);
-}
-
 BOOL tnx_gameobject_shape(uintptr_t object) {
     void *vtable = NULL;
     int32_t team = 0;
@@ -989,9 +791,9 @@ BOOL tnx_gameobject_shape(uintptr_t object) {
     if (!tnx_heap_resident(object)) return NO;
     if (!tnx_read_ptr(object, &vtable)) return NO;
     if (!tnx_vtable_shaped((uintptr_t)vtable)) return NO;
-    if (!tnx_read_i32(object + TNX_OBJ_TEAM_OFF, &team)) return NO;
+    if (!tnx_read_int(object + TNX_OBJ_TEAM_OFF, &team)) return NO;
     if (team < 0 || team > TNX_OBJ_TEAM_MAX) return NO;
-    if (!tnx_read_u8(object + TNX_OBJ_DEADFLAG_OFF, &dead)) return NO;
+    if (!tnx_read_byte(object + TNX_OBJ_DEADFLAG_OFF, &dead)) return NO;
     if (dead > 1) return NO;
 
     return YES;
@@ -1018,8 +820,8 @@ BOOL tnx_manager_shape(uintptr_t manager) {
 
     if (!tnx_heap_resident(manager)) return NO;
     if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array)) return NO;
-    if (!tnx_read_i32(manager + TNX_MGR_COUNT_OFF, &count)) return NO;
-    if (!tnx_read_i32(manager + TNX_MGR_CAP_OFF, &capacity)) return NO;
+    if (!tnx_read_int(manager + TNX_MGR_COUNT_OFF, &count)) return NO;
+    if (!tnx_read_int(manager + TNX_MGR_CAP_OFF, &capacity)) return NO;
     if (count < 0 || count > TNX_MANAGER_MAX_OBJECTS) return NO;
 
     if (capacity < count || capacity > TNX_MGR_CAP_MAX) return NO;
@@ -1038,87 +840,35 @@ BOOL tnx_manager_shape(uintptr_t manager) {
 
     return YES;
 }
-
-uintptr_t tnx_vtable_rva(void *object) {
-    void *vtable = NULL;
-
-    if (!object) return 0;
-    if (!tnx_read_ptr((uintptr_t)object, &vtable)) return 0;
-    if (!vtable) return 0;
-    if ((uintptr_t)vtable < t_base) return 0;
-
-    return (uintptr_t)vtable - t_base;
-}
-
 int t_trail_count = 0;
 
-uint64_t t_trail_total = 0;
 
 int t_gate_last = -1;
 
-int t_gate_logs = 0;
 
-int t_step_logs = 0;
 
-int t_elem_logs = 0;
 
 uintptr_t t_last_own = 0;
 
-int t_logs = 0;
 
 int32_t t_last_tx = 0;
 
 int32_t t_last_ty = 0;
 
-int t_issued = 0;
+int t_issued = 0;int t_human_2 = 0;
 
-int tnx_write_i32(uintptr_t address, int32_t value) {
-    if (address & 3) return 0;
 
-    return tnx_write_bytes(address, &value, sizeof(value)) ? 1 : 0;
-}
 
-uintptr_t t_enemy_elem = 0;
 
-uint64_t t_push_logs = 0;
+uint64_t t_queue_skips = 0;
 
-uint64_t t_reloads = 0;
 
-uint64_t t_pre_reloads = 0;
 
-uint64_t t_pre_frames = 0;
 
-uint64_t t_push_frame_2 = 0;
 
-uint64_t t_win_reloads = 0;
+int32_t t_tx_b = 0;
 
-int t_win_stage = 0;
-
-float t_dir_x = 0.0f;
-
-float t_dir_y = 0.0f;
-
-int t_human_2 = 0;
-
-int t_touch = 0;
-
-int t_moved_3 = 0;
-
-uint64_t t_stops = 0;
-
-uint64_t t_queue_skips_2 = 0;
-
-float t_org_x = 0.0f;
-
-float t_org_y = 0.0f;
-
-float t_cur_x = 0.0f;
-
-float t_cur_y = 0.0f;
-
-int32_t t_tx_3 = 0;
-
-int32_t t_ty_3 = 0;
+int32_t t_ty_b = 0;
 
 uint64_t t_hold = 0;
 
@@ -1173,3 +923,5 @@ void poll_for_game(int tick) {
         poll_for_game(tick + 1);
     });
 }
+
+uintptr_t t_base = 0;

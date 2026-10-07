@@ -2,7 +2,6 @@
 
 int t_find_joy_done = 0;
 
-int t_entry_logs = 0;
 
 uintptr_t t_manager = 0;
 
@@ -22,7 +21,7 @@ int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) 
 
     if (!manager) return 0;
     if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &data) || !data) return 0;
-    if (!tnx_read_i32((uintptr_t)manager + TNX_MGR_COUNT_OFF, &count)) return 0;
+    if (!tnx_read_int((uintptr_t)manager + TNX_MGR_COUNT_OFF, &count)) return 0;
     if (count <= 0) return 0;
 
     if (count > capacity) count = capacity;
@@ -31,10 +30,6 @@ int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) 
 
     walkSeq = t_seq;
 
-    t_walk_aborted = 0;
-    t_walk_abort_i = -1;
-    t_walk_arr = (uintptr_t)data;
-    t_walk_n = count;
 
     for (int32_t i = 0; i < count && usable < capacity; i++) {
         void *element = NULL;
@@ -47,19 +42,6 @@ int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) 
         t_reject.elementsRead++;
 
         if (t_seq != walkSeq) {
-            t_walk_aborted = 1;
-            t_walk_abort_i = i;
-            t_walk_aborts++;
-
-            if (t_walk_aborts <= TNX_WALK_ABORT_FULL) {
-                tnx_logf("walk aborted at i=%d n=%d arr=%p g_arr=%p g_n=%d aborts=%llu",
-                         i, count, (void *)(uintptr_t)data, (void *)t_pub_array,
-                         t_pub_count, (unsigned long long)t_walk_aborts);
-            } else if ((t_walk_aborts % TNX_WALK_ABORT_EVERY) == 0) {
-                tnx_logf("walk aborts=%llu at i=%d n=%d",
-                         (unsigned long long)t_walk_aborts, i, count,
-                         TNX_WALK_ABORT_FULL);
-            }
 
             break;
         }
@@ -82,7 +64,6 @@ int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) 
 
         if (tnx_element_ascii(entry.object)) {
             t_reject.rejAscii++;
-            t_ascii_rejected++;
             bad++;
 
             continue;
@@ -114,13 +95,13 @@ int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) 
             entry.typeWord = (int32_t)tw;
         }
 
-        if (!tnx_read_i32(entry.object + tnx_coord_x_off(), &entry.x) ||
-            !tnx_read_i32(entry.object + tnx_coord_y_off(), &entry.y) ||
-            !tnx_read_i32(entry.object + TNX_OBJ_OWNERINDEX_OFF, &entry.ownerIndex) ||
-            !tnx_read_i32(entry.object + TNX_OBJ_TEAM_OFF, &entry.teamOld) ||
-            !tnx_read_i32(entry.object + TNX_TEAM_OFF, &entry.teamNew) ||
-            !tnx_read_u8(entry.object + TNX_OBJ_DEADFLAG_OFF, &entry.dead) ||
-            !tnx_read_u8(entry.object + TNX_OBJ_ACTIVEFLAG_OFF, &entry.activeFlag)) {
+        if (!tnx_read_int(entry.object + tnx_coord_x_off(), &entry.x) ||
+            !tnx_read_int(entry.object + tnx_coord_y_off(), &entry.y) ||
+            !tnx_read_int(entry.object + TNX_OBJ_OWNERINDEX_OFF, &entry.ownerIndex) ||
+            !tnx_read_int(entry.object + TNX_OBJ_TEAM_OFF, &entry.teamOld) ||
+            !tnx_read_int(entry.object + TNX_TEAM_OFF, &entry.teamNew) ||
+            !tnx_read_byte(entry.object + TNX_OBJ_DEADFLAG_OFF, &entry.dead) ||
+            !tnx_read_byte(entry.object + TNX_OBJ_ACTIVEFLAG_OFF, &entry.activeFlag)) {
             t_reject.rejUnreadable++;
             bad++;
 
@@ -147,24 +128,16 @@ int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) 
 
                 t_dump_np++;
 
-                tnx_read_i32(entry.object + TNX_OBJ_X_OFF, &npX);
-                tnx_read_i32(entry.object + TNX_OBJ_Y_OFF, &npY);
-                tnx_read_i32(entry.object + TNX_OFF, &np70);
-                tnx_read_i32(entry.object + TNX_OFF + 4ULL, &np74);
+                tnx_read_int(entry.object + TNX_OBJ_X_OFF, &npX);
+                tnx_read_int(entry.object + TNX_OBJ_Y_OFF, &npY);
+                tnx_read_int(entry.object + TNX_OFF, &np70);
+                tnx_read_int(entry.object + TNX_OFF + 4ULL, &np74);
                 tnx_read_ptr(entry.object + TNX_NP_PTR_OFF, &np38);
-                if (!tnx_read_f32(entry.object + TNX_OBJ_X_OFF, &npFx)) npFx = 0.0f;
-                if (!tnx_read_f32(entry.object + TNX_OBJ_Y_OFF, &npFy)) npFy = 0.0f;
-                if (!tnx_read_f32(entry.object + TNX_OFF, &npF70)) npF70 = 0.0f;
-                if (!tnx_read_f32(entry.object + TNX_OFF + 4ULL, &npF74)) npF74 = 0.0f;
+                if (!tnx_read_float(entry.object + TNX_OBJ_X_OFF, &npFx)) npFx = 0.0f;
+                if (!tnx_read_float(entry.object + TNX_OBJ_Y_OFF, &npFy)) npFy = 0.0f;
+                if (!tnx_read_float(entry.object + TNX_OFF, &npF70)) npF70 = 0.0f;
+                if (!tnx_read_float(entry.object + TNX_OFF + 4ULL, &npF74)) npF74 = 0.0f;
 
-                tnx_logf("nonplayer elem=%p classRva=%#llx gid=%d team=%d x+%#llx=%d y+%#llx=%d +%#llx=%d +%#llx=%d f32x=%g f32y=%g f32%#llx=%g f32%#llx=%g ptr+%#llx=%p",
-                         (void *)entry.object, (unsigned long long)npRva, entry.gid, entry.teamOld,
-                         (unsigned long long)TNX_OBJ_X_OFF, npX, (unsigned long long)TNX_OBJ_Y_OFF, npY,
-                         (unsigned long long)TNX_OFF, np70,
-                         (unsigned long long)(TNX_OFF + 4ULL), np74,
-                         (double)npFx, (double)npFy, (unsigned long long)TNX_OBJ_X_OFF, (double)npF70,
-                         (unsigned long long)(TNX_OFF + 4ULL), (double)npF74,
-                         (unsigned long long)TNX_NP_PTR_OFF, np38);
             }
 
             continue;
@@ -187,10 +160,6 @@ int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) 
 
                 if (tnx_read_ptr(entry.object, &tvtable) && tvtable) tvtRva = (uintptr_t)tvtable - t_base;
 
-                tnx_logf("coord suspect elem=%p vtRva=%#llx +%#llx=%d +%#llx=%d gid=%d",
-                         (void *)entry.object, (unsigned long long)tvtRva,
-                         (unsigned long long)TNX_OBJ_X_OFF, entry.x,
-                         (unsigned long long)TNX_OBJ_Y_OFF, entry.y, entry.gid);
             }
 
             if (!TNX_COORD_SOFT) {
@@ -247,7 +216,6 @@ void tnx_discriminate(uintptr_t manager) {
     memset(objects, 0, sizeof(objects));
     memset(words, 0, sizeof(words));
 
-    tnx_phase("walk");
 
     usable = tnx_collect(manager, objects, TNX_OBJECT_MAX, &rejected);
 
@@ -257,13 +225,6 @@ void tnx_discriminate(uintptr_t manager) {
     if (usable == 0) {
         char reasons[320];
 
-        if (rejected > 0 || t_reject.elementsRead > 0) {
-            tnx_logf("fields manager=%p usable=0 rejected=%d -- all elements rejected: %s",
-                     (void *)manager, rejected, tnx_reject_text(reasons, sizeof(reasons)));
-        } else {
-            tnx_logf("fields manager=%p usable=0 rejected=0 -- no elements in container",
-                     (void *)manager);
-        }
 
         return;
     }
@@ -271,9 +232,6 @@ void tnx_discriminate(uintptr_t manager) {
     if (usable == 1) {
         char reasons[320];
 
-        tnx_logf("fields manager=%p usable=1 rejected=%d -- one element is not enough to tell "
-                 "one field from another: %s",
-                 (void *)manager, rejected, tnx_reject_text(reasons, sizeof(reasons)));
 
         return;
     }
@@ -282,14 +240,10 @@ void tnx_discriminate(uintptr_t manager) {
 
     for (int i = 0; i < n; i++) {
         if (!tnx_read_bytes(objects[i].object, words[i], sizeof(words[i]))) {
-            tnx_logf("fields element %d at %p unreadable over 0x%x bytes",
-                     i, (void *)objects[i].object, (unsigned)sizeof(words[i]));
             return;
         }
     }
 
-    tnx_logf("fields manager=%p usable=%d rejected=%d sample=%d window=+0x0..+0x%x",
-             (void *)manager, usable, rejected, n, (unsigned)((TNX_WORDS_2 - 1) * 4));
 
     for (int w = 0; w < TNX_WORDS_2; w++) {
         int distinct = 0;
@@ -318,10 +272,6 @@ void tnx_discriminate(uintptr_t manager) {
 
         if (distinct <= 1) continue;
 
-        tnx_logf("off +0x%02x distinct=%d/%d min=%lld max=%lld small=%d tiny=%d %s%s",
-                 w * 4, distinct, n, (long long)minV, (long long)maxV, allSmall, allTiny,
-                 (allTiny && distinct >= 2 && distinct <= TNX_TEAM_MAX) ? "TEAM? " : "",
-                 (allSmall && distinct == n) ? "VARIES/PAIR-MEMBER?" : "");
 
         if (teamOff < 0 && allTiny && distinct >= 2 && distinct <= TNX_TEAM_MAX) {
             teamOff = w * 4;
@@ -335,16 +285,11 @@ void tnx_discriminate(uintptr_t manager) {
     }
 
     if (teamOff == (int)TNX_OBJ_X_OFF || teamOff == (int)TNX_OBJ_Y_OFF) {
-        tnx_logf("walk error: teamOff=+0x%x equals the repository coordinate offset, so the walk hit strings and not objects",
-                 teamOff);
 
         teamOff = -1;
         teamDistinct = 0;
     }
 
-    if (teamOff < 0) {
-        tnx_logf("teamOff unset after the walk, the engine's own +0x4c is used src=log-v55");
-    }
 
     {
         int order[TNX_WORDS_2];
@@ -388,8 +333,6 @@ void tnx_discriminate(uintptr_t manager) {
             if (dx == n && dy == n) {
                 intPairOff = w * 4;
 
-                tnx_logf("coord pair int32 at +0x%02x,+0x%02x all %d distinct team=+0x%x "
-                         "excluded from the candidates", w * 4, (w + 1) * 4, n, teamOff);
             }
         }
     }
@@ -426,35 +369,20 @@ void tnx_discriminate(uintptr_t manager) {
 
         floatPairOff = w * 4;
 
-        tnx_logf("coord pair float32 at +0x%02x,+0x%02x first=(%.3f,%.3f) distinct=%d/%d",
-                 w * 4, (w + 1) * 4, fx, fy, distinctPairs, n);
     }
 
-    tnx_logf("named teamOff=%s0x%x distinct=%d | coordOff=%s0x%x distinct=%d | "
-             "intPair=%s0x%x | floatPair=%s0x%x",
-             teamOff >= 0 ? "+" : "none:", teamOff >= 0 ? teamOff : 0, teamDistinct,
-             coordOff >= 0 ? "+" : "none:", coordOff >= 0 ? coordOff : 0, coordDistinct,
-             intPairOff >= 0 ? "+" : "none:", intPairOff >= 0 ? intPairOff : 0,
-             floatPairOff >= 0 ? "+" : "none:", floatPairOff >= 0 ? floatPairOff : 0);
 
-    t_coord_off = (int)TNX_OBJ_X_OFF;
 
     if (!t_coord_fixed_logged) {
         t_coord_fixed_logged = 1;
 
-        tnx_logf("walk coord fixed +%#llx/+%#llx (was auto)",
-                 (unsigned long long)TNX_OBJ_X_OFF, (unsigned long long)TNX_OBJ_Y_OFF,
-                 intPairOff >= 0 ? intPairOff : 0, coordOff >= 0 ? coordOff : 0);
     }
 }
 
-int t_logs_2 = 0;
 
-int32_t t_max_x = 0;
 
-int32_t t_max_y = 0;
 
-uintptr_t tnx_bounds_obj_2(uintptr_t receiver) {
+uintptr_t tnx_bounds_obj(uintptr_t receiver) {
     void *out = NULL;
 
     if (!receiver) return 0;
@@ -469,55 +397,32 @@ uintptr_t tnx_bounds_obj_2(uintptr_t receiver) {
 
 int tnx_clamp(int32_t *x, int32_t *y) {
     uintptr_t receiver = tnx_controller();
-    uintptr_t bounds = tnx_bounds_obj_2(receiver);
+    uintptr_t bounds = tnx_bounds_obj(receiver);
     int32_t maxX = 0;
     int32_t maxY = 0;
     int32_t ox = *x;
     int32_t oy = *y;
 
     if (!bounds) {
-        if (t_logs_2 < TNX_LOGS_2) {
-            t_logs_2++;
-
-            tnx_logf("clamp skipped receiver=%p - the bounds accessor returned nothing, so the "
-                     "target is sent unchanged", (void *)receiver);
-        }
 
         return 0;
     }
 
-    if (!tnx_read_i32(bounds + TNX_BOUNDS_X_OFF, &maxX)) return 0;
-    if (!tnx_read_i32(bounds + TNX_BOUNDS_Y_OFF, &maxY)) return 0;
+    if (!tnx_read_int(bounds + TNX_BOUNDS_X_OFF, &maxX)) return 0;
+    if (!tnx_read_int(bounds + TNX_BOUNDS_Y_OFF, &maxY)) return 0;
 
     if (maxX <= 3 || maxY <= 3 || maxX > 200000 || maxY > 200000) {
-        if (t_logs_2 < TNX_LOGS_2) {
-            t_logs_2++;
-
-            tnx_logf("clamp skipped max=(%d,%d) receiver=%p bounds=%p", maxX, maxY, (void *)receiver, (void *)bounds);
-        }
 
         return 0;
     }
 
-    t_max_x = maxX;
-    t_max_y = maxY;
 
-    tnx_map_dump(bounds);
 
     if (*x > maxX - 2) *x = maxX - 2;
     if (*y > maxY - 2) *y = maxY - 2;
     if (*x <= 1) *x = 0;
     if (*y <= 1) *y = 0;
 
-    if (t_logs_2 < TNX_LOGS_2) {
-        t_logs_2++;
-
-        tnx_logf("clamp max=(%d,%d) target=(%d,%d)->(%d,%d) receiver=%p bounds=%p",
-                 maxX, maxY, ox, oy, *x, *y, (void *)receiver, (void *)bounds,
-                 (unsigned long long)TNX_BOUNDS_RVA,
-                 (unsigned long long)TNX_BOUNDS_X_OFF,
-                 (unsigned long long)TNX_BOUNDS_Y_OFF);
-    }
 
     return 1;
 }
@@ -543,13 +448,13 @@ uint64_t tnx_us(void) {
     return (t / (uint64_t)tb.denom) * (uint64_t)tb.numer / 1000ULL;
 }
 
-int t_logs_5 = 0;
+int t_logs_a = 0;
 
 int t_seeded = 0;
 
-int32_t t_last_x_2 = 0;
+int32_t t_last_x_a = 0;
 
-int32_t t_last_y_2 = 0;
+int32_t t_last_y_a = 0;
 
 uintptr_t tnx_pair_base(void) {
     void *battleRaw = NULL;

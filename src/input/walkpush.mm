@@ -1,181 +1,155 @@
 #include "titanox.h"
 
-uintptr_t t_walk_ent_10 = 0;
+uintptr_t t_walk_ent = 0;
 
-uint64_t t_walk_scans_10 = 0;
 
-uint64_t t_walk_sends_10 = 0;
 
-uint64_t t_walk_near_10 = 0;
 
-uint64_t t_walk_hand_10 = 0;
 
-static uint64_t t_walk_logs_10 = 0;
 
-static uint64_t t_walk_offlogs_10 = 0;
 
-static uintptr_t t_walk_lookup_fn_10 = 0;
+static uintptr_t t_walk_lookup_fn = 0;
 
-static uintptr_t t_walk_entb_10 = 0;
 
-static uintptr_t t_walk_entc_10 = 0;
+static uintptr_t t_walk_entc = 0;
 
-static int t_walk_on_10 = 0;
+static int t_walk_on = 0;
 
-static int32_t t_walk_px_10 = 0;
+static int32_t t_walk_px = 0;
 
-static int32_t t_walk_py_10 = 0;
+static int32_t t_walk_py = 0;
 
-static int32_t t_walk_tx_10 = 0;
+static int32_t t_walk_tx = 0;
 
-static int32_t t_walk_ty_10 = 0;
+static int32_t t_walk_ty = 0;
 
-static uint64_t t_walk_stamp_10 = 0;
+static uint64_t t_walk_stamp = 0;
 
-static uint64_t t_walk_frames_10 = 0;
+static uint64_t t_walk_frames = 0;
 
-static uint8_t t_walk_knob_own_10 = 0;
+static uint8_t t_walk_knob_own = 0;
 
-static float t_walk_knob_x_10 = 0.0f;
+static float t_walk_knob_x = 0.0f;
 
-static float t_walk_knob_y_10 = 0.0f;
+static float t_walk_knob_y = 0.0f;
 
-static uint64_t t_walk_knob_writes_10 = 0;
 
-static uint64_t t_walk_knob_restores_10 = 0;
 
-static uint8_t t_walk_save_f78_10 = 0;
+static uint8_t t_walk_save_f = 0;
 
-static uint8_t t_walk_save_f7f_10 = 0;
+static uint8_t t_walk_save_f7f = 0;
 
-static uint64_t t_walk_gate_logs_10 = 0;
+static uint64_t t_walk_gate_logs = 0;
 
-static uintptr_t t_walk_mode_fn_10 = 0;
+static uintptr_t t_walk_mode_fn = 0;
 
-static float t_walk_dead_11 = 0.0f;
+static float t_walk_dead = 0.0f;
 
-static uintptr_t t_walk_dead_a_11 = 0;
+static uintptr_t t_walk_dead_a = 0;
 
-static uintptr_t t_walk_dead_b_11 = 0;
+static uintptr_t t_walk_dead_b = 0;
 
-static int32_t t_ent_prev_10[TNX_ENT_SLOTS_10];
+static int32_t t_ent_prev[TNX_ENT_SLOTS];
 
-static int32_t t_ent_cur_10[TNX_ENT_SLOTS_10];
 
-static uint32_t t_ent_chg_10[TNX_ENT_SLOTS_10];
+static uint32_t t_ent_chg[TNX_ENT_SLOTS];
 
-static uint32_t t_ent_cd_10[TNX_ENT_SLOTS_10];
+static uint32_t t_ent_cd[TNX_ENT_SLOTS];
 
-static uint32_t t_ent_co_10[TNX_ENT_SLOTS_10];
+static uint32_t t_ent_co[TNX_ENT_SLOTS];
 
-static uint8_t t_ent_seen_10[TNX_ENT_SLOTS_10];
+static uint8_t t_ent_seen[TNX_ENT_SLOTS];
 
-static uint64_t t_ent_frames_10 = 0;
+static uint64_t t_ent_frames = 0;
 
-static uint64_t t_ent_logs_10 = 0;
+static uint64_t t_ent_logs = 0;
 
-static uint64_t t_ent_sums_10 = 0;
 
-static uintptr_t t_ent_last_10 = 0;
+static uintptr_t t_ent_last = 0;
 
-static uintptr_t t_walk_fn_10 = 0;
+static uintptr_t t_walk_fn = 0;
 
-static int32_t t_walk_dir_10[2] = { 0, 0 };
 
-static int32_t t_walk_goal_10[2] = { 0, 0 };
 
-static void tnx_ent_summary_10(void) {
-    uintptr_t ent = t_ent_last_10;
+static void tnx_ent_summary(void) {
+    uintptr_t ent = t_ent_last;
     uint64_t logs = 0;
     int i = 0;
 
     if (!ent) return;
 
-    TNX_LOGX("entsum begin frames=%llu ent=%p slots=%d min=%d chunk=%d - knob marks the frames the native "
-             "stick was displaced and ours the frames our walk wrote the pair, so an offset the native walk "
-             "moves and our walk never touches is the state we are still missing",
-             (unsigned long long)t_ent_frames_10, (void *)ent, (int)TNX_ENT_SLOTS_10, (int)TNX_ENT_SUM_MIN_10,
-             (int)TNX_ENT_CHUNK_10);
 
-    for (i = 0; i < TNX_ENT_SLOTS_10; i++) {
-        if (t_ent_chg_10[i] < (uint32_t)TNX_ENT_SUM_MIN_10) continue;
-        if (logs >= (uint64_t)TNX_ENT_SUM_LOGS_10) break;
+    for (i = 0; i < TNX_ENT_SLOTS; i++) {
+        if (t_ent_chg[i] < (uint32_t)TNX_ENT_SUM_MIN) continue;
+        if (logs >= (uint64_t)TNX_ENT_SUM_LOGS) break;
 
         logs++;
 
-        TNX_LOGX("entsum off=+%#x chg=%llu knob=%llu ours=%llu last=%d", (unsigned)(i * 4),
-                 (unsigned long long)t_ent_chg_10[i], (unsigned long long)t_ent_cd_10[i],
-                 (unsigned long long)t_ent_co_10[i], t_ent_cur_10[i]);
     }
 
-    t_ent_sums_10++;
 }
 
-void tnx_ent_probe_10(uintptr_t ent, int knob, int ours) {
-    int32_t buf[TNX_ENT_CHUNK_10 / 4];
+void tnx_ent_probe(uintptr_t ent, int knob, int ours) {
+    int32_t buf[TNX_ENT_CHUNK / 4];
     uintptr_t base = 0;
     int32_t v = 0;
     int c = 0;
     int k = 0;
     int i = 0;
 
-    if (!TNX_ENT_PROBE_10) return;
+    if (!TNX_ENT_PROBE) return;
     if (!ent) return;
 
-    if (ent != t_ent_last_10) {
-        t_ent_last_10 = ent;
+    if (ent != t_ent_last) {
+        t_ent_last = ent;
 
-        for (i = 0; i < TNX_ENT_SLOTS_10; i++) {
-            t_ent_prev_10[i] = 0;
-            t_ent_cur_10[i] = 0;
-            t_ent_chg_10[i] = 0;
-            t_ent_cd_10[i] = 0;
-            t_ent_co_10[i] = 0;
-            t_ent_seen_10[i] = 0;
+        for (i = 0; i < TNX_ENT_SLOTS; i++) {
+            t_ent_prev[i] = 0;
+            t_ent_chg[i] = 0;
+            t_ent_cd[i] = 0;
+            t_ent_co[i] = 0;
+            t_ent_seen[i] = 0;
         }
     }
 
-    t_ent_frames_10++;
+    t_ent_frames++;
 
-    if (t_ent_frames_10 <= (uint64_t)TNX_ENT_WARMUP_10) {
-        for (i = 0; i < TNX_ENT_SLOTS_10; i++) t_ent_seen_10[i] = 0;
+    if (t_ent_frames <= (uint64_t)TNX_ENT_WARMUP) {
+        for (i = 0; i < TNX_ENT_SLOTS; i++) t_ent_seen[i] = 0;
 
         return;
     }
 
-    for (c = 0; c < TNX_ENT_CHUNKS_10; c++) {
-        base = ent + (uintptr_t)(c * TNX_ENT_CHUNK_10);
+    for (c = 0; c < TNX_ENT_CHUNKS; c++) {
+        base = ent + (uintptr_t)(c * TNX_ENT_CHUNK);
 
         if (!tnx_read_bytes(base, buf, sizeof(buf))) continue;
 
-        for (k = 0; k < (int)(TNX_ENT_CHUNK_10 / 4); k++) {
-            i = c * (int)(TNX_ENT_CHUNK_10 / 4) + k;
+        for (k = 0; k < (int)(TNX_ENT_CHUNK / 4); k++) {
+            i = c * (int)(TNX_ENT_CHUNK / 4) + k;
             v = buf[k];
 
-            t_ent_cur_10[i] = v;
 
-            if (v == t_ent_prev_10[i]) continue;
+            if (v == t_ent_prev[i]) continue;
 
-            t_ent_prev_10[i] = v;
-            t_ent_chg_10[i]++;
+            t_ent_prev[i] = v;
+            t_ent_chg[i]++;
 
-            if (knob) t_ent_cd_10[i]++;
-            if (ours) t_ent_co_10[i]++;
+            if (knob) t_ent_cd[i]++;
+            if (ours) t_ent_co[i]++;
 
-            if (t_ent_seen_10[i] < (uint8_t)TNX_ENT_SAMPLE_10 && t_ent_logs_10 < (uint64_t)TNX_ENT_PROBE_LOGS_10) {
-                t_ent_seen_10[i]++;
-                t_ent_logs_10++;
+            if (t_ent_seen[i] < (uint8_t)TNX_ENT_SAMPLE && t_ent_logs < (uint64_t)TNX_ENT_PROBE_LOGS) {
+                t_ent_seen[i]++;
+                t_ent_logs++;
 
-                TNX_LOGX("entchg off=+%#x val=%d knob=%d ours=%d chg=%llu", (unsigned)(i * 4), v, knob, ours,
-                         (unsigned long long)t_ent_chg_10[i]);
             }
         }
     }
 
-    if ((t_ent_frames_10 % (uint64_t)TNX_ENT_SUM_EVERY_10) == 0) tnx_ent_summary_10();
+    if ((t_ent_frames % (uint64_t)TNX_ENT_SUM_EVERY) == 0) tnx_ent_summary();
 }
 
-static uintptr_t tnx_walk_lookup_10(uintptr_t mgr, uintptr_t ent) {
+static uintptr_t tnx_walk_lookup(uintptr_t mgr, uintptr_t ent) {
     uintptr_t col = 0;
     uintptr_t inner = 0;
     uintptr_t fn = 0;
@@ -187,24 +161,24 @@ static uintptr_t tnx_walk_lookup_10(uintptr_t mgr, uintptr_t ent) {
     int32_t rx = 0;
     int32_t ry = 0;
 
-    if (!TNX_WALK_LOOKUP_10) return 0;
+    if (!TNX_WALK_LOOKUP) return 0;
     if (!mgr || !ent) return 0;
 
     if (!tnx_read_ptr(mgr + (uintptr_t)TNX_CI_MGR_OBJLIST_OFF, (void **)&col) || !col) return 0;
     if (!tnx_read_ptr(col + 8, (void **)&inner) || !inner) return 0;
 
-    if (!tnx_read_i32(inner + 0xc, &cnt)) return 0;
+    if (!tnx_read_int(inner + 0xc, &cnt)) return 0;
     if (cnt < 1 || cnt > 64) return 0;
     if (!tnx_read_ptr(inner, (void **)&arr) || !arr) return 0;
 
-    fn = t_walk_lookup_fn_10;
+    fn = t_walk_lookup_fn;
 
     if (!fn) {
         fn = tnx_entry_2(RVA_MGR_OBJ_LOOKUP_10);
 
         if (!fn && t_base) fn = t_base + RVA_MGR_OBJ_LOOKUP_10;
 
-        t_walk_lookup_fn_10 = fn;
+        t_walk_lookup_fn = fn;
     }
 
     if (!fn) return 0;
@@ -213,10 +187,10 @@ static uintptr_t tnx_walk_lookup_10(uintptr_t mgr, uintptr_t ent) {
 
     if (!res) return 0;
 
-    if (!tnx_read_i32(res + (uintptr_t)TNX_OBJ_X_OFF, &rx)) return 0;
-    if (!tnx_read_i32(res + (uintptr_t)TNX_OBJ_Y_OFF, &ry)) return 0;
-    if (!tnx_read_i32(ent + (uintptr_t)TNX_OBJ_X_OFF, &ex)) return 0;
-    if (!tnx_read_i32(ent + (uintptr_t)TNX_OBJ_Y_OFF, &ey)) return 0;
+    if (!tnx_read_int(res + (uintptr_t)TNX_OBJ_X_OFF, &rx)) return 0;
+    if (!tnx_read_int(res + (uintptr_t)TNX_OBJ_Y_OFF, &ry)) return 0;
+    if (!tnx_read_int(ent + (uintptr_t)TNX_OBJ_X_OFF, &ex)) return 0;
+    if (!tnx_read_int(ent + (uintptr_t)TNX_OBJ_Y_OFF, &ey)) return 0;
 
     if (rx - ex > 400 || ex - rx > 400) return 0;
     if (ry - ey > 400 || ey - ry > 400) return 0;
@@ -224,7 +198,7 @@ static uintptr_t tnx_walk_lookup_10(uintptr_t mgr, uintptr_t ent) {
     return res;
 }
 
-uintptr_t tnx_walk_mgr_10(void) {
+uintptr_t tnx_walk_mgr(void) {
     uintptr_t bs = tnx_bs();
     uintptr_t mgr = 0;
 
@@ -234,30 +208,30 @@ uintptr_t tnx_walk_mgr_10(void) {
     return mgr;
 }
 
-void tnx_walk_want_10(int on, int32_t px, int32_t py, int32_t tx, int32_t ty) {
-    t_walk_on_10 = on ? 1 : 0;
-    t_walk_px_10 = px;
-    t_walk_py_10 = py;
-    t_walk_tx_10 = tx;
-    t_walk_ty_10 = ty;
-    t_walk_stamp_10 = t_walk_frames_10;
+void tnx_walk_want(int on, int32_t px, int32_t py, int32_t tx, int32_t ty) {
+    t_walk_on = on ? 1 : 0;
+    t_walk_px = px;
+    t_walk_py = py;
+    t_walk_tx = tx;
+    t_walk_ty = ty;
+    t_walk_stamp = t_walk_frames;
 }
 
-static uintptr_t tnx_walk_flip_10(void) {
+static uintptr_t tnx_walk_flip(void) {
     uint8_t flip = 0;
     uintptr_t addr = 0;
 
     addr = t_base + (uintptr_t)RVA_JOY_FLIP_10;
 
     if (!t_base) return 0;
-    if (!tnx_read_u8(addr, &flip)) return 0;
+    if (!tnx_read_byte(addr, &flip)) return 0;
 
     return flip ? 1 : 0;
 }
 
-void tnx_walk_pump_10(void) {
+void tnx_walk_pump(void) {
     uintptr_t mgr = 0;
-    uintptr_t ent = t_walk_ent_10;
+    uintptr_t ent = t_walk_ent;
     uintptr_t fn = 0;
     int32_t ox = 0;
     int32_t oy = 0;
@@ -330,69 +304,68 @@ void tnx_walk_pump_10(void) {
     uintptr_t gObj = 0;
     uintptr_t gFn = 0;
 
-    t_walk_frames_10++;
+    t_walk_frames++;
 
-    if (!TNX_WALK_PUSH_10) return;
+    if (!TNX_WALK_PUSH) return;
 
-    on = t_walk_on_10;
-    px = t_walk_px_10;
-    py = t_walk_py_10;
-    tx = t_walk_tx_10;
-    ty = t_walk_ty_10;
+    on = t_walk_on;
+    px = t_walk_px;
+    py = t_walk_py;
+    tx = t_walk_tx;
+    ty = t_walk_ty;
 
-    if (t_walk_frames_10 - t_walk_stamp_10 > (uint64_t)TNX_WALK_STALE_10) on = 0;
+    if (t_walk_frames - t_walk_stamp > (uint64_t)TNX_WALK_STALE) on = 0;
 
-    mgr = tnx_walk_mgr_10();
+    mgr = tnx_walk_mgr();
 
     if (!mgr) return;
     if (!ent) return;
 
-    if (!tnx_read_i32(ent + (uintptr_t)TNX_OBJ_X_OFF, &ox)) return;
-    if (!tnx_read_i32(ent + (uintptr_t)TNX_OBJ_Y_OFF, &oy)) return;
-    if (!tnx_read_i32(ent + 0x24c, &span)) return;
-    if (!tnx_read_i32(mgr + (uintptr_t)TNX_CTRL_RAW_X_OFF, &rawX)) return;
-    if (!tnx_read_i32(mgr + (uintptr_t)TNX_CTRL_RAW_Y_OFF, &rawY)) return;
-    if (!tnx_read_i32(mgr + (uintptr_t)TNX_CTRL_APPLIED_X_OFF, &appX)) return;
-    if (!tnx_read_i32(mgr + (uintptr_t)TNX_CTRL_APPLIED_Y_OFF, &appY)) return;
-    tnx_read_u8(mgr + (uintptr_t)TNX_CTRL_MOVE_OFF, &gF78);
-    tnx_read_u8(mgr + (uintptr_t)TNX_TOUCH_GATE_OFF, &gF7F);
+    if (!tnx_read_int(ent + (uintptr_t)TNX_OBJ_X_OFF, &ox)) return;
+    if (!tnx_read_int(ent + (uintptr_t)TNX_OBJ_Y_OFF, &oy)) return;
+    if (!tnx_read_int(ent + 0x24c, &span)) return;
+    if (!tnx_read_int(mgr + (uintptr_t)TNX_CTRL_RAW_X_OFF, &rawX)) return;
+    if (!tnx_read_int(mgr + (uintptr_t)TNX_CTRL_RAW_Y_OFF, &rawY)) return;
+    if (!tnx_read_int(mgr + (uintptr_t)TNX_CTRL_APPLIED_X_OFF, &appX)) return;
+    if (!tnx_read_int(mgr + (uintptr_t)TNX_CTRL_APPLIED_Y_OFF, &appY)) return;
+    tnx_read_byte(mgr + (uintptr_t)TNX_CTRL_MOVE_OFF, &gF78);
+    tnx_read_byte(mgr + (uintptr_t)TNX_TOUCH_GATE_OFF, &gF7F);
 
     latchB = 0;
     holdB = 0;
 
-    tnx_read_u8(mgr + (uintptr_t)TNX_CTRL_LATCH_OFF, &latchB);
-    tnx_read_u8(mgr + (uintptr_t)TNX_CTRL_ALIVE_OFF, &holdB);
-    tnx_read_i32(mgr + (uintptr_t)TNX_CTRL_DIRTY_OFF, &dirtyB);
-    tnx_read_f32(mgr + (uintptr_t)TNX_MARK_OFF, &timerB);
+    tnx_read_byte(mgr + (uintptr_t)TNX_CTRL_LATCH_OFF, &latchB);
+    tnx_read_byte(mgr + (uintptr_t)TNX_CTRL_ALIVE_OFF, &holdB);
+    tnx_read_int(mgr + (uintptr_t)TNX_CTRL_DIRTY_OFF, &dirtyB);
+    tnx_read_float(mgr + (uintptr_t)TNX_MARK_OFF, &timerB);
 
     mgrB = (uintptr_t)tnx_manager();
 
     if (mgrB) {
-        tnx_read_i32(mgrB + (uintptr_t)TNX_CTRL_RAW_X_OFF, &mgrBrawX);
-        tnx_read_i32(mgrB + (uintptr_t)TNX_CTRL_RAW_Y_OFF, &mgrBrawY);
-        tnx_read_i32(mgrB + (uintptr_t)TNX_CTRL_APPLIED_X_OFF, &mgrBappX);
-        tnx_read_i32(mgrB + (uintptr_t)TNX_CTRL_APPLIED_Y_OFF, &mgrBappY);
+        tnx_read_int(mgrB + (uintptr_t)TNX_CTRL_RAW_X_OFF, &mgrBrawX);
+        tnx_read_int(mgrB + (uintptr_t)TNX_CTRL_RAW_Y_OFF, &mgrBrawY);
+        tnx_read_int(mgrB + (uintptr_t)TNX_CTRL_APPLIED_X_OFF, &mgrBappX);
+        tnx_read_int(mgrB + (uintptr_t)TNX_CTRL_APPLIED_Y_OFF, &mgrBappY);
     }
 
     knob = 0;
 
-    if (tnx_read_f32(mgr + 0xa40, &knobA[0]) && tnx_read_f32(mgr + 0xa44, &knobA[1])
-        && tnx_read_f32(mgr + 0xa48, &knobB[0]) && tnx_read_f32(mgr + 0xa4c, &knobB[1])) {
+    if (tnx_read_float(mgr + 0xa40, &knobA[0]) && tnx_read_float(mgr + 0xa44, &knobA[1])
+        && tnx_read_float(mgr + 0xa48, &knobB[0]) && tnx_read_float(mgr + 0xa4c, &knobB[1])) {
         if (knobA[0] - knobB[0] > 1.0f || knobB[0] - knobA[0] > 1.0f) knob = 1;
         if (knobA[1] - knobB[1] > 1.0f || knobB[1] - knobA[1] > 1.0f) knob = 1;
     }
 
-    t_walk_entb_10 = ent;
-    t_walk_entc_10 = tnx_walk_lookup_10(mgr, ent);
+    t_walk_entc = tnx_walk_lookup(mgr, ent);
 
-    if (t_walk_entc_10 && t_walk_entc_10 != ent) {
+    if (t_walk_entc && t_walk_entc != ent) {
         int32_t ux = 0;
         int32_t uy = 0;
 
-        if (tnx_read_i32(t_walk_entc_10 + (uintptr_t)TNX_OBJ_X_OFF, &ux)
-            && tnx_read_i32(t_walk_entc_10 + (uintptr_t)TNX_OBJ_Y_OFF, &uy)) {
+        if (tnx_read_int(t_walk_entc + (uintptr_t)TNX_OBJ_X_OFF, &ux)
+            && tnx_read_int(t_walk_entc + (uintptr_t)TNX_OBJ_Y_OFF, &uy)) {
             if (ux - ox <= 400 && ox - ux <= 400 && uy - oy <= 400 && oy - uy <= 400) {
-                ent = t_walk_entc_10;
+                ent = t_walk_entc;
                 ox = ux;
                 oy = uy;
             }
@@ -403,31 +376,30 @@ void tnx_walk_pump_10(void) {
     if (oy - py > 250 || py - oy > 250) return;
 
     if (!on) {
-        if (t_walk_knob_own_10) {
+        if (t_walk_knob_own) {
             float rx = 0.0f;
             float ry = 0.0f;
             float cx = 0.0f;
             float cy = 0.0f;
 
-            if (tnx_read_f32(mgr + (uintptr_t)TNX_JOY_ORG_X_OFF, &rx)
-                && tnx_read_f32(mgr + (uintptr_t)TNX_JOY_ORG_Y_OFF, &ry)
-                && tnx_read_f32(mgr + (uintptr_t)TNX_JOY_CUR_X_OFF, &cx)
-                && tnx_read_f32(mgr + (uintptr_t)TNX_JOY_CUR_Y_OFF, &cy)) {
-                float ax = t_walk_knob_x_10 - cx;
-                float ay = t_walk_knob_y_10 - cy;
+            if (tnx_read_float(mgr + (uintptr_t)TNX_JOY_ORG_X_OFF, &rx)
+                && tnx_read_float(mgr + (uintptr_t)TNX_JOY_ORG_Y_OFF, &ry)
+                && tnx_read_float(mgr + (uintptr_t)TNX_JOY_CUR_X_OFF, &cx)
+                && tnx_read_float(mgr + (uintptr_t)TNX_JOY_CUR_Y_OFF, &cy)) {
+                float ax = t_walk_knob_x - cx;
+                float ay = t_walk_knob_y - cy;
 
                 if (ax <= 0.5f && ax >= -0.5f && ay <= 0.5f && ay >= -0.5f) {
-                    tnx_write_f32(mgr + (uintptr_t)TNX_JOY_CUR_X_OFF, rx);
-                    tnx_write_f32(mgr + (uintptr_t)TNX_JOY_CUR_Y_OFF, ry);
+                    tnx_write_float(mgr + (uintptr_t)TNX_JOY_CUR_X_OFF, rx);
+                    tnx_write_float(mgr + (uintptr_t)TNX_JOY_CUR_Y_OFF, ry);
                 }
 
-                if (TNX_WALK_HOLD_10) {
-                    tnx_write_bytes(mgr + (uintptr_t)TNX_CTRL_MOVE_OFF, &t_walk_save_f78_10, sizeof(t_walk_save_f78_10));
-                    tnx_write_bytes(mgr + (uintptr_t)TNX_TOUCH_GATE_OFF, &t_walk_save_f7f_10, sizeof(t_walk_save_f7f_10));
+                if (TNX_WALK_HOLD) {
+                    tnx_write_bytes(mgr + (uintptr_t)TNX_CTRL_MOVE_OFF, &t_walk_save_f, sizeof(t_walk_save_f));
+                    tnx_write_bytes(mgr + (uintptr_t)TNX_TOUCH_GATE_OFF, &t_walk_save_f7f, sizeof(t_walk_save_f7f));
                 }
 
-                t_walk_knob_own_10 = 0;
-                t_walk_knob_restores_10++;
+                t_walk_knob_own = 0;
                 knobRestored = 1;
             }
         }
@@ -439,20 +411,8 @@ void tnx_walk_pump_10(void) {
             wrote = 1;
         }
 
-        tnx_ent_probe_10(ent, knob, 0);
+        tnx_ent_probe(ent, knob, 0);
 
-        if (t_walk_offlogs_10 < TNX_WALK_OFF_LOGS_10) {
-            t_walk_offlogs_10++;
-
-            TNX_LOGX("walkpush off n=%llu mgr=%p ent=%p own=(%d,%d) raw=%d,%d wrote=%d knobOwn=%d "
-                     "knobBack=%d knobWrites=%llu knobBacks=%llu scans=%llu sends=%llu near=%llu - no walk this "
-                     "frame, the raw pair goes back to zero and a stick we displaced is put back on its centre",
-                     (unsigned long long)t_walk_offlogs_10, (void *)mgr, (void *)ent, ox, oy, rawX, rawY, wrote,
-                     (int)t_walk_knob_own_10, knobRestored,
-                     (unsigned long long)t_walk_knob_writes_10, (unsigned long long)t_walk_knob_restores_10,
-                     (unsigned long long)t_walk_scans_10, (unsigned long long)t_walk_sends_10,
-                     (unsigned long long)t_walk_near_10);
-        }
 
         return;
     }
@@ -466,8 +426,8 @@ void tnx_walk_pump_10(void) {
     dx /= len;
     dy /= len;
 
-    dirX = (int32_t)(dx * TNX_WALK_PUSH_RAW_10);
-    dirY = (int32_t)(dy * TNX_WALK_PUSH_RAW_10);
+    dirX = (int32_t)(dx * TNX_WALK_PUSH_RAW);
+    dirY = (int32_t)(dy * TNX_WALK_PUSH_RAW);
 
     if (dirX == 0 && dirY == 0) return;
 
@@ -481,18 +441,14 @@ void tnx_walk_pump_10(void) {
     jump = (int64_t)(goalX - appX) * (int64_t)(goalX - appX)
          + (int64_t)(goalY - appY) * (int64_t)(goalY - appY);
 
-    t_walk_dir_10[0] = dirX;
-    t_walk_dir_10[1] = dirY;
-    t_walk_goal_10[0] = goalX;
-    t_walk_goal_10[1] = goalY;
 
     knobOk = 0;
 
-    if (TNX_WALK_KNOB_10) {
-        if (tnx_read_f32(mgr + (uintptr_t)TNX_JOY_ORG_X_OFF, &orgX)
-            && tnx_read_f32(mgr + (uintptr_t)TNX_JOY_ORG_Y_OFF, &orgY)
-            && tnx_read_f32(mgr + (uintptr_t)TNX_JOY_CUR_X_OFF, &curX)
-            && tnx_read_f32(mgr + (uintptr_t)TNX_JOY_CUR_Y_OFF, &curY)) knobOk = 1;
+    if (TNX_WALK_KNOB) {
+        if (tnx_read_float(mgr + (uintptr_t)TNX_JOY_ORG_X_OFF, &orgX)
+            && tnx_read_float(mgr + (uintptr_t)TNX_JOY_ORG_Y_OFF, &orgY)
+            && tnx_read_float(mgr + (uintptr_t)TNX_JOY_CUR_X_OFF, &curX)
+            && tnx_read_float(mgr + (uintptr_t)TNX_JOY_CUR_Y_OFF, &curY)) knobOk = 1;
     }
 
     curBefore = curX;
@@ -505,35 +461,35 @@ void tnx_walk_pump_10(void) {
     }
 
     if (knobOk) {
-        flip = tnx_walk_flip_10();
+        flip = tnx_walk_flip();
         sign = flip ? -1.0f : 1.0f;
 
-        if (t_walk_dead_11 <= 0.0f) {
+        if (t_walk_dead <= 0.0f) {
             int da = 0;
             int db = 0;
 
-            if (!t_walk_dead_a_11) {
-                t_walk_dead_a_11 = tnx_entry_2(RVA_DEAD_A_11);
+            if (!t_walk_dead_a) {
+                t_walk_dead_a = tnx_entry_2(RVA_DEAD_A_11);
 
-                if (!t_walk_dead_a_11 && t_base) t_walk_dead_a_11 = t_base + RVA_DEAD_A_11;
+                if (!t_walk_dead_a && t_base) t_walk_dead_a = t_base + RVA_DEAD_A_11;
             }
 
-            if (!t_walk_dead_b_11) {
-                t_walk_dead_b_11 = tnx_entry_2(RVA_DEAD_B_11);
+            if (!t_walk_dead_b) {
+                t_walk_dead_b = tnx_entry_2(RVA_DEAD_B_11);
 
-                if (!t_walk_dead_b_11 && t_base) t_walk_dead_b_11 = t_base + RVA_DEAD_B_11;
+                if (!t_walk_dead_b && t_base) t_walk_dead_b = t_base + RVA_DEAD_B_11;
             }
 
-            if (t_walk_dead_a_11 && t_walk_dead_b_11) {
-                da = ((int (*)(void))t_walk_dead_a_11)();
-                db = ((int (*)(void))t_walk_dead_b_11)();
+            if (t_walk_dead_a && t_walk_dead_b) {
+                da = ((int (*)(void))t_walk_dead_a)();
+                db = ((int (*)(void))t_walk_dead_b)();
             }
 
-            if (da > 0 && db > 0) t_walk_dead_11 = TNX_DEAD_CONST_11 / (1.0f + (float)da / (float)db);
-            else t_walk_dead_11 = 12.0f;
+            if (da > 0 && db > 0) t_walk_dead = TNX_DEAD_CONST / (1.0f + (float)da / (float)db);
+            else t_walk_dead = 12.0f;
         }
 
-        knobR = t_walk_dead_11 * TNX_WALK_DEAD_GAIN_11 + TNX_WALK_DEAD_PAD_11;
+        knobR = t_walk_dead * TNX_WALK_DEAD_GAIN + TNX_WALK_DEAD_PAD;
 
         if (knobR < 10.0f) knobR = 10.0f;
         if (knobR > 60.0f) knobR = 60.0f;
@@ -541,25 +497,24 @@ void tnx_walk_pump_10(void) {
         knobX = orgX + dx * sign * knobR;
         knobY = orgY + dy * sign * knobR;
 
-        if (!t_walk_knob_own_10) {
-            t_walk_save_f78_10 = gF78;
-            t_walk_save_f7f_10 = gF7F;
+        if (!t_walk_knob_own) {
+            t_walk_save_f = gF78;
+            t_walk_save_f7f = gF7F;
         }
 
-        if (TNX_WALK_HOLD_10) {
+        if (TNX_WALK_HOLD) {
             tnx_write_bytes(mgr + (uintptr_t)TNX_CTRL_MOVE_OFF, &one, sizeof(one));
 
-            if (TNX_WALK_HOLD_GATE_12) tnx_write_bytes(mgr + (uintptr_t)TNX_TOUCH_GATE_OFF, &one, sizeof(one));
+            if (TNX_WALK_HOLD_GATE) tnx_write_bytes(mgr + (uintptr_t)TNX_TOUCH_GATE_OFF, &one, sizeof(one));
         }
 
-        tnx_write_f32(mgr + (uintptr_t)TNX_JOY_CUR_X_OFF, knobX);
-        tnx_write_f32(mgr + (uintptr_t)TNX_JOY_CUR_Y_OFF, knobY);
+        tnx_write_float(mgr + (uintptr_t)TNX_JOY_CUR_X_OFF, knobX);
+        tnx_write_float(mgr + (uintptr_t)TNX_JOY_CUR_Y_OFF, knobY);
 
-        t_walk_knob_own_10 = 1;
-        t_walk_knob_x_10 = knobX;
-        t_walk_knob_y_10 = knobY;
+        t_walk_knob_own = 1;
+        t_walk_knob_x = knobX;
+        t_walk_knob_y = knobY;
 
-        t_walk_knob_writes_10++;
         knobWrote = 1;
     } else {
         tnx_write_bytes(mgr + (uintptr_t)TNX_CTRL_RAW_X_OFF, &dirX, sizeof(dirX));
@@ -568,21 +523,19 @@ void tnx_walk_pump_10(void) {
         wrote = 1;
     }
 
-    t_walk_scans_10++;
 
     if (knobWrote) {
         sent = 1;
-    } else if (jump < (int64_t)TNX_WALK_PUSH_MIN_JUMP_10 || rad < 60.0f || rad > 1500.0f) {
-        t_walk_near_10++;
+    } else if (jump < (int64_t)TNX_WALK_PUSH_MIN_JUMP || rad < 60.0f || rad > 1500.0f) {
     } else {
-        fn = t_walk_fn_10;
+        fn = t_walk_fn;
 
         if (!fn) {
             fn = tnx_entry_2(RVA_INPUT_COMMIT_10);
 
             if (!fn && t_base) fn = t_base + RVA_INPUT_COMMIT_10;
 
-            t_walk_fn_10 = fn;
+            t_walk_fn = fn;
         }
 
         if (fn) {
@@ -590,108 +543,60 @@ void tnx_walk_pump_10(void) {
 
             sent = 1;
 
-            t_walk_sends_10++;
 
-            if (TNX_WALK_HS_10) {
+            if (TNX_WALK_HS) {
                 latch = (uint8_t)TNX_CTRL_LATCH_VAL;
                 dirty = (int32_t)TNX_CTRL_DIRTY_VAL;
                 hold = 1;
-                timer = TNX_WALK_HS_TIMER_10;
+                timer = TNX_WALK_HS_TIMER;
 
                 tnx_write_bytes(mgr + (uintptr_t)TNX_CTRL_LATCH_OFF, &latch, sizeof(latch));
                 tnx_write_bytes(mgr + (uintptr_t)TNX_CTRL_DIRTY_OFF, &dirty, sizeof(dirty));
-                tnx_write_f32(mgr + (uintptr_t)TNX_MARK_OFF, timer);
+                tnx_write_float(mgr + (uintptr_t)TNX_MARK_OFF, timer);
                 tnx_write_bytes(mgr + (uintptr_t)TNX_CTRL_ALIVE_OFF, &hold, sizeof(hold));
 
-                t_walk_hand_10++;
             }
         }
     }
 
-    if (!tnx_read_i32(mgr + (uintptr_t)TNX_CTRL_APPLIED_X_OFF, &appX)) appX = 0;
-    if (!tnx_read_i32(mgr + (uintptr_t)TNX_CTRL_APPLIED_Y_OFF, &appY)) appY = 0;
+    if (!tnx_read_int(mgr + (uintptr_t)TNX_CTRL_APPLIED_X_OFF, &appX)) appX = 0;
+    if (!tnx_read_int(mgr + (uintptr_t)TNX_CTRL_APPLIED_Y_OFF, &appY)) appY = 0;
 
-    tnx_ent_probe_10(ent, knob, (wrote || knobWrote) ? 1 : 0);
+    tnx_ent_probe(ent, knob, (wrote || knobWrote) ? 1 : 0);
 
-    if (t_walk_logs_10 < TNX_WALK_PUSH_LOGS_10) {
-        t_walk_logs_10++;
-
-        TNX_LOGX("walkpush n=%llu mgr=%p ent=%p own=(%d,%d) want=(%d,%d) dir=(%d,%d) span=%d goal=(%d,%d) "
-                 "applied=(%d,%d) jump=%lld sent=%d wrote=%d knobWrote=%d knobHeld=%d flip=%llu "
-                 "curBefore=%g org=(%g,%g) cur=(%g,%g) rad=%g dead=%g hold=%d/%d sav=%d/%d hsBefore=(%d,%d,%g,%d) hsAfter=(%d,%d,%g,%d) scans=%llu "
-                 "sends=%llu near=%llu hand=%llu knobWrites=%llu knobBacks=%llu - while the touch pair is at rest "
-                 "it is displaced so the engine walk routine reads the wanted direction itself, and when the "
-                 "finger already holds the pair the raw pair and the commit are used instead, and the sign comes "
-                 "from the byte the walk routine multiplies the delta with",
-                 (unsigned long long)t_walk_logs_10, (void *)mgr, (void *)ent, ox, oy, tx, ty,
-                 t_walk_dir_10[0], t_walk_dir_10[1], span, t_walk_goal_10[0], t_walk_goal_10[1], appX, appY,
-                 (long long)jump, sent, wrote, knobWrote, knobHeld, (unsigned long long)flip,
-                 (double)curBefore, (double)orgX, (double)orgY, (double)curX, (double)curY,
-                 (double)knobR, (double)t_walk_dead_11,
-                 (int)gF78, (int)gF7F, (int)t_walk_save_f78_10, (int)t_walk_save_f7f_10,
-                 (int)latchB, (int)dirtyB, (double)timerB, (int)holdB,
-                 (int)latch, (int)dirty, (double)timer, (int)hold,
-                 (unsigned long long)t_walk_scans_10, (unsigned long long)t_walk_sends_10,
-                 (unsigned long long)t_walk_near_10, (unsigned long long)t_walk_hand_10,
-                 (unsigned long long)t_walk_knob_writes_10, (unsigned long long)t_walk_knob_restores_10);
-    }
-
-    if (t_walk_gate_logs_10 < (uint64_t)TNX_WALK_GATE_LOGS_10) {
-        t_walk_gate_logs_10++;
+    if (t_walk_gate_logs < (uint64_t)TNX_WALK_GATE_LOGS) {
+        t_walk_gate_logs++;
 
         gObj = 0;
         gMode = -1;
 
-        tnx_read_u8(mgr + 0xf78, &gF78);
-        tnx_read_u8(mgr + 0xf9e, &gF9E);
-        tnx_read_u8(mgr + 0xf7f, &gF7F);
-        tnx_read_u8(mgr + 0xf80, &gF80);
-        tnx_read_u8(mgr + 0x1041, &g1041);
-        tnx_read_u8(mgr + 0x1042, &g1042);
+        tnx_read_byte(mgr + 0xf78, &gF78);
+        tnx_read_byte(mgr + 0xf9e, &gF9E);
+        tnx_read_byte(mgr + 0xf7f, &gF7F);
+        tnx_read_byte(mgr + 0xf80, &gF80);
+        tnx_read_byte(mgr + 0x1041, &g1041);
+        tnx_read_byte(mgr + 0x1042, &g1042);
 
         if (ent) {
-            tnx_read_u8(ent + 0x32a, &gE32A);
-            tnx_read_u8(ent + 0x240, &gE240);
-            tnx_read_i32(ent + 0x13c, &gE13C);
+            tnx_read_byte(ent + 0x32a, &gE32A);
+            tnx_read_byte(ent + 0x240, &gE240);
+            tnx_read_int(ent + 0x13c, &gE13C);
         }
 
         if (tnx_read_ptr(mgr + (uintptr_t)TNX_WALK_OBJ_OFF, (void **)&gObj) && gObj) {
-            gFn = t_walk_mode_fn_10;
+            gFn = t_walk_mode_fn;
 
             if (!gFn) {
                 gFn = tnx_entry_2(RVA_WALK_MODE_10);
 
                 if (!gFn && t_base) gFn = t_base + RVA_WALK_MODE_10;
 
-                t_walk_mode_fn_10 = gFn;
+                t_walk_mode_fn = gFn;
             }
 
             if (gFn) gMode = ((int (*)(void *))gFn)((void *)gObj);
         }
 
-        TNX_LOGX("walkgate n=%llu mgr=%p ent=%p knobWrote=%d on=%d f78=%d f9e=%d f7f=%d f80=%d a08=%p mode=%d "
-                 "e32a=%d e240=%d e13c=%d m1041=%d m1042=%d - these are the exact conditions the per frame walk "
-                 "routine checks before it reads the touch pair, so whichever one is off is what keeps the "
-                 "engine from committing the step",
-                 (unsigned long long)t_walk_gate_logs_10, (void *)mgr, (void *)ent, knobWrote, on,
-                 (int)gF78, (int)gF9E, (int)gF7F, (int)gF80, (void *)gObj, gMode,
-                 (int)gE32A, (int)gE240, gE13C, (int)g1041, (int)g1042);
-    }
-
-    if (t_walk_logs_10 < (uint64_t)TNX_WALK_PUSH_LOGS_10) {
-        flagUsed = 0;
-        flagOwn = 0;
-
-        tnx_read_u8(ent + (uintptr_t)TNX_LOCAL_ENT_FLAG_OFF, &flagUsed);
-
-        if (t_walk_entb_10) tnx_read_u8(t_walk_entb_10 + (uintptr_t)TNX_LOCAL_ENT_FLAG_OFF, &flagOwn);
-
-        TNX_LOGX("walkent used=%p own=%p found=%p flagUsed=%d flagOwn=%d mgrA=%p mgrB=%p mgrBraw=%d,%d "
-                 "mgrBapp=%d,%d - the engine takes the local object for the input call out of the manager "
-                 "collection, so the entity handed to the commit has to be that one and not the one the "
-                 "scanner reads out of the battle array", (void *)ent, (void *)t_walk_entb_10,
-                 (void *)t_walk_entc_10, (int)flagUsed, (int)flagOwn, (void *)mgr, (void *)mgrB,
-                 mgrBrawX, mgrBrawY, mgrBappX, mgrBappY);
     }
 
     return;

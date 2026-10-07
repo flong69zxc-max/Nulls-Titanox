@@ -3,7 +3,7 @@
 const char *tnx_prologue_rule(uintptr_t address) {
     uint32_t first = 0;
 
-    if (!tnx_read_u32(address, &first)) return "unreadable";
+    if (!tnx_read_word(address, &first)) return "unreadable";
 
     if (first == 0xD503233F) return "paciasp";
     if (first == 0xD503237F) return "pacibsp";
@@ -14,7 +14,7 @@ const char *tnx_prologue_rule(uintptr_t address) {
 
     if (address >= 4) {
         uint32_t previous = 0;
-        if (tnx_read_u32(address - 4, &previous) && previous == 0xD65F03C0) return "afterret";
+        if (tnx_read_word(address - 4, &previous) && previous == 0xD65F03C0) return "afterret";
     }
 
     return "none";
@@ -88,25 +88,21 @@ void tnx_load_function_starts(void) {
     uint64_t textSize = 0;
 
     if (!tnx_text_section(&textAddress, &textSize)) {
-        tnx_logf("starts no text section");
         return;
     }
 
     if (textSize < 64 || textSize > (64ull * 1024ull * 1024ull)) {
-        tnx_logf("starts bad text size=%llu", (unsigned long long)textSize);
         return;
     }
 
     uint8_t *bytes = (uint8_t *)malloc((size_t)textSize);
 
     if (!bytes) {
-        tnx_logf("starts alloc failed size=%llu", (unsigned long long)textSize);
         return;
     }
 
     if (!tnx_copy(textAddress, bytes, (size_t)textSize)) {
         free(bytes);
-        tnx_logf("starts read failed");
         return;
     }
 
@@ -145,49 +141,13 @@ void tnx_load_function_starts(void) {
 
     if (!count) {
         free(starts);
-        tnx_logf("starts scan empty");
         return;
     }
 
     t_starts = starts;
     t_starts_count = count;
 
-    tnx_logf("starts scanned=%zu text=%p size=%llu first=%p last=%p",
-             count, (void *)textAddress, (unsigned long long)textSize,
-             (void *)starts[0], (void *)starts[count - 1]);
 }
-
-void *tnx_sc_string(const char *utf8) {
-    if (!utf8) return NULL;
-
-    size_t blen = strlen(utf8);
-
-    uint8_t *buf = (uint8_t *)malloc(16);
-    if (!buf) return NULL;
-
-    memset(buf, 0, 16);
-
-    *(uint32_t *)(buf + 0) = (uint32_t)blen;
-    *(uint32_t *)(buf + 4) = (uint32_t)blen;
-
-    if (blen > 7) {
-        uint8_t *data = (uint8_t *)malloc(blen + 1);
-        if (!data) {
-            free(buf);
-            return NULL;
-        }
-
-        memcpy(data, utf8, blen);
-        data[blen] = 0;
-
-        *(void **)(buf + 8) = data;
-    } else {
-        memcpy(buf + 8, utf8, blen);
-    }
-
-    return buf;
-}
-
 const char *tnx_skip_compound(const char *p) {
     char open = *p;
     char close = (open == '{') ? '}' : ((open == '(') ? ')' : ']');

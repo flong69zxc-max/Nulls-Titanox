@@ -3,7 +3,7 @@
 
 #include "core/types.h"
 
-void tnx_sha256(const uint8_t *data, size_t length, uint8_t out[32]);
+void tnx_sha(const uint8_t *data, size_t length, uint8_t out[32]);
 
 void tnx_ci_make_block(const uint8_t key16[16], const uint8_t mask16[16], uint8_t pad, uint8_t out[64]);
 

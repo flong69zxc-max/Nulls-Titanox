@@ -161,7 +161,6 @@ uintptr_t rcl_addr_battlescreen = 0;
 volatile int rcl_at = 0;
 
 
-uint64_t rcl_stale = 0;
 
 uintptr_t rcl_slot_object[RCL_SLOT_COUNT] = { 0 };
 

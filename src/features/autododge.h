@@ -3,7 +3,6 @@
 
 #include "../core/types.h"
 
-extern uint64_t rcl_drop_blink;
 extern __thread int rcl_in_drive;
 extern int rcl_state_code;
 extern int rcl_pl_n;
@@ -21,8 +20,6 @@ extern int32_t rcl_enemy_y[RCL_PLAYER_MAX];
 extern int rcl_enemy_n;
 extern int rcl_new_tick;
 extern int rcl_prev_seg;
-extern int rcl_mates;
-extern int rcl_enemies;
 extern uint64_t rcl_human;
 extern int32_t rcl_tx;
 extern int32_t rcl_ty;
@@ -177,7 +174,6 @@ void rcl_threats(void);
 extern uint64_t rcl_bucket_abs[RCL_ADV_BUCKETS];
 extern uint64_t rcl_learn_loss[3][3][2];
 extern uint64_t rcl_learn_win[3][3][2];
-extern int rcl_stat_near;
 int rcl_blacklisted(float speed, float radius);
 void rcl_stat_tick(float px, float py);
 

@@ -83,7 +83,6 @@ int rcl_check_done = 0;
 
 
 
-uint64_t rcl_pred_miss = 0;
 
 
 int rcl_modesig_hit(uintptr_t at) {
@@ -1602,7 +1601,6 @@ void rcl_publish_own(uintptr_t elem, const char *from) {
     }
 
     rcl_own_elem = elem;
-    rcl_own_stamp = rcl_tick_stamp;
 
     if (rcl_pub_logs < RCL_PUB_LOGS) {
         uintptr_t cls = (vt >= rcl_base) ? (vt - rcl_base) : 0;
@@ -1760,31 +1758,6 @@ void rcl_roster(uintptr_t ownElem, int ownIndex, int ownTeam,
     }
 
     {
-        int ownSpawn = -1;
-        int k = 0;
-
-        for (k = 0; k < rcl_pl_n; k++) {
-            if (rcl_pl_mine[k]) { ownSpawn = k; break; }
-        }
-
-        rcl_mates = 0;
-        rcl_enemies = 0;
-
-        if (ownSpawn >= 0) {
-            for (k = 0; k < rcl_pl_n; k++) {
-                float dx = 0.0f;
-                float dy = 0.0f;
-
-                if (rcl_pl_mine[k]) continue;
-
-                dx = (float)(rcl_pl_x[k] - rcl_pl_x[ownSpawn]);
-                dy = (float)(rcl_pl_y[k] - rcl_pl_y[ownSpawn]);
-
-                if (sqrtf(dx * dx + dy * dy) <= RCL_CLUSTER) rcl_mates++;
-                else rcl_enemies++;
-            }
-        }
-
         {
             int same = 1;
 
@@ -2213,7 +2186,6 @@ int rcl_own_latch(const rcl_obj_t *objects, int usable, int *indexOut,
 }
 uintptr_t rcl_own_elem = 0;
 
-uint64_t rcl_own_stamp = 0;
 
 uintptr_t rcl_own_obj(void) {
     uintptr_t vt = 0;

@@ -4,9 +4,6 @@
 #include "../core/types.h"
 
 extern int rcl_dead_probe_done;
-extern uint64_t rcl_ctrl_dead;
-extern int rcl_body_mine;
-extern int rcl_body_enemy;
 extern int rcl_wrote_input;
 extern int rcl_engaged_frame;
 extern int rcl_seq_before;

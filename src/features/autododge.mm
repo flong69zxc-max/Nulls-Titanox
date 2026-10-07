@@ -38,7 +38,6 @@ static int rcl_dodge_is_proj(uintptr_t obj) {
 
 
 
-uint64_t rcl_drop_blink = 0;
 
 
 
@@ -77,9 +76,7 @@ int rcl_prev_seg = -1;
 
 
 
-int rcl_mates = 0;
 
-int rcl_enemies = 0;
 
 
 
@@ -472,9 +469,6 @@ void rcl_build(void) {
                      rem < RCL_BLINK_REM) rule = 3;
 
             if (rule) {
-                else rcl_drop_blink++;
-
-
                 continue;
             }
         }
@@ -2754,9 +2748,6 @@ int rcl_body_blocked(float x, float y, float ownX, float ownY) {
 
         if (rcl_seg_dist(ownX, ownY, x, y, px, py) < RCL_BODY_CLEAR) {
 
-            if (rcl_pl_mine[i]) rcl_body_mine++;
-            else rcl_body_enemy++;
-
 
             return 1;
         }
@@ -2793,7 +2784,6 @@ uint64_t rcl_learn_win[3][3][2];
 
 uint64_t rcl_learn_loss[3][3][2];
 
-int rcl_stat_near = 0;
 int rcl_blacklisted(float speed, float radius) {
     static const float bl[][2] = {
         { 3100.0f, 0.0f },
@@ -2847,7 +2837,6 @@ void rcl_stat_tick(float px, float py) {
                 float cross = dx * (py - rcl_seg[j].ay) - dy * (px - rcl_seg[j].ax);
 
                 if (c <= 0.0f) rcl_track_hit[i] = 1;
-                if (c <= rcl_seg[j].inflatedR * (RCL_NEAR_MULT - 1.0f)) rcl_stat_near++;
                 if (c < rcl_track_min[i]) rcl_track_min[i] = c;
 
                 if (cross > 0.0f) {

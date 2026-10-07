@@ -20,7 +20,6 @@ float rcl_look_ms(void) {
     return looks[rcl_mode()];
 }
 
-uint64_t rcl_ctrl_dead = 0;
 
 int rcl_ctrl_ok(uintptr_t ctrl) {
     int32_t rawX = 0;
@@ -32,35 +31,28 @@ int rcl_ctrl_ok(uintptr_t ctrl) {
     if (!ctrl) return 0;
     if (!rcl_writable(ctrl + RCL_FLAG_OFF_2, RCL_CTRL_APPLIED_Y_OFF -
                            RCL_FLAG_OFF_2 + sizeof(int32_t))) {
-        rcl_ctrl_dead++;
-
         return 0;
     }
     if (!rcl_writable(ctrl + RCL_CUR_X_OFF, RCL_ORG_Y_OFF -
                            RCL_CUR_X_OFF + sizeof(float))) {
-        rcl_ctrl_dead++;
-
         return 0;
     }
     if (RCL_STALE_SIGHT && rcl_read_ptr(ctrl, &vt) && vt) {
-        if ((uintptr_t)vt < rcl_base || (uintptr_t)vt >= rcl_base + RCL_IMAGE_SPAN) rcl_stale++;
     }
     if (!rcl_read_int(ctrl + RCL_CTRL_RAW_X_OFF, &rawX)) return 0;
     if (!rcl_read_int(ctrl + RCL_CTRL_RAW_Y_OFF, &rawY)) return 0;
     if (!rcl_read_int(ctrl + RCL_CTRL_APPLIED_X_OFF, &appX)) return 0;
     if (!rcl_read_int(ctrl + RCL_CTRL_APPLIED_Y_OFF, &appY)) return 0;
 
-    if (rawX < -RCL_DEGEN || rawX > RCL_DEGEN) { rcl_ctrl_dead++; return 0; }
-    if (rawY < -RCL_DEGEN || rawY > RCL_DEGEN) { rcl_ctrl_dead++; return 0; }
-    if (appX < -RCL_DEGEN || appX > RCL_DEGEN) { rcl_ctrl_dead++; return 0; }
-    if (appY < -RCL_DEGEN || appY > RCL_DEGEN) { rcl_ctrl_dead++; return 0; }
+    if (rawX < -RCL_DEGEN || rawX > RCL_DEGEN) { return 0; }
+    if (rawY < -RCL_DEGEN || rawY > RCL_DEGEN) { return 0; }
+    if (appX < -RCL_DEGEN || appX > RCL_DEGEN) { return 0; }
+    if (appY < -RCL_DEGEN || appY > RCL_DEGEN) { return 0; }
 
     return 1;
 }
 
-int rcl_body_mine = 0;
 
-int rcl_body_enemy = 0;
 
 int rcl_wrote_input = 0;
 
@@ -153,12 +145,7 @@ int rcl_predict(int32_t x, int32_t y) {
 
             rcl_write_bytes((uintptr_t)battle + RCL_GATE_OFF, &one, sizeof(one));
 
-            if (rcl_read_bytes((uintptr_t)battle + RCL_GATE_OFF, &back, sizeof(back)) &&
-                back == 1) {
-            }
         }
-
-        else rcl_pred_miss++;
 
     }
 

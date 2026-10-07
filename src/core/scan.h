@@ -19,7 +19,6 @@ extern int rcl_own_logged;
 extern uint64_t rcl_wrote_tick;
 extern int rcl_wrote_valid;
 extern int rcl_check_done;
-extern uint64_t rcl_pred_miss;
 extern uintptr_t rcl_hop_scene;
 extern int rcl_coord_logs;
 extern int rcl_last_choice;
@@ -48,7 +47,6 @@ extern int rcl_proj_have;
 extern int rcl_proj_dumps;
 extern uint64_t rcl_proj_diff_logs;
 extern uintptr_t rcl_own_elem;
-extern uint64_t rcl_own_stamp;
 extern int rcl_own_logs_b;
 extern int32_t rcl_own_gid;
 extern rcl_proj_t rcl_projs[RCL_PROJ_MAX];
@@ -136,7 +134,6 @@ extern int rcl_own_index_3;
 extern uintptr_t rcl_own_ptr;
 extern uintptr_t rcl_own_ptr_a;
 extern uintptr_t rcl_own_ptr_b;
-extern uint64_t rcl_own_stamp;
 extern int rcl_own_team_b;
 extern int rcl_pending;
 extern int rcl_pending_tick;
@@ -210,7 +207,6 @@ int rcl_object_live(uintptr_t object);
 #define RCL_MIN_OBJ_BYTES 0x118ULL
 #define RCL_DUMPS 3
 #define RCL_DIFF_LOGS 48
-#define RCL_MAP_MAX 512
 #define RCL_COUNT_MAX 96
 #define RCL_SCAN_QWORDS 512
 #define RCL_SCAN_BASES 3

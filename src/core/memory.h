@@ -41,7 +41,6 @@ extern uintptr_t rcl_addr_gety;
 extern uintptr_t rcl_addr_setprediction;
 extern uintptr_t rcl_addr_battlescreen;
 extern volatile int rcl_at;
-extern uint64_t rcl_stale;
 extern int rcl_no_source_passes;
 extern int rcl_route_logged;
 extern int rcl_sig_ticks;

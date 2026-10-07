@@ -486,4 +486,7 @@
 #define TNX_MIRROR_ON_2 1
 #define TNX_MIRROR_LOGS_2 1600
 
+#define TNX_JOY_KNOB_WRITE_2 0
+#define TNX_APPLY_WRITE_2 0
+
 #endif

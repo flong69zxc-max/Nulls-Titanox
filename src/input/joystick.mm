@@ -622,6 +622,21 @@ void tnx_joy_knob(float dirX, float dirY, int on) {
         ky = cy;
     }
 
+    if (!TNX_JOY_KNOB_WRITE_2) {
+        if (t_joy_knob_logs < TNX_JOY_KNOB_LOGS) {
+            t_joy_knob_logs++;
+
+            TNX_LOGX("joyknobread obj=%p pair=%#llx on=%d cen=(%.1f,%.1f) want=(%.1f,%.1f) - writes "
+                     "are off, so this only names the object and the pair the old code would have "
+                     "written into: on this object those two words are not a joystick, and the bytes "
+                     "just past them belong to whatever the game keeps there",
+                     (void *)obj, (unsigned long long)pair, on, (double)cx, (double)cy,
+                     (double)kx, (double)ky);
+        }
+
+        return;
+    }
+
     if (!tnx_write_f32(obj + pair, kx)) return;
 
     tnx_write_f32(obj + pair + TNX_JOY_PAIR_Y, ky);
@@ -708,7 +723,7 @@ void tnx_stick(int engaged, float dirX, float dirY) {
     haveOwn = tnx_own(&ownX, &ownY);
     tnx_drag(engaged, haveOwn, ownX, ownY, dirX, dirY);
 
-    if (!TNX_STICK_RAW_WRITE) return;
+    if (!TNX_STICK_RAW_WRITE_2) return;
     if (!tnx_ctrl_ok(ctrl)) return;
 
     if (engaged) {
@@ -759,7 +774,7 @@ void tnx_stick(int engaged, float dirX, float dirY) {
     t_stick_x = wx;
     t_stick_y = wy;
 
-    if (TNX_STICK_RAW_WRITE && !(TNX_RETIRE && t_accepted && !TNX_JS_STICK)) {
+    if (TNX_STICK_RAW_WRITE_2 && !(TNX_RETIRE && t_accepted && !TNX_JS_STICK)) {
         if (!tnx_write_bytes(ctrl + TNX_CTRL_RAW_X_OFF, &wx, sizeof(wx))) return;
 
         tnx_write_bytes(ctrl + TNX_CTRL_RAW_Y_OFF, &wy, sizeof(wy));

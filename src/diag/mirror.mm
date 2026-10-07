@@ -127,7 +127,7 @@ void tnx_mirror_probe_2(int dodging) {
 
     t_ticks_2++;
 
-    if (t_ticks_2 >= 300 && t_dumps_2 < 14) {
+    if (t_ticks_2 >= 60 && t_dumps_2 < 500) {
         int k;
         int rank;
 

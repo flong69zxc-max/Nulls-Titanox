@@ -176,8 +176,8 @@
 #ifndef TNX_JS_HOLD
 #define TNX_JS_HOLD 2
 #endif
-#ifndef TNX_STICK_RAW_WRITE
-#define TNX_STICK_RAW_WRITE 1
+#ifndef TNX_STICK_RAW_WRITE_2
+#define TNX_STICK_RAW_WRITE_2 0
 #define TNX_PRED_SPAN 0x118
 #endif
 #ifndef TNX_LOG_PLANS

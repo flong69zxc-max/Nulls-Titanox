@@ -256,5 +256,6 @@ extern tnx_trail_t t_trail[TNX_TRAIL_MAX];
 int tnx_ctrl_bounds_2(uintptr_t base, int32_t *wOut, int32_t *hOut);
 void tnx_paircal(void);
 void tnx_probe_3(uintptr_t manager, uintptr_t mode, int verbose);
+void tnx_layout_probe_2(int dodging);
 
 #endif

@@ -2541,6 +2541,7 @@ void tnx_autododge_v49(void) {
         if (slot == 0) tnx_core();
         else if (slot == 1) tnx_dump();
         else if (slot == 2) tnx_census();
+        else tnx_layout_probe_2(t_active_2);
 
         t_diag_us = tnx_us() - diag0;
 

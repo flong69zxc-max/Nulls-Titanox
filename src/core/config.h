@@ -3,11 +3,7 @@
 
 #include "core/imports.h"
 
-#define LOG_MAX_BYTES (18 * 1024 * 1024)
-#define TNX_LOG_ROLL 1
-#define TNX_LOG_FILTER 1
 
-#define TNX_LOG_WHITELIST 0
 #define TNX_APPLIED 0
 #define TNX_MOVE_MIN 3
 #define TNX_ONESHOT 1

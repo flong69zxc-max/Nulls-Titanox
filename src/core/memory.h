@@ -15,7 +15,6 @@ extern BOOL t_aim_rejected;
 extern __thread BOOL t_inside_hook;
 extern uint64_t t_dodge_calls;
 extern int t_dump_np;
-extern const uintptr_t t_mode_vtables_verified[3];
 extern BOOL t_mode_strong;
 extern uintptr_t t_players_object;
 extern int t_manager_count;

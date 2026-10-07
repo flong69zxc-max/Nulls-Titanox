@@ -5,7 +5,6 @@
 
 extern uint64_t t_ticks_b;
 extern tnx_reject_t t_reject;
-extern int t_setpred_blocked_logs;
 
 int tnx_ascii_word(uintptr_t address);
 int tnx_word_ascii(uint64_t value);

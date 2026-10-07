@@ -36,7 +36,6 @@ extern uintptr_t t_walk_ent;
 
 
 
-extern uint64_t t_walk_arm;
 
 int tnx_joy_read(uintptr_t bs, float *ax, float *ay, float *bx, float *by, uint32_t *mode, float *cs, float *sn);
 void tnx_precision(int32_t ownX, int32_t ownY, float dirX, float dirY, int escape);

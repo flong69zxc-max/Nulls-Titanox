@@ -58,7 +58,6 @@ uint64_t t_dodge_calls = 0;
 int t_dump_np = 0;
 
 
-const uintptr_t t_mode_vtables_verified[3] = { 0x1002548, 0xff5720, 0 };
 BOOL t_mode_strong = NO;
 
 

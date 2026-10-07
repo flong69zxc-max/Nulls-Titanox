@@ -21,12 +21,10 @@ extern int t_live;
 extern int t_seg_test;
 extern int t_seg_clip;
 extern int t_seg_frac;
-extern int t_logs_b;
 extern uint64_t t_built;
 
 uintptr_t tnx_map_object(void);
 int tnx_clip_walk(int32_t ax, int32_t ay, int32_t bx, int32_t by, int32_t cell, const uint8_t *solid, int gw, int gh, int32_t *outX, int32_t *outY);
-void tnx_log_grid(int force);
 int tnx_cell(int tx, int ty, int *proj, int *move);
 void tnx_tile_of(float x, float y, int *tx, int *ty);
 int tnx_build_2(void);

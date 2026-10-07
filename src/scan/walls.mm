@@ -105,7 +105,6 @@ int t_seg_clip = 0;
 
 int t_seg_frac = 0;
 
-int t_logs_b = 0;
 
 uint64_t t_built = 0;
 
@@ -118,29 +117,6 @@ uintptr_t tnx_map_object(void) {
     if (!tnx_read_ptr((uintptr_t)client + TNX_MAP_PTR_OFF, &map) || !map) return 0;
 
     return (uintptr_t)map;
-}
-
-void tnx_log_grid(int force) {
-    char mask[16];
-    int ix = 0;
-    int iy = 0;
-    int n = 0;
-
-    if (!force && t_logs_b >= TNX_LOGS_b) return;
-
-    t_logs_b++;
-
-    for (iy = t_own_ty - 1; iy <= t_own_ty + 1; iy++) {
-        if (iy > t_own_ty - 1) mask[n++] = '/';
-
-        for (ix = t_own_tx - 1; ix <= t_own_tx + 1; ix++) {
-            if (ix < 0 || iy < 0 || ix >= t_w || iy >= t_h) mask[n++] = '?';
-            else mask[n++] = t_grid[iy * t_w + ix] ? '#' : '.';
-        }
-    }
-
-    mask[n] = 0;
-
 }
 
 int tnx_cell(int tx, int ty, int *proj, int *move) {
@@ -311,7 +287,6 @@ void tnx_arm(float ownX, float ownY) {
         } else {
             t_armed = 0;
             t_passes = 0;
-            tnx_log_grid(1);
         }
 
         return;
@@ -320,7 +295,6 @@ void tnx_arm(float ownX, float ownY) {
     if (!tnx_build_2()) {
         t_armed = 0;
         t_passes = 0;
-        tnx_log_grid(1);
 
         return;
     }
@@ -352,5 +326,4 @@ void tnx_arm(float ownX, float ownY) {
 
     if (t_armed) t_live = 1;
 
-    tnx_log_grid((t_armed != wasArmed) ? 1 : 0);
 }

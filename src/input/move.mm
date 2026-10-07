@@ -725,7 +725,6 @@ int tnx_move_to(int32_t x, int32_t y, float ox, float oy) {
 
 
 
-int t_own_logs_a = 0;
 int tnx_proj_vel(const tnx_proj_t *p, float *vxOut, float *vyOut) {
     uint64_t dt = 0;
 

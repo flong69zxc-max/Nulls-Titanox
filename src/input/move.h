@@ -13,7 +13,6 @@ extern int t_seq_before;
 extern int t_seq_after;
 extern int t_q_after;
 extern uintptr_t t_pred_last;
-extern int t_own_logs_a;
 extern uintptr_t t_joystick;
 extern int32_t t_stick_x;
 extern int32_t t_stick_y;

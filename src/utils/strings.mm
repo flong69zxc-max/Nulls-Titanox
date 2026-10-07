@@ -42,4 +42,3 @@ int tnx_element_ascii(uintptr_t element) {
     return tnx_word_ascii((uint64_t)element) == 8 ? 1 : 0;
 }
 tnx_reject_t t_reject;
-int t_setpred_blocked_logs = 0;

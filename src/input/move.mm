@@ -1,7 +1,6 @@
 #include "recoil.h"
 
 
-uint32_t rcl_token = 0;
 
 
 
@@ -333,12 +332,11 @@ int rcl_enqueue_type(int x, int y, int type) {
     {
         uintptr_t battleFn = rcl_entry_2(RCL_GETBATTLE_RVA);
 
-        rcl_token = 0;
 
         if (battleFn) {
             void *battle = ((void *(*)(void))battleFn)();
 
-            if (battle) rcl_token = rcl_ci_sign(msg, battle);
+            if (battle) rcl_ci_sign(msg, battle);
         }
     }
 

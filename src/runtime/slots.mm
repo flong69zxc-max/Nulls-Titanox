@@ -1,7 +1,6 @@
 #include "recoil.h"
 
 
-int rcl_own_idhit = 0;
 
 uintptr_t rcl_setpred = 0;
 

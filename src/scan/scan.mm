@@ -217,7 +217,6 @@ int rcl_container_header(uintptr_t object, uintptr_t *arrayOut, int32_t *countOu
 
 int rcl_coord_logs = 0;
 
-int rcl_dump_done = 0;
 
 int32_t rcl_gid_at(uintptr_t element, uintptr_t off) {
     int32_t gid = 0;
@@ -802,7 +801,6 @@ void rcl_state_note(int state) {
 
     if (state == 5 && rcl_prev_state != 5) {
 
-        rcl_dump_done = 0;
         rcl_coord_logs = 0;
         rcl_owner = 0;
         rcl_wired = 0;
@@ -1586,14 +1584,6 @@ void rcl_own_index_probe(void) {
             if (rcl_read_ptr(array + (uintptr_t)idx * 8ULL, &elem) && elem) hit = 1;
         }
 
-        if (hit) {
-            if (rcl_read_int((uintptr_t)elem + RCL_ELEM_ID_OFF, &eid) &&
-                rcl_read_int((uintptr_t)elem + RCL_ELEM_TEAM_OFF, &eteam)) {
-                rcl_own_idhit = (eid == idx) ? 1 : 0;
-            }
-        }
-
-
         if (hit && !taken) {
             taken = 1;
             chosen = b;
@@ -2108,32 +2098,6 @@ uintptr_t rcl_own_ptr_b = 0;
 
 int rcl_own_index_3 = -1;
 
-void rcl_own_dump(uintptr_t element) {
-    void *vtable = NULL;
-    uintptr_t vtRva = 0;
-    int i;
-
-    if (!element || rcl_dump_done) return;
-
-    rcl_dump_done = 1;
-
-    if (rcl_read_ptr(element, &vtable) && vtable) vtRva = (uintptr_t)vtable - rcl_base;
-
-
-    for (i = 0; i < 13; i++) {
-        uint64_t q = rcl_word_2(element + (uintptr_t)i * 8ULL);
-        uint32_t lo = (uint32_t)(q & 0xffffffffULL);
-        uint32_t hi = (uint32_t)(q >> 32);
-        float loF = 0.0f;
-        float hiF = 0.0f;
-
-        memcpy(&loF, &lo, sizeof(loF));
-        memcpy(&hiF, &hi, sizeof(hiF));
-
-    }
-
-}
-
 int rcl_own_verdict(uintptr_t element) {
     void *vtable = NULL;
     uintptr_t vtRva = 0;
@@ -2234,7 +2198,6 @@ void rcl_own_probe(void) {
             rcl_own_ptr_a = (uintptr_t)elem;
             rcl_own_from_a = (b == 0) ? "container+e0" : "scene+e0";
 
-            rcl_own_dump(rcl_own_ptr_a);
         }
     }
 

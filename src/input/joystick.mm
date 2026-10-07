@@ -353,7 +353,6 @@ uintptr_t rcl_joy_knob_obj = 0;
 uintptr_t rcl_joy_knob_pair = 0;
 
 
-int rcl_joy_knob_ok = 0;
 
 int rcl_joy_knob_logs = 0;
 
@@ -507,7 +506,6 @@ void rcl_joy_knob(float dirX, float dirY, int on) {
         rcl_read_bytes(obj + RCL_JOY_DRAG_OFF, &s1, sizeof(s1));
         rcl_read_bytes(obj + RCL_JOY_DRAG2_OFF, &s2, sizeof(s2));
 
-        if (bx == kx && by == ky) rcl_joy_knob_ok++;
 
     }
 }

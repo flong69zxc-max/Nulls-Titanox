@@ -1203,8 +1203,6 @@ typedef struct {
 } rcl_dodge_proj_t;
 
 static int rcl_js_picked = 0;
-static int rcl_dodge_foes = 0;
-static int rcl_dodge_unk = 0;
 static float rcl_dodge_ox = 0.0f;
 
 
@@ -1327,8 +1325,6 @@ static void rcl_dodge_collect(float px, float py) {
     int n = 0;
     int myTeam = -1;
 
-    rcl_dodge_foes = 0;
-    rcl_dodge_unk = 0;
     rcl_dodge_detail = 0;
 
     rcl_dodge_build_dirs();
@@ -1368,8 +1364,6 @@ static void rcl_dodge_collect(float px, float py) {
             continue;
         }
 
-        if (p->team == 0 || p->team == 1) rcl_dodge_foes++;
-        else rcl_dodge_unk++;
 
         if (!rcl_read_byte(p->elem + (uintptr_t)RCL_OBJ_DEADFLAG_OFF, &dead)) continue;
         if (dead != 0) continue;

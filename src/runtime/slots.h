@@ -17,7 +17,6 @@ extern uint64_t rcl_idle_start;
 extern int rcl_live_objs;
 extern int rcl_live_teams;
 extern unsigned long long rcl_obj_prev;
-extern int rcl_own_idhit;
 extern uintptr_t rcl_pub_array;
 extern int32_t rcl_pub_count;
 extern int rcl_pub_logs;

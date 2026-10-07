@@ -15,7 +15,7 @@ Tweak for **Nulls Brawl v69.225** (iOS)
 ## Build
 
 ```
-Actions → Titanox → Run workflow
+Actions → Recoil → Run workflow
 ```
 
 or locally, with theos on Linux or macOS:

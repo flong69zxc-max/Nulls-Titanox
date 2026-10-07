@@ -2531,6 +2531,8 @@ void tnx_autododge_v49(void) {
 
     tnx_drift();
 
+    tnx_layout_probe_3(t_active_2);
+
     tnx_state();
 
     if (TNX_DIAG_EVERY <= 0 || (t_ticks_3 % (uint64_t)TNX_DIAG_EVERY) == 0) {
@@ -2541,7 +2543,6 @@ void tnx_autododge_v49(void) {
         if (slot == 0) tnx_core();
         else if (slot == 1) tnx_dump();
         else if (slot == 2) tnx_census();
-        else tnx_layout_probe_2(t_active_2);
 
         t_diag_us = tnx_us() - diag0;
 

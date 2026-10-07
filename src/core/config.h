@@ -47,7 +47,7 @@
 #define TNX_SLOW_US 200
 #define TNX_DIAG_EVERY 30
 #define TNX_LAYOUT_ON_2 1
-#define TNX_LAYOUT_LOGS_2 400
+#define TNX_LAYOUT_LOGS_2 1600
 #define TNX_MODE_TUNE 1
 #define TNX_GATE_WRITE 1
 #define TNX_HIT_ONLY 1

@@ -3,7 +3,7 @@
 
 #include "core/imports.h"
 
-#define LOG_MAX_BYTES (20 * 1024 * 1024)
+#define LOG_MAX_BYTES (18 * 1024 * 1024)
 #define TNX_LOG_ROLL 1
 #define TNX_LOG_FILTER 1
 
@@ -508,20 +508,24 @@
 #define TNX_MATCH_LOGS_3 4000
 #define TNX_MATCH_EVERY_3 30
 
-#define TNX_WALK_PUSH_7 1
-#define TNX_WALK_LOOKUP_7 1
-#define TNX_WALK_PUSH_LOGS_7 400
-#define TNX_ENT_PROBE_7 1
-#define TNX_ENT_PROBE_LOGS_7 900
-#define TNX_ENT_SAMPLE_7 3
-#define TNX_ENT_SUM_EVERY_7 360
-#define TNX_ENT_SUM_MIN_7 4
-#define TNX_ENT_SUM_LOGS_7 40
-#define TNX_ENT_SLOTS_7 512
-#define TNX_ENT_CHUNK_7 0x100
-#define TNX_ENT_CHUNKS_7 8
-#define TNX_WALK_OFF_LOGS_7 30
-#define TNX_WALK_HS_7 1
-#define TNX_WALK_HS_TIMER_7 0.05f
+#define TNX_WALK_PUSH_8 1
+#define TNX_WALK_KNOB_8 1
+#define TNX_WALK_KNOB_RADIUS_8 150.0f
+#define TNX_WALK_STALE_8 3
+#define TNX_STATE_EVERY_8 240
+#define TNX_WALK_LOOKUP_8 1
+#define TNX_WALK_PUSH_LOGS_8 400
+#define TNX_ENT_PROBE_8 1
+#define TNX_ENT_PROBE_LOGS_8 900
+#define TNX_ENT_SAMPLE_8 3
+#define TNX_ENT_SUM_EVERY_8 360
+#define TNX_ENT_SUM_MIN_8 4
+#define TNX_ENT_SUM_LOGS_8 40
+#define TNX_ENT_SLOTS_8 512
+#define TNX_ENT_CHUNK_8 0x100
+#define TNX_ENT_CHUNKS_8 8
+#define TNX_WALK_OFF_LOGS_8 30
+#define TNX_WALK_HS_8 1
+#define TNX_WALK_HS_TIMER_8 0.05f
 
 #endif

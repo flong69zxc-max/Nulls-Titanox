@@ -39,6 +39,11 @@ const char *t_log_drop[64] = {
     "queueSkip", "enqueueStop", "predSkip", "predMiss",
     "chain-only", "plan v", "engage running", "setter-before",
     "setter-after", "ownscan", "clip",
+    "state ", "inputstate", "sd ", "joy ",
+    "sidestep", "teamdump", "container", "man ",
+    "match ", "walk ", "recon ", "coords",
+    "membership", "gid ", "classHist", "stickpush",
+    "queue ",
     NULL
 };
 

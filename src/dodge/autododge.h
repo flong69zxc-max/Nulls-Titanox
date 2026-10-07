@@ -198,7 +198,7 @@ int tnx_passed(float px, float py);
 int tnx_best(float px, float py, float *tx, float *ty);
 int tnx_freest(float px, float py, float *tx, float *ty);
 int tnx_decide(int32_t ownX, int32_t ownY);
-void tnx_autododge_v48(void);
+void tnx_autododge_v49(void);
 void tnx_dodge_plan(uintptr_t manager, int32_t team);
 void tnx_dodge_all_teams(uintptr_t manager);
 

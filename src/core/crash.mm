@@ -193,7 +193,7 @@ void start(void) {
     tnx_install();
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        tlog(@"=== titanox started (zero latency mode) ===");
+        tlog(@"=== titanox started v47 (zero latency mode) ===");
         poll_for_game(0);
     });
 }

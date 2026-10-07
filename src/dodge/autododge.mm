@@ -2501,7 +2501,7 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
     return picked;
 }
 
-void tnx_autododge_v48(void) {
+void tnx_autododge_v49(void) {
     static int tagOnce = 0;
 
     tnx_phase("dodge-enter");
@@ -2679,14 +2679,39 @@ void tnx_autododge_v48(void) {
         (t_ticks_3 - t_wrote_tick) >= TNX_VERIFY_FRAMES) {
         int32_t nowX = 0;
         int32_t nowY = 0;
+        int32_t ctrlX_2 = 0;
+        int32_t ctrlY_2 = 0;
+        int32_t mgrX_2 = 0;
+        int32_t mgrY_2 = 0;
+        uintptr_t ctrl_2 = 0;
+        uintptr_t mgr_2 = 0;
+
+        ctrl_2 = tnx_controller();
+
+        if (ctrl_2) {
+            tnx_read_i32(ctrl_2 + TNX_MOVE_X_OFF, &ctrlX_2);
+            tnx_read_i32(ctrl_2 + TNX_MOVE_Y_OFF, &ctrlY_2);
+        }
+
+        if (ctrl_2 && tnx_read_ptr(ctrl_2 + TNX_MGR_OFF, (void **)&mgr_2) && mgr_2) {
+            tnx_read_i32(mgr_2 + TNX_MOVE_X_OFF, &mgrX_2);
+            tnx_read_i32(mgr_2 + TNX_MOVE_Y_OFF, &mgrY_2);
+        } else {
+            mgr_2 = 0;
+        }
 
         if (t_scene_object && tnx_read_i32(t_scene_object + TNX_MODE_PREDICTX_OFF, &nowX) &&
             tnx_read_i32(t_scene_object + TNX_MODE_PREDICTY_OFF, &nowY)) {
-            TNX_LOGX("write verify: wrote=(%d,%d) now=(%d,%d) %s frames=%d testWrites=%llu - "
-                     "kept means the engine left the two words alone, overwritten means the input "
-                     "path rewrites them before anything is sent",
-                     t_wrote_x, t_wrote_y, nowX, nowY,
-                     (nowX == t_wrote_x && nowY == t_wrote_y) ? "kept" : "overwritten",
+            TNX_LOGX("write verify: wrote=(%d,%d) scene=(%d,%d) ctrl=%p ctrl+%#llx=(%d,%d) %s "
+                     "mgr=%p mgr+%#llx=(%d,%d) %s frames=%d testWrites=%llu - the setter writes the "
+                     "logic client and the input state dump reads the manager hop, so the two pairs "
+                     "belong to different objects and the old line compared the write against a "
+                     "location the write never touched",
+                     t_wrote_x, t_wrote_y, nowX, nowY, (void *)ctrl_2,
+                     (unsigned long long)TNX_MOVE_X_OFF, ctrlX_2, ctrlY_2,
+                     (ctrlX_2 == t_wrote_x && ctrlY_2 == t_wrote_y) ? "kept" : "overwritten",
+                     (void *)mgr_2, (unsigned long long)TNX_MOVE_X_OFF, mgrX_2, mgrY_2,
+                     (mgrX_2 == t_wrote_x && mgrY_2 == t_wrote_y) ? "kept" : "overwritten",
                      (int)(t_ticks_3 - t_wrote_tick),
                      (unsigned long long)t_test_writes);
 

@@ -15,7 +15,7 @@ void tnx_run_autododge(int from_update) {
 
     t_in_drive = 1;
     t_t0 = tnx_us();
-    tnx_autododge_v48();
+    tnx_autododge_v49();
     t_in_drive = 0;
 }
 

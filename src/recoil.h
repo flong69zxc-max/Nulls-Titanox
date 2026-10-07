@@ -1,29 +1,29 @@
 #ifndef RECOIL_H
 #define RECOIL_H
 
-#include "./core/types/types.h"
-#include "./helpers/autoaim/config.h"
-#include "./helpers/autododge/config.h"
-#include "./core/memory/memory.h"
-#include "./core/geometry/geometry.h"
-#include "./core/strings/strings.h"
-#include "./utils/crypto/crypto.h"
-#include "./utils/log/log.h"
-#include "./input/move/move.h"
-#include "./core/scan/scan.h"
-#include "./utils/walls/walls.h"
-#include "./utils/sign/sign.h"
+#include "./core/types.h"
+#include "./helpers/aim_lead.h"
+#include "./helpers/dodge_profiles.h"
+#include "./core/memory.h"
+#include "./core/geometry.h"
+#include "./utils/crypto.h"
+#include "./utils/log.h"
+#include "./input/move.h"
+#include "./core/scan.h"
+#include "./utils/walls.h"
 
-#include "./input/joystick/joystick.h"
+#include "./input/joystick.h"
 
 #include "objc.h"
-#include "./runtime/slots/slots.h"
-#include "./core/starts/starts.h"
-#include "./runtime/scene/scene.h"
-#include "./runtime/setup/setup.h"
-#include "./runtime/state/state.h"
+#include "./runtime/slots.h"
+#include "./core/starts.h"
+#include "./runtime/scene.h"
+#include "./runtime/setup.h"
+#include "./runtime/state.h"
 
-#include "./features/autoaim/autoaim.h"
-#include "./features/autododge/autododge.h"
+#include "./features/autoaim.h"
+#include "./features/autododge.h"
+
+#include "./core/commands.h"
 
 #endif

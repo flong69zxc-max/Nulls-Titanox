@@ -35,7 +35,7 @@ uint64_t t_drop_fast = 0;
 
 uint64_t t_drop_blink = 0;
 
-uint64_t t_logs_10 = 0;
+uint64_t t_logs_9 = 0;
 
 float t_spd_min = 0.0f;
 
@@ -636,8 +636,8 @@ void tnx_build(void) {
                 else if (rule == 2) t_drop_fast++;
                 else t_drop_blink++;
 
-                if (t_logs_10 < TNX_LOGS_5) {
-                    t_logs_10++;
+                if (t_logs_9 < TNX_LOGS_5) {
+                    t_logs_9++;
 
                     TNX_LOGX("drop rule=%d gid=%d speed=%.0f age=%llu rem=%.0f team=%d - a shot of "
                              "this shape cannot be walked out of, so reacting to it only spends "

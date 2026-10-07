@@ -783,7 +783,7 @@ static void tnx_stick_push_6(int engaged, float dirX, float dirY) {
         }
     }
 
-    {
+    if (TNX_STICK_HOLD_WRITE_2) {
         uint8_t held = 1;
 
         tnx_write_bytes(bsm + 0xf78, &held, sizeof(held));

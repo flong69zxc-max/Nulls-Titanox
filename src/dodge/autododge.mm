@@ -2525,7 +2525,7 @@ void tnx_autododge_v49(void) {
 
     tnx_input_release();
 
-    if (tnx_mirror_probe_2) tnx_mirror_probe_2(t_active_2);
+    if (tnx_battle_probe_2) tnx_battle_probe_2(t_active_2);
 
     tnx_stick(0, 0.0f, 0.0f);
 

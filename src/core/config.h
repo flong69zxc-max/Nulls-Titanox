@@ -483,7 +483,7 @@
 #define TNX_WALL_LOGS 8
 #define TNX_TEAM_LOGS 6
 
-#define TNX_MIRROR_ON_2 1
+#define TNX_MIRROR_ON_2 0
 #define TNX_MIRROR_LOGS_2 1600
 
 #define TNX_JOY_KNOB_WRITE_2 0
@@ -491,31 +491,13 @@
 
 #define TNX_STICK_PUSH_2 1
 #define TNX_STICK_RADIUS_2 60.0f
-
-#define TNX_STICK_KNOB_3 1
-#define TNX_STICK_INPUT_2 0
-#define TNX_STICK_HOLD_2 0
-
 #define TNX_STICK_KNOB_3 0
 #define TNX_STICK_INPUT_2 0
 #define TNX_STICK_KNOB_4 0
 #define TNX_STICK_HOLD_2 0
+#define TNX_STICK_HOLD_WRITE_2 0
 
-#define TNX_STICK_KNOB_3 0
-#define TNX_STICK_INPUT_2 0
-#define TNX_STICK_KNOB_4 0
-#define TNX_STICK_HOLD_2 0
-
-#define TNX_APPLY_WRITE_2 0
-
-#define TNX_STICK_KNOB_3 0
-#define TNX_STICK_INPUT_2 0
-#define TNX_STICK_KNOB_4 0
-#define TNX_STICK_HOLD_2 0
-
-#define TNX_STICK_KNOB_3 0
-#define TNX_STICK_INPUT_2 0
-#define TNX_STICK_KNOB_4 0
-#define TNX_STICK_HOLD_2 0
+#define TNX_BP_ON_2 1
+#define TNX_BP_LOG_2 900
 
 #endif

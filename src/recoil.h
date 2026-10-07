@@ -2,6 +2,8 @@
 #define RECOIL_H
 
 #include "core/types.h"
+#include "helpers/autoaim/config.h"
+#include "helpers/autododge/config.h"
 #include "core/memory.h"
 #include "utils/geometry.h"
 #include "utils/strings.h"
@@ -20,10 +22,5 @@
 #include "runtime/scene.h"
 #include "runtime/setup.h"
 #include "runtime/state.h"
-
-#include "features/config/aimbot/config.h"
-#include "features/config/autododge/config.h"
-#include "features/aimbot/aimbot.h"
-#include "features/autododge/autododge.h"
 
 #endif

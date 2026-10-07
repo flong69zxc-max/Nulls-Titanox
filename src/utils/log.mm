@@ -186,13 +186,14 @@ void rcl_log_every(int interval, const char *format, ...) {
     vsnprintf(text, sizeof(text), format, args);
     va_end(args);
 
+    const char *key = text;
     int step = interval > 0 ? interval : 1;
     uint64_t now = rcl_log_now_ms();
 
     __block bool emit = false;
 
     dispatch_sync(rcl_log_serial(), ^{
-        int slot = rcl_log_repeat_slot(text);
+        int slot = rcl_log_repeat_slot(key);
 
         if (slot < 0) return;
 

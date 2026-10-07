@@ -193,7 +193,7 @@ void start(void) {
     tnx_install();
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        tlog(@"=== titanox started v84 (walk knob merge) ===");
+        tlog(@"=== titanox started v85 (walk gates) ===");
         poll_for_game(0);
     });
 }

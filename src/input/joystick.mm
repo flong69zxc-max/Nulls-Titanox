@@ -709,9 +709,9 @@ void tnx_applied_2(int32_t ax, int32_t ay) {
     }
 }
 
-uint64_t t_stick_push_2 = 0;
+uint64_t t_stick_push_3 = 0;
 
-static void tnx_stick_push_2(int engaged, float dirX, float dirY) {
+static void tnx_stick_push_3(int engaged, float dirX, float dirY) {
     uintptr_t bs = tnx_bs();
     uintptr_t bsm = 0;
     float ox = 0.0f;
@@ -740,9 +740,18 @@ static void tnx_stick_push_2(int engaged, float dirX, float dirY) {
     if (!tnx_write_f32(bsm + 0xa40, ox + nx * TNX_STICK_RADIUS_2)) return;
     if (!tnx_write_f32(bsm + 0xa44, oy + ny * TNX_STICK_RADIUS_2)) return;
 
-    t_stick_push_2++;
+    {
+        uint8_t held = engaged ? 1 : 0;
 
-    if (t_stick_push_2 <= 200) {
+        tnx_write_bytes(bsm + 0xf78, &held, sizeof(held));
+        tnx_write_bytes(bsm + 0xf80, &held, sizeof(held));
+        tnx_write_bytes(bsm + 0xf9c, &held, sizeof(held));
+        tnx_write_bytes(bsm + 0xf9e, &held, sizeof(held));
+    }
+
+    t_stick_push_3++;
+
+    if (t_stick_push_3 <= 200) {
         tnx_read_f32(bsm + 0xa40, &backX);
         tnx_read_f32(bsm + 0xa44, &backY);
 
@@ -750,7 +759,7 @@ static void tnx_stick_push_2(int engaged, float dirX, float dirY) {
                  "- the engine walks by cur minus org at +0xa40/+0xa44 against +0xa48/+0xa4c on this "
                  "object, and at rest it keeps cur equal to org, so only cur is written here and org is "
                  "left exactly as the game set it",
-                 (unsigned long long)t_stick_push_2, (void *)bsm, engaged,
+                 (unsigned long long)t_stick_push_3, (void *)bsm, engaged,
                  (double)ox, (double)oy,
                  (double)(ox + nx * TNX_STICK_RADIUS_2), (double)(oy + ny * TNX_STICK_RADIUS_2),
                  (double)backX, (double)backY);
@@ -758,7 +767,7 @@ static void tnx_stick_push_2(int engaged, float dirX, float dirY) {
 }
 
 void tnx_stick(int engaged, float dirX, float dirY) {
-    tnx_stick_push_2(engaged, dirX, dirY);
+    tnx_stick_push_3(engaged, dirX, dirY);
 
     if (!TNX_V245_STICK && !TNX_JS_STICK) return;
     uintptr_t ctrl = tnx_controller();

@@ -8,7 +8,7 @@ Tweak for **Nulls Brawl v69.225** (iOS)
 
 ## Install
 
-1. LiveContainer → **Tweaks** → **Add** → `Titanox.dylib`
+1. LiveContainer → **Tweaks** → **Add** → `Recoil.dylib`
 2. Sign it with the button at the top of that screen — unsigned, it won't load
 3. Launch the game
 
@@ -26,7 +26,3 @@ make -j"$(( $(nproc) + 1 ))" ARCHS=arm64 DEBUG=0 FINALPACKAGE=1
 
 Addresses in `src/core/offsets.h` are RVAs for that exact build. Other versions
 won't work.
-
-## Credits
-
-Hooking framework: [Ragekill3377/Titanox](https://github.com/Ragekill3377/Titanox), MIT.

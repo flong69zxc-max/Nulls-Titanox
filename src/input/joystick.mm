@@ -742,7 +742,7 @@ static void tnx_stick_push_2(int engaged, float dirX, float dirY) {
 
     t_stick_push_2++;
 
-    if (t_stick_push_2 <= 6) {
+    if (t_stick_push_2 <= 200) {
         tnx_read_f32(bsm + 0xa40, &backX);
         tnx_read_f32(bsm + 0xa44, &backY);
 

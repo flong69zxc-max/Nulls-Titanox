@@ -215,6 +215,53 @@ void tnx_mirror_probe_2(int dodging) {
                      (double)w[8], (double)w[9], (double)w[10], (double)w[11],
                      (double)w[12], (double)w[13], (double)w[14], (double)w[15],
                      (double)w[16], (double)w[17], (double)w[18], (double)w[19], dodging);
+
+            if (bsm) {
+                float pcx = 0.0f;
+                float pcy = 0.0f;
+                float pox = 0.0f;
+                float poy = 0.0f;
+                uint8_t f[18];
+                int fi;
+
+                for (fi = 0; fi < 18; fi++) f[fi] = 0;
+
+                tnx_read_f32(bsm + 0xa40, &pcx);
+                tnx_read_f32(bsm + 0xa44, &pcy);
+                tnx_read_f32(bsm + 0xa48, &pox);
+                tnx_read_f32(bsm + 0xa4c, &poy);
+
+                tnx_read_u8(bsm + 0x8ac, &f[0]);
+                tnx_read_u8(bsm + 0x8ad, &f[1]);
+                tnx_read_u8(bsm + 0xee8, &f[2]);
+                tnx_read_u8(bsm + 0xee9, &f[3]);
+                tnx_read_u8(bsm + 0xf48, &f[4]);
+                tnx_read_u8(bsm + 0xf49, &f[5]);
+                tnx_read_u8(bsm + 0xf78, &f[6]);
+                tnx_read_u8(bsm + 0xf80, &f[7]);
+                tnx_read_u8(bsm + 0xf9c, &f[8]);
+                tnx_read_u8(bsm + 0xf9e, &f[9]);
+                tnx_read_u8(bsm + 0xfa0, &f[10]);
+                tnx_read_u8(bsm + 0xfb0, &f[11]);
+                tnx_read_u8(bsm + 0xfb1, &f[12]);
+                tnx_read_u8(bsm + 0xfac, &f[13]);
+                tnx_read_u8(bsm + 0xfad, &f[14]);
+                tnx_read_u8(bsm + 0x1050, &f[15]);
+                tnx_read_u8(bsm + 0x1051, &f[16]);
+                tnx_read_u8(bsm + 0xfec, &f[17]);
+
+                TNX_LOGX("mirror flags bsm=%p playerDrag=%d dodging=%d cur=(%.1f,%.1f) org=(%.1f,%.1f) "
+                         "b[18]=%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d - the byte that "
+                         "reads 1 only on the frames the player is the one holding the stick is the "
+                         "flag the engine gates the whole stick read on, so it is the one the write "
+                         "has to raise together with cur",
+                         (void *)bsm,
+                         (dodging == 0 && (pcx != pox || pcy != poy)) ? 1 : 0, dodging,
+                         (double)pcx, (double)pcy, (double)pox, (double)poy,
+                         (int)f[0], (int)f[1], (int)f[2], (int)f[3], (int)f[4], (int)f[5],
+                         (int)f[6], (int)f[7], (int)f[8], (int)f[9], (int)f[10], (int)f[11],
+                         (int)f[12], (int)f[13], (int)f[14], (int)f[15], (int)f[16], (int)f[17]);
+            }
         }
 
         for (rank = 0; rank < 8; rank++) {

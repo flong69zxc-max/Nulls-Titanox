@@ -35,7 +35,7 @@ uint64_t t_drop_fast = 0;
 
 uint64_t t_drop_blink = 0;
 
-uint64_t t_logs_9 = 0;
+uint64_t t_logs_10 = 0;
 
 float t_spd_min = 0.0f;
 
@@ -636,8 +636,8 @@ void tnx_build(void) {
                 else if (rule == 2) t_drop_fast++;
                 else t_drop_blink++;
 
-                if (t_logs_9 < TNX_LOGS_5) {
-                    t_logs_9++;
+                if (t_logs_10 < TNX_LOGS_5) {
+                    t_logs_10++;
 
                     TNX_LOGX("drop rule=%d gid=%d speed=%.0f age=%llu rem=%.0f team=%d - a shot of "
                              "this shape cannot be walked out of, so reacting to it only spends "
@@ -2472,7 +2472,7 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
         t_ty_2 = py;
     }
 
-    tnx_walk_want_9(t_moving, ownX, ownY, (int32_t)t_tx_2, (int32_t)t_ty_2);
+    tnx_walk_want_10(t_moving, ownX, ownY, (int32_t)t_tx_2, (int32_t)t_ty_2);
 
     if ((t_ticks_3 % 10) == 0) {
         t_logs_4++;
@@ -2985,9 +2985,9 @@ void tnx_autododge_v49(void) {
 
     t_own_elem_2 = objects[ownIndex].object;
 
-    t_walk_ent_9 = objects[ownIndex].object;
+    t_walk_ent_10 = objects[ownIndex].object;
 
-    tnx_walk_pump_9();
+    tnx_walk_pump_10();
 
     ownTeam = (t_team_off == (int)TNX_OBJ_TEAM_OFF) ? objects[ownIndex].teamOld
                                                         : objects[ownIndex].teamNew;

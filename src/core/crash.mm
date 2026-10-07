@@ -193,7 +193,7 @@ void start(void) {
     tnx_install();
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        tlog(@"=== titanox started v86 (move flag) ===");
+        tlog(@"=== titanox started v87 (native hold) ===");
         poll_for_game(0);
     });
 }

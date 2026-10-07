@@ -531,7 +531,6 @@ BOOL find_game_image(uintptr_t *out_base) {
         if (strstr(path, "/usr/lib/")) continue;
         if (strstr(path, ".framework/")) continue;
         if (strstr(path, ".dylib")) continue;
-        if (rcl_name_marks_host_runtime(path)) continue;
         if (!rcl_valid_header(base)) continue;
 
         BOOL matched = NO;

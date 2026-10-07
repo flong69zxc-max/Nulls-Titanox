@@ -12,65 +12,6 @@
 #import <unistd.h>
 #import <stdint.h>
 
-static inline BOOL rcl_name_marks_host_runtime(const char *name) {
-    if (!name) return NO;
-    static const char *marks[] = {
-        "TweakLoader",
-        "LiveContainer",
-        "LiveContainerShared",
-        "CydiaSubstrate",
-        "libellekit",
-        "SubstrateLoader",
-        NULL
-    };
-    for (int i = 0; marks[i]; i++) {
-        if (strstr(name, marks[i])) return YES;
-    }
-    return NO;
-}
-
-static inline BOOL rcl_host_is_livecontainer(void) {
-    static int cached = -1;
-    if (cached >= 0) return cached ? YES : NO;
-
-    int found = 0;
-
-    uint32_t count = _dyld_image_count();
-    if (count > 8192) count = 8192;
-
-    for (uint32_t i = 0; i < count && !found; i++) {
-        if (rcl_name_marks_host_runtime(_dyld_get_image_name(i))) found = 1;
-    }
-
-    if (!found) {
-        NSString *identifier = [NSBundle mainBundle].bundleIdentifier;
-        if (identifier &&
-            [identifier rangeOfString:@"livecontainer"
-                              options:NSCaseInsensitiveSearch].location != NSNotFound) {
-            found = 1;
-        }
-    }
-
-    if (!found && dlsym(RTLD_DEFAULT, "LiveContainerMain") != NULL) found = 1;
-
-    if (!found) {
-        const char *home = getenv("HOME");
-        if (home) {
-            char probe[1024];
-            snprintf(probe, sizeof(probe), "%s/Documents/Tweaks", home);
-            if (access(probe, F_OK) == 0) found = 1;
-        }
-    }
-
-    if (!found) {
-        const char *injected = getenv("DYLD_INSERT_LIBRARIES");
-        if (injected && strstr(injected, "TweakLoader")) found = 1;
-    }
-
-    cached = found;
-    return found ? YES : NO;
-}
-
 static inline BOOL rcl_region_flags(uintptr_t address, vm_prot_t *outFlags) {
     if (!address) return NO;
 
@@ -292,38 +233,6 @@ static inline BOOL rcl_image_text_contains(uintptr_t imageBase, uintptr_t addres
 
     return (prot & VM_PROT_EXECUTE) ? YES : NO;
 }
-
-static inline BOOL rcl_looks_like_function(uintptr_t address) {
-    uint32_t first = 0;
-
-    if (!rcl_read_word(address, &first)) return NO;
-
-    if (first == 0xD503233F) return YES;
-    if (first == 0xD503237F) return YES;
-
-    if ((first & 0xFFFFFF1F) == 0xD503241F) return YES;
-
-    uint32_t pairBase = first & 0xFFC00000u;
-
-    if ((pairBase == 0xA9800000u ||
-         pairBase == 0xA9000000u ||
-         pairBase == 0xA8C00000u) &&
-        (first & 0x7C00u) == 0x7800u &&
-        (first & 0x1Fu) == 29u) {
-        return YES;
-    }
-
-    if ((first & 0xFF8003FFu) == 0xD10003FFu) return YES;
-
-    if (address >= 4) {
-        uint32_t previous = 0;
-        if (rcl_read_word(address - 4, &previous) && previous == 0xD65F03C0) {
-            return YES;
-        }
-    }
-
-    return NO;
-}
 static inline BOOL rcl_object_plausible(void *object) {
     if (!object) return NO;
 
@@ -346,32 +255,4 @@ static inline BOOL rcl_object_plausible(void *object) {
 }
 static inline BOOL rcl_image_owns_address(uintptr_t imageBase, uintptr_t address) {
     return rcl_image_segment_contains(imageBase, address, NO, NULL, NULL, NULL);
-}
-
-static inline BOOL rcl_isa_in_image_data(uintptr_t imageBase, uintptr_t isa) {
-    if (!imageBase || !isa) return NO;
-
-    uintptr_t start = 0;
-    uintptr_t end = 0;
-    uint32_t prot = 0;
-
-    if (!rcl_image_segment_contains(imageBase, isa, NO, &start, &end, &prot)) return NO;
-    if (prot & VM_PROT_EXECUTE) return NO;
-
-    return YES;
-}
-
-static inline Class rcl_object_class(void *object) {
-    if (!object) return Nil;
-
-    uintptr_t address = (uintptr_t)object;
-    if (address < 0x100000000ULL) return Nil;
-    if (address & 7) return Nil;
-    if (!rcl_addr_readable(address, sizeof(void *))) return Nil;
-
-#if __has_feature(objc_arc)
-    return object_getClass((__bridge id)object);
-#else
-    return object_getClass((id)object);
-#endif
 }

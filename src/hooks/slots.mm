@@ -125,8 +125,6 @@ void rcl_slot_install_one(int index) {
 
     rcl_slot_installed[index] = 0;
 
-    setenv("RECOIL_ALLOW_CODE_PATCH", "0", 1);
-
     if (!rcl_slot_specs[index].rva && !rcl_slot_specs[index].slotRva) return;
 
     target = rcl_base + rcl_slot_specs[index].rva;
@@ -178,14 +176,7 @@ void rcl_slot_install_one(int index) {
 }
 
 void rcl_slot_hooks_install(void) {
-    const char *flag = NULL;
-
     if (!rcl_base) return;
-
-    setenv("RECOIL_ALLOW_CODE_PATCH", "0", 1);
-
-    flag = getenv("RECOIL_ALLOW_CODE_PATCH");
-
 
     for (int i = 0; i < RCL_SLOT_COUNT; i++) rcl_slot_install_one(i);
 

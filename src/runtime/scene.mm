@@ -2,12 +2,12 @@
 
 void tnx_run_workload(void) {
 
-    tnx_tick_begin("pre-locate");
+    tnx_tick_begin();
 
 
     tnx_locate_battle_mode();
 
-    tnx_tick_begin("post-locate");
+    tnx_tick_begin();
 
     if (t_scene_object) {
         if (!t_snapshot_first) {

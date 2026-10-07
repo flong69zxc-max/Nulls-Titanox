@@ -500,4 +500,12 @@
 #define TNX_BP_ON_2 1
 #define TNX_BP_LOG_2 900
 
+#define TNX_WALK_ARM_3 1
+#define TNX_WALK_RAW_3 500
+#define TNX_WALK_ARM_LOGS_3 400
+
+#define TNX_MATCH_ON_3 1
+#define TNX_MATCH_LOGS_3 4000
+#define TNX_MATCH_EVERY_3 30
+
 #endif

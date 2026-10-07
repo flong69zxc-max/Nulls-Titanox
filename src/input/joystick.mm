@@ -43,6 +43,57 @@ int t_joy_drive_on = 0;
 
 int t_joy_drive_ok = 0;
 
+uint64_t t_walk_arm_3 = 0;
+
+int32_t t_walk_arm_x_3 = 0;
+
+int32_t t_walk_arm_y_3 = 0;
+
+int tnx_walk_arm_3(int engaged, float dirX, float dirY) {
+    uintptr_t bs = tnx_bs();
+    uintptr_t s = 0;
+    float len = 0.0f;
+    int32_t ix = 0;
+    int32_t iy = 0;
+    uint8_t arm = 0;
+
+    if (!TNX_WALK_ARM_3) return 0;
+    if (!bs) return 0;
+    if (!tnx_read_ptr(bs + (uintptr_t)TNX_JOY_TARGET_OFF, (void **)&s) || !s) return 0;
+
+    if (engaged) {
+        len = __builtin_sqrtf(dirX * dirX + dirY * dirY);
+
+        if (len > 0.0001f) {
+            ix = (int32_t)(dirX / len * (float)TNX_WALK_RAW_3);
+            iy = (int32_t)(dirY / len * (float)TNX_WALK_RAW_3);
+        }
+    }
+
+    tnx_write_bytes(s + (uintptr_t)TNX_CTRL_RAW_X_OFF, &ix, sizeof(ix));
+    tnx_write_bytes(s + (uintptr_t)TNX_CTRL_RAW_Y_OFF, &iy, sizeof(iy));
+
+    arm = engaged ? 1 : 0;
+
+    tnx_write_bytes(s + (uintptr_t)TNX_TOUCH_GATE_OFF, &arm, sizeof(arm));
+
+    t_walk_arm_x_3 = ix;
+    t_walk_arm_y_3 = iy;
+
+    if (t_walk_arm_3 < TNX_WALK_ARM_LOGS_3) {
+        t_walk_arm_3++;
+
+        TNX_LOGX("walkarm n=%llu mgr=%p engaged=%d in=(%.2f,%.2f) raw=(%d,%d) gate+%#llx=%d - the direction "
+                 "goes into the raw stick pair the engine turns into the touch vector and the gate byte makes "
+                 "the engine commit it itself, so the visible knob pair stays untouched",
+                 (unsigned long long)t_walk_arm_3, (void *)s, engaged,
+                 (double)dirX, (double)dirY, ix, iy,
+                 (unsigned long long)TNX_TOUCH_GATE_OFF, (int)arm);
+    }
+
+    return 1;
+}
+
 int tnx_joy_set(float dirX, float dirY, int on) {
     uintptr_t bs = tnx_bs();
     float ax = 0.0f;

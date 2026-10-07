@@ -30,6 +30,12 @@ void tnx_joy_knob(float dirX, float dirY, int on);
 
 int tnx_joy_set(float dirX, float dirY, int on);
 
+int tnx_walk_arm_3(int engaged, float dirX, float dirY);
+
+extern uint64_t t_walk_arm_3;
+extern int32_t t_walk_arm_x_3;
+extern int32_t t_walk_arm_y_3;
+
 int tnx_joy_read(uintptr_t bs, float *ax, float *ay, float *bx, float *by, uint32_t *mode, float *cs, float *sn);
 void tnx_precision(int32_t ownX, int32_t ownY, float dirX, float dirY, int escape);
 void tnx_select(float px, float py);

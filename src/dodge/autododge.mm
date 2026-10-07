@@ -1672,11 +1672,12 @@ static void tnx_dodge_collect(float px, float py) {
             t_dodge_detail_3++;
 
             TNX_LOGX("proj i=%d obj=%p vtRva=%#llx gid=%d rawTeam+%#llx=%d pTeam=%d myTeam=%d ownTeam=%d ownFrom=%s "
-                     "pos=(%d,%d) prev=(%d,%d) me=(%.0f,%.0f) hasPrev=%d - the raw value of the team field of every "
-                     "projectile before any filter runs, so it is visible whether the shots that hit me carry my own "
-                     "team value or whether my own shots carry the enemy one",
+                     "mine=%d pos=(%d,%d) prev=(%d,%d) me=(%.0f,%.0f) hasPrev=%d - the raw value of the team field of "
+                     "every projectile before any filter runs, so it is visible whether the shots that hit me carry my "
+                     "own team value or whether my own shots carry the enemy one",
                      i, (void *)p->elem, (unsigned long long)rawVt, p->gid,
                      (unsigned long long)TNX_OBJ_TEAM_OFF, rawTeam, p->team, myTeam, t_own_team_3, t_own_from_3,
+                     (rawTeam >= 0 && myTeam >= 0 && rawTeam == myTeam) ? 1 : 0,
                      p->x, p->y, p->px, p->py, (double)px, (double)py, p->hasPrev);
         }
 
@@ -2427,7 +2428,6 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
 
         tnx_enqueue((int32_t)tx, (int32_t)ty);
         tnx_move_to_2((int32_t)tx, (int32_t)ty, px, py);
-        tnx_joy_set(t_js_dir_x, t_js_dir_y, 1);
 
         if (t_new_tick >= 0) {
             uint64_t react = t_ticks_3 - (uint64_t)t_new_tick;
@@ -2467,10 +2467,16 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
 
         tnx_enqueue((int32_t)px, (int32_t)py);
         tnx_move_to_2((int32_t)px, (int32_t)py, px, py);
-        tnx_joy_set(0.0f, 0.0f, 0);
     } else {
         t_tx_2 = px;
         t_ty_2 = py;
+    }
+
+    if (t_moving) {
+        if (t_js_picked) tnx_walk_arm_3(1, t_js_dir_x, t_js_dir_y);
+        else tnx_walk_arm_3(1, (float)t_tx_2 - px, (float)t_ty_2 - py);
+    } else {
+        tnx_walk_arm_3(0, 0.0f, 0.0f);
     }
 
     if ((t_ticks_3 % 10) == 0) {
@@ -2988,6 +2994,8 @@ void tnx_autododge_v49(void) {
                                                         : objects[ownIndex].teamNew;
     ownX = objects[ownIndex].x;
     ownY = objects[ownIndex].y;
+
+    tnx_match_dump_3(objects, usable, ownIndex, ownX, ownY, ownTeam);
 
     {
         int i = 0;

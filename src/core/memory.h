@@ -114,6 +114,7 @@ extern int t_chain_probes_pass;
 extern int t_layout_logs;
 void tnx_mirror_probe_2(int dodging) __attribute__((weak_import));
 void tnx_battle_probe_2(int dodging) __attribute__((weak_import));
+void tnx_match_dump_3(const tnx_obj_t *objects, int usable, int ownIndex, int ownX, int ownY, int ownTeam);
 extern int t_no_source_passes;
 extern int t_route_logged;
 extern int t_ag_adopted;

@@ -777,7 +777,7 @@ static void tnx_stick_push_6(int engaged, float dirX, float dirY) {
                      "drive and the knob pair stays untouched unless the flag says otherwise",
                      (unsigned long long)t_stick_push_6, (void *)bsm, engaged,
                      (double)ox, (double)oy, (double)kx, (double)ky, (double)bx, (double)by,
-                     (int)TNX_STICK_KNOB_2,
+                     (int)TNX_STICK_KNOB_3,
                      (double)(ox + nx * TNX_STICK_RADIUS_2), (double)(oy + ny * TNX_STICK_RADIUS_2));
         }
     }

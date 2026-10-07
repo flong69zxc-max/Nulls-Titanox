@@ -149,14 +149,18 @@ void tnx_mirror_probe_2(int dodging) {
 
             if (bi < 0 || bv < 3) break;
 
-            TNX_LOGX("mirror top #%d obj=%s off=+0x%llx moves=%u whileDodging=0 moves=%u whileDodging=1 "
-                     "- counts over the whole battle, so an offset with a high count at dodging=0 is a "
-                     "channel the game own touch path writes and a high count at dodging=1 means this "
-                     "build reaches the same field",
-                     rank, t_mirror_name(bi),
-                     (unsigned long long)(bslot < 160 ? (0x880 + (unsigned long long)bslot * 4)
-                                                      : (0xe00 + (unsigned long long)(bslot - 160) * 4)),
-                     t_n0_2[bi][bslot], t_n1_2[bi][bslot]);
+            {
+                int32_t cur = 0;
+
+                if (!tnx_read_i32(t_mirror_seen[bi] + t_mirror_off(bslot), &cur)) cur = 0;
+
+                TNX_LOGX("mirror top #%d obj=%s off=+0x%llx val=%d/%.4f moves=%u whileDodging=0 "
+                         "moves=%u whileDodging=1 - the value says what the field is: a small float "
+                         "inside -1..1 is a normalised stick, a large float is a screen or world "
+                         "coordinate, and a small integer is a flag or an index",
+                         rank, t_mirror_name(bi), (unsigned long long)t_mirror_off(bslot),
+                         cur, (double)t_mirror_f(cur), t_n0_2[bi][bslot], t_n1_2[bi][bslot]);
+            }
 
             t_n0_2[bi][bslot] = 0;
             t_n1_2[bi][bslot] = 0;

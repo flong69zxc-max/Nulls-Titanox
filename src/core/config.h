@@ -483,4 +483,7 @@
 #define TNX_WALL_LOGS 8
 #define TNX_TEAM_LOGS 6
 
+#define TNX_MIRROR_ON_2 1
+#define TNX_MIRROR_LOGS_2 1600
+
 #endif

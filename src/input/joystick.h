@@ -32,17 +32,19 @@ int tnx_joy_set(float dirX, float dirY, int on);
 
 int tnx_walk_arm_3(int engaged, float dirX, float dirY);
 
-uintptr_t tnx_walk_mgr_4(void);
+uintptr_t tnx_walk_mgr_5(void);
 
-int tnx_walk_push_4(int on, int32_t px, int32_t py, int32_t tx, int32_t ty);
+int tnx_walk_push_5(int on, int32_t px, int32_t py, int32_t tx, int32_t ty);
 
-extern uintptr_t t_walk_ent_4;
+extern uintptr_t t_walk_ent_5;
 
-extern uint64_t t_walk_scans_4;
+extern uint64_t t_walk_hand_5;
 
-extern uint64_t t_walk_sends_4;
+extern uint64_t t_walk_scans_5;
 
-extern uint64_t t_walk_near_4;
+extern uint64_t t_walk_sends_5;
+
+extern uint64_t t_walk_near_5;
 
 extern uint64_t t_walk_arm_3;
 extern int32_t t_walk_arm_x_3;

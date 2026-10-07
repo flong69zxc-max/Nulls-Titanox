@@ -508,7 +508,10 @@
 #define TNX_MATCH_LOGS_3 4000
 #define TNX_MATCH_EVERY_3 30
 
-#define TNX_WALK_PUSH_4 1
-#define TNX_WALK_PUSH_LOGS_4 400
+#define TNX_WALK_PUSH_5 1
+#define TNX_WALK_PUSH_LOGS_5 400
+#define TNX_WALK_OFF_LOGS_5 30
+#define TNX_WALK_HS_5 1
+#define TNX_WALK_HS_TIMER_5 0.05f
 
 #endif

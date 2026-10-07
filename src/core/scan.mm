@@ -482,8 +482,6 @@ void rcl_read_map(uintptr_t mode) {
     if (!rcl_read_int((uintptr_t)tileMap + RCL_MAP_WIDTH_OFF, &width)) return;
     if (!rcl_read_int((uintptr_t)tileMap + RCL_MAP_HEIGHT_OFF, &height)) return;
 
-    rcl_map_ok = (width >= RCL_MAP_MIN && width <= RCL_MAP_MAX &&
-                    height >= RCL_MAP_MIN && height <= RCL_MAP_MAX) ? 1 : 0;
 }
 
 int rcl_gidless = 0;
@@ -931,7 +929,7 @@ int rcl_proj_scan(uintptr_t manager, int32_t count) {
             }
 
             if (rcl_projs[slot].team >= 0) {
-                else rcl_proj_other++;
+                if (rcl_projs[slot].team != rcl_own_team_a) rcl_proj_other++;
             }
 
         }

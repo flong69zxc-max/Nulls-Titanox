@@ -234,6 +234,7 @@ int tnx_drive(void) {
         t_dead_picks++;
         tnx_stick(0, 0.0f, 0.0f);
         tnx_applied_2(TNX_APPLIED_IDLE, TNX_APPLIED_IDLE);
+        tnx_joy_knob(0.0f, 0.0f, 0);
 
         return 0;
     }
@@ -287,6 +288,8 @@ int tnx_drive(void) {
     }
 
     tnx_applied_2(tx, ty);
+
+    tnx_joy_knob(dx, dy, 1);
 
     if (TNX_TOUCH_FLAG && ctrl) {
         uint8_t gateNow = 0;
@@ -505,6 +508,8 @@ int t_joy_knob_logs = 0;
 
 int t_joy_knob_on = 0;
 
+static int t_joy_knob_miss = 0;
+
 static uint8_t t_joy_knob_state_1 = 0;
 
 static uint8_t t_joy_knob_state_2 = 0;
@@ -581,7 +586,24 @@ void tnx_joy_knob(float dirX, float dirY, int on) {
     if (!t_joy_knob_obj) {
         obj = tnx_joy_knob_target(&pair, &cx, &cy, &kx, &ky);
 
-        if (!obj) return;
+        if (!obj) {
+            if (t_joy_knob_miss < TNX_JOY_KNOB_LOGS) {
+                uintptr_t b = tnx_bs();
+                uintptr_t s = (uintptr_t)t_scene_object;
+                uintptr_t h = 0;
+
+                t_joy_knob_miss++;
+
+                if (b) tnx_read_ptr(b + TNX_JOY_TARGET_OFF, (void **)&h);
+
+                TNX_LOGX("joyknobmiss bs=%p scene=%p hop=%p - the joystick pair is the layout the "
+                         "reference build drives (float current at +0x9d0/+0x9d4 against the float "
+                         "centre at +0x9d8/+0x9dc with the drag byte at +0xee8), so a miss here means "
+                         "none of the candidate objects carries it", (void *)b, (void *)s, (void *)h);
+            }
+
+            return;
+        }
 
         t_joy_knob_obj = obj;
         t_joy_knob_pair = pair;

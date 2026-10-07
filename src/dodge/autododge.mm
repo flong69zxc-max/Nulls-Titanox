@@ -2472,7 +2472,7 @@ int tnx_decide(int32_t ownX, int32_t ownY) {
         t_ty_2 = py;
     }
 
-    tnx_walk_push_6(t_moving, ownX, ownY, (int32_t)t_tx_2, (int32_t)t_ty_2);
+    tnx_walk_push_7(t_moving, ownX, ownY, (int32_t)t_tx_2, (int32_t)t_ty_2);
 
     if ((t_ticks_3 % 10) == 0) {
         t_logs_4++;
@@ -2985,7 +2985,7 @@ void tnx_autododge_v49(void) {
 
     t_own_elem_2 = objects[ownIndex].object;
 
-    t_walk_ent_6 = objects[ownIndex].object;
+    t_walk_ent_7 = objects[ownIndex].object;
 
     ownTeam = (t_team_off == (int)TNX_OBJ_TEAM_OFF) ? objects[ownIndex].teamOld
                                                         : objects[ownIndex].teamNew;

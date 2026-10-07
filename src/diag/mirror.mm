@@ -288,6 +288,50 @@ void tnx_mirror_probe_2(int dodging) {
                              (dodging == 0 && (pcx != pox || pcy != poy)) ? 1 : 0, dodging,
                              appx, appy, rawx, rawy, m1, m2, m3);
                 }
+
+                {
+                    uintptr_t mgr = 0;
+                    uintptr_t own = 0;
+                    int32_t cnt = 0;
+                    int di;
+
+                    if (bs) tnx_read_ptr(bs + 0x28, (void **)&mgr);
+
+                    if (mgr) {
+                        tnx_read_i32(mgr + 0xc, &cnt);
+
+                        if (cnt > 6) cnt = 6;
+
+                        tnx_read_ptr(mgr + 0x0, (void **)&own);
+
+                        TNX_LOGX("mirror det mgr=%p count=%d own=%p", (void *)mgr, cnt, (void *)own);
+
+                        for (di = 0; di < cnt; di++) {
+                            uintptr_t el = 0;
+                            int32_t c30 = 0;
+                            int32_t c34 = 0;
+                            int32_t t40 = 0;
+                            int32_t t48 = 0;
+                            int32_t t4c = 0;
+                            int32_t t50 = 0;
+
+                            tnx_read_ptr(mgr + di * 8, (void **)&el);
+
+                            if (!el) continue;
+
+                            tnx_read_i32(el + 0x30, &c30);
+                            tnx_read_i32(el + 0x34, &c34);
+                            tnx_read_i32(el + 0x40, &t40);
+                            tnx_read_i32(el + 0x48, &t48);
+                            tnx_read_i32(el + 0x4c, &t4c);
+                            tnx_read_i32(el + 0x50, &t50);
+
+                            TNX_LOGX("mirror el #%d ptr=%p pos=%d,%d w40=%d w48=%d w4c=%d w50=%d",
+                                     di, (void *)el, c30, c34, t40, t48, t4c, t50);
+                        }
+                    }
+                }
+                }
             }
         }
 

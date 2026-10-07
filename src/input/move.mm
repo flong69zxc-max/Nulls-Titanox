@@ -933,7 +933,7 @@ int tnx_move_to_2(int32_t x, int32_t y, float ox, float oy) {
     tnx_read_i32(own + TNX_MOVE_KEY_OFF, &t_move_before_k);
     tnx_read_i32(own + TNX_MOVE_ARM_OFF, &t_move_before_arm);
 
-    ((void (*)(void *, int, int, int))fn)((void *)own, (int)x, (int)y, (int)TNX_MOVE_FLAG);
+    ((void (*)(void *, int, int, int))fn)((void *)own, (int)x, (int)y, (int)TNX_MOVE_FLAG_10);
 
     tnx_read_i32(own + TNX_MOVE_X_OFF, &t_move_after_x);
     tnx_read_i32(own + TNX_MOVE_Y_OFF, &t_move_after_y);
@@ -956,7 +956,7 @@ int tnx_move_to_2(int32_t x, int32_t y, float ox, float oy) {
         TNX_LOGX("move n=%d own=%p stick=%p from=%s want=(%d,%d) key+%#llx=%d arm+%#llx=%d "
                  "before=(%d,%d,%d,%d) after=(%d,%d,%d,%d) armBytes=%d,%d,%d,%d,%d applied=(%d,%d) rva=%#llx tick=%llu",
                  t_move_n, (void *)own, (void *)t_move_stick_2, t_own_from_3, x, y,
-                 (unsigned long long)TNX_MOVE_KEY_OFF, (int)TNX_MOVE_FLAG,
+                 (unsigned long long)TNX_MOVE_KEY_OFF, (int)TNX_MOVE_FLAG_10,
                  (unsigned long long)TNX_MOVE_ARM_OFF, (int)TNX_MOVE_ARM_ON,
                  t_move_before_x, t_move_before_y, t_move_before_k, t_move_before_arm,
                  t_move_after_x, t_move_after_y, t_move_after_k, t_move_after_arm,

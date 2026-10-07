@@ -2536,7 +2536,7 @@ void tnx_autododge_v49(void) {
 
     tnx_layout_probe_3(t_active_2);
 
-    if (TNX_STATE_EVERY_8 <= 1 || (t_ticks_3 % (uint64_t)TNX_STATE_EVERY_8) == 0) tnx_state();
+    if (TNX_STATE_EVERY_10 <= 1 || (t_ticks_3 % (uint64_t)TNX_STATE_EVERY_10) == 0) tnx_state();
 
     if (TNX_DIAG_EVERY <= 0 || (t_ticks_3 % (uint64_t)TNX_DIAG_EVERY) == 0) {
         uint64_t diag0 = tnx_us();

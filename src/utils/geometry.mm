@@ -1,60 +1,60 @@
-#include "titanox.h"
+#include "recoil.h"
 
-int t_find_joy_done = 0;
+int rcl_find_joy_done = 0;
 
 
-uintptr_t t_manager = 0;
+uintptr_t rcl_manager_ptr = 0;
 
-int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) {
+int rcl_collect(uintptr_t manager, rcl_obj_t *out, int capacity, int *rejected) {
     void *data = NULL;
     int32_t count = 0;
     int usable = 0;
     int bad = 0;
-    uintptr_t gidOff = TNX_OBJ_GLOBALID_OFF;
+    uintptr_t gidOff = RCL_OBJ_GLOBALID_OFF;
     uint32_t walkSeq = 0;
 
-    memset(&t_reject, 0, sizeof(t_reject));
+    memset(&rcl_reject, 0, sizeof(rcl_reject));
 
-    tnx_gidless_scan(manager);
+    rcl_gidless_scan(manager);
 
     if (rejected) *rejected = 0;
 
     if (!manager) return 0;
-    if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &data) || !data) return 0;
-    if (!tnx_read_int((uintptr_t)manager + TNX_MGR_COUNT_OFF, &count)) return 0;
+    if (!rcl_read_ptr(manager + RCL_MGR_ARRAY_OFF, &data) || !data) return 0;
+    if (!rcl_read_int((uintptr_t)manager + RCL_MGR_COUNT_OFF, &count)) return 0;
     if (count <= 0) return 0;
 
     if (count > capacity) count = capacity;
 
-    gidOff = tnx_list_gid_off((uintptr_t)data, count);
+    gidOff = rcl_list_gid_off((uintptr_t)data, count);
 
-    walkSeq = t_seq;
+    walkSeq = rcl_seq;
 
 
     for (int32_t i = 0; i < count && usable < capacity; i++) {
         void *element = NULL;
         void *vtable = NULL;
-        tnx_obj_t entry;
+        rcl_obj_t entry;
         uintptr_t vtRva = 0;
 
         memset(&entry, 0, sizeof(entry));
 
-        t_reject.elementsRead++;
+        rcl_reject.elementsRead++;
 
-        if (t_seq != walkSeq) {
+        if (rcl_seq != walkSeq) {
 
             break;
         }
 
-        if (!tnx_read_ptr((uintptr_t)data + (uintptr_t)i * sizeof(void *), &element)) {
-            t_reject.rejUnreadable++;
+        if (!rcl_read_ptr((uintptr_t)data + (uintptr_t)i * sizeof(void *), &element)) {
+            rcl_reject.rejUnreadable++;
             bad++;
 
             continue;
         }
 
         if (!element) {
-            t_reject.rejNull++;
+            rcl_reject.rejNull++;
             bad++;
 
             continue;
@@ -62,59 +62,59 @@ int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) 
 
         entry.object = (uintptr_t)element;
 
-        if (tnx_element_ascii(entry.object)) {
-            t_reject.rejAscii++;
+        if (rcl_element_ascii(entry.object)) {
+            rcl_reject.rejAscii++;
             bad++;
 
             continue;
         }
 
-        if (!tnx_read_ptr(entry.object, &vtable) || !vtable) {
-            t_reject.rejUnreadable++;
+        if (!rcl_read_ptr(entry.object, &vtable) || !vtable) {
+            rcl_reject.rejUnreadable++;
             bad++;
 
             continue;
         }
 
-        vtRva = (uintptr_t)vtable - t_base;
+        vtRva = (uintptr_t)vtable - rcl_base;
 
-        if (vtRva < TNX_DC_RVA_LO || vtRva >= TNX_DC_RVA_LO + TNX_DC_RVA_SIZE) {
-            t_reject.rejNoVt++;
+        if (vtRva < RCL_DC_RVA_LO || vtRva >= RCL_DC_RVA_LO + RCL_DC_RVA_SIZE) {
+            rcl_reject.rejNoVt++;
             bad++;
 
             continue;
         }
 
-        entry.gid = tnx_gid_at(entry.object, gidOff);
+        entry.gid = rcl_gid_at(entry.object, gidOff);
 
         {
             uintptr_t tw = 0;
 
-            tnx_element_type((uintptr_t)vtable, &tw);
+            rcl_element_type((uintptr_t)vtable, &tw);
 
             entry.typeWord = (int32_t)tw;
         }
 
-        if (!tnx_read_int(entry.object + tnx_coord_x_off(), &entry.x) ||
-            !tnx_read_int(entry.object + tnx_coord_y_off(), &entry.y) ||
-            !tnx_read_int(entry.object + TNX_OBJ_OWNERINDEX_OFF, &entry.ownerIndex) ||
-            !tnx_read_int(entry.object + TNX_OBJ_TEAM_OFF, &entry.teamOld) ||
-            !tnx_read_int(entry.object + TNX_TEAM_OFF, &entry.teamNew) ||
-            !tnx_read_byte(entry.object + TNX_OBJ_DEADFLAG_OFF, &entry.dead) ||
-            !tnx_read_byte(entry.object + TNX_OBJ_ACTIVEFLAG_OFF, &entry.activeFlag)) {
-            t_reject.rejUnreadable++;
+        if (!rcl_read_int(entry.object + rcl_coord_x_off(), &entry.x) ||
+            !rcl_read_int(entry.object + rcl_coord_y_off(), &entry.y) ||
+            !rcl_read_int(entry.object + RCL_OBJ_OWNERINDEX_OFF, &entry.ownerIndex) ||
+            !rcl_read_int(entry.object + RCL_OBJ_TEAM_OFF, &entry.teamOld) ||
+            !rcl_read_int(entry.object + RCL_TEAM_OFF, &entry.teamNew) ||
+            !rcl_read_byte(entry.object + RCL_OBJ_DEADFLAG_OFF, &entry.dead) ||
+            !rcl_read_byte(entry.object + RCL_OBJ_ACTIVEFLAG_OFF, &entry.activeFlag)) {
+            rcl_reject.rejUnreadable++;
             bad++;
 
             continue;
         }
 
-        if (entry.gid >= TNX_PLAYER_GID_MAX) {
-            t_reject.rejNonPlayer++;
+        if (entry.gid >= RCL_PLAYER_GID_MAX) {
+            rcl_reject.rejNonPlayer++;
             bad++;
 
-            tnx_proj_track(entry.object, vtRva, entry.gid, entry.teamOld);
+            rcl_proj_track(entry.object, vtRva, entry.gid, entry.teamOld);
 
-            if (t_dump_np < TNX_NP_DUMPS) {
+            if (rcl_dump_np < RCL_NP_DUMPS) {
                 int32_t npX = 0;
                 int32_t npY = 0;
                 int32_t np70 = 0;
@@ -126,59 +126,59 @@ int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) 
                 void *np38 = NULL;
                 uintptr_t npRva = vtRva;
 
-                t_dump_np++;
+                rcl_dump_np++;
 
-                tnx_read_int(entry.object + TNX_OBJ_X_OFF, &npX);
-                tnx_read_int(entry.object + TNX_OBJ_Y_OFF, &npY);
-                tnx_read_int(entry.object + TNX_OFF, &np70);
-                tnx_read_int(entry.object + TNX_OFF + 4ULL, &np74);
-                tnx_read_ptr(entry.object + TNX_NP_PTR_OFF, &np38);
-                if (!tnx_read_float(entry.object + TNX_OBJ_X_OFF, &npFx)) npFx = 0.0f;
-                if (!tnx_read_float(entry.object + TNX_OBJ_Y_OFF, &npFy)) npFy = 0.0f;
-                if (!tnx_read_float(entry.object + TNX_OFF, &npF70)) npF70 = 0.0f;
-                if (!tnx_read_float(entry.object + TNX_OFF + 4ULL, &npF74)) npF74 = 0.0f;
+                rcl_read_int(entry.object + RCL_OBJ_X_OFF, &npX);
+                rcl_read_int(entry.object + RCL_OBJ_Y_OFF, &npY);
+                rcl_read_int(entry.object + RCL_OFF, &np70);
+                rcl_read_int(entry.object + RCL_OFF + 4ULL, &np74);
+                rcl_read_ptr(entry.object + RCL_NP_PTR_OFF, &np38);
+                if (!rcl_read_float(entry.object + RCL_OBJ_X_OFF, &npFx)) npFx = 0.0f;
+                if (!rcl_read_float(entry.object + RCL_OBJ_Y_OFF, &npFy)) npFy = 0.0f;
+                if (!rcl_read_float(entry.object + RCL_OFF, &npF70)) npF70 = 0.0f;
+                if (!rcl_read_float(entry.object + RCL_OFF + 4ULL, &npF74)) npF74 = 0.0f;
 
             }
 
             continue;
         }
 
-        if (entry.gid == 0 && !t_gidless) {
-            t_reject.rejGidZero++;
+        if (entry.gid == 0 && !rcl_gidless) {
+            rcl_reject.rejGidZero++;
             bad++;
 
             continue;
         }
 
-        if (entry.x <= -TNX_COORD_ABS_MAX || entry.x >= TNX_COORD_ABS_MAX ||
-            entry.y <= -TNX_COORD_ABS_MAX || entry.y >= TNX_COORD_ABS_MAX) {
-            if (t_coord_logs < 6) {
+        if (entry.x <= -RCL_COORD_ABS_MAX || entry.x >= RCL_COORD_ABS_MAX ||
+            entry.y <= -RCL_COORD_ABS_MAX || entry.y >= RCL_COORD_ABS_MAX) {
+            if (rcl_coord_logs < 6) {
                 void *tvtable = NULL;
                 uintptr_t tvtRva = 0;
 
-                t_coord_logs++;
+                rcl_coord_logs++;
 
-                if (tnx_read_ptr(entry.object, &tvtable) && tvtable) tvtRva = (uintptr_t)tvtable - t_base;
+                if (rcl_read_ptr(entry.object, &tvtable) && tvtable) tvtRva = (uintptr_t)tvtable - rcl_base;
 
             }
 
-            if (!TNX_COORD_SOFT) {
-                t_reject.rejOutOfRange++;
+            if (!RCL_COORD_SOFT) {
+                rcl_reject.rejOutOfRange++;
                 bad++;
 
                 continue;
             }
         }
 
-        if (!((entry.teamOld >= 0 && entry.teamOld <= TNX_OBJ_TEAM_MAX) ||
-              (entry.teamNew >= 0 && entry.teamNew <= TNX_OBJ_TEAM_MAX))) {
-            t_reject.rejTeamMissing++;
+        if (!((entry.teamOld >= 0 && entry.teamOld <= RCL_OBJ_TEAM_MAX) ||
+              (entry.teamNew >= 0 && entry.teamNew <= RCL_OBJ_TEAM_MAX))) {
+            rcl_reject.rejTeamMissing++;
             bad++;
 
             continue;
         }
 
-        if (entry.dead == 1) t_reject.deadSeen++;
+        if (entry.dead == 1) rcl_reject.deadSeen++;
 
         out[usable++] = entry;
     }
@@ -188,11 +188,11 @@ int tnx_collect(uintptr_t manager, tnx_obj_t *out, int capacity, int *rejected) 
     return usable;
 }
 
-int tnx_small(long value) {
-    return (value > -TNX_VALUE_MAX && value < TNX_VALUE_MAX) ? 1 : 0;
+int rcl_small(long value) {
+    return (value > -RCL_VALUE_MAX && value < RCL_VALUE_MAX) ? 1 : 0;
 }
 
-float tnx_as_float(uint32_t bits) {
+float rcl_as_float(uint32_t bits) {
     union { uint32_t u; float f; } view;
 
     view.u = bits;
@@ -200,9 +200,9 @@ float tnx_as_float(uint32_t bits) {
     return view.f;
 }
 
-void tnx_discriminate(uintptr_t manager) {
-    tnx_obj_t objects[TNX_OBJECT_MAX];
-    uint32_t words[TNX_ELEMS][TNX_WORDS_2];
+void rcl_discriminate(uintptr_t manager) {
+    rcl_obj_t objects[RCL_OBJECT_MAX];
+    uint32_t words[RCL_ELEMS][RCL_WORDS_2];
     int rejected = 0;
     int usable = 0;
     int n = 0;
@@ -217,10 +217,10 @@ void tnx_discriminate(uintptr_t manager) {
     memset(words, 0, sizeof(words));
 
 
-    usable = tnx_collect(manager, objects, TNX_OBJECT_MAX, &rejected);
+    usable = rcl_collect(manager, objects, RCL_OBJECT_MAX, &rejected);
 
-    t_dodge_probe_usable = usable;
-    if (usable > 0) memcpy(t_dodge_probe_list, objects, (size_t)usable * sizeof(t_dodge_probe_list[0]));
+    rcl_dodge_probe_usable = usable;
+    if (usable > 0) memcpy(rcl_dodge_probe_list, objects, (size_t)usable * sizeof(rcl_dodge_probe_list[0]));
 
     if (usable == 0) {
         char reasons[320];
@@ -236,16 +236,16 @@ void tnx_discriminate(uintptr_t manager) {
         return;
     }
 
-    n = (usable < TNX_ELEMS) ? usable : TNX_ELEMS;
+    n = (usable < RCL_ELEMS) ? usable : RCL_ELEMS;
 
     for (int i = 0; i < n; i++) {
-        if (!tnx_read_bytes(objects[i].object, words[i], sizeof(words[i]))) {
+        if (!rcl_read_bytes(objects[i].object, words[i], sizeof(words[i]))) {
             return;
         }
     }
 
 
-    for (int w = 0; w < TNX_WORDS_2; w++) {
+    for (int w = 0; w < RCL_WORDS_2; w++) {
         int distinct = 0;
         int allSmall = 1;
         int allTiny = 1;
@@ -266,14 +266,14 @@ void tnx_discriminate(uintptr_t manager) {
             if (value < minV) minV = value;
             if (value > maxV) maxV = value;
 
-            if (!tnx_small(value)) allSmall = 0;
+            if (!rcl_small(value)) allSmall = 0;
             if (value < 0 || value > 15) allTiny = 0;
         }
 
         if (distinct <= 1) continue;
 
 
-        if (teamOff < 0 && allTiny && distinct >= 2 && distinct <= TNX_TEAM_MAX) {
+        if (teamOff < 0 && allTiny && distinct >= 2 && distinct <= RCL_TEAM_MAX) {
             teamOff = w * 4;
             teamDistinct = distinct;
         }
@@ -284,7 +284,7 @@ void tnx_discriminate(uintptr_t manager) {
         }
     }
 
-    if (teamOff == (int)TNX_OBJ_X_OFF || teamOff == (int)TNX_OBJ_Y_OFF) {
+    if (teamOff == (int)RCL_OBJ_X_OFF || teamOff == (int)RCL_OBJ_Y_OFF) {
 
         teamOff = -1;
         teamDistinct = 0;
@@ -292,13 +292,13 @@ void tnx_discriminate(uintptr_t manager) {
 
 
     {
-        int order[TNX_WORDS_2];
+        int order[RCL_WORDS_2];
         int orderCount = 0;
-        int defaultWord = (int)(TNX_OBJ_X_OFF / 4);
+        int defaultWord = (int)(RCL_OBJ_X_OFF / 4);
 
-        if (defaultWord >= 0 && defaultWord + 1 < TNX_WORDS_2) order[orderCount++] = defaultWord;
+        if (defaultWord >= 0 && defaultWord + 1 < RCL_WORDS_2) order[orderCount++] = defaultWord;
 
-        for (int w = 0; w + 1 < TNX_WORDS_2; w++) {
+        for (int w = 0; w + 1 < RCL_WORDS_2; w++) {
             if (w != defaultWord) order[orderCount++] = w;
         }
 
@@ -311,8 +311,8 @@ void tnx_discriminate(uintptr_t manager) {
             if (teamOff >= 0 && (w * 4 == teamOff || (w + 1) * 4 == teamOff)) continue;
 
             for (int i = 0; i < n && ok; i++) {
-                if (!tnx_small((int32_t)words[i][w])) ok = 0;
-                if (!tnx_small((int32_t)words[i][w + 1])) ok = 0;
+                if (!rcl_small((int32_t)words[i][w])) ok = 0;
+                if (!rcl_small((int32_t)words[i][w + 1])) ok = 0;
             }
 
             if (!ok) continue;
@@ -337,7 +337,7 @@ void tnx_discriminate(uintptr_t manager) {
         }
     }
 
-    for (int w = 0; w + 1 < TNX_WORDS_2 && floatPairOff < 0; w++) {
+    for (int w = 0; w + 1 < RCL_WORDS_2 && floatPairOff < 0; w++) {
         int ok = 1;
         int anyNonZero = 0;
         int distinctPairs = 0;
@@ -348,12 +348,12 @@ void tnx_discriminate(uintptr_t manager) {
         if (teamOff >= 0 && (w * 4 == teamOff || (w + 1) * 4 == teamOff)) continue;
 
         for (int i = 0; i < n; i++) {
-            float ax = tnx_as_float(words[i][w]);
-            float ay = tnx_as_float(words[i][w + 1]);
+            float ax = rcl_as_float(words[i][w]);
+            float ay = rcl_as_float(words[i][w + 1]);
             int seen = 0;
 
-            if (!(ax > -TNX_FLOAT_MAX && ax < TNX_FLOAT_MAX)) ok = 0;
-            if (!(ay > -TNX_FLOAT_MAX && ay < TNX_FLOAT_MAX)) ok = 0;
+            if (!(ax > -RCL_FLOAT_MAX && ax < RCL_FLOAT_MAX)) ok = 0;
+            if (!(ay > -RCL_FLOAT_MAX && ay < RCL_FLOAT_MAX)) ok = 0;
             if (words[i][w] != 0 || words[i][w + 1] != 0) anyNonZero = 1;
 
             if (i == 0) { fx = ax; fy = ay; }
@@ -373,8 +373,8 @@ void tnx_discriminate(uintptr_t manager) {
 
 
 
-    if (!t_coord_fixed_logged) {
-        t_coord_fixed_logged = 1;
+    if (!rcl_coord_fixed_logged) {
+        rcl_coord_fixed_logged = 1;
 
     }
 }
@@ -382,22 +382,22 @@ void tnx_discriminate(uintptr_t manager) {
 
 
 
-uintptr_t tnx_bounds_obj(uintptr_t receiver) {
+uintptr_t rcl_bounds_obj(uintptr_t receiver) {
     void *out = NULL;
 
     if (!receiver) return 0;
-    if (!tnx_pointer_plausible(receiver)) return 0;
-    if (!tnx_read_ptr(receiver + (uintptr_t)TNX_BOX_PTR_OFF, &out)) return 0;
+    if (!rcl_pointer_plausible(receiver)) return 0;
+    if (!rcl_read_ptr(receiver + (uintptr_t)RCL_BOX_PTR_OFF, &out)) return 0;
     if (!out) return 0;
     if (((uintptr_t)out & 7) != 0) return 0;
-    if (!tnx_addr_readable((uintptr_t)out, 0x100)) return 0;
+    if (!rcl_addr_readable((uintptr_t)out, 0x100)) return 0;
 
     return (uintptr_t)out;
 }
 
-int tnx_clamp(int32_t *x, int32_t *y) {
-    uintptr_t receiver = tnx_controller();
-    uintptr_t bounds = tnx_bounds_obj(receiver);
+int rcl_clamp(int32_t *x, int32_t *y) {
+    uintptr_t receiver = rcl_controller();
+    uintptr_t bounds = rcl_bounds_obj(receiver);
     int32_t maxX = 0;
     int32_t maxY = 0;
     int32_t ox = *x;
@@ -408,8 +408,8 @@ int tnx_clamp(int32_t *x, int32_t *y) {
         return 0;
     }
 
-    if (!tnx_read_int(bounds + TNX_BOUNDS_X_OFF, &maxX)) return 0;
-    if (!tnx_read_int(bounds + TNX_BOUNDS_Y_OFF, &maxY)) return 0;
+    if (!rcl_read_int(bounds + RCL_BOUNDS_X_OFF, &maxX)) return 0;
+    if (!rcl_read_int(bounds + RCL_BOUNDS_Y_OFF, &maxY)) return 0;
 
     if (maxX <= 3 || maxY <= 3 || maxX > 200000 || maxY > 200000) {
 
@@ -427,11 +427,11 @@ int tnx_clamp(int32_t *x, int32_t *y) {
     return 1;
 }
 
-uint64_t t_dec_us = 0;
+uint64_t rcl_dec_us = 0;
 
-uint64_t t_dec_us_max = 0;
+uint64_t rcl_dec_us_max = 0;
 
-uint64_t tnx_us(void) {
+uint64_t rcl_us(void) {
     static mach_timebase_info_data_t tb;
     static int ready = 0;
     uint64_t t = 0;
@@ -448,25 +448,25 @@ uint64_t tnx_us(void) {
     return (t / (uint64_t)tb.denom) * (uint64_t)tb.numer / 1000ULL;
 }
 
-int t_logs_a = 0;
+int rcl_logs_a = 0;
 
-int t_seeded = 0;
+int rcl_seeded = 0;
 
-int32_t t_last_x_a = 0;
+int32_t rcl_last_x_a = 0;
 
-int32_t t_last_y_a = 0;
+int32_t rcl_last_y_a = 0;
 
-uintptr_t tnx_pair_base(void) {
+uintptr_t rcl_pair_base(void) {
     void *battleRaw = NULL;
     uintptr_t battle = 0;
-    uintptr_t alt = tnx_controller();
+    uintptr_t alt = rcl_controller();
 
-    if (t_base && tnx_read_ptr(t_base + TNX_BATTLE_RVA, &battleRaw)) {
+    if (rcl_base && rcl_read_ptr(rcl_base + RCL_BATTLE_RVA, &battleRaw)) {
         battle = (uintptr_t)battleRaw;
     }
 
     if (battle) {
-        if (tnx_hop(battle, NULL)) return battle;
+        if (rcl_hop(battle, NULL)) return battle;
     }
 
     return alt;

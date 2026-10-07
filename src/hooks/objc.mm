@@ -1,6 +1,6 @@
-#include "titanox.h"
+#include "recoil.h"
 
-int tnx_objc_arg_types(const char *types, char *out, size_t capacity) {
+int rcl_objc_arg_types(const char *types, char *out, size_t capacity) {
     if (!types || !out || capacity < 8) return -1;
 
     size_t used = 0;
@@ -19,13 +19,13 @@ int tnx_objc_arg_types(const char *types, char *out, size_t capacity) {
 
         if (c == '^') {
             p++;
-            if (*p == '{' || *p == '(' || *p == '[') p = tnx_skip_compound(p);
+            if (*p == '{' || *p == '(' || *p == '[') p = rcl_skip_compound(p);
             out[used++] = '^';
             continue;
         }
 
         if (c == '{' || c == '(' || c == '[') {
-            p = tnx_skip_compound(p);
+            p = rcl_skip_compound(p);
             out[used++] = 'X';
             continue;
         }
@@ -39,7 +39,7 @@ int tnx_objc_arg_types(const char *types, char *out, size_t capacity) {
     return (int)used;
 }
 
-BOOL tnx_class_owns_method(Class cls, SEL sel) {
+BOOL rcl_class_owns_method(Class cls, SEL sel) {
     if (!cls || !sel) return NO;
 
     unsigned count = 0;
@@ -61,26 +61,26 @@ BOOL tnx_class_owns_method(Class cls, SEL sel) {
     return found;
 }
 
-Class tnx_owner_class(Class cls, SEL sel) {
+Class rcl_owner_class(Class cls, SEL sel) {
     if (!cls || !sel) return Nil;
 
     for (Class c = cls; c; c = class_getSuperclass(c)) {
-        if (tnx_class_owns_method(c, sel)) return c;
+        if (rcl_class_owns_method(c, sel)) return c;
     }
 
     return Nil;
 }
 
-tnx_objc_hook_t *tnx_objc_find(id self, SEL _cmd) {
+rcl_objc_hook_t *rcl_objc_find(id self, SEL _cmd) {
     Class start = object_getClass(self);
 
     if (!start) return NULL;
 
-    tnx_objc_hook_t *bySelector = NULL;
+    rcl_objc_hook_t *bySelector = NULL;
     int bySelectorCount = 0;
 
     for (int i = 0; i < OBJC_HOOK_MAX; i++) {
-        tnx_objc_hook_t *hook = &t_objc_hooks[i];
+        rcl_objc_hook_t *hook = &rcl_objc_hooks[i];
 
         if (!hook->used || hook->sel != _cmd) continue;
 
@@ -97,7 +97,7 @@ tnx_objc_hook_t *tnx_objc_find(id self, SEL _cmd) {
     return NULL;
 }
 
-BOOL tnx_objc_targets(id self, tnx_objc_hook_t *hook) {
+BOOL rcl_objc_targets(id self, rcl_objc_hook_t *hook) {
     if (!hook || hook->wantedCount <= 0) return NO;
 
     Class start = object_getClass(self);
@@ -117,17 +117,17 @@ BOOL tnx_objc_targets(id self, tnx_objc_hook_t *hook) {
     return NO;
 }
 
-void tnx_objc_rep_a(id self, SEL _cmd) {
-    tnx_objc_hook_t *hook = tnx_objc_find(self, _cmd);
+void rcl_objc_rep_a(id self, SEL _cmd) {
+    rcl_objc_hook_t *hook = rcl_objc_find(self, _cmd);
 
 
     if (hook) hook->hits++;
 
 
-    if (hook && !t_inside_hook && tnx_objc_targets(self, hook)) {
-        t_inside_hook = YES;
-        tnx_run_workload();
-        t_inside_hook = NO;
+    if (hook && !rcl_inside_hook && rcl_objc_targets(self, hook)) {
+        rcl_inside_hook = YES;
+        rcl_run_workload();
+        rcl_inside_hook = NO;
     }
 
     if (hook && hook->original) {
@@ -135,42 +135,42 @@ void tnx_objc_rep_a(id self, SEL _cmd) {
     }
 }
 
-void tnx_objc_rep_b(id self, SEL _cmd, id a1) {
-    tnx_objc_hook_t *hook = tnx_objc_find(self, _cmd);
+void rcl_objc_rep_b(id self, SEL _cmd, id a1) {
+    rcl_objc_hook_t *hook = rcl_objc_find(self, _cmd);
 
     if (hook && hook->original) {
         reinterpret_cast<void (*)(id, SEL, id)>(hook->original)(self, _cmd, a1);
     }
 }
 
-void tnx_objc_rep1b(id self, SEL _cmd, BOOL a1) {
-    tnx_objc_hook_t *hook = tnx_objc_find(self, _cmd);
+void rcl_objc_rep1b(id self, SEL _cmd, BOOL a1) {
+    rcl_objc_hook_t *hook = rcl_objc_find(self, _cmd);
 
     if (hook && hook->original) {
         reinterpret_cast<void (*)(id, SEL, BOOL)>(hook->original)(self, _cmd, a1);
     }
 }
 
-void tnx_objc_rep_c(id self, SEL _cmd, id a1, id a2) {
-    tnx_objc_hook_t *hook = tnx_objc_find(self, _cmd);
+void rcl_objc_rep_c(id self, SEL _cmd, id a1, id a2) {
+    rcl_objc_hook_t *hook = rcl_objc_find(self, _cmd);
 
     if (hook && hook->original) {
         reinterpret_cast<void (*)(id, SEL, id, id)>(hook->original)(self, _cmd, a1, a2);
     }
 }
 
-int tnx_objc_arm(const char *clsName, const char *selName) {
+int rcl_objc_arm(const char *clsName, const char *selName) {
     Class wanted = objc_getClass(clsName);
 
     if (!wanted) return 0;
-    if (!tnx_image_owns_address(t_base, (uintptr_t)wanted)) return 0;
+    if (!rcl_image_owns_address(rcl_base, (uintptr_t)wanted)) return 0;
 
     SEL sel = sel_registerName(selName);
 
-    Class owner = tnx_owner_class(wanted, sel);
+    Class owner = rcl_owner_class(wanted, sel);
 
     if (!owner) return 0;
-    if (!tnx_image_owns_address(t_base, (uintptr_t)owner)) return 0;
+    if (!rcl_image_owns_address(rcl_base, (uintptr_t)owner)) return 0;
 
     Method method = class_getInstanceMethod(owner, sel);
 
@@ -182,7 +182,7 @@ int tnx_objc_arm(const char *clsName, const char *selName) {
     if (!types) return 0;
 
     char args[10];
-    int argc = tnx_objc_arg_types(types, args, sizeof(args));
+    int argc = rcl_objc_arg_types(types, args, sizeof(args));
 
     if (argc < 3) return 0;
     if (args[0] != 'v') return 0;
@@ -190,56 +190,56 @@ int tnx_objc_arm(const char *clsName, const char *selName) {
     IMP replacement = NULL;
 
     if (argc == 3) {
-        replacement = reinterpret_cast<IMP>(tnx_objc_rep_a);
+        replacement = reinterpret_cast<IMP>(rcl_objc_rep_a);
     } else if (argc == 4 && args[3] == '@') {
-        replacement = reinterpret_cast<IMP>(tnx_objc_rep_b);
+        replacement = reinterpret_cast<IMP>(rcl_objc_rep_b);
     } else if (argc == 4 && args[3] == 'B') {
-        replacement = reinterpret_cast<IMP>(tnx_objc_rep1b);
+        replacement = reinterpret_cast<IMP>(rcl_objc_rep1b);
     } else if (argc == 5 && args[3] == '@' && args[4] == '@') {
-        replacement = reinterpret_cast<IMP>(tnx_objc_rep_c);
+        replacement = reinterpret_cast<IMP>(rcl_objc_rep_c);
     } else {
         return 0;
     }
 
     for (int i = 0; i < OBJC_HOOK_MAX; i++) {
-        if (!t_objc_hooks[i].used) continue;
-        if (t_objc_hooks[i].cls != owner || t_objc_hooks[i].sel != sel) continue;
+        if (!rcl_objc_hooks[i].used) continue;
+        if (rcl_objc_hooks[i].cls != owner || rcl_objc_hooks[i].sel != sel) continue;
 
         return 0;
     }
 
     for (int i = 0; i < OBJC_HOOK_MAX; i++) {
-        if (t_objc_hooks[i].used) continue;
+        if (rcl_objc_hooks[i].used) continue;
 
         IMP previous = method_setImplementation(method, replacement);
 
         if (!previous) return 0;
 
-        if (tnx_strip_imp(previous) == tnx_strip_imp(replacement)) {
+        if (rcl_strip_imp(previous) == rcl_strip_imp(replacement)) {
             method_setImplementation(method, previous);
             return 0;
         }
 
-        t_objc_hooks[i].used = YES;
-        t_objc_hooks[i].cls = owner;
-        t_objc_hooks[i].sel = sel;
-        t_objc_hooks[i].original = previous;
-        t_objc_hooks[i].replacement = replacement;
-        t_objc_hooks[i].selName = selName;
-        t_objc_hooks[i].signature = types;
-        t_objc_hooks[i].hits = 0;
+        rcl_objc_hooks[i].used = YES;
+        rcl_objc_hooks[i].cls = owner;
+        rcl_objc_hooks[i].sel = sel;
+        rcl_objc_hooks[i].original = previous;
+        rcl_objc_hooks[i].replacement = replacement;
+        rcl_objc_hooks[i].selName = selName;
+        rcl_objc_hooks[i].signature = types;
+        rcl_objc_hooks[i].hits = 0;
 
-        t_objc_hooks[i].wanted[0] = owner;
-        t_objc_hooks[i].wantedCount = 1;
+        rcl_objc_hooks[i].wanted[0] = owner;
+        rcl_objc_hooks[i].wantedCount = 1;
 
 
 
-        uintptr_t originalRaw = tnx_strip_imp(previous);
+        uintptr_t originalRaw = rcl_strip_imp(previous);
 
         rt_dump_target(clsName, originalRaw);
 
         BOOL originalExact = NO;
-        size_t originalIndex = tnx_start_index(originalRaw, &originalExact);
+        size_t originalIndex = rcl_start_index(originalRaw, &originalExact);
 
 
         return 1;
@@ -248,4 +248,4 @@ int tnx_objc_arm(const char *clsName, const char *selName) {
     return 0;
 }
 
-tnx_objc_hook_t t_objc_hooks[OBJC_HOOK_MAX];
+rcl_objc_hook_t rcl_objc_hooks[OBJC_HOOK_MAX];

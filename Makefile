@@ -1,32 +1,32 @@
 TARGET := iphone:clang:latest:15.0
 ARCHS := arm64
 
-TITANOX := deps/Titanox/libtitanox
+RECOIL := deps/Recoil/librecoil
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = Titanox
+TWEAK_NAME = Recoil
 
-Titanox_FILES = $(shell find src -name "*.mm")
-Titanox_FILES += $(TITANOX)/brk_hook/Hook/hook.c
-Titanox_FILES += $(TITANOX)/brk_hook/Hook/mach_excServer.c
+Recoil_FILES = $(shell find src -name "*.mm")
+Recoil_FILES += $(RECOIL)/brk_hook/Hook/hook.c
+Recoil_FILES += $(RECOIL)/brk_hook/Hook/mach_excServer.c
 
 COMMON_INCLUDES = \
 	-Isrc \
 	-Iinclude \
-	-I$(TITANOX) \
-	-I$(TITANOX)/libtitanox \
-	-I$(TITANOX)/brk_hook \
-	-I$(TITANOX)/brk_hook/Hook
+	-I$(RECOIL) \
+	-I$(RECOIL)/librecoil \
+	-I$(RECOIL)/brk_hook \
+	-I$(RECOIL)/brk_hook/Hook
 
-Titanox_CFLAGS = -Iinclude -Isrc -I$(TITANOX)/brk_hook/Hook
+Recoil_CFLAGS = -Iinclude -Isrc -I$(RECOIL)/brk_hook/Hook
 
-Titanox_OBJCFLAGS = -fobjc-arc -std=c++17 $(COMMON_INCLUDES) \
+Recoil_OBJCFLAGS = -fobjc-arc -std=c++17 $(COMMON_INCLUDES) \
 	-Wno-unused-function -Wno-unused-variable -Wno-unused-parameter \
 	-Wno-everything
 
-Titanox_LDFLAGS = -Wl,-undefined,dynamic_lookup
+Recoil_LDFLAGS = -Wl,-undefined,dynamic_lookup
 
-Titanox_FRAMEWORKS = Foundation UIKit
+Recoil_FRAMEWORKS = Foundation UIKit
 
 include $(THEOS_MAKE_PATH)/tweak.mk

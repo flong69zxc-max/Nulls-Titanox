@@ -1,6 +1,6 @@
-#include "titanox.h"
+#include "recoil.h"
 
-static const uint32_t TNX_SHA_K[64] = {
+static const uint32_t RCL_SHA_K[64] = {
     0x428a2f98UL, 0x71374491UL, 0xb5c0fbcfUL, 0xe9b5dba5UL, 0x3956c25bUL, 0x59f111f1UL,
     0x923f82a4UL, 0xab1c5ed5UL, 0xd807aa98UL, 0x12835b01UL, 0x243185beUL, 0x550c7dc3UL,
     0x72be5d74UL, 0x80deb1feUL, 0x9bdc06a7UL, 0xc19bf174UL, 0xe49b69c1UL, 0xefbe4786UL,
@@ -14,7 +14,7 @@ static const uint32_t TNX_SHA_K[64] = {
     0x90befffaUL, 0xa4506cebUL, 0xbef9a3f7UL, 0xc67178f2UL
 };
 
-static const uint32_t TNX_SHA_IV[8] = {
+static const uint32_t RCL_SHA_IV[8] = {
     0x6a09e667UL, 0xbb67ae85UL, 0x3c6ef372UL, 0xa54ff53aUL,
     0x510e527fUL, 0x9b05688cUL, 0x1f83d9abUL, 0x5be0cd19UL
 };
@@ -24,13 +24,13 @@ typedef struct {
     uint8_t buf[64];
     uint64_t bits;
     size_t n;
-} tnx_sha_ctx_t;
+} rcl_sha_ctx_t;
 
-static uint32_t tnx_ror(uint32_t v, int s) {
+static uint32_t rcl_ror(uint32_t v, int s) {
     return (v >> s) | (v << (32 - s));
 }
 
-static void tnx_sha_block(tnx_sha_ctx_t *c, const uint8_t *p) {
+static void rcl_sha_block(rcl_sha_ctx_t *c, const uint8_t *p) {
     uint32_t w[64];
     uint32_t a = 0;
     uint32_t b = 0;
@@ -48,8 +48,8 @@ static void tnx_sha_block(tnx_sha_ctx_t *c, const uint8_t *p) {
     }
 
     for (i = 16; i < 64; i++) {
-        uint32_t s0 = tnx_ror(w[i - 15], 7) ^ tnx_ror(w[i - 15], 18) ^ (w[i - 15] >> 3);
-        uint32_t s1 = tnx_ror(w[i - 2], 17) ^ tnx_ror(w[i - 2], 19) ^ (w[i - 2] >> 10);
+        uint32_t s0 = rcl_ror(w[i - 15], 7) ^ rcl_ror(w[i - 15], 18) ^ (w[i - 15] >> 3);
+        uint32_t s1 = rcl_ror(w[i - 2], 17) ^ rcl_ror(w[i - 2], 19) ^ (w[i - 2] >> 10);
 
         w[i] = w[i - 16] + s0 + w[i - 7] + s1;
     }
@@ -64,10 +64,10 @@ static void tnx_sha_block(tnx_sha_ctx_t *c, const uint8_t *p) {
     hh = c->h[7];
 
     for (i = 0; i < 64; i++) {
-        uint32_t S1 = tnx_ror(e, 6) ^ tnx_ror(e, 11) ^ tnx_ror(e, 25);
+        uint32_t S1 = rcl_ror(e, 6) ^ rcl_ror(e, 11) ^ rcl_ror(e, 25);
         uint32_t ch = (e & f) ^ ((~e) & g);
-        uint32_t t1 = hh + S1 + ch + TNX_SHA_K[i] + w[i];
-        uint32_t S0 = tnx_ror(a, 2) ^ tnx_ror(a, 13) ^ tnx_ror(a, 22);
+        uint32_t t1 = hh + S1 + ch + RCL_SHA_K[i] + w[i];
+        uint32_t S0 = rcl_ror(a, 2) ^ rcl_ror(a, 13) ^ rcl_ror(a, 22);
         uint32_t maj = (a & b) ^ (a & cc) ^ (b & cc);
         uint32_t t2 = S0 + maj;
 
@@ -91,13 +91,13 @@ static void tnx_sha_block(tnx_sha_ctx_t *c, const uint8_t *p) {
     c->h[7] += hh;
 }
 
-static void tnx_sha_init(tnx_sha_ctx_t *c) {
-    memcpy(c->h, TNX_SHA_IV, sizeof(TNX_SHA_IV));
+static void rcl_sha_init(rcl_sha_ctx_t *c) {
+    memcpy(c->h, RCL_SHA_IV, sizeof(RCL_SHA_IV));
     c->bits = 0;
     c->n = 0;
 }
 
-static void tnx_sha_update(tnx_sha_ctx_t *c, const uint8_t *p, size_t length) {
+static void rcl_sha_update(rcl_sha_ctx_t *c, const uint8_t *p, size_t length) {
     size_t i = 0;
 
     c->bits += (uint64_t)length * 8ULL;
@@ -113,13 +113,13 @@ static void tnx_sha_update(tnx_sha_ctx_t *c, const uint8_t *p, size_t length) {
         i += k;
 
         if (c->n == 64) {
-            tnx_sha_block(c, c->buf);
+            rcl_sha_block(c, c->buf);
             c->n = 0;
         }
     }
 }
 
-static void tnx_sha_final(tnx_sha_ctx_t *c, uint8_t out[32]) {
+static void rcl_sha_final(rcl_sha_ctx_t *c, uint8_t out[32]) {
     uint8_t pad[72];
     uint64_t bits = c->bits;
     size_t padlen = (c->n < 56) ? ((size_t)56 - c->n) : ((size_t)120 - c->n);
@@ -130,7 +130,7 @@ static void tnx_sha_final(tnx_sha_ctx_t *c, uint8_t out[32]) {
 
     for (i = 0; i < 8; i++) pad[padlen + (size_t)i] = (uint8_t)(bits >> (56 - 8 * i));
 
-    tnx_sha_update(c, pad, padlen + 8);
+    rcl_sha_update(c, pad, padlen + 8);
 
     for (i = 0; i < 8; i++) {
         out[i * 4] = (uint8_t)(c->h[i] >> 24);
@@ -140,15 +140,15 @@ static void tnx_sha_final(tnx_sha_ctx_t *c, uint8_t out[32]) {
     }
 }
 
-void tnx_sha(const uint8_t *data, size_t length, uint8_t out[32]) {
-    tnx_sha_ctx_t c;
+void rcl_sha(const uint8_t *data, size_t length, uint8_t out[32]) {
+    rcl_sha_ctx_t c;
 
-    tnx_sha_init(&c);
-    tnx_sha_update(&c, data, length);
-    tnx_sha_final(&c, out);
+    rcl_sha_init(&c);
+    rcl_sha_update(&c, data, length);
+    rcl_sha_final(&c, out);
 }
 
-void tnx_ci_make_block(const uint8_t key16[16], const uint8_t mask16[16], uint8_t pad, uint8_t out[64]) {
+void rcl_ci_make_block(const uint8_t key16[16], const uint8_t mask16[16], uint8_t pad, uint8_t out[64]) {
     int i = 0;
 
     for (i = 0; i < 16; i++) out[i] = (uint8_t)(key16[i] ^ mask16[i]);
@@ -156,11 +156,11 @@ void tnx_ci_make_block(const uint8_t key16[16], const uint8_t mask16[16], uint8_
     memset(out + 16, pad, 64 - 16);
 }
 
-uint32_t tnx_ci_compute_token(const uint8_t key16[16], const uint8_t cmd16[16],
+uint32_t rcl_ci_compute_token(const uint8_t key16[16], const uint8_t cmd16[16],
                               const uint32_t *table, const uint8_t innerMask[16],
                               const uint8_t outerMask[16]) {
-    uint8_t msg[TNX_CI_TOKEN_MSG_LEN];
-    uint8_t innerBuf[64 + TNX_CI_TOKEN_MSG_LEN];
+    uint8_t msg[RCL_CI_TOKEN_MSG_LEN];
+    uint8_t innerBuf[64 + RCL_CI_TOKEN_MSG_LEN];
     uint8_t outerBuf[64 + 32];
     uint8_t block[64];
     uint8_t inner[32];
@@ -172,7 +172,7 @@ uint32_t tnx_ci_compute_token(const uint8_t key16[16], const uint8_t cmd16[16],
 
     typeRaw = (uint32_t)cmd16[4] | ((uint32_t)cmd16[5] << 8) |
               ((uint32_t)cmd16[6] << 16) | ((uint32_t)cmd16[7] << 24);
-    typeC = (typeRaw <= TNX_CI_MAX_TABLE_TYPE) ? table[typeRaw] : (uint32_t)TNX_CI_FALLBACK_TYPE_CONST;
+    typeC = (typeRaw <= RCL_CI_MAX_TABLE_TYPE) ? table[typeRaw] : (uint32_t)RCL_CI_FALLBACK_TYPE_CONST;
 
     for (i = 0; i < 12; i++) msg[i] = cmd16[4 + i];
     for (i = 0; i < 4; i++) msg[12 + i] = cmd16[i];
@@ -181,19 +181,19 @@ uint32_t tnx_ci_compute_token(const uint8_t key16[16], const uint8_t cmd16[16],
     msg[18] = (uint8_t)(typeC >> 16);
     msg[19] = (uint8_t)(typeC >> 24);
 
-    tnx_ci_make_block(key16, innerMask, (uint8_t)TNX_CI_HASH_PAD_INNER, block);
+    rcl_ci_make_block(key16, innerMask, (uint8_t)RCL_CI_HASH_PAD_INNER, block);
     memcpy(innerBuf, block, 64);
-    memcpy(innerBuf + 64, msg, TNX_CI_TOKEN_MSG_LEN);
-    tnx_sha(innerBuf, sizeof(innerBuf), inner);
+    memcpy(innerBuf + 64, msg, RCL_CI_TOKEN_MSG_LEN);
+    rcl_sha(innerBuf, sizeof(innerBuf), inner);
 
-    tnx_ci_make_block(key16, outerMask, (uint8_t)TNX_CI_HASH_PAD_OUTER, block);
+    rcl_ci_make_block(key16, outerMask, (uint8_t)RCL_CI_HASH_PAD_OUTER, block);
     memcpy(outerBuf, block, 64);
     memcpy(outerBuf + 64, inner, 32);
-    tnx_sha(outerBuf, sizeof(outerBuf), digest);
+    rcl_sha(outerBuf, sizeof(outerBuf), digest);
 
-    token = (uint32_t)digest[0] | (((uint32_t)digest[1] & (uint32_t)TNX_CI_TOKEN_MASK) << 8);
+    token = (uint32_t)digest[0] | (((uint32_t)digest[1] & (uint32_t)RCL_CI_TOKEN_MASK) << 8);
 
-    if (token <= (uint32_t)TNX_CI_TOKEN_MIN) token = (uint32_t)TNX_CI_TOKEN_MIN;
+    if (token <= (uint32_t)RCL_CI_TOKEN_MIN) token = (uint32_t)RCL_CI_TOKEN_MIN;
 
     return token;
 }

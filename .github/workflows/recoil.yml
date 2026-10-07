@@ -1,4 +1,4 @@
-name: Titanox
+name: Recoil
 
 on:
   push:
@@ -8,14 +8,17 @@ on:
       - 'Makefile'
       - 'control'
       - 'layout/**'
-      - '.github/workflows/titanox.yml'
+      - '.github/workflows/recoil.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
+env:
+  DEPS_REPO: ${{ vars.DEPS_REPO || 'Recoil' }}
+
 concurrency:
-  group: titanox-${{ github.ref }}
+  group: recoil-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -63,7 +66,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p deps
-          git clone -q --depth 1 https://github.com/${{ github.repository_owner }}/Titanox.git deps/Titanox
+          git clone -q --depth 1 "https://github.com/${{ github.repository_owner }}/${DEPS_REPO}.git" deps/Recoil
 
       - name: Build
         run: |
@@ -73,17 +76,17 @@ jobs:
       - name: Package
         run: |
           set -euo pipefail
-          dylib="$(find .theos -type f -name Titanox.dylib ! -path '*.dSYM/*' | sort | head -n 1)"
+          dylib="$(find .theos -type f -name Recoil.dylib ! -path '*.dSYM/*' | sort | head -n 1)"
           test -n "$dylib"
           mkdir -p out
-          cp "$dylib" out/Titanox.dylib
-          file out/Titanox.dylib
+          cp "$dylib" out/Recoil.dylib
+          file out/Recoil.dylib
 
-      - name: Upload Titanox.dylib
+      - name: Upload Recoil.dylib
         uses: actions/upload-artifact@v4
         with:
-          name: Titanox
-          path: out/Titanox.dylib
+          name: Recoil
+          path: out/Recoil.dylib
           if-no-files-found: error
           compression-level: 1
           retention-days: 3

@@ -1,5 +1,5 @@
-#ifndef TITANOX_IMPORTS_H
-#define TITANOX_IMPORTS_H
+#ifndef RECOIL_IMPORTS_H
+#define RECOIL_IMPORTS_H
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>

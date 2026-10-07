@@ -1,5 +1,5 @@
-#ifndef TITANOX_TYPES_H
-#define TITANOX_TYPES_H
+#ifndef RECOIL_TYPES_H
+#define RECOIL_TYPES_H
 
 #include "config.h"
 
@@ -26,7 +26,7 @@ typedef int (*fn_get_coord_t)(void *);
 typedef struct {
     const char *name;
     uintptr_t rva;
-} tnx_rva_entry_t;
+} rcl_rva_entry_t;
 
 typedef struct {
     __unsafe_unretained Class cls;
@@ -39,7 +39,7 @@ typedef struct {
     const char *signature;
     int hits;
     BOOL used;
-} tnx_objc_hook_t;
+} rcl_objc_hook_t;
 
 typedef struct {
     uintptr_t at;
@@ -50,7 +50,7 @@ typedef struct {
     int32_t ownerIdx;
     int dead;
     int ownerClass;
-} tnx_objhit_t;
+} rcl_objhit_t;
 
 typedef struct {
     uintptr_t rva;
@@ -59,19 +59,19 @@ typedef struct {
     unsigned long long shaped;
     unsigned long long ownerEqVt;
     uintptr_t first;
-    uintptr_t inst[TNX_VTCENSUS_INST];
+    uintptr_t inst[RCL_VTCENSUS_INST];
     int instCount;
-} tnx_vtcensus_t;
+} rcl_vtcensus_t;
 
-typedef uint64_t (*tnx_slot_fn_t)(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
+typedef uint64_t (*rcl_slot_fn_t)(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                   uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7);
 
 typedef struct {
     uintptr_t base;
     int used;
     int have;
-    uint32_t prev[TNX_FLOATS];
-} tnx_slot_t;
+    uint32_t prev[RCL_FLOATS];
+} rcl_slot_t;
 
 typedef struct {
     int sampled;
@@ -79,7 +79,7 @@ typedef struct {
     int noVt;
     int teamDistinct;
     int posDistinct;
-} tnx_measure_t;
+} rcl_measure_t;
 
 typedef struct {
     int elements;
@@ -88,12 +88,12 @@ typedef struct {
     int distinctGids;
     int deadOk;
     uintptr_t vt0;
-} tnx_facts_t;
+} rcl_facts_t;
 
 typedef struct {
     uintptr_t low;
     uintptr_t high;
-} tnx_region_t;
+} rcl_region_t;
 
 typedef struct {
     uintptr_t manager;
@@ -110,21 +110,21 @@ typedef struct {
     int teamDistinct;
     int posDistinct;
     int refused;
-} tnx_trail_t;
+} rcl_trail_t;
 
 typedef struct {
     uintptr_t address;
     int32_t count;
     int pass;
-} tnx_seen_t;
+} rcl_seen_t;
 
 typedef struct {
     const char *label;
     const char *value;
     const char *provenance;
-} tnx_fact_t;
+} rcl_fact_t;
 
-typedef void (*tnx_setpred_t)(void *self, int x, int y);
+typedef void (*rcl_setpred_t)(void *self, int x, int y);
 
 typedef struct {
     uintptr_t object;
@@ -137,7 +137,7 @@ typedef struct {
     int32_t   typeWord;
     uint8_t   dead;
     uint8_t   activeFlag;
-} tnx_obj_t;
+} rcl_obj_t;
 
 typedef struct {
     int elementsRead;
@@ -150,7 +150,7 @@ typedef struct {
     int rejOutOfRange;
     int rejTeamMissing;
     int deadSeen;
-} tnx_reject_t;
+} rcl_reject_t;
 
 typedef struct {
     uintptr_t elem;
@@ -166,7 +166,7 @@ typedef struct {
     uint64_t ptick;
     uint64_t qtick;
     int hasPrev;
-} tnx_proj_t;
+} rcl_proj_t;
 
 typedef struct {
     float ax;
@@ -179,13 +179,13 @@ typedef struct {
     float inflatedR;
     float remaining;
     int32_t gid;
-} tnx_seg_t;
+} rcl_seg_t;
 
 typedef struct {
     uintptr_t base;
     int have;
-    uint32_t prev[TNX_WORDS];
-    uint16_t hot[TNX_WORDS];
-} tnx_win_t;
+    uint32_t prev[RCL_WORDS];
+    uint16_t hot[RCL_WORDS];
+} rcl_win_t;
 
 #endif

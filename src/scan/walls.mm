@@ -1,6 +1,6 @@
-#include "titanox.h"
+#include "recoil.h"
 
-int tnx_clip_walk(int32_t ax, int32_t ay, int32_t bx, int32_t by, int32_t cell,
+int rcl_clip_walk(int32_t ax, int32_t ay, int32_t bx, int32_t by, int32_t cell,
                   const uint8_t *solid, int gw, int gh, int32_t *outX, int32_t *outY) {
     int32_t cx = 0;
     int32_t cy = 0;
@@ -70,56 +70,56 @@ int tnx_clip_walk(int32_t ax, int32_t ay, int32_t bx, int32_t by, int32_t cell,
     return 0;
 }
 
-uint8_t t_grid[TNX_GRID_MAX * TNX_GRID_MAX] = { 0 };
+uint8_t rcl_grid[RCL_GRID_MAX * RCL_GRID_MAX] = { 0 };
 
-uintptr_t t_tiles = 0;
+uintptr_t rcl_tiles = 0;
 
-int t_w = 0;
+int rcl_w = 0;
 
-int t_h = 0;
+int rcl_h = 0;
 
-int t_cells = 0;
+int rcl_cells = 0;
 
-int t_solid = 0;
-
-
-int t_img = 0;
-
-int t_own_tx = -1;
-
-int t_own_ty = -1;
-
-int t_own_proj = -1;
+int rcl_solid = 0;
 
 
-int t_passes = 0;
+int rcl_img = 0;
 
-int t_armed = 0;
+int rcl_own_tx = -1;
 
-int t_live = 0;
+int rcl_own_ty = -1;
 
-
-int t_seg_test = 0;
-
-int t_seg_clip = 0;
-
-int t_seg_frac = 0;
+int rcl_own_proj = -1;
 
 
-uint64_t t_built = 0;
+int rcl_passes = 0;
 
-uintptr_t tnx_map_object(void) {
+int rcl_armed = 0;
+
+int rcl_live = 0;
+
+
+int rcl_seg_test = 0;
+
+int rcl_seg_clip = 0;
+
+int rcl_seg_frac = 0;
+
+
+uint64_t rcl_built = 0;
+
+uintptr_t rcl_map_object(void) {
     void *client = NULL;
     void *map = NULL;
 
-    if (!t_scene_object) return 0;
-    if (!tnx_read_ptr((uintptr_t)t_scene_object + TNX_MAP_BASE_OFF, &client) || !client) return 0;
-    if (!tnx_read_ptr((uintptr_t)client + TNX_MAP_PTR_OFF, &map) || !map) return 0;
+    if (!rcl_scene_object) return 0;
+    if (!rcl_read_ptr((uintptr_t)rcl_scene_object + RCL_MAP_BASE_OFF, &client) || !client) return 0;
+    if (!rcl_read_ptr((uintptr_t)client + RCL_MAP_PTR_OFF, &map) || !map) return 0;
 
     return (uintptr_t)map;
 }
 
-int tnx_cell(int tx, int ty, int *proj, int *move) {
+int rcl_cell(int tx, int ty, int *proj, int *move) {
     void *tile = NULL;
     void *type = NULL;
     uint8_t bm = 0;
@@ -128,9 +128,9 @@ int tnx_cell(int tx, int ty, int *proj, int *move) {
     *proj = -1;
     *move = -1;
 
-    if (!t_tiles) return 0;
-    if (tx < 0 || ty < 0 || tx >= t_w || ty >= t_h) return 0;
-    if (!tnx_read_ptr(t_tiles + (uintptr_t)(ty * t_w + tx) * (uintptr_t)TNX_TILE_PTR_STRIDE, &tile)) return 0;
+    if (!rcl_tiles) return 0;
+    if (tx < 0 || ty < 0 || tx >= rcl_w || ty >= rcl_h) return 0;
+    if (!rcl_read_ptr(rcl_tiles + (uintptr_t)(ty * rcl_w + tx) * (uintptr_t)RCL_TILE_PTR_STRIDE, &tile)) return 0;
 
     if (!tile) {
         *proj = 0;
@@ -139,9 +139,9 @@ int tnx_cell(int tx, int ty, int *proj, int *move) {
         return 1;
     }
 
-    if (!tnx_read_ptr((uintptr_t)tile, &type) || !type) return 0;
-    if (!tnx_read_bytes((uintptr_t)type + TNX_TILE_TYPE_MOVE_OFF, &bm, 1)) return 0;
-    if (!tnx_read_bytes((uintptr_t)type + TNX_TILE_TYPE_PROJ_OFF, &bp, 1)) return 0;
+    if (!rcl_read_ptr((uintptr_t)tile, &type) || !type) return 0;
+    if (!rcl_read_bytes((uintptr_t)type + RCL_TILE_TYPE_MOVE_OFF, &bm, 1)) return 0;
+    if (!rcl_read_bytes((uintptr_t)type + RCL_TILE_TYPE_PROJ_OFF, &bp, 1)) return 0;
 
     *proj = (int)bp;
     *move = (int)bm;
@@ -149,7 +149,7 @@ int tnx_cell(int tx, int ty, int *proj, int *move) {
     return 1;
 }
 
-void tnx_tile_of(float x, float y, int *tx, int *ty) {
+void rcl_tile_of(float x, float y, int *tx, int *ty) {
     if (x < 0.0f || y < 0.0f) {
         *tx = -1;
         *ty = -1;
@@ -157,11 +157,11 @@ void tnx_tile_of(float x, float y, int *tx, int *ty) {
         return;
     }
 
-    *tx = (int)(x / TNX_TILE_SIZE);
-    *ty = (int)(y / TNX_TILE_SIZE);
+    *tx = (int)(x / RCL_TILE_SIZE);
+    *ty = (int)(y / RCL_TILE_SIZE);
 }
 
-int tnx_build_2(void) {
+int rcl_build_2(void) {
     void *client = NULL;
     void *tileMap = NULL;
     void *tiles = NULL;
@@ -174,27 +174,27 @@ int tnx_build_2(void) {
     int move = 0;
     int img = 0;
 
-    t_tiles = 0;
-    t_w = 0;
-    t_h = 0;
-    t_cells = 0;
-    t_solid = 0;
-    t_img = 0;
+    rcl_tiles = 0;
+    rcl_w = 0;
+    rcl_h = 0;
+    rcl_cells = 0;
+    rcl_solid = 0;
+    rcl_img = 0;
 
-    if (!t_scene_object) return 0;
-    if (!tnx_read_ptr((uintptr_t)t_scene_object + TNX_MAP_BASE_OFF, &client) || !client) return 0;
-    if (!tnx_read_ptr((uintptr_t)client + TNX_MAP_PTR_OFF, &tileMap) || !tileMap) return 0;
-    if (!tnx_read_int((uintptr_t)tileMap + TNX_MAP_WIDTH_OFF, &w)) return 0;
-    if (!tnx_read_int((uintptr_t)tileMap + TNX_MAP_HEIGHT_OFF, &h)) return 0;
-    if (w < TNX_MAP_MIN || h < TNX_MAP_MIN) return 0;
-    if (w > TNX_GRID_MAX || h > TNX_GRID_MAX) return 0;
-    if (!tnx_read_int((uintptr_t)tileMap + TNX_MAP_COUNT_OFF, &count)) return 0;
+    if (!rcl_scene_object) return 0;
+    if (!rcl_read_ptr((uintptr_t)rcl_scene_object + RCL_MAP_BASE_OFF, &client) || !client) return 0;
+    if (!rcl_read_ptr((uintptr_t)client + RCL_MAP_PTR_OFF, &tileMap) || !tileMap) return 0;
+    if (!rcl_read_int((uintptr_t)tileMap + RCL_MAP_WIDTH_OFF, &w)) return 0;
+    if (!rcl_read_int((uintptr_t)tileMap + RCL_MAP_HEIGHT_OFF, &h)) return 0;
+    if (w < RCL_MAP_MIN || h < RCL_MAP_MIN) return 0;
+    if (w > RCL_GRID_MAX || h > RCL_GRID_MAX) return 0;
+    if (!rcl_read_int((uintptr_t)tileMap + RCL_MAP_COUNT_OFF, &count)) return 0;
     if (count < w * h) return 0;
-    if (!tnx_read_ptr((uintptr_t)tileMap + TNX_MAP_TILES_OFF, &tiles) || !tiles) return 0;
+    if (!rcl_read_ptr((uintptr_t)tileMap + RCL_MAP_TILES_OFF, &tiles) || !tiles) return 0;
 
     cells = w * h;
 
-    memset(t_grid, 0, (size_t)cells);
+    memset(rcl_grid, 0, (size_t)cells);
 
     for (i = 0; i < cells; i++) {
         void *tile = NULL;
@@ -202,42 +202,42 @@ int tnx_build_2(void) {
         uint8_t bm = 0;
         uint8_t bp = 0;
 
-        if (!tnx_read_ptr((uintptr_t)tiles + (uintptr_t)i * (uintptr_t)TNX_TILE_PTR_STRIDE, &tile) || !tile) continue;
-        if (!tnx_read_ptr((uintptr_t)tile, &type) || !type) continue;
-        if ((uintptr_t)type >= t_base && (uintptr_t)type < t_base + TNX_IMAGE_SPAN) img++;
-        if (!tnx_read_bytes((uintptr_t)type + TNX_TILE_TYPE_MOVE_OFF, &bm, 1)) continue;
-        if (!tnx_read_bytes((uintptr_t)type + TNX_TILE_TYPE_PROJ_OFF, &bp, 1)) continue;
+        if (!rcl_read_ptr((uintptr_t)tiles + (uintptr_t)i * (uintptr_t)RCL_TILE_PTR_STRIDE, &tile) || !tile) continue;
+        if (!rcl_read_ptr((uintptr_t)tile, &type) || !type) continue;
+        if ((uintptr_t)type >= rcl_base && (uintptr_t)type < rcl_base + RCL_IMAGE_SPAN) img++;
+        if (!rcl_read_bytes((uintptr_t)type + RCL_TILE_TYPE_MOVE_OFF, &bm, 1)) continue;
+        if (!rcl_read_bytes((uintptr_t)type + RCL_TILE_TYPE_PROJ_OFF, &bp, 1)) continue;
 
         if (bm) move++;
         if (bp) {
             solid++;
-            t_grid[i] = 1;
+            rcl_grid[i] = 1;
         }
     }
 
-    t_tiles = (uintptr_t)tiles;
-    t_w = w;
-    t_h = h;
-    t_cells = cells;
-    t_solid = solid;
-    t_img = img;
+    rcl_tiles = (uintptr_t)tiles;
+    rcl_w = w;
+    rcl_h = h;
+    rcl_cells = cells;
+    rcl_solid = solid;
+    rcl_img = img;
 
     return 1;
 }
 
-float tnx_clip_range(float ax, float ay, float dx, float dy, float rem) {
+float rcl_clip_range(float ax, float ay, float dx, float dy, float rem) {
     int32_t ox = 0;
     int32_t oy = 0;
     float hx = 0.0f;
     float hy = 0.0f;
     float d = 0.0f;
 
-    if (!t_live) return rem;
+    if (!rcl_live) return rem;
 
-    t_seg_test++;
+    rcl_seg_test++;
 
-    if (!tnx_clip_walk((int32_t)ax, (int32_t)ay, (int32_t)(ax + dx * rem), (int32_t)(ay + dy * rem),
-                       (int32_t)TNX_TILE_SIZE, t_grid, t_w, t_h, &ox, &oy)) {
+    if (!rcl_clip_walk((int32_t)ax, (int32_t)ay, (int32_t)(ax + dx * rem), (int32_t)(ay + dy * rem),
+                       (int32_t)RCL_TILE_SIZE, rcl_grid, rcl_w, rcl_h, &ox, &oy)) {
         return rem;
     }
 
@@ -245,85 +245,85 @@ float tnx_clip_range(float ax, float ay, float dx, float dy, float rem) {
     hy = (float)oy;
     d = sqrtf((hx - ax) * (hx - ax) + (hy - ay) * (hy - ay));
 
-    if (d < TNX_MIN_CLIP) d = TNX_MIN_CLIP;
+    if (d < RCL_MIN_CLIP) d = RCL_MIN_CLIP;
 
-    t_seg_clip++;
+    rcl_seg_clip++;
 
     return d;
 }
 
-void tnx_arm(float ownX, float ownY) {
+void rcl_arm(float ownX, float ownY) {
     int tx = -1;
     int ty = -1;
     int proj = -1;
     int move = -1;
     int solidPct = 0;
     int imgPct = 0;
-    int wasArmed = t_armed;
+    int wasArmed = rcl_armed;
     int gate = 1;
 
-    if (t_seg_test >= TNX_MIN_SEGS && t_seg_frac > TNX_MAX_CLIP_PCT) {
-        t_armed = 0;
-        t_passes = 0;
+    if (rcl_seg_test >= RCL_MIN_SEGS && rcl_seg_frac > RCL_MAX_CLIP_PCT) {
+        rcl_armed = 0;
+        rcl_passes = 0;
     }
 
-    t_live = 0;
-    t_seg_test = 0;
-    t_seg_clip = 0;
-    t_seg_frac = 0;
+    rcl_live = 0;
+    rcl_seg_test = 0;
+    rcl_seg_clip = 0;
+    rcl_seg_frac = 0;
 
-    if (!TNX_WALL_CLIP) return;
+    if (!RCL_WALL_CLIP) return;
 
-    if (t_armed && (t_ticks_a - t_built) < TNX_REBUILD_TICKS) {
-        tnx_tile_of(ownX, ownY, &tx, &ty);
+    if (rcl_armed && (rcl_ticks_a - rcl_built) < RCL_REBUILD_TICKS) {
+        rcl_tile_of(ownX, ownY, &tx, &ty);
 
-        if (tx == t_own_tx && ty == t_own_ty && t_own_proj == 0) {
-            t_live = 1;
-        } else if (tnx_cell(tx, ty, &proj, &move) && proj == 0) {
-            t_own_tx = tx;
-            t_own_ty = ty;
-            t_own_proj = proj;
-            t_live = 1;
+        if (tx == rcl_own_tx && ty == rcl_own_ty && rcl_own_proj == 0) {
+            rcl_live = 1;
+        } else if (rcl_cell(tx, ty, &proj, &move) && proj == 0) {
+            rcl_own_tx = tx;
+            rcl_own_ty = ty;
+            rcl_own_proj = proj;
+            rcl_live = 1;
         } else {
-            t_armed = 0;
-            t_passes = 0;
+            rcl_armed = 0;
+            rcl_passes = 0;
         }
 
         return;
     }
 
-    if (!tnx_build_2()) {
-        t_armed = 0;
-        t_passes = 0;
+    if (!rcl_build_2()) {
+        rcl_armed = 0;
+        rcl_passes = 0;
 
         return;
     }
 
-    t_built = t_ticks_a;
+    rcl_built = rcl_ticks_a;
 
-    tnx_tile_of(ownX, ownY, &tx, &ty);
-    tnx_cell(tx, ty, &proj, &move);
+    rcl_tile_of(ownX, ownY, &tx, &ty);
+    rcl_cell(tx, ty, &proj, &move);
 
-    t_own_tx = tx;
-    t_own_ty = ty;
-    t_own_proj = proj;
+    rcl_own_tx = tx;
+    rcl_own_ty = ty;
+    rcl_own_proj = proj;
 
-    solidPct = (t_solid * 100) / t_cells;
-    imgPct = (t_img * 100) / t_cells;
+    solidPct = (rcl_solid * 100) / rcl_cells;
+    imgPct = (rcl_img * 100) / rcl_cells;
 
-    if (tx < 0 || ty < 0 || tx >= t_w || ty >= t_h) gate = 0;
+    if (tx < 0 || ty < 0 || tx >= rcl_w || ty >= rcl_h) gate = 0;
     if (proj != 0) gate = 0;
-    if (solidPct > TNX_MAX_SOLID_PCT) gate = 0;
-    if (imgPct < TNX_MIN_IMG_PCT) gate = 0;
+    if (solidPct > RCL_MAX_SOLID_PCT) gate = 0;
+    if (imgPct < RCL_MIN_IMG_PCT) gate = 0;
 
     if (gate) {
-        if (t_passes < TNX_MIN_PASSES) t_passes++;
-        if (t_passes >= TNX_MIN_PASSES) t_armed = 1;
+        if (rcl_passes < RCL_MIN_PASSES) rcl_passes++;
+        if (rcl_passes >= RCL_MIN_PASSES) rcl_armed = 1;
     } else {
-        t_armed = 0;
-        t_passes = 0;
+        rcl_armed = 0;
+        rcl_passes = 0;
     }
 
-    if (t_armed) t_live = 1;
+    if (rcl_armed) rcl_live = 1;
 
 }

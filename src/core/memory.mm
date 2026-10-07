@@ -1,13 +1,13 @@
-#include "titanox.h"
+#include "recoil.h"
 
-const char *t_image_names[4] = {
+const char *rcl_image_names[4] = {
     "Nulls Brawl",
     "Laser",
     "NB.app",
     NULL
 };
 
-const tnx_rva_entry_t t_rvas[32] = {
+const rcl_rva_entry_t rcl_rvas[32] = {
     { "RVA_BATTLEMODE_GETINSTANCE", RVA_BATTLEMODE_GETINSTANCE },
     { "RVA_BATTLESCREEN__BATTLESCREEN", RVA_BATTLESCREEN__BATTLESCREEN },
     { "RVA_BATTLESCREEN__UPDATEMOVEMENT", RVA_BATTLESCREEN__UPDATEMOVEMENT },
@@ -44,26 +44,26 @@ const tnx_rva_entry_t t_rvas[32] = {
 
 
 
-BOOL t_setup_done = NO;
+BOOL rcl_setup_done = NO;
 
 
 
-BOOL t_aim_rejected = NO;
+BOOL rcl_aim_rejected = NO;
 
-__thread BOOL t_inside_hook = NO;
+__thread BOOL rcl_inside_hook = NO;
 
-uint64_t t_dodge_calls = 0;
+uint64_t rcl_dodge_calls = 0;
 
 
-int t_dump_np = 0;
+int rcl_dump_np = 0;
 
 
-BOOL t_mode_strong = NO;
+BOOL rcl_mode_strong = NO;
 
 
 
 
-int t_manager_count = 0;
+int rcl_manager_count = 0;
 
 
 
@@ -83,35 +83,35 @@ int t_manager_count = 0;
 
 
 
-uintptr_t t_objvote_best_owner = 0;
+uintptr_t rcl_objvote_best_owner = 0;
 
 
 
 
 
 
-int t_objvote_best_teamcount = 0;
+int rcl_objvote_best_teamcount = 0;
 
 
-tnx_objhit_t t_objhits[TNX_OBJ_HIT_DUMP_MAX];
+rcl_objhit_t rcl_objhits[RCL_OBJ_HIT_DUMP_MAX];
 
-int t_objhit_count = 0;
+int rcl_objhit_count = 0;
 
 
 
-int t_objvote_max_votes = 0;
+int rcl_objvote_max_votes = 0;
 
 
 
 
-int t_heap_region_capped = 0;
+int rcl_heap_region_capped = 0;
 
-uintptr_t t_img_span_lo = 0;
+uintptr_t rcl_img_span_lo = 0;
 
-uintptr_t t_img_span_hi = 0;
+uintptr_t rcl_img_span_hi = 0;
 
 
-int t_trail_best = 0;
+int rcl_trail_best = 0;
 
 
 
@@ -119,28 +119,28 @@ int t_trail_best = 0;
 
 
 
-int t_votescan_attempts = 0;
+int rcl_votescan_attempts = 0;
 
-double t_votescan_last = 0.0;
+double rcl_votescan_last = 0.0;
 
-BOOL t_snapshot_first = NO;
+BOOL rcl_snapshot_first = NO;
 
-BOOL t_snapshot_second = NO;
+BOOL rcl_snapshot_second = NO;
 
-double t_snapshot_start = 0.0;
+double rcl_snapshot_start = 0.0;
 
 
-uintptr_t t_addr_getinstance = 0;
+uintptr_t rcl_addr_getinstance = 0;
 
-uintptr_t t_addr_getownchar = 0;
+uintptr_t rcl_addr_getownchar = 0;
 
-uintptr_t t_addr_getteam = 0;
+uintptr_t rcl_addr_getteam = 0;
 
-uintptr_t t_addr_getx = 0;
+uintptr_t rcl_addr_getx = 0;
 
-uintptr_t t_addr_gety = 0;
+uintptr_t rcl_addr_gety = 0;
 
-uintptr_t t_addr_setprediction = 0;
+uintptr_t rcl_addr_setprediction = 0;
 
 
 
@@ -148,14 +148,14 @@ uintptr_t t_addr_setprediction = 0;
 
 
 
-uintptr_t t_addr_battlescreen = 0;
+uintptr_t rcl_addr_battlescreen = 0;
 
 
 
 
 
 
-uintptr_t tnx_strip_imp(IMP imp) {
+uintptr_t rcl_strip_imp(IMP imp) {
 #if defined(__has_feature)
 #if __has_feature(ptrauth_calls)
     return (uintptr_t)ptrauth_strip((void *)imp, ptrauth_key_function_pointer);
@@ -170,62 +170,62 @@ uintptr_t tnx_strip_imp(IMP imp) {
 
 
 
-volatile int t_at = 0;
+volatile int rcl_at = 0;
 
 
-uint64_t t_stale = 0;
+uint64_t rcl_stale = 0;
 
-uintptr_t t_slot_object[TNX_SLOT_COUNT] = { 0 };
+uintptr_t rcl_slot_object[RCL_SLOT_COUNT] = { 0 };
 
-uintptr_t t_slot_arg[TNX_SLOT_COUNT] = { 0 };
-
-
-
-
-
-
-int t_no_source_passes = 0;
-
-int t_route_logged = 0;
-
-
-
-uintptr_t t_slot_adopted = 0;
+uintptr_t rcl_slot_arg[RCL_SLOT_COUNT] = { 0 };
 
 
 
 
 
 
+int rcl_no_source_passes = 0;
 
-
-int t_sig_ticks = 0;
-
-
-uintptr_t t_sig_last = 0;
+int rcl_route_logged = 0;
 
 
 
-
-
-
-uint64_t t_walk_tick = 0;
-
-
-int t_walk_count = -1;
-
-int t_coord_fixed_logged = 0;
-
-
-
-uint64_t t_time = 0;
-
-uint64_t t_slow = 0;
+uintptr_t rcl_slot_adopted = 0;
 
 
 
 
-BOOL tnx_query_region(uintptr_t address,
+
+
+
+
+int rcl_sig_ticks = 0;
+
+
+uintptr_t rcl_sig_last = 0;
+
+
+
+
+
+
+uint64_t rcl_walk_tick = 0;
+
+
+int rcl_walk_count = -1;
+
+int rcl_coord_fixed_logged = 0;
+
+
+
+uint64_t rcl_time = 0;
+
+uint64_t rcl_slow = 0;
+
+
+
+
+BOOL rcl_query_region(uintptr_t address,
                              vm_prot_t *protection,
                              vm_prot_t *maxProtection,
                              mach_vm_size_t *regionSize,
@@ -262,7 +262,7 @@ BOOL tnx_query_region(uintptr_t address,
     return YES;
 }
 
-BOOL tnx_addr_writable(uintptr_t address, size_t length) {
+BOOL rcl_addr_writable(uintptr_t address, size_t length) {
     if (!address || !length) return NO;
 
     uintptr_t end = address + length;
@@ -275,7 +275,7 @@ BOOL tnx_addr_writable(uintptr_t address, size_t length) {
         mach_vm_size_t size = 0;
         uintptr_t start = 0;
 
-        if (!tnx_query_region(cursor, &protection, NULL, &size, &start)) return NO;
+        if (!rcl_query_region(cursor, &protection, NULL, &size, &start)) return NO;
         if (size == 0) return NO;
         if ((protection & VM_PROT_WRITE) == 0) return NO;
 
@@ -288,7 +288,7 @@ BOOL tnx_addr_writable(uintptr_t address, size_t length) {
     return cursor >= end;
 }
 
-BOOL tnx_read_bytes(uintptr_t address, void *out, size_t length) {
+BOOL rcl_read_bytes(uintptr_t address, void *out, size_t length) {
     if (!out || !length) return NO;
     if (!address) return NO;
 
@@ -305,33 +305,33 @@ BOOL tnx_read_bytes(uintptr_t address, void *out, size_t length) {
     return result == KERN_SUCCESS && got == (vm_size_t)length;
 }
 
-BOOL tnx_pointer_plausible(uintptr_t value) {
+BOOL rcl_pointer_plausible(uintptr_t value) {
     if (value < 0x10000) return NO;
     if (value & 7) return NO;
 
     return YES;
 }
 
-BOOL tnx_read_byte(uintptr_t address, uint8_t *out) {
-    return tnx_read_bytes(address, out, 1);
+BOOL rcl_read_byte(uintptr_t address, uint8_t *out) {
+    return rcl_read_bytes(address, out, 1);
 }
 
-BOOL tnx_read_int(uintptr_t address, int32_t *out) {
+BOOL rcl_read_int(uintptr_t address, int32_t *out) {
     if (!out) return NO;
     if (address & 3) return NO;
 
-    return tnx_read_bytes(address, out, 4);
+    return rcl_read_bytes(address, out, 4);
 }
 
-BOOL tnx_read_float(uintptr_t address, float *out) {
+BOOL rcl_read_float(uintptr_t address, float *out) {
     if (address & 3) return NO;
 
-    return tnx_read_bytes(address, out, 4);
+    return rcl_read_bytes(address, out, 4);
 }
 
 
 
-BOOL tnx_writable(uintptr_t address, size_t length) {
+BOOL rcl_writable(uintptr_t address, size_t length) {
     uintptr_t end = address + length;
     uintptr_t cursor = address;
 
@@ -344,7 +344,7 @@ BOOL tnx_writable(uintptr_t address, size_t length) {
         uintptr_t start = 0;
         uintptr_t next = 0;
 
-        if (!tnx_query_region(cursor, &protection, NULL, &size, &start)) return NO;
+        if (!rcl_query_region(cursor, &protection, NULL, &size, &start)) return NO;
         if ((protection & VM_PROT_WRITE) == 0) return NO;
         if (size == 0) return NO;
 
@@ -357,12 +357,12 @@ BOOL tnx_writable(uintptr_t address, size_t length) {
     return cursor >= end;
 }
 
-void tnx_note(uintptr_t address, const void *src, size_t length, int denied) {
-    int n = t_at;
+void rcl_note(uintptr_t address, const void *src, size_t length, int denied) {
+    int n = rcl_at;
     uint32_t value = 0;
 
     if (n < 0) n = 0;
-    if (n >= TNX_JOURNAL) n = 0;
+    if (n >= RCL_JOURNAL) n = 0;
 
     if (src && length) {
         size_t take = length < sizeof(value) ? length : sizeof(value);
@@ -370,70 +370,70 @@ void tnx_note(uintptr_t address, const void *src, size_t length, int denied) {
         memcpy(&value, src, take);
     }
 
-    t_at = (n + 1) % TNX_JOURNAL;
+    rcl_at = (n + 1) % RCL_JOURNAL;
 }
 
-BOOL tnx_write_bytes(uintptr_t address, const void *src, size_t length) {
+BOOL rcl_write_bytes(uintptr_t address, const void *src, size_t length) {
     if (!src || !length) return NO;
     if (!address) return NO;
 
-    if (TNX_WRITE_GUARD && !tnx_writable(address, length)) {
-        tnx_note(address, src, length, 1);
+    if (RCL_WRITE_GUARD && !rcl_writable(address, length)) {
+        rcl_note(address, src, length, 1);
 
 
         return NO;
     }
 
-    tnx_note(address, src, length, 0);
+    rcl_note(address, src, length, 0);
 
     memcpy((void *)address, src, length);
 
     return YES;
 }
 
-BOOL tnx_write_float(uintptr_t address, float value) {
+BOOL rcl_write_float(uintptr_t address, float value) {
     if (address & 3) return NO;
 
-    return tnx_write_bytes(address, &value, sizeof(value));
+    return rcl_write_bytes(address, &value, sizeof(value));
 }
 
-BOOL tnx_read_ptr(uintptr_t address, void **out) {
+BOOL rcl_read_ptr(uintptr_t address, void **out) {
     if (!out) return NO;
     if (address & 7) return NO;
 
-    return tnx_read_bytes(address, out, sizeof(void *));
+    return rcl_read_bytes(address, out, sizeof(void *));
 }
 
-void *tnx_read_global_ptr(uintptr_t rva) {
-    if (!t_base || !rva) return NULL;
+void *rcl_read_global_ptr(uintptr_t rva) {
+    if (!rcl_base || !rva) return NULL;
 
     void *value = NULL;
 
-    if (!tnx_read_ptr(t_base + rva, &value)) return NULL;
+    if (!rcl_read_ptr(rcl_base + rva, &value)) return NULL;
 
     return value;
 }
 
-uintptr_t tnx_callable(uintptr_t rva) {
-    if (!t_base || !rva) return 0;
+uintptr_t rcl_callable(uintptr_t rva) {
+    if (!rcl_base || !rva) return 0;
 
-    uintptr_t address = t_base + rva;
+    uintptr_t address = rcl_base + rva;
 
-    if (!tnx_addr_executable(address)) return 0;
-    if (!tnx_image_text_contains(t_base, address)) return 0;
+    if (!rcl_addr_executable(address)) return 0;
+    if (!rcl_image_text_contains(rcl_base, address)) return 0;
 
     BOOL exact = NO;
 
-    tnx_start_index(address, &exact);
+    rcl_start_index(address, &exact);
 
     if (exact) return address;
-    if (tnx_looks_like_start(address)) return address;
+    if (rcl_looks_like_start(address)) return address;
 
     return 0;
 }
-BOOL tnx_copy(uintptr_t source, void *destination, size_t length) {
+BOOL rcl_copy(uintptr_t source, void *destination, size_t length) {
     if (!source || !destination || !length) return NO;
-    if (!tnx_addr_readable(source, length)) return NO;
+    if (!rcl_addr_readable(source, length)) return NO;
 
     vm_size_t copied = 0;
 
@@ -448,17 +448,17 @@ BOOL tnx_copy(uintptr_t source, void *destination, size_t length) {
     return result == KERN_SUCCESS && copied == (vm_size_t)length;
 }
 
-BOOL tnx_text_section(uintptr_t *address, uint64_t *size) {
-    if (!t_base) return NO;
-    if (!tnx_addr_readable(t_base, sizeof(struct mach_header_64))) return NO;
+BOOL rcl_text_section(uintptr_t *address, uint64_t *size) {
+    if (!rcl_base) return NO;
+    if (!rcl_addr_readable(rcl_base, sizeof(struct mach_header_64))) return NO;
 
-    const struct mach_header_64 *header = (const struct mach_header_64 *)t_base;
+    const struct mach_header_64 *header = (const struct mach_header_64 *)rcl_base;
 
     if (header->magic != MH_MAGIC_64) return NO;
 
     const uint8_t *cursor = (const uint8_t *)(header + 1);
     const uint8_t *limit = cursor + header->sizeofcmds;
-    uintptr_t slide = tnx_image_slide(t_base);
+    uintptr_t slide = rcl_image_slide(rcl_base);
 
     for (uint32_t i = 0; i < header->ncmds; i++) {
         if (cursor + sizeof(struct load_command) > limit) return NO;
@@ -497,18 +497,18 @@ BOOL tnx_text_section(uintptr_t *address, uint64_t *size) {
     return NO;
 }
 
-BOOL tnx_valid_header(uintptr_t base) {
+BOOL rcl_valid_header(uintptr_t base) {
     if (!base) return NO;
     struct mach_header_64 header;
 
-    if (!tnx_pointer_plausible(base)) return NO;
-    if (!tnx_read_bytes(base, &header, sizeof(header))) return NO;
+    if (!rcl_pointer_plausible(base)) return NO;
+    if (!rcl_read_bytes(base, &header, sizeof(header))) return NO;
 
     if (header.magic != MH_MAGIC_64) return NO;
     if (header.ncmds == 0 || header.ncmds > 4096) return NO;
     if (header.sizeofcmds == 0) return NO;
     if (header.sizeofcmds > (4u * 1024u * 1024u)) return NO;
-    if (!tnx_image_text_contains(base, base + TNX_IMAGE_TEXT_WINDOW)) return NO;
+    if (!rcl_image_text_contains(base, base + RCL_IMAGE_TEXT_WINDOW)) return NO;
 
     return YES;
 }
@@ -531,13 +531,13 @@ BOOL find_game_image(uintptr_t *out_base) {
         if (strstr(path, "/usr/lib/")) continue;
         if (strstr(path, ".framework/")) continue;
         if (strstr(path, ".dylib")) continue;
-        if (tnx_name_marks_host_runtime(path)) continue;
-        if (!tnx_valid_header(base)) continue;
+        if (rcl_name_marks_host_runtime(path)) continue;
+        if (!rcl_valid_header(base)) continue;
 
         BOOL matched = NO;
 
-        for (int n = 0; t_image_names[n]; n++) {
-            if (strstr(path, t_image_names[n])) {
+        for (int n = 0; rcl_image_names[n]; n++) {
+            if (strstr(path, rcl_image_names[n])) {
                 matched = YES;
                 break;
             }
@@ -560,11 +560,9 @@ BOOL find_game_image(uintptr_t *out_base) {
 }
 
 
-uint64_t t_drain = 0;
+uint64_t rcl_drain = 0;
 
-uint64_t t_q_max = 0;
-
-
+uint64_t rcl_q_max = 0;
 
 
 
@@ -572,23 +570,25 @@ uint64_t t_q_max = 0;
 
 
 
-uintptr_t t_owner = 0;
 
-int t_wired = 0;
 
-dispatch_source_t t_scan_timer = NULL;
+uintptr_t rcl_owner = 0;
 
-BOOL tnx_segment_range(const char *name, uintptr_t *lo, uintptr_t *hi) {
-    if (!t_base || !name) return NO;
-    if (!tnx_addr_readable(t_base, sizeof(struct mach_header_64))) return NO;
+int rcl_wired = 0;
 
-    const struct mach_header_64 *header = (const struct mach_header_64 *)t_base;
+dispatch_source_t rcl_scan_timer = NULL;
+
+BOOL rcl_segment_range(const char *name, uintptr_t *lo, uintptr_t *hi) {
+    if (!rcl_base || !name) return NO;
+    if (!rcl_addr_readable(rcl_base, sizeof(struct mach_header_64))) return NO;
+
+    const struct mach_header_64 *header = (const struct mach_header_64 *)rcl_base;
 
     if (header->magic != MH_MAGIC_64) return NO;
 
     const uint8_t *cursor = (const uint8_t *)(header + 1);
     const uint8_t *limit = cursor + header->sizeofcmds;
-    uintptr_t slide = tnx_image_slide(t_base);
+    uintptr_t slide = rcl_image_slide(rcl_base);
 
     for (uint32_t i = 0; i < header->ncmds; i++) {
         if (cursor + sizeof(struct load_command) > limit) return NO;
@@ -614,19 +614,19 @@ BOOL tnx_segment_range(const char *name, uintptr_t *lo, uintptr_t *hi) {
 
     return NO;
 }
-void tnx_image_span_refresh(void) {
-    t_img_span_lo = 0;
-    t_img_span_hi = 0;
+void rcl_image_span_refresh(void) {
+    rcl_img_span_lo = 0;
+    rcl_img_span_hi = 0;
 
-    if (!t_base || !tnx_addr_readable(t_base, sizeof(struct mach_header_64))) return;
+    if (!rcl_base || !rcl_addr_readable(rcl_base, sizeof(struct mach_header_64))) return;
 
-    const struct mach_header_64 *header = (const struct mach_header_64 *)t_base;
+    const struct mach_header_64 *header = (const struct mach_header_64 *)rcl_base;
 
     if (header->magic != MH_MAGIC_64) return;
 
     const uint8_t *cursor = (const uint8_t *)(header + 1);
     const uint8_t *limit = cursor + header->sizeofcmds;
-    uintptr_t slide = tnx_image_slide(t_base);
+    uintptr_t slide = rcl_image_slide(rcl_base);
 
     for (uint32_t i = 0; i < header->ncmds; i++) {
         if (cursor + sizeof(struct load_command) > limit) break;
@@ -643,8 +643,8 @@ void tnx_image_span_refresh(void) {
                 uintptr_t start = slide + (uintptr_t)segment->vmaddr;
                 uintptr_t end = start + (uintptr_t)segment->vmsize;
 
-                if (!t_img_span_lo || start < t_img_span_lo) t_img_span_lo = start;
-                if (end > t_img_span_hi) t_img_span_hi = end;
+                if (!rcl_img_span_lo || start < rcl_img_span_lo) rcl_img_span_lo = start;
+                if (end > rcl_img_span_hi) rcl_img_span_hi = end;
             }
         }
 
@@ -652,17 +652,17 @@ void tnx_image_span_refresh(void) {
     }
 
 }
-const char *tnx_image_segment_name(uintptr_t value) {
-    if (!t_base || !value) return NULL;
-    if (!tnx_addr_readable(t_base, sizeof(struct mach_header_64))) return NULL;
+const char *rcl_image_segment_name(uintptr_t value) {
+    if (!rcl_base || !value) return NULL;
+    if (!rcl_addr_readable(rcl_base, sizeof(struct mach_header_64))) return NULL;
 
-    const struct mach_header_64 *header = (const struct mach_header_64 *)t_base;
+    const struct mach_header_64 *header = (const struct mach_header_64 *)rcl_base;
 
     if (header->magic != MH_MAGIC_64) return NULL;
 
     const uint8_t *cursor = (const uint8_t *)(header + 1);
     const uint8_t *limit = cursor + header->sizeofcmds;
-    uintptr_t slide = tnx_image_slide(t_base);
+    uintptr_t slide = rcl_image_slide(rcl_base);
 
     for (uint32_t i = 0; i < header->ncmds; i++) {
         if (cursor + sizeof(struct load_command) > limit) return NULL;
@@ -690,39 +690,39 @@ const char *tnx_image_segment_name(uintptr_t value) {
     return NULL;
 }
 
-tnx_region_t t_heap_regions[TNX_HEAP_REGION_MAX];
+rcl_region_t rcl_heap_regions[RCL_HEAP_REGION_MAX];
 
-int t_heap_region_count = 0;
+int rcl_heap_region_count = 0;
 
-uintptr_t t_heap_window_low = 0;
+uintptr_t rcl_heap_window_low = 0;
 
-uintptr_t t_heap_window_high = 0;
+uintptr_t rcl_heap_window_high = 0;
 
 
-void tnx_heap_regions_refresh(void) {
+void rcl_heap_regions_refresh(void) {
     uintptr_t cursor = 0x10000;
     uintptr_t lowest = 0;
     uintptr_t highest = 0;
     int count = 0;
 
-    for (int guard = 0; guard < 8192 && count < TNX_HEAP_REGION_MAX; guard++) {
+    for (int guard = 0; guard < 8192 && count < RCL_HEAP_REGION_MAX; guard++) {
         vm_prot_t protection = 0;
         mach_vm_size_t size = 0;
         uintptr_t start = 0;
         uintptr_t next = 0;
 
-        if (!tnx_query_region(cursor, &protection, NULL, &size, &start)) break;
+        if (!rcl_query_region(cursor, &protection, NULL, &size, &start)) break;
         if (size == 0) break;
 
         next = start + (uintptr_t)size;
         if (next <= cursor) break;
 
         if ((protection & VM_PROT_WRITE) &&
-            size <= TNX_HEAP_REGION_MAX_SIZE &&
+            size <= RCL_HEAP_REGION_MAX_SIZE &&
             start >= 0x10000 &&
-            !tnx_image_segment_name(start)) {
-            t_heap_regions[count].low = start;
-            t_heap_regions[count].high = next;
+            !rcl_image_segment_name(start)) {
+            rcl_heap_regions[count].low = start;
+            rcl_heap_regions[count].high = next;
             count++;
 
             if (!lowest || start < lowest) lowest = start;
@@ -732,31 +732,31 @@ void tnx_heap_regions_refresh(void) {
         cursor = next;
     }
 
-    t_heap_region_count = count;
-    t_heap_window_low = lowest;
-    t_heap_window_high = highest;
+    rcl_heap_region_count = count;
+    rcl_heap_window_low = lowest;
+    rcl_heap_window_high = highest;
 
-    t_heap_region_capped = (count >= TNX_HEAP_REGION_MAX) ? 1 : 0;
+    rcl_heap_region_capped = (count >= RCL_HEAP_REGION_MAX) ? 1 : 0;
 
-    tnx_image_span_refresh();
+    rcl_image_span_refresh();
 }
 
-BOOL tnx_heap_contains(uintptr_t value) {
+BOOL rcl_heap_contains(uintptr_t value) {
     int lo = 0;
-    int hi = t_heap_region_count - 1;
+    int hi = rcl_heap_region_count - 1;
 
     if (!value) return NO;
 
-    if (!t_heap_region_count) return tnx_image_segment_name(value) ? NO : YES;
+    if (!rcl_heap_region_count) return rcl_image_segment_name(value) ? NO : YES;
 
-    if (value < t_heap_window_low || value >= t_heap_window_high) return NO;
+    if (value < rcl_heap_window_low || value >= rcl_heap_window_high) return NO;
 
     while (lo <= hi) {
         int mid = lo + (hi - lo) / 2;
 
-        if (value < t_heap_regions[mid].low) {
+        if (value < rcl_heap_regions[mid].low) {
             hi = mid - 1;
-        } else if (value >= t_heap_regions[mid].high) {
+        } else if (value >= rcl_heap_regions[mid].high) {
             lo = mid + 1;
         } else {
             return YES;
@@ -766,156 +766,156 @@ BOOL tnx_heap_contains(uintptr_t value) {
     return NO;
 }
 
-BOOL tnx_vtable_shaped(uintptr_t value) {
-    const char *segment = tnx_image_segment_name(value);
+BOOL rcl_vtable_shaped(uintptr_t value) {
+    const char *segment = rcl_image_segment_name(value);
 
     if (!segment) return NO;
     if (value % 8) return NO;
 
-    if (strcmp(segment, TNX_VTABLE_SEGMENT) == 0) return YES;
-    if (strcmp(segment, TNX_VTABLE_SEGMENT_ALT) == 0) return YES;
+    if (strcmp(segment, RCL_VTABLE_SEGMENT) == 0) return YES;
+    if (strcmp(segment, RCL_VTABLE_SEGMENT_ALT) == 0) return YES;
 
     return NO;
 }
 
-BOOL tnx_heap_resident(uintptr_t value) {
+BOOL rcl_heap_resident(uintptr_t value) {
     if (!value) return NO;
 
-    return tnx_image_segment_name(value) ? NO : YES;
+    return rcl_image_segment_name(value) ? NO : YES;
 }
-BOOL tnx_gameobject_shape(uintptr_t object) {
+BOOL rcl_gameobject_shape(uintptr_t object) {
     void *vtable = NULL;
     int32_t team = 0;
     uint8_t dead = 0;
 
-    if (!tnx_pointer_plausible(object)) return NO;
-    if (!tnx_heap_resident(object)) return NO;
-    if (!tnx_read_ptr(object, &vtable)) return NO;
-    if (!tnx_vtable_shaped((uintptr_t)vtable)) return NO;
-    if (!tnx_read_int(object + TNX_OBJ_TEAM_OFF, &team)) return NO;
-    if (team < 0 || team > TNX_OBJ_TEAM_MAX) return NO;
-    if (!tnx_read_byte(object + TNX_OBJ_DEADFLAG_OFF, &dead)) return NO;
+    if (!rcl_pointer_plausible(object)) return NO;
+    if (!rcl_heap_resident(object)) return NO;
+    if (!rcl_read_ptr(object, &vtable)) return NO;
+    if (!rcl_vtable_shaped((uintptr_t)vtable)) return NO;
+    if (!rcl_read_int(object + RCL_OBJ_TEAM_OFF, &team)) return NO;
+    if (team < 0 || team > RCL_OBJ_TEAM_MAX) return NO;
+    if (!rcl_read_byte(object + RCL_OBJ_DEADFLAG_OFF, &dead)) return NO;
     if (dead > 1) return NO;
 
     return YES;
 }
 
-BOOL tnx_instance_shaped(uintptr_t object) {
+BOOL rcl_instance_shaped(uintptr_t object) {
     void *vtable = NULL;
 
-    if (!tnx_pointer_plausible(object)) return NO;
-    if (!tnx_heap_resident(object)) return NO;
-    if (!tnx_read_ptr(object, &vtable)) return NO;
+    if (!rcl_pointer_plausible(object)) return NO;
+    if (!rcl_heap_resident(object)) return NO;
+    if (!rcl_read_ptr(object, &vtable)) return NO;
     if (!vtable) return NO;
     if ((uintptr_t)vtable == object) return NO;
-    if (!tnx_vtable_shaped((uintptr_t)vtable)) return NO;
+    if (!rcl_vtable_shaped((uintptr_t)vtable)) return NO;
 
     return YES;
 }
 
-BOOL tnx_manager_shape(uintptr_t manager) {
+BOOL rcl_manager_shape(uintptr_t manager) {
     void *array = NULL;
     void *probe = NULL;
     int32_t count = 0;
     int32_t capacity = 0;
 
-    if (!tnx_heap_resident(manager)) return NO;
-    if (!tnx_read_ptr(manager + TNX_MGR_ARRAY_OFF, &array)) return NO;
-    if (!tnx_read_int(manager + TNX_MGR_COUNT_OFF, &count)) return NO;
-    if (!tnx_read_int(manager + TNX_MGR_CAP_OFF, &capacity)) return NO;
-    if (count < 0 || count > TNX_MANAGER_MAX_OBJECTS) return NO;
+    if (!rcl_heap_resident(manager)) return NO;
+    if (!rcl_read_ptr(manager + RCL_MGR_ARRAY_OFF, &array)) return NO;
+    if (!rcl_read_int(manager + RCL_MGR_COUNT_OFF, &count)) return NO;
+    if (!rcl_read_int(manager + RCL_MGR_CAP_OFF, &capacity)) return NO;
+    if (count < 0 || count > RCL_MANAGER_MAX_OBJECTS) return NO;
 
-    if (capacity < count || capacity > TNX_MGR_CAP_MAX) return NO;
+    if (capacity < count || capacity > RCL_MGR_CAP_MAX) return NO;
 
-    if (array && !tnx_heap_resident((uintptr_t)array)) return NO;
+    if (array && !rcl_heap_resident((uintptr_t)array)) return NO;
 
     if (count > 0) {
         if (!array) return NO;
-        if (!tnx_read_ptr((uintptr_t)array, &probe)) return NO;
-        if (!tnx_heap_resident((uintptr_t)probe)) return NO;
+        if (!rcl_read_ptr((uintptr_t)array, &probe)) return NO;
+        if (!rcl_heap_resident((uintptr_t)probe)) return NO;
         if (count > 1) {
-            if (!tnx_read_ptr((uintptr_t)array + (uintptr_t)(count - 1) * sizeof(void *), &probe)) return NO;
-            if (!tnx_heap_resident((uintptr_t)probe)) return NO;
+            if (!rcl_read_ptr((uintptr_t)array + (uintptr_t)(count - 1) * sizeof(void *), &probe)) return NO;
+            if (!rcl_heap_resident((uintptr_t)probe)) return NO;
         }
     }
 
     return YES;
 }
-int t_trail_count = 0;
+int rcl_trail_count = 0;
 
 
-int t_gate_last = -1;
-
-
-
-
-uintptr_t t_last_own = 0;
-
-
-int32_t t_last_tx = 0;
-
-int32_t t_last_ty = 0;
-
-int t_issued = 0;
-int t_human_2 = 0;
+int rcl_gate_last = -1;
 
 
 
 
-uint64_t t_queue_skips = 0;
+uintptr_t rcl_last_own = 0;
+
+
+int32_t rcl_last_tx = 0;
+
+int32_t rcl_last_ty = 0;
+
+int rcl_issued = 0;
+int rcl_human_2 = 0;
+
+
+
+
+uint64_t rcl_queue_skips = 0;
 
 
 
 
 
-int32_t t_tx_b = 0;
+int32_t rcl_tx_b = 0;
 
-int32_t t_ty_b = 0;
+int32_t rcl_ty_b = 0;
 
-uint64_t t_hold = 0;
+uint64_t rcl_hold = 0;
 
-BOOL tnx_vtable_in_image(uintptr_t vtable) {
+BOOL rcl_vtable_in_image(uintptr_t vtable) {
     uintptr_t lo = 0;
     uintptr_t hi = 0;
 
     if (!vtable) return NO;
-    if (vtable >= t_base + TNX_DC_RVA_LO && vtable < t_base + TNX_DC_RVA_LO + TNX_DC_RVA_SIZE) {
+    if (vtable >= rcl_base + RCL_DC_RVA_LO && vtable < rcl_base + RCL_DC_RVA_LO + RCL_DC_RVA_SIZE) {
         return YES;
     }
 
-    if (tnx_segment_range(TNX_VTABLE_SEGMENT_ALT, &lo, &hi) && vtable >= lo && vtable < hi) {
+    if (rcl_segment_range(RCL_VTABLE_SEGMENT_ALT, &lo, &hi) && vtable >= lo && vtable < hi) {
         return YES;
     }
 
     return NO;
 }
 
-uintptr_t tnx_strip_ptr(uintptr_t value) {
+uintptr_t rcl_strip_ptr(uintptr_t value) {
     uintptr_t stripped = value;
 
 #if __has_feature(ptrauth_calls)
     stripped = (uintptr_t)ptrauth_strip((void *)value, ptrauth_key_function_pointer);
 #endif
 
-    if (stripped >= t_base && stripped < t_base + TNX_IMAGE_SPAN) return stripped;
+    if (stripped >= rcl_base && stripped < rcl_base + RCL_IMAGE_SPAN) return stripped;
 
-    if ((stripped & 0xffffffffULL) < TNX_IMAGE_SPAN) {
-        uintptr_t viaLow = t_base + (stripped & 0xffffffffULL);
+    if ((stripped & 0xffffffffULL) < RCL_IMAGE_SPAN) {
+        uintptr_t viaLow = rcl_base + (stripped & 0xffffffffULL);
 
-        if (viaLow >= t_base && viaLow < t_base + TNX_IMAGE_SPAN) return viaLow;
+        if (viaLow >= rcl_base && viaLow < rcl_base + RCL_IMAGE_SPAN) return viaLow;
     }
 
     return stripped;
 }
 
 void poll_for_game(int tick) {
-    if (t_setup_done) return;
+    if (rcl_setup_done) return;
     if (tick > 1200) return;
 
     uintptr_t base = 0;
 
     if (find_game_image(&base)) {
-        t_base = base;
+        rcl_base = base;
         setup();
         return;
     }
@@ -926,4 +926,4 @@ void poll_for_game(int tick) {
     });
 }
 
-uintptr_t t_base = 0;
+uintptr_t rcl_base = 0;

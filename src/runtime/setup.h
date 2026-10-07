@@ -1,10 +1,10 @@
-#ifndef TITANOX_RUNTIME_SETUP_H
-#define TITANOX_RUNTIME_SETUP_H
+#ifndef RECOIL_RUNTIME_SETUP_H
+#define RECOIL_RUNTIME_SETUP_H
 
 #include "core/types.h"
 
 void setup(void);
-void tnx_run_autoaim(void);
-void tnx_run_autododge(int from_update);
+void rcl_run_autoaim(void);
+void rcl_run_autododge(int from_update);
 
 #endif

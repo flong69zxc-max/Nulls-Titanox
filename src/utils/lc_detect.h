@@ -12,7 +12,7 @@
 #import <unistd.h>
 #import <stdint.h>
 
-static inline BOOL tnx_name_marks_host_runtime(const char *name) {
+static inline BOOL rcl_name_marks_host_runtime(const char *name) {
     if (!name) return NO;
     static const char *marks[] = {
         "TweakLoader",
@@ -29,7 +29,7 @@ static inline BOOL tnx_name_marks_host_runtime(const char *name) {
     return NO;
 }
 
-static inline BOOL tnx_host_is_livecontainer(void) {
+static inline BOOL rcl_host_is_livecontainer(void) {
     static int cached = -1;
     if (cached >= 0) return cached ? YES : NO;
 
@@ -39,7 +39,7 @@ static inline BOOL tnx_host_is_livecontainer(void) {
     if (count > 8192) count = 8192;
 
     for (uint32_t i = 0; i < count && !found; i++) {
-        if (tnx_name_marks_host_runtime(_dyld_get_image_name(i))) found = 1;
+        if (rcl_name_marks_host_runtime(_dyld_get_image_name(i))) found = 1;
     }
 
     if (!found) {
@@ -71,7 +71,7 @@ static inline BOOL tnx_host_is_livecontainer(void) {
     return found ? YES : NO;
 }
 
-static inline BOOL tnx_region_flags(uintptr_t address, vm_prot_t *outFlags) {
+static inline BOOL rcl_region_flags(uintptr_t address, vm_prot_t *outFlags) {
     if (!address) return NO;
 
     vm_address_t region = (vm_address_t)address;
@@ -102,7 +102,7 @@ static inline BOOL tnx_region_flags(uintptr_t address, vm_prot_t *outFlags) {
     return YES;
 }
 
-static inline BOOL tnx_addr_readable(uintptr_t address, size_t length) {
+static inline BOOL rcl_addr_readable(uintptr_t address, size_t length) {
     if (!address || !length) return NO;
 
     uintptr_t end = address + length;
@@ -112,7 +112,7 @@ static inline BOOL tnx_addr_readable(uintptr_t address, size_t length) {
 
     for (int guard = 0; cursor < end && guard < 64; guard++) {
         vm_prot_t flags = 0;
-        if (!tnx_region_flags(cursor, &flags)) return NO;
+        if (!rcl_region_flags(cursor, &flags)) return NO;
         if ((flags & VM_PROT_READ) == 0) return NO;
 
         vm_address_t region = (vm_address_t)cursor;
@@ -146,7 +146,7 @@ static inline BOOL tnx_addr_readable(uintptr_t address, size_t length) {
     return cursor >= end;
 }
 
-static inline BOOL tnx_read_word(uintptr_t address, uint32_t *out) {
+static inline BOOL rcl_read_word(uintptr_t address, uint32_t *out) {
     if (!address || (address & 3) || !out) return NO;
 
     uint32_t value = 0;
@@ -166,7 +166,7 @@ static inline BOOL tnx_read_word(uintptr_t address, uint32_t *out) {
     return YES;
 }
 
-static inline BOOL tnx_read_pointer(uintptr_t address, uintptr_t *out) {
+static inline BOOL rcl_read_pointer(uintptr_t address, uintptr_t *out) {
     if (!address || (address & 7) || !out) return NO;
 
     uintptr_t value = 0;
@@ -186,18 +186,18 @@ static inline BOOL tnx_read_pointer(uintptr_t address, uintptr_t *out) {
     return YES;
 }
 
-static inline BOOL tnx_addr_executable(uintptr_t address) {
+static inline BOOL rcl_addr_executable(uintptr_t address) {
     vm_prot_t flags = 0;
-    if (!tnx_region_flags(address, &flags)) return NO;
+    if (!rcl_region_flags(address, &flags)) return NO;
     return (flags & VM_PROT_EXECUTE) ? YES : NO;
 }
 
-static inline uintptr_t tnx_image_slide(uintptr_t imageBase) {
+static inline uintptr_t rcl_image_slide(uintptr_t imageBase) {
     if (!imageBase) return 0;
 
     const struct mach_header_64 *header = (const struct mach_header_64 *)imageBase;
 
-    if (!tnx_addr_readable(imageBase, sizeof(struct mach_header_64))) return 0;
+    if (!rcl_addr_readable(imageBase, sizeof(struct mach_header_64))) return 0;
     if (header->magic != MH_MAGIC_64) return 0;
     if (header->ncmds == 0 || header->ncmds > 4096) return 0;
     if (header->sizeofcmds == 0 || header->sizeofcmds > (4u * 1024u * 1024u)) return 0;
@@ -230,7 +230,7 @@ static inline uintptr_t tnx_image_slide(uintptr_t imageBase) {
     return 0;
 }
 
-static inline BOOL tnx_image_segment_contains(uintptr_t imageBase,
+static inline BOOL rcl_image_segment_contains(uintptr_t imageBase,
                                               uintptr_t address,
                                               BOOL requireExec,
                                               uintptr_t *outStart,
@@ -240,12 +240,12 @@ static inline BOOL tnx_image_segment_contains(uintptr_t imageBase,
 
     const struct mach_header_64 *header = (const struct mach_header_64 *)imageBase;
 
-    if (!tnx_addr_readable(imageBase, sizeof(struct mach_header_64))) return NO;
+    if (!rcl_addr_readable(imageBase, sizeof(struct mach_header_64))) return NO;
     if (header->magic != MH_MAGIC_64) return NO;
     if (header->ncmds == 0 || header->ncmds > 4096) return NO;
     if (header->sizeofcmds == 0 || header->sizeofcmds > (4u * 1024u * 1024u)) return NO;
 
-    uintptr_t slide = tnx_image_slide(imageBase);
+    uintptr_t slide = rcl_image_slide(imageBase);
 
     const uint8_t *cursor = (const uint8_t *)(header + 1);
     const uint8_t *limit = cursor + header->sizeofcmds;
@@ -283,20 +283,20 @@ static inline BOOL tnx_image_segment_contains(uintptr_t imageBase,
     return NO;
 }
 
-static inline BOOL tnx_image_text_contains(uintptr_t imageBase, uintptr_t address) {
+static inline BOOL rcl_image_text_contains(uintptr_t imageBase, uintptr_t address) {
     uintptr_t start = 0;
     uintptr_t end = 0;
     uint32_t prot = 0;
 
-    if (!tnx_image_segment_contains(imageBase, address, NO, &start, &end, &prot)) return NO;
+    if (!rcl_image_segment_contains(imageBase, address, NO, &start, &end, &prot)) return NO;
 
     return (prot & VM_PROT_EXECUTE) ? YES : NO;
 }
 
-static inline BOOL tnx_looks_like_function(uintptr_t address) {
+static inline BOOL rcl_looks_like_function(uintptr_t address) {
     uint32_t first = 0;
 
-    if (!tnx_read_word(address, &first)) return NO;
+    if (!rcl_read_word(address, &first)) return NO;
 
     if (first == 0xD503233F) return YES;
     if (first == 0xD503237F) return YES;
@@ -317,57 +317,57 @@ static inline BOOL tnx_looks_like_function(uintptr_t address) {
 
     if (address >= 4) {
         uint32_t previous = 0;
-        if (tnx_read_word(address - 4, &previous) && previous == 0xD65F03C0) {
+        if (rcl_read_word(address - 4, &previous) && previous == 0xD65F03C0) {
             return YES;
         }
     }
 
     return NO;
 }
-static inline BOOL tnx_object_plausible(void *object) {
+static inline BOOL rcl_object_plausible(void *object) {
     if (!object) return NO;
 
     uintptr_t address = (uintptr_t)object;
 
     if (address < 0x100000000ULL) return NO;
     if (address & 7) return NO;
-    if (!tnx_addr_readable(address, sizeof(void *))) return NO;
+    if (!rcl_addr_readable(address, sizeof(void *))) return NO;
 
     uintptr_t vtable = 0;
-    if (!tnx_read_pointer(address, &vtable)) return NO;
+    if (!rcl_read_pointer(address, &vtable)) return NO;
     if (!vtable) return NO;
-    if (!tnx_addr_readable(vtable, sizeof(void *))) return NO;
+    if (!rcl_addr_readable(vtable, sizeof(void *))) return NO;
 
     uintptr_t firstEntry = 0;
-    if (!tnx_read_pointer(vtable, &firstEntry)) return NO;
+    if (!rcl_read_pointer(vtable, &firstEntry)) return NO;
     if (!firstEntry) return NO;
 
-    return tnx_addr_executable(firstEntry);
+    return rcl_addr_executable(firstEntry);
 }
-static inline BOOL tnx_image_owns_address(uintptr_t imageBase, uintptr_t address) {
-    return tnx_image_segment_contains(imageBase, address, NO, NULL, NULL, NULL);
+static inline BOOL rcl_image_owns_address(uintptr_t imageBase, uintptr_t address) {
+    return rcl_image_segment_contains(imageBase, address, NO, NULL, NULL, NULL);
 }
 
-static inline BOOL tnx_isa_in_image_data(uintptr_t imageBase, uintptr_t isa) {
+static inline BOOL rcl_isa_in_image_data(uintptr_t imageBase, uintptr_t isa) {
     if (!imageBase || !isa) return NO;
 
     uintptr_t start = 0;
     uintptr_t end = 0;
     uint32_t prot = 0;
 
-    if (!tnx_image_segment_contains(imageBase, isa, NO, &start, &end, &prot)) return NO;
+    if (!rcl_image_segment_contains(imageBase, isa, NO, &start, &end, &prot)) return NO;
     if (prot & VM_PROT_EXECUTE) return NO;
 
     return YES;
 }
 
-static inline Class tnx_object_class(void *object) {
+static inline Class rcl_object_class(void *object) {
     if (!object) return Nil;
 
     uintptr_t address = (uintptr_t)object;
     if (address < 0x100000000ULL) return Nil;
     if (address & 7) return Nil;
-    if (!tnx_addr_readable(address, sizeof(void *))) return Nil;
+    if (!rcl_addr_readable(address, sizeof(void *))) return Nil;
 
 #if __has_feature(objc_arc)
     return object_getClass((__bridge id)object);

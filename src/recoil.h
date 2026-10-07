@@ -1,5 +1,5 @@
-#ifndef TITANOX_H
-#define TITANOX_H
+#ifndef RECOIL_H
+#define RECOIL_H
 
 #include "core/config.h"
 #include "core/tuning.h"

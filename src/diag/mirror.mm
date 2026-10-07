@@ -261,6 +261,33 @@ void tnx_mirror_probe_2(int dodging) {
                          (int)f[0], (int)f[1], (int)f[2], (int)f[3], (int)f[4], (int)f[5],
                          (int)f[6], (int)f[7], (int)f[8], (int)f[9], (int)f[10], (int)f[11],
                          (int)f[12], (int)f[13], (int)f[14], (int)f[15], (int)f[16], (int)f[17]);
+
+                {
+                    int32_t appx = 0;
+                    int32_t appy = 0;
+                    int32_t rawx = 0;
+                    int32_t rawy = 0;
+                    int32_t m1 = 0;
+                    int32_t m2 = 0;
+                    int32_t m3 = 0;
+
+                    tnx_read_i32(bsm + 0xfcc, &appx);
+                    tnx_read_i32(bsm + 0xfd0, &appy);
+                    tnx_read_i32(bsm + 0xfa4, &rawx);
+                    tnx_read_i32(bsm + 0xfa8, &rawy);
+                    tnx_read_i32(bsm + 0xfec, &m1);
+                    tnx_read_i32(bsm + 0xfb0, &m2);
+                    tnx_read_i32(bsm + 0x1050, &m3);
+
+                    TNX_LOGX("mirror aim bsm=%p playerDrag=%d dodging=%d applied=%d,%d raw=%d,%d "
+                             "fec=%d fb0=%d 1050=%d - the attack goes through the same stick node "
+                             "with the attack flag, so the pair that moves here while the player aims "
+                             "is the aim input and the pair that moves while he walks is the move "
+                             "input",
+                             (void *)bsm,
+                             (dodging == 0 && (pcx != pox || pcy != poy)) ? 1 : 0, dodging,
+                             appx, appy, rawx, rawy, m1, m2, m3);
+                }
             }
         }
 

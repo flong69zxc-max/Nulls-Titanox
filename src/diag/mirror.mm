@@ -137,10 +137,12 @@ void tnx_mirror_probe_2(int dodging) {
         {
             uintptr_t bsm = 0;
             float v[16];
+            float w[20];
             uint8_t dr[3];
             int q;
 
             for (q = 0; q < 16; q++) v[q] = 0.0f;
+            for (q = 0; q < 20; q++) w[q] = 0.0f;
             for (q = 0; q < 3; q++) dr[q] = 0;
 
             if (bs) tnx_read_ptr(bs + TNX_JOY_TARGET_OFF, (void **)&bsm);
@@ -166,6 +168,27 @@ void tnx_mirror_probe_2(int dodging) {
                 tnx_read_u8(bsm + 0x8ac, &dr[0]);
                 tnx_read_u8(bsm + 0xee8, &dr[1]);
                 tnx_read_u8(bsm + 0xf48, &dr[2]);
+
+                tnx_read_f32(bsm + 0x9a0, &w[0]);
+                tnx_read_f32(bsm + 0x9a4, &w[1]);
+                tnx_read_f32(bsm + 0x9a8, &w[2]);
+                tnx_read_f32(bsm + 0x9ac, &w[3]);
+                tnx_read_f32(bsm + 0x9b0, &w[4]);
+                tnx_read_f32(bsm + 0x9b4, &w[5]);
+                tnx_read_f32(bsm + 0xa30, &w[6]);
+                tnx_read_f32(bsm + 0xa34, &w[7]);
+                tnx_read_f32(bsm + 0xa38, &w[8]);
+                tnx_read_f32(bsm + 0xa3c, &w[9]);
+                tnx_read_f32(bsm + 0xa50, &w[10]);
+                tnx_read_f32(bsm + 0xa54, &w[11]);
+                tnx_read_f32(bsm + 0xa58, &w[12]);
+                tnx_read_f32(bsm + 0xa5c, &w[13]);
+                tnx_read_f32(bsm + 0x880, &w[14]);
+                tnx_read_f32(bsm + 0x884, &w[15]);
+                tnx_read_f32(bsm + 0x888, &w[16]);
+                tnx_read_f32(bsm + 0x88c, &w[17]);
+                tnx_read_f32(bsm + 0x800, &w[18]);
+                tnx_read_f32(bsm + 0x804, &w[19]);
             }
 
             TNX_LOGX("mirror pairs bsm=%p p1=%.2f,%.2f cen1=%.2f,%.2f p2=%.2f,%.2f cen2=%.2f,%.2f "
@@ -180,6 +203,18 @@ void tnx_mirror_probe_2(int dodging) {
                      (double)v[8], (double)v[9], (double)v[10], (double)v[11],
                      (double)v[12], (double)v[13], (double)v[14], (double)v[15],
                      (int)dr[0], (int)dr[1], (int)dr[2], dodging);
+
+            TNX_LOGX("mirror rec bsm=%p a0=%.1f,%.1f,%.1f,%.1f a8=%.1f,%.1f,%.1f,%.1f b0=%.1f,%.1f "
+                     "c0=%.1f,%.1f,%.1f,%.1f d0=%.1f,%.1f,%.1f,%.1f e0=%.1f,%.1f,%.1f,%.1f d=%d - the "
+                     "rest of the stick record, read as floats: a normalised direction sits inside "
+                     "-1..1 and tracks the hand every frame, a screen coordinate sits in the hundreds, "
+                     "and a weight sits still until the hand moves",
+                     (void *)bsm,
+                     (double)w[0], (double)w[1], (double)w[2], (double)w[3],
+                     (double)w[4], (double)w[5], (double)w[6], (double)w[7],
+                     (double)w[8], (double)w[9], (double)w[10], (double)w[11],
+                     (double)w[12], (double)w[13], (double)w[14], (double)w[15],
+                     (double)w[16], (double)w[17], (double)w[18], (double)w[19], dodging);
         }
 
         for (rank = 0; rank < 8; rank++) {

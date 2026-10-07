@@ -58,7 +58,8 @@ uint64_t t_dodge_calls = 0;
 int t_dump_np = 0;
 
 
-const uintptr_t t_mode_vtables_verified[3] = { 0x1002548, 0xff5720, 0 };BOOL t_mode_strong = NO;
+const uintptr_t t_mode_vtables_verified[3] = { 0x1002548, 0xff5720, 0 };
+BOOL t_mode_strong = NO;
 
 
 
@@ -430,7 +431,8 @@ uintptr_t tnx_callable(uintptr_t rva) {
     if (tnx_looks_like_start(address)) return address;
 
     return 0;
-}BOOL tnx_copy(uintptr_t source, void *destination, size_t length) {
+}
+BOOL tnx_copy(uintptr_t source, void *destination, size_t length) {
     if (!source || !destination || !length) return NO;
     if (!tnx_addr_readable(source, length)) return NO;
 
@@ -855,7 +857,8 @@ int32_t t_last_tx = 0;
 
 int32_t t_last_ty = 0;
 
-int t_issued = 0;int t_human_2 = 0;
+int t_issued = 0;
+int t_human_2 = 0;
 
 
 

@@ -37,7 +37,8 @@ int tnx_joy_read(uintptr_t bs, float *ax, float *ay, float *bx, float *by,
 
 
 
-uint64_t t_walk_arm = 0;int tnx_joy_angle(float *outAngle) {
+uint64_t t_walk_arm = 0;
+int tnx_joy_angle(float *outAngle) {
     float ax = 0.0f;
     float ay = 0.0f;
     float bx = 0.0f;

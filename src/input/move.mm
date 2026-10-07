@@ -126,7 +126,8 @@ void *tnx_msg_alloc(void) {
 
 
     return NULL;
-}uintptr_t tnx_entry_2(uintptr_t rva) {
+}
+uintptr_t tnx_entry_2(uintptr_t rva) {
     if (!t_base || !rva) return 0;
     if (!tnx_callable(rva)) return 0;
 
@@ -724,7 +725,8 @@ int tnx_move_to(int32_t x, int32_t y, float ox, float oy) {
 
 
 
-int t_own_logs_a = 0;int tnx_proj_vel(const tnx_proj_t *p, float *vxOut, float *vyOut) {
+int t_own_logs_a = 0;
+int tnx_proj_vel(const tnx_proj_t *p, float *vxOut, float *vyOut) {
     uint64_t dt = 0;
 
     if (!p->elem || !p->hasPrev) return 0;

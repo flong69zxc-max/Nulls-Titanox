@@ -81,7 +81,6 @@ int tnx_own_side_spawn(int32_t sx, int32_t sy);
 
 
 
-int tnx_joy_set(float dirX, float dirY, int on);
 
 uintptr_t tnx_bs(void);
 int tnx_joy_read(uintptr_t bs, float *ax, float *ay, float *bx, float *by, uint32_t *mode, float *cs, float *sn);
@@ -135,11 +134,8 @@ extern int t_side_last;
 
 float tnx_clear_at(float px, float py, int i);
 
-int tnx_key_c(int n);
 
-int tnx_key_t(float tti);
 
-float tnx_learn_rate(int c, int t, int side);
 
 int tnx_ok(float v, float lo, float hi);
 
@@ -177,7 +173,6 @@ extern float t_prev_own_y;
 extern int t_released;
 extern float t_shot_speed[TNX_PROJ_MAX];
 int tnx_body_blocked(float x, float y, float ownX, float ownY);
-void tnx_contact_note(float dist, float projR);
 float tnx_own_radius(void);
 float tnx_proj_radius(const tnx_proj_t *p, float speed);
 float tnx_seg_dist(float ax, float ay, float bx, float by, float px, float py);

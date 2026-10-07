@@ -22,7 +22,6 @@ int tnx_joy_angle(float *outAngle);
 
 void tnx_joy_knob(float dirX, float dirY, int on);
 
-int tnx_joy_set(float dirX, float dirY, int on);
 
 
 uintptr_t tnx_walk_mgr(void);

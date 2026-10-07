@@ -9,7 +9,8 @@ uint64_t t_learn_win[3][3][2];
 
 uint64_t t_learn_loss[3][3][2];
 
-int t_stat_near = 0;int tnx_blacklisted(float speed, float radius) {
+int t_stat_near = 0;
+int tnx_blacklisted(float speed, float radius) {
     static const float bl[][2] = {
         { 3100.0f, 0.0f },
         { 4130.0f, 50.0f },

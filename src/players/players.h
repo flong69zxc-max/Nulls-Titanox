@@ -45,9 +45,7 @@ extern int t_state;
 extern int t_team_trust;
 extern uint64_t t_tick_stamp;
 void tnx_clear_life(void);
-void tnx_contact_note(float dist, float projR);
 int tnx_enemy_blocked(float x, float y, float ownX, float ownY);
-int tnx_inject_own(tnx_obj_t *objects, int usable, int capacity);
 int tnx_life(uintptr_t ownElem, int32_t ownX, int32_t ownY);
 int tnx_mate_blocked(float x, float y);
 int tnx_own(int32_t *xOut, int32_t *yOut);
@@ -69,7 +67,6 @@ int tnx_resolve_own(const tnx_obj_t *objects, int usable, int *indexOut, const c
 int tnx_resolve_own_2(const tnx_obj_t *objects, int usable, int *indexOut, const char **fromOut);
 void tnx_respawn_event(int32_t x, int32_t y, int32_t px, int32_t py);
 void tnx_roster(uintptr_t ownElem, int ownIndex, int ownTeam, const tnx_obj_t *objects, int usable);
-int tnx_take_own(const tnx_obj_t *objects, int usable, int *indexOut, const char **fromOut);
 int tnx_team_at(const tnx_obj_t *objects, int index);
 
 int tnx_object_live(uintptr_t object);

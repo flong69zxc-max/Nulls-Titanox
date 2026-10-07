@@ -1,5 +1,7 @@
 #include "titanox.h"
 
+void tnx_applied_2(int32_t ax, int32_t ay);
+
 tnx_seg_t t_seg[TNX_SEG_MAX];
 
 int t_seg_count = 0;
@@ -231,6 +233,7 @@ int tnx_drive(void) {
     if (len < 0.0001f) {
         t_dead_picks++;
         tnx_stick(0, 0.0f, 0.0f);
+        tnx_applied_2(TNX_APPLIED_IDLE, TNX_APPLIED_IDLE);
 
         return 0;
     }
@@ -282,6 +285,8 @@ int tnx_drive(void) {
     if (!TNX_STICK_ONLY && !TNX_JS_NOPREDICT && !tnx_js_owns_3()) {
         tnx_predict(tx, ty);
     }
+
+    tnx_applied_2(tx, ty);
 
     if (TNX_TOUCH_FLAG && ctrl) {
         uint8_t gateNow = 0;
@@ -649,6 +654,28 @@ static void tnx_stick_arm_2(uintptr_t ctrl, int on) {
     tnx_write_bytes(ctrl + TNX_CTRL_ALIVE_OFF, &v, sizeof(v));
     tnx_write_bytes(ctrl + TNX_CTRL_LATCH_OFF, &latch, sizeof(latch));
     tnx_write_bytes(ctrl + TNX_CTRL_DIRTY_OFF, &dirty, sizeof(dirty));
+}
+
+void tnx_applied_2(int32_t ax, int32_t ay) {
+    uintptr_t ctrl = tnx_controller();
+    int32_t backX = 0;
+    int32_t backY = 0;
+
+    if (!ctrl) return;
+
+    if (!tnx_write_bytes(ctrl + TNX_CTRL_APPLIED_X_OFF, &ax, sizeof(ax))) return;
+
+    tnx_write_bytes(ctrl + TNX_CTRL_APPLIED_Y_OFF, &ay, sizeof(ay));
+
+    t_applied_writes++;
+
+    if (tnx_read_i32(ctrl + TNX_CTRL_APPLIED_X_OFF, &backX) &&
+        tnx_read_i32(ctrl + TNX_CTRL_APPLIED_Y_OFF, &backY) &&
+        backX == ax && backY == ay) {
+        t_applied_live++;
+    } else {
+        t_applied_stale++;
+    }
 }
 
 void tnx_stick(int engaged, float dirX, float dirY) {

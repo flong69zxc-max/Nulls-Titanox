@@ -492,4 +492,6 @@
 #define TNX_STICK_PUSH_2 1
 #define TNX_STICK_RADIUS_2 60.0f
 
+#define TNX_STICK_KNOB_2 0
+
 #endif

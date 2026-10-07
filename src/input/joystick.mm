@@ -709,9 +709,9 @@ void tnx_applied_2(int32_t ax, int32_t ay) {
     }
 }
 
-uint64_t t_stick_push_4 = 0;
+uint64_t t_stick_push_5 = 0;
 
-static void tnx_stick_push_4(int engaged, float dirX, float dirY) {
+static void tnx_stick_push_5(int engaged, float dirX, float dirY) {
     uintptr_t bs = tnx_bs();
     uintptr_t bsm = 0;
     float ox = 0.0f;
@@ -739,8 +739,39 @@ static void tnx_stick_push_4(int engaged, float dirX, float dirY) {
         }
     }
 
-    if (!tnx_write_f32(bsm + 0xa40, ox + nx * TNX_STICK_RADIUS_2)) return;
-    if (!tnx_write_f32(bsm + 0xa44, oy + ny * TNX_STICK_RADIUS_2)) return;
+    {
+        float kx = 0.0f;
+        float ky = 0.0f;
+        float bx = 0.0f;
+        float by = 0.0f;
+
+        if (tnx_read_f32(bsm + 0x9d8, &kx) && tnx_read_f32(bsm + 0x9dc, &ky)) {
+            float ix = kx + nx * TNX_STICK_RADIUS_2;
+            float iy = ky + ny * TNX_STICK_RADIUS_2;
+
+            tnx_write_f32(bsm + 0x9d0, ix);
+            tnx_write_f32(bsm + 0x9d4, iy);
+        }
+
+        if (TNX_STICK_KNOB_2) {
+            tnx_write_f32(bsm + 0xa40, ox + nx * TNX_STICK_RADIUS_2);
+            tnx_write_f32(bsm + 0xa44, oy + ny * TNX_STICK_RADIUS_2);
+        }
+
+        tnx_read_f32(bsm + 0x9d0, &bx);
+        tnx_read_f32(bsm + 0x9d4, &by);
+
+        if (t_stick_push_5 <= 200) {
+            TNX_LOGX("stickpush n=%llu bsm=%p engaged=%d org=(%.2f,%.2f) cen=(%.2f,%.2f) "
+                     "in=(%.2f,%.2f) knob=%d knobWant=(%.2f,%.2f) - the input pair carries the "
+                     "direction and the knob pair only paints it, so the input pair is the one to "
+                     "drive and the knob pair stays untouched unless the flag says otherwise",
+                     (unsigned long long)t_stick_push_5, (void *)bsm, engaged,
+                     (double)ox, (double)oy, (double)kx, (double)ky, (double)bx, (double)by,
+                     (int)TNX_STICK_KNOB_2,
+                     (double)(ox + nx * TNX_STICK_RADIUS_2), (double)(oy + ny * TNX_STICK_RADIUS_2));
+        }
+    }
 
     {
         uint8_t held = 1;
@@ -751,25 +782,11 @@ static void tnx_stick_push_4(int engaged, float dirX, float dirY) {
         tnx_write_bytes(bsm + 0xf9e, &held, sizeof(held));
     }
 
-    t_stick_push_4++;
-
-    if (t_stick_push_4 <= 200) {
-        tnx_read_f32(bsm + 0xa40, &backX);
-        tnx_read_f32(bsm + 0xa44, &backY);
-
-        TNX_LOGX("stickpush n=%llu bsm=%p engaged=%d org=(%.2f,%.2f) want=(%.2f,%.2f) back=(%.2f,%.2f) "
-                 "- the engine walks by cur minus org at +0xa40/+0xa44 against +0xa48/+0xa4c on this "
-                 "object, and at rest it keeps cur equal to org, so only cur is written here and org is "
-                 "left exactly as the game set it",
-                 (unsigned long long)t_stick_push_4, (void *)bsm, engaged,
-                 (double)ox, (double)oy,
-                 (double)(ox + nx * TNX_STICK_RADIUS_2), (double)(oy + ny * TNX_STICK_RADIUS_2),
-                 (double)backX, (double)backY);
-    }
+    t_stick_push_5++;
 }
 
 void tnx_stick(int engaged, float dirX, float dirY) {
-    tnx_stick_push_4(engaged, dirX, dirY);
+    tnx_stick_push_5(engaged, dirX, dirY);
 
     if (!TNX_V245_STICK && !TNX_JS_STICK) return;
     uintptr_t ctrl = tnx_controller();

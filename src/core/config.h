@@ -513,4 +513,9 @@
 #define TNX_STICK_KNOB_4 0
 #define TNX_STICK_HOLD_2 0
 
+#define TNX_STICK_KNOB_3 0
+#define TNX_STICK_INPUT_2 0
+#define TNX_STICK_KNOB_4 0
+#define TNX_STICK_HOLD_2 0
+
 #endif

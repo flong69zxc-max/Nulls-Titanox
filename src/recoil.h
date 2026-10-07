@@ -23,4 +23,7 @@
 #include "runtime/setup.h"
 #include "runtime/state.h"
 
+#include "features/autoaim/autoaim.h"
+#include "features/autododge/autododge.h"
+
 #endif

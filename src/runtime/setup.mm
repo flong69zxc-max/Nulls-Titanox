@@ -1,4 +1,4 @@
-#include "recoil.h"
+#include "../recoil.h"
 
 void rcl_run_autododge(int from_update) {
     if (rcl_in_drive) {

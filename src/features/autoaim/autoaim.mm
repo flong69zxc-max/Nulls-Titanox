@@ -1,4 +1,4 @@
-#include "recoil.h"
+#include "../../recoil.h"
 
 void rcl_run_autoaim(void) {
     if (!rcl_addr_getinstance || !rcl_addr_getownchar || !rcl_addr_battlescreen) return;

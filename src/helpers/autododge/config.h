@@ -1,9 +1,9 @@
 #ifndef RECOIL_HELPERS_AUTODODGE_CONFIG_H
 #define RECOIL_HELPERS_AUTODODGE_CONFIG_H
 
-#include "core/types.h"
+#include "../../core/types.h"
 
-#include "core/imports.h"
+#include "../../core/imports.h"
 #define RCL_ONESHOT 1
 #define RCL_BODY_CLEAR 180.0f
 #define RCL_TEAM_STRICT 1

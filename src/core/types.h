@@ -1,8 +1,8 @@
 #ifndef RECOIL_CORE_TYPES_H
 #define RECOIL_CORE_TYPES_H
 
-#include "core/imports.h"
-#include "core/offsets.h"
+#include "imports.h"
+#include "offsets.h"
 
 typedef void (*fn_void_2_t)(void *, void *);
 typedef void *(*fn_ptr_2_t)(void *, void *);

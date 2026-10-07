@@ -1,4 +1,4 @@
-#include "recoil.h"
+#include "../recoil.h"
 
 #if RCL_CI_HASH_INNER_MASK_RVA && RCL_CI_HASH_OUTER_MASK_RVA && RCL_BM_HASH_ENABLED_OFF && RCL_BM_HASH_KEY_OFF
 #define RCL_CI_SIGNING_ON 1

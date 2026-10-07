@@ -1,7 +1,7 @@
 #ifndef RECOIL_HELPERS_AUTOAIM_CONFIG_H
 #define RECOIL_HELPERS_AUTOAIM_CONFIG_H
 
-#include "core/types.h"
+#include "../../core/types.h"
 
 #define SCAN_MAX 256
 #define RCL_AIM 1

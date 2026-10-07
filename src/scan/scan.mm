@@ -1,4 +1,4 @@
-#include "recoil.h"
+#include "../recoil.h"
 
 
 
@@ -1445,7 +1445,7 @@ void rcl_paircal(void) {
 
 uintptr_t rcl_scene_object = 0;
 
-#include "recoil.h"
+#include "../recoil.h"
 
 int rcl_team_at(const rcl_obj_t *objects, int index) {
     if (!objects || index < 0) return -1;

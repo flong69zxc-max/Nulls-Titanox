@@ -1,8 +1,8 @@
 #ifndef RECOIL_UTILS_SIGN_H
 #define RECOIL_UTILS_SIGN_H
 
-#include "core/types.h"
-#include "core/offsets.h"
+#include "../core/types.h"
+#include "../core/offsets.h"
 
 
 int rcl_ci_load_constants(void);

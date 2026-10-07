@@ -1,7 +1,7 @@
 #ifndef RECOIL_SCAN_SCAN_H
 #define RECOIL_SCAN_SCAN_H
 
-#include "core/types.h"
+#include "../core/types.h"
 
 extern uintptr_t rcl_scene_object;
 

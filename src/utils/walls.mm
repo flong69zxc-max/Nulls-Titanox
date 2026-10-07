@@ -1,4 +1,4 @@
-#include "recoil.h"
+#include "../recoil.h"
 
 int rcl_clip_walk(int32_t ax, int32_t ay, int32_t bx, int32_t by, int32_t cell,
                   const uint8_t *solid, int gw, int gh, int32_t *outX, int32_t *outY) {

@@ -1,4 +1,4 @@
-#include "recoil.h"
+#include "../recoil.h"
 
 static const uint32_t RCL_SHA_K[64] = {
     0x428a2f98UL, 0x71374491UL, 0xb5c0fbcfUL, 0xe9b5dba5UL, 0x3956c25bUL, 0x59f111f1UL,

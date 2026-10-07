@@ -1,7 +1,7 @@
 #ifndef RECOIL_INPUT_DRIVE_H
 #define RECOIL_INPUT_DRIVE_H
 
-#include "core/types.h"
+#include "../core/types.h"
 
 extern int rcl_engaged_ticks;
 extern rcl_seg_t rcl_seg[RCL_SEG_MAX];

@@ -1,7 +1,7 @@
 #ifndef RECOIL_INPUT_MOVE_H
 #define RECOIL_INPUT_MOVE_H
 
-#include "core/types.h"
+#include "../core/types.h"
 
 extern int rcl_dead_probe_done;
 extern uint64_t rcl_ctrl_dead;

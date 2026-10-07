@@ -1,7 +1,7 @@
 #ifndef RECOIL_RUNTIME_SLOTS_H
 #define RECOIL_RUNTIME_SLOTS_H
 
-#include "core/types.h"
+#include "../core/types.h"
 #include "hook.h"
 
 void rcl_slot_note(int index, void *self, uint64_t arg1);

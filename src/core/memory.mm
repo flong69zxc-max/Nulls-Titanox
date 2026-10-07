@@ -1,4 +1,4 @@
-#include "recoil.h"
+#include "../recoil.h"
 
 const char *rcl_image_names[4] = {
     "Nulls Brawl",

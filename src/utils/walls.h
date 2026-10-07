@@ -1,8 +1,8 @@
 #ifndef RECOIL_UTILS_WALLS_H
 #define RECOIL_UTILS_WALLS_H
 
-#include "core/types.h"
-#include "core/offsets.h"
+#include "../core/types.h"
+#include "../core/offsets.h"
 
 extern uint8_t rcl_grid[RCL_GRID_MAX * RCL_GRID_MAX];
 extern uintptr_t rcl_tiles;

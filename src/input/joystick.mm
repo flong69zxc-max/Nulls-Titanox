@@ -709,9 +709,9 @@ void tnx_applied_2(int32_t ax, int32_t ay) {
     }
 }
 
-uint64_t t_stick_push_3 = 0;
+uint64_t t_stick_push_4 = 0;
 
-static void tnx_stick_push_3(int engaged, float dirX, float dirY) {
+static void tnx_stick_push_4(int engaged, float dirX, float dirY) {
     uintptr_t bs = tnx_bs();
     uintptr_t bsm = 0;
     float ox = 0.0f;
@@ -728,6 +728,8 @@ static void tnx_stick_push_3(int engaged, float dirX, float dirY) {
     if (!tnx_read_f32(bsm + 0xa48, &ox)) return;
     if (!tnx_read_f32(bsm + 0xa4c, &oy)) return;
 
+    if (!engaged) return;
+
     if (engaged) {
         len = __builtin_sqrtf(dirX * dirX + dirY * dirY);
 
@@ -741,7 +743,7 @@ static void tnx_stick_push_3(int engaged, float dirX, float dirY) {
     if (!tnx_write_f32(bsm + 0xa44, oy + ny * TNX_STICK_RADIUS_2)) return;
 
     {
-        uint8_t held = engaged ? 1 : 0;
+        uint8_t held = 1;
 
         tnx_write_bytes(bsm + 0xf78, &held, sizeof(held));
         tnx_write_bytes(bsm + 0xf80, &held, sizeof(held));
@@ -749,9 +751,9 @@ static void tnx_stick_push_3(int engaged, float dirX, float dirY) {
         tnx_write_bytes(bsm + 0xf9e, &held, sizeof(held));
     }
 
-    t_stick_push_3++;
+    t_stick_push_4++;
 
-    if (t_stick_push_3 <= 200) {
+    if (t_stick_push_4 <= 200) {
         tnx_read_f32(bsm + 0xa40, &backX);
         tnx_read_f32(bsm + 0xa44, &backY);
 
@@ -759,7 +761,7 @@ static void tnx_stick_push_3(int engaged, float dirX, float dirY) {
                  "- the engine walks by cur minus org at +0xa40/+0xa44 against +0xa48/+0xa4c on this "
                  "object, and at rest it keeps cur equal to org, so only cur is written here and org is "
                  "left exactly as the game set it",
-                 (unsigned long long)t_stick_push_3, (void *)bsm, engaged,
+                 (unsigned long long)t_stick_push_4, (void *)bsm, engaged,
                  (double)ox, (double)oy,
                  (double)(ox + nx * TNX_STICK_RADIUS_2), (double)(oy + ny * TNX_STICK_RADIUS_2),
                  (double)backX, (double)backY);
@@ -767,7 +769,7 @@ static void tnx_stick_push_3(int engaged, float dirX, float dirY) {
 }
 
 void tnx_stick(int engaged, float dirX, float dirY) {
-    tnx_stick_push_3(engaged, dirX, dirY);
+    tnx_stick_push_4(engaged, dirX, dirY);
 
     if (!TNX_V245_STICK && !TNX_JS_STICK) return;
     uintptr_t ctrl = tnx_controller();

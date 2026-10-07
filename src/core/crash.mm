@@ -193,7 +193,7 @@ void start(void) {
     tnx_install();
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        tlog(@"=== titanox started v80 (walk handshake) ===");
+        tlog(@"=== titanox started v81 (walk probe) ===");
         poll_for_game(0);
     });
 }

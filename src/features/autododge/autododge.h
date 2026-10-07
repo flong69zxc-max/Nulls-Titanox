@@ -1,7 +1,7 @@
 #ifndef RECOIL_FEATURES_AUTODODGE_AUTODODGE_H
 #define RECOIL_FEATURES_AUTODODGE_AUTODODGE_H
 
-#include "../../core/types.h"
+#include "../../core/types/types.h"
 
 extern uint64_t rcl_drop_slow;
 extern uint64_t rcl_drop_fast;

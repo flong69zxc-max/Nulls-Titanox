@@ -643,19 +643,6 @@ void tnx_joy_knob(float dirX, float dirY, int on) {
     }
 }
 
-static void tnx_stick_arm_2(uintptr_t ctrl, int on) {
-    uint8_t v = on ? 1 : 0;
-    uint8_t latch = (uint8_t)TNX_CTRL_LATCH_VAL;
-    uint8_t dirty = (uint8_t)TNX_CTRL_DIRTY_VAL;
-
-    if (!ctrl) return;
-
-    tnx_write_bytes(ctrl + TNX_CTRL_MOVE_OFF, &v, sizeof(v));
-    tnx_write_bytes(ctrl + TNX_CTRL_ALIVE_OFF, &v, sizeof(v));
-    tnx_write_bytes(ctrl + TNX_CTRL_LATCH_OFF, &latch, sizeof(latch));
-    tnx_write_bytes(ctrl + TNX_CTRL_DIRTY_OFF, &dirty, sizeof(dirty));
-}
-
 void tnx_applied_2(int32_t ax, int32_t ay) {
     uintptr_t ctrl = tnx_controller();
     int32_t backX = 0;
@@ -665,7 +652,14 @@ void tnx_applied_2(int32_t ax, int32_t ay) {
 
     if (!tnx_write_bytes(ctrl + TNX_CTRL_APPLIED_X_OFF, &ax, sizeof(ax))) return;
 
-    tnx_write_bytes(ctrl + TNX_CTRL_APPLIED_Y_OFF, &ay, sizeof(ay));
+    {
+        uint8_t latch = (uint8_t)TNX_CTRL_LATCH_VAL;
+        int32_t dirty = (int32_t)TNX_CTRL_DIRTY_VAL;
+
+        tnx_write_bytes(ctrl + TNX_CTRL_APPLIED_Y_OFF, &ay, sizeof(ay));
+        tnx_write_bytes(ctrl + TNX_CTRL_LATCH_OFF, &latch, sizeof(latch));
+        tnx_write_bytes(ctrl + TNX_CTRL_DIRTY_OFF, &dirty, sizeof(dirty));
+    }
 
     t_applied_writes++;
 
@@ -748,7 +742,6 @@ void tnx_stick(int engaged, float dirX, float dirY) {
 
         tnx_write_bytes(ctrl + TNX_CTRL_RAW_Y_OFF, &wy, sizeof(wy));
 
-        tnx_stick_arm_2(ctrl, want);
 
         if (want) {
             tnx_joy_knob(dirX, dirY, 1);

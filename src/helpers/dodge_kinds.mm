@@ -1,6 +1,6 @@
 #include "../recoil.h"
 
-static int rcl_dodge_is_proj(uintptr_t obj) {
+int rcl_dodge_is_proj(uintptr_t obj) {
     void *vt = NULL;
     intptr_t cls = 0;
 

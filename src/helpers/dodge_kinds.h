@@ -16,16 +16,14 @@ typedef struct
     int32_t spawnX;
     int32_t spawnY;
     int32_t gid;
-    uint64_t ptick;
-    uint64_t qtick;
+    uint64_t pms;
+    uint64_t qms;
     int hasPrev;
     const char *name;
-    const char *ownerName;
     int32_t targetX;
     int32_t targetY;
     int32_t ownerX;
     int32_t ownerY;
-    float speed;
     float radius;
     float angle;
     uint64_t spawnedAt;

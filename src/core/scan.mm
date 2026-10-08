@@ -702,7 +702,6 @@ void rcl_image_span_refresh(void)
 
     const uint8_t *cursor = (const uint8_t *)(header + 1);
     const uint8_t *limit = cursor + header->sizeofcmds;
-    uintptr_t slide = rcl_image_slide(rcl_base);
 
     for (uint32_t i = 0; i < header->ncmds; i++)
     {
@@ -720,17 +719,6 @@ void rcl_image_span_refresh(void)
         if (cursor + command->cmdsize > limit)
         {
             break;
-        }
-
-        if (command->cmd == LC_SEGMENT_64 && command->cmdsize >= sizeof(struct segment_command_64))
-        {
-            const struct segment_command_64 *segment = (const struct segment_command_64 *)command;
-
-            if (segment->vmsize)
-            {
-                ;
-                ;
-            }
         }
 
         cursor += command->cmdsize;
@@ -1193,7 +1181,6 @@ int rcl_collect(uintptr_t manager, rcl_obj_t *out, int capacity)
                 float npF70 = 0.0f;
                 float npF74 = 0.0f;
                 void *np38 = nullptr;
-                ;
 
                 rcl_dump_np++;
 
@@ -1230,19 +1217,6 @@ int rcl_collect(uintptr_t manager, rcl_obj_t *out, int capacity)
 
         if (entry.x <= -1000000 || entry.x >= 1000000 || entry.y <= -1000000 || entry.y >= 1000000)
         {
-            if (rcl_coord_logs < 6)
-            {
-                void *tvtable = nullptr;
-                uintptr_t tvtRva = 0;
-
-                rcl_coord_logs++;
-
-                if (rcl_read_ptr(entry.object, &tvtable) && tvtable)
-                {
-                    tvtRva = (uintptr_t)tvtable - rcl_base;
-                }
-            }
-
             if (!RCL_COORD_SOFT)
             {
                 continue;
@@ -1285,9 +1259,7 @@ void rcl_discriminate(uintptr_t manager)
     int usable = 0;
     int n = 0;
     int teamOff = -1;
-    int teamDistinct = 0;
     int coordOff = -1;
-    int coordDistinct = 0;
     int intPairOff = -1;
     int floatPairOff = -1;
 
@@ -1304,15 +1276,11 @@ void rcl_discriminate(uintptr_t manager)
 
     if (usable == 0)
     {
-        ;
-
         return;
     }
 
     if (usable == 1)
     {
-        ;
-
         return;
     }
 
@@ -1385,20 +1353,17 @@ void rcl_discriminate(uintptr_t manager)
         if (teamOff < 0 && allTiny && distinct >= 2 && distinct <= RCL_TEAM_MAX)
         {
             teamOff = w * 4;
-            teamDistinct = distinct;
         }
 
         if (coordOff < 0 && allSmall && distinct == n)
         {
             coordOff = w * 4;
-            coordDistinct = distinct;
         }
     }
 
     if (teamOff == (int)RCL_OBJ_X_OFF || teamOff == (int)RCL_OBJ_Y_OFF)
     {
         teamOff = -1;
-        teamDistinct = 0;
     }
 
     {
@@ -1592,8 +1557,6 @@ int rcl_clamp(int32_t *x, int32_t *y)
     uintptr_t bounds = rcl_bounds_obj(receiver);
     int32_t maxX = 0;
     int32_t maxY = 0;
-    ;
-    ;
 
     if (!bounds)
     {
@@ -2801,8 +2764,6 @@ int rcl_state_tick(void)
 
     if (scene != rcl_scene_object)
     {
-        ;
-
         rcl_scene_object = scene;
     }
 
@@ -3061,6 +3022,8 @@ int rcl_battle_gate(int scene)
 void rcl_run_workload(void)
 {
     rcl_tick_begin();
+
+    rcl_wall_maybe_refresh((uint64_t)(CFAbsoluteTimeGetCurrent() * 1000.0));
 
     rcl_locate_battle_mode();
 
@@ -3399,8 +3362,6 @@ int rcl_container_header(uintptr_t object, uintptr_t *arrayOut, int32_t *countOu
     return 1;
 }
 
-int rcl_coord_logs = 0;
-
 int32_t rcl_gid_at(uintptr_t element, uintptr_t off)
 {
     int32_t gid = 0;
@@ -3716,6 +3677,7 @@ rcl_obj_t rcl_dodge_probe_list[64];
 void rcl_read_map(uintptr_t mode)
 {
     void *tileMap = nullptr;
+    void *tiles = nullptr;
     int32_t width = 0;
     int32_t height = 0;
 
@@ -3737,6 +3699,28 @@ void rcl_read_map(uintptr_t mode)
     {
         return;
     }
+    if (width <= 0 || height <= 0)
+    {
+        return;
+    }
+    if (width > RCL_WALL_MAX_MAP_TILES || height > RCL_WALL_MAX_MAP_TILES)
+    {
+        return;
+    }
+    if (!rcl_read_ptr((uintptr_t)tileMap + RCL_MAP_TILES_OFF, &tiles) || !tiles)
+    {
+        return;
+    }
+    if ((uintptr_t)tiles == rcl_tiles && width == rcl_w && height == rcl_h)
+    {
+        return;
+    }
+
+    rcl_tiles = (uintptr_t)tiles;
+    rcl_w = width;
+    rcl_h = height;
+
+    rcl_wall_notify_battle_mode_changed((uint64_t)(CFAbsoluteTimeGetCurrent() * 1000.0));
 }
 
 int rcl_gidless = 0;
@@ -4112,7 +4096,6 @@ void rcl_state_note(int state)
 
     if (state == 5 && rcl_prev_state != 5)
     {
-        rcl_coord_logs = 0;
         rcl_owner = 0;
         rcl_wired = 0;
     }
@@ -4187,6 +4170,7 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
     int found = 0;
     int k;
     int32_t i;
+    uint64_t nowMs = 0;
 
     if (!manager || count <= 0)
     {
@@ -4208,6 +4192,8 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
 
     rcl_proj_other = 0;
     rcl_proj_death_n = 0;
+
+    nowMs = (uint64_t)(CFAbsoluteTimeGetCurrent() * 1000.0);
 
     for (i = 0; i < count && found < 16; i++)
     {
@@ -4311,7 +4297,7 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
             {
                 rcl_projs[slot].px = rcl_projs[slot].x;
                 rcl_projs[slot].py = rcl_projs[slot].y;
-                rcl_projs[slot].ptick = rcl_projs[slot].qtick;
+                rcl_projs[slot].pms = rcl_projs[slot].qms;
                 rcl_projs[slot].hasPrev = 1;
             }
         }
@@ -4322,15 +4308,14 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
             rcl_projs[slot].py = py;
             rcl_projs[slot].spawnX = px;
             rcl_projs[slot].spawnY = py;
-            rcl_projs[slot].ptick = rcl_ticks_a;
+            rcl_projs[slot].pms = nowMs;
             rcl_projs[slot].hasPrev = 0;
-            rcl_projs[slot].spawnedAt = (uint64_t)(CFAbsoluteTimeGetCurrent() * 1000.0);
+            rcl_projs[slot].spawnedAt = nowMs;
         }
 
         {
             uintptr_t teamOff = (rcl_team_off == (int)RCL_OBJ_TEAM_OFF) ? RCL_OBJ_TEAM_OFF : RCL_TEAM_OFF;
             int32_t pteam = -1;
-            int attributed = 0;
 
             if (rcl_read_int((uintptr_t)element + teamOff, &pteam) && pteam >= 0 && pteam <= 7)
             {
@@ -4343,7 +4328,6 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
                 if (side == 1 && rcl_own_team_b >= 0)
                 {
                     rcl_projs[slot].team = rcl_own_team_b;
-                    attributed = 1;
                 }
                 else
                 {
@@ -4366,7 +4350,6 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
 
             rcl_projs[slot].name = nullptr;
             rcl_projs[slot].angle = 0.0f;
-            rcl_projs[slot].speed = 0.0f;
             rcl_projs[slot].radius = 0.0f;
             rcl_projs[slot].vx = 0.0f;
             rcl_projs[slot].vy = 0.0f;
@@ -4405,7 +4388,7 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
         rcl_projs[slot].x = px;
         rcl_projs[slot].y = py;
         rcl_projs[slot].gid = gid;
-        rcl_projs[slot].qtick = rcl_ticks_a;
+        rcl_projs[slot].qms = nowMs;
 
         found++;
     }
@@ -4704,15 +4687,7 @@ void rcl_probe(uintptr_t manager, uintptr_t mode, int verbose)
         rcl_read_map(mode);
     }
 
-    {
-        ;
-    }
-
     usable = rcl_collect(manager, objects, 64);
-
-    {
-        ;
-    }
 
     for (int i = 0; i < usable; i++)
     {
@@ -4762,10 +4737,6 @@ void rcl_probe(uintptr_t manager, uintptr_t mode, int verbose)
     }
 
     rcl_team_off = (int)RCL_OBJ_TEAM_OFF;
-
-    {
-        ;
-    }
 
     if (!RCL_DEAD_ONCE || !rcl_dead_probe_done)
     {
@@ -4834,9 +4805,6 @@ void rcl_paircal(void)
     int dy = 0;
     float pLen = 0.0f;
     float mLen = 0.0f;
-    float dot = 0.0f;
-    float angPair = 0.0f;
-    float angMove = 0.0f;
 
     if ((rcl_ticks_a % 60) != 0)
     {
@@ -4882,10 +4850,6 @@ void rcl_paircal(void)
     }
 
     rcl_logs_a++;
-
-    dot = ((float)px / pLen) * ((float)dx / mLen) + ((float)py / pLen) * ((float)dy / mLen);
-    angPair = atan2f((float)py, (float)px) * 57.2958f;
-    angMove = atan2f((float)dy, (float)dx) * 57.2958f;
 }
 
 uintptr_t rcl_scene_object = 0;
@@ -4997,11 +4961,9 @@ uint64_t rcl_tick_stamp = 0;
 void rcl_own_index_probe(void)
 {
     uintptr_t cand[2];
-    ;
     uintptr_t array = rcl_players_array;
     int32_t count = rcl_players_count;
     int taken = 0;
-    int chosen = -1;
     int b;
 
     if (!array || count <= 0)
@@ -5016,8 +4978,6 @@ void rcl_own_index_probe(void)
     {
         int32_t idx = -1;
         int32_t team = -1;
-        ;
-        ;
         void *elem = nullptr;
         int hit = 0;
 
@@ -5043,7 +5003,6 @@ void rcl_own_index_probe(void)
         if (hit && !taken)
         {
             taken = 1;
-            chosen = b;
             rcl_own_index = idx;
             rcl_own_ptr = (uintptr_t)elem;
             rcl_own_from = (b == 0) ? "container+e0" : "scene+e0";
@@ -5072,8 +5031,6 @@ void rcl_publish_own(uintptr_t elem, const char *)
 
     if (rcl_pub_logs < RCL_PUB_LOGS)
     {
-        ;
-
         rcl_pub_logs++;
     }
 }
@@ -5200,7 +5157,6 @@ int rcl_enemy_n = 0;
 void rcl_roster(uintptr_t ownElem, int ownIndex, int ownTeam, const rcl_obj_t *objects, int usable)
 {
     int i = 0;
-    ;
     int ownSide = 0;
     int hist[12];
     int hn = 0;
@@ -5406,7 +5362,6 @@ void rcl_clear_life(void)
 int rcl_life(uintptr_t ownElem, int32_t ownX, int32_t ownY)
 {
     int i = 0;
-    int changed = 0;
     int deadNow = 0;
 
     rcl_candidates(ownElem, rcl_cand_now);
@@ -5417,8 +5372,6 @@ int rcl_life(uintptr_t ownElem, int32_t ownX, int32_t ownY)
         {
             if (rcl_cand_now[i] != rcl_cand_frame[i])
             {
-                changed = 1;
-
                 if (rcl_cand_changes[i] < 1000000)
                 {
                     rcl_cand_changes[i]++;
@@ -5709,7 +5662,6 @@ int rcl_own_verdict(uintptr_t element)
 {
     void *vtable = nullptr;
     uintptr_t vtRva = 0;
-    int32_t gid = 0;
     int32_t x = 0;
     int32_t y = 0;
     int32_t teamOld = 0;
@@ -5736,8 +5688,6 @@ int rcl_own_verdict(uintptr_t element)
         return 0;
     }
 
-    gid = rcl_gid(element, nullptr);
-
     if (!rcl_read_int(element + rcl_coord_x_off(), &x) || !rcl_read_int(element + rcl_coord_y_off(), &y) ||
         !rcl_read_int(element + RCL_OBJ_TEAM_OFF, &teamOld) || !rcl_read_int(element + RCL_TEAM_OFF, &teamNew) ||
         !rcl_read_byte(element + RCL_OBJ_DEADFLAG_OFF, &dead))
@@ -5756,7 +5706,6 @@ int rcl_own_verdict(uintptr_t element)
 void rcl_own_probe(void)
 {
     uintptr_t cand[2];
-    ;
     int taken = 0;
     int b;
 
@@ -5774,7 +5723,6 @@ void rcl_own_probe(void)
         int32_t eteam = 0;
         int32_t elemGid = 0;
         int32_t gidOff = 0;
-        const char *sigField = (const char *)"none";
         int sig = 0;
         int valid = 0;
 
@@ -5813,22 +5761,18 @@ void rcl_own_probe(void)
                     if (eid == idx && eid != 0)
                     {
                         sig = 1;
-                        sigField = (const char *)"idAt48";
                     }
                     else if (team >= 0 && team <= 7 && eteam == team)
                     {
                         sig = 2;
-                        sigField = (const char *)"teamAt4c";
                     }
                     else if (idx == 0 && elemGid != 0)
                     {
                         sig = 3;
-                        sigField = (const char *)"slotZeroWithGid";
                     }
                     else
                     {
                         sig = 0;
-                        sigField = (const char *)"none";
                     }
                 }
             }
@@ -6029,7 +5973,6 @@ int rcl_own_from_list(const rcl_obj_t *objects, int usable, int *indexOut, const
 int rcl_own_scan(void)
 {
     uintptr_t bases[RCL_SCAN_BASES];
-    ;
     uintptr_t array = rcl_players_array;
     int32_t count = rcl_players_count;
     uintptr_t client = 0;

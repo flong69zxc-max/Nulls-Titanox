@@ -671,7 +671,6 @@ extern int rcl_own_index_3;
 extern uintptr_t rcl_scan_container;
 extern int rcl_own_logged;
 extern uintptr_t rcl_hop_scene;
-extern int rcl_coord_logs;
 extern int rcl_last_choice;
 extern int rcl_hop_logs;
 extern int rcl_probe_done;

@@ -79,6 +79,8 @@ static void rcl_dodge_speed_probe(void)
 #define RCL_AD_PROBE_COUNT 3
 #define RCL_AD_PROBE_STEP 0.35f
 #define RCL_AD_WALL_BODY 240.0f
+#define RCL_AD_TICK_MS 16.0f
+#define RCL_AD_TICK_MAX_MS 250.0f
 
 typedef struct
 {
@@ -87,21 +89,15 @@ typedef struct
     float vx;
     float vy;
     float rad;
-    float path_len;
-    float left;
-    float until;
     float age;
     float fade_base;
     float fade_k;
-    float cast_range;
     float ax;
     float ay;
     float bx;
     float by;
-    int blob;
     int has_segment;
     const char *name;
-    const char *owner;
 } rcl_ad_hazard_t;
 
 #define RCL_AD_HAZARD_MAX 96
@@ -469,8 +465,6 @@ static void rcl_ad_collect(float mx, float my, float myRadius, uint64_t nowMs)
             memset(h, 0, sizeof(*h));
 
             h->rad = cap->radius + bodyPad;
-            h->blob = cap->has_segment ? 0 : 1;
-            h->until = until;
             h->has_segment = cap->has_segment;
             h->name = p->name ? p->name : cap->name;
 
@@ -537,7 +531,13 @@ static void rcl_ad_collect(float mx, float my, float myRadius, uint64_t nowMs)
 
             if (spec && (spec->flags & RCL_K_LOCKPATH) && flown > 120.0f && p->spawnX && p->spawnY)
             {
-                float base = p->speed > 0.0f ? p->speed : 1.0f;
+                float base = sqrtf(vx * vx + vy * vy);
+
+                if (base < 1.0f)
+                {
+                    base = 1.0f;
+                }
+
 
                 vx = ((float)p->x - (float)p->spawnX) / flown * base;
                 vy = ((float)p->y - (float)p->spawnY) / flown * base;
@@ -554,8 +554,7 @@ static void rcl_ad_collect(float mx, float my, float myRadius, uint64_t nowMs)
         }
 
         lockPath = (spec && (spec->flags & RCL_K_LOCKPATH)) || p->isBeam;
-        blob = (spec && (spec->flags & RCL_K_BLOB)) ||
-               (!lockPath && (p->isThrower || (p->speed > 0.0f && p->speed < 1600.0f)));
+        blob = (spec && (spec->flags & RCL_K_BLOB)) || (!lockPath && p->isThrower);
         fit = rcl_fit_of(name);
         shotR = rcl_ad_ball_radius(p) + (spec ? (float)spec->growR : 0.0f);
         rad = shotR + bodyR + fit->pad + shotR * fit->grow;
@@ -617,14 +616,10 @@ static void rcl_ad_collect(float mx, float my, float myRadius, uint64_t nowMs)
 
             h->x = (float)p->x;
             h->y = (float)p->y;
-            h->vx = blob ? 0.0f : vx;
-            h->vy = blob ? 0.0f : vy;
+            h->vx = vx;
+            h->vy = vy;
             h->rad = rad;
-            h->path_len = left + shotR;
-            h->left = left;
             h->name = p->name;
-            h->blob = blob;
-            h->cast_range = (float)p->castRange;
             h->age = (spec && (spec->flags & RCL_K_FADE))
                          ? ((float)nowMs - (float)(p->spawnedAt ? p->spawnedAt : nowMs))
                          : 0.0f;
@@ -1423,21 +1418,21 @@ float rcl_own_radius(void)
 
 int rcl_proj_vel(const rcl_proj_t *p, float *vxOut, float *vyOut)
 {
-    uint64_t dt = 0;
+    float dt = 0.0f;
 
     if (!p->elem || !p->hasPrev)
     {
         return 0;
     }
 
-    dt = p->qtick - p->ptick;
-    if (dt == 0 || dt > 12)
+    dt = (float)(p->qms - p->pms);
+    if (dt < RCL_AD_TICK_MS || dt > RCL_AD_TICK_MAX_MS)
     {
-        dt = 1;
+        dt = RCL_AD_TICK_MS;
     }
 
-    *vxOut = (float)(p->x - p->px) / (float)dt;
-    *vyOut = (float)(p->y - p->py) / (float)dt;
+    *vxOut = (float)(p->x - p->px) * 1000.0f / dt;
+    *vyOut = (float)(p->y - p->py) * 1000.0f / dt;
 
     return 1;
 }

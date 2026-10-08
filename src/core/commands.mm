@@ -6,8 +6,9 @@
 #define RCL_CI_SIGNING_ON 0
 #endif
 
-
-
+int rcl_seq_before = -1;
+int rcl_seq_after = -1;
+int rcl_q_after = -1;
 
 int rcl_qguard_probe = 0;
 int rcl_qguard_skip = 0;
@@ -195,3 +196,202 @@ int rcl_enqueue(int x, int y) {
     return rcl_enqueue_type(x, y, (int)RCL_TYPE_MOVE);
 }
 
+
+static int rcl_pred_probe(uintptr_t pred, int *alignOut, int *readOut, int *writeOut, int *vtOut) {
+    void *vtRaw = NULL;
+    uintptr_t vt = 0;
+
+    if (alignOut) *alignOut = 0;
+    if (readOut) *readOut = 0;
+    if (writeOut) *writeOut = 0;
+    if (vtOut) *vtOut = 0;
+
+    if (!pred) return 0;
+    if ((pred & 7) != 0) return 0;
+
+    if (alignOut) *alignOut = 1;
+
+    if (!rcl_addr_readable(pred, RCL_PRED_SPAN)) return 0;
+
+    if (readOut) *readOut = 1;
+
+    if (!rcl_addr_writable(pred, RCL_PRED_SPAN)) return 0;
+
+    if (writeOut) *writeOut = 1;
+
+    if (!rcl_read_ptr(pred, &vtRaw)) return 0;
+
+    vt = (uintptr_t)vtRaw;
+
+    if (!vt) return 0;
+
+    if (vtOut) *vtOut = 1;
+
+    return 1;
+}
+
+static int rcl_pred_ok(uintptr_t pred) {
+    return rcl_pred_probe(pred, NULL, NULL, NULL, NULL);
+}
+
+static int rcl_move_pair_ok(uintptr_t obj, int32_t *outX, int32_t *outY) {
+    int32_t ix = 0;
+    int32_t iy = 0;
+    int32_t key = 0;
+    int32_t arm = 0;
+
+    if (!obj) return 0;
+    if (!rcl_read_int(obj + RCL_MOVE_X_OFF, &ix)) return 0;
+    if (!rcl_read_int(obj + RCL_MOVE_Y_OFF, &iy)) return 0;
+    if (!rcl_read_int(obj + RCL_MOVE_KEY_OFF, &key)) return 0;
+    if (!rcl_read_int(obj + RCL_MOVE_ARM_OFF, &arm)) return 0;
+
+    if (ix < -RCL_MOVE_COORD_LIMIT || ix > RCL_MOVE_COORD_LIMIT) return 0;
+    if (iy < -RCL_MOVE_COORD_LIMIT || iy > RCL_MOVE_COORD_LIMIT) return 0;
+    if (key < 0 || key > 1) return 0;
+    if ((arm & 0xFF) > RCL_MOVE_ARM_ON) return 0;
+
+    if (outX) *outX = ix;
+    if (outY) *outY = iy;
+
+    return 1;
+}
+
+static uintptr_t rcl_move_carrier(void) {
+    uintptr_t bs = rcl_client();
+    uintptr_t s = 0;
+    uintptr_t r = 0;
+
+    if (!bs) return 0;
+
+    if (!rcl_read_ptr(bs + (uintptr_t)RCL_JOY_TARGET_OFF, (void **)&s) || !s) return 0;
+
+    r = rcl_hop(s, NULL);
+
+    if (!r) return 0;
+
+    return r;
+}
+
+uintptr_t rcl_entry_2(uintptr_t rva) {
+    if (!rcl_base || !rva) return 0;
+    if (!rcl_callable(rva)) return 0;
+
+    return rcl_base + rva;
+}
+
+void *rcl_msg_alloc(void) {
+    uintptr_t stub = rcl_entry_2(RCL_ALLOC_RVA);
+    uintptr_t got = 0;
+
+    if (stub) {
+        return ((void *(*)(size_t))stub)((size_t)RCL_MSG_SIZE);
+    }
+
+    if (rcl_base && rcl_read_ptr(rcl_base + RCL_ALLOC_GOT_RVA, (void **)&got) && got) {
+        return ((void *(*)(size_t))got)((size_t)RCL_MSG_SIZE);
+    }
+
+    return NULL;
+}
+
+void *rcl_manager(void) {
+    uintptr_t battleFn = rcl_entry_2(RCL_GETBATTLE_RVA);
+    void *battle = NULL;
+    void *mgr = NULL;
+
+    if (!battleFn) return NULL;
+
+    battle = ((void *(*)(void))battleFn)();
+
+    if (!battle) return NULL;
+    if (!rcl_read_ptr((uintptr_t)battle + RCL_MGR_OFF, &mgr) || !mgr) return NULL;
+
+    return mgr;
+}
+
+int rcl_queue_count(uintptr_t *mgrOut) {
+    void *mgr = rcl_manager();
+    void *queue = NULL;
+    int32_t count = -1;
+
+    if (mgrOut) *mgrOut = (uintptr_t)mgr;
+    if (!mgr) return -1;
+    if (!rcl_read_ptr((uintptr_t)mgr + RCL_QUEUE_OFF, &queue) || !queue) return -1;
+    if (!rcl_read_int((uintptr_t)queue + RCL_QUEUE_COUNT_OFF, &count)) return -1;
+
+    return (int)count;
+}
+
+int rcl_pred_set(int x, int y) {
+    uintptr_t setFn = 0;
+    uintptr_t pred = 0;
+
+    if (!RCL_PRED_SET) return 0;
+
+    if (!rcl_coord_ok) {
+
+        return 0;
+    }
+
+    setFn = rcl_entry_2(RCL_SETINPUT_RVA);
+
+    if (!setFn) return 0;
+
+    pred = rcl_hop(rcl_controller(), NULL);
+
+    if (!rcl_pred_ok(pred)) {
+        return 0;
+    }
+
+    ((void (*)(uintptr_t, int, int, int))setFn)(pred, x, y, RCL_PRED_FLAG);
+
+    return 1;
+}
+
+int rcl_move_to(int32_t x, int32_t y, float ox, float oy) {
+    uintptr_t fn = 0;
+    uintptr_t own = 0;
+
+    (void)ox;
+    (void)oy;
+
+    if (!RCL_MOVE_ON) return 0;
+    if (x < -RCL_MOVE_COORD_LIMIT || x > RCL_MOVE_COORD_LIMIT) return 0;
+    if (y < -RCL_MOVE_COORD_LIMIT || y > RCL_MOVE_COORD_LIMIT) return 0;
+
+    fn = rcl_entry_2(RCL_MOVE_RVA);
+    own = rcl_move_carrier();
+
+    if (!fn || !own) return 0;
+
+    if (!rcl_move_pair_ok(own, NULL, NULL)) return 0;
+
+    ((void (*)(void *, int, int, int))fn)((void *)own, (int)x, (int)y, (int)RCL_MOVE_FLAG_10);
+
+    return 1;
+}
+
+uintptr_t rcl_pred_last = 0;
+
+int rcl_predict(int32_t x, int32_t y) {
+    uintptr_t battleFn = rcl_entry_2(RCL_GETBATTLE_RVA);
+    void *battle = NULL;
+
+    if (!RCL_PREDICT) return 0;
+    if (!rcl_addr_setprediction) return 0;
+    if (!battleFn) return 0;
+
+    battle = ((void *(*)(void))battleFn)();
+
+    if (!battle) {
+
+        return 0;
+    }
+
+    ((void (*)(void *, int, int, int))rcl_addr_setprediction)(battle, x, y, RCL_PREDICT_FLAG);
+
+    rcl_pred_last = (uintptr_t)battle;
+
+    return 1;
+}

@@ -9,12 +9,9 @@
 #include "./core/geometry.h"
 #include "./utils/crypto.h"
 #include "./utils/log.h"
-#include "./input/move.h"
 #include "./core/scan.h"
 #include "./utils/walls.h"
 #include "./utils/flags.h"
-
-#include "./input/joystick.h"
 
 #include "objc.h"
 #include "./runtime/slots.h"

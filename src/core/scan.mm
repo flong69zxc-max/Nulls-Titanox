@@ -14,6 +14,10 @@
 
 
 
+int rcl_dead_probe_done = 0;
+
+float rcl_walk_step = RCL_STEP_b;
+
 int rcl_prev_state = -1;
 
 
@@ -1405,7 +1409,6 @@ void rcl_paircal(void) {
 
     if ((rcl_ticks_a % 60) != 0) return;
     if (rcl_logs_a >= RCL_LOGS_a) return;
-    if (rcl_stick_hold) return;
     if (!ctrl) return;
     if (!rcl_own(&ownX, &ownY)) return;
     if (!rcl_read_int(ctrl + RCL_CTRL_RAW_X_OFF, &px)) return;
@@ -1854,9 +1857,6 @@ void rcl_clear_life(void) {
     rcl_issued = 0;
     rcl_moving = 0;
     rcl_hold = 0;
-    rcl_stick_hold = 0;
-    rcl_stick_x = 0;
-    rcl_stick_y = 0;
     rcl_prev_valid = 0;
 }
 
@@ -2495,4 +2495,36 @@ int rcl_element_ascii(uintptr_t element) {
     if (rcl_ascii_word(element)) return 1;
 
     return rcl_word_ascii((uint64_t)element) == 8 ? 1 : 0;
+}
+
+static int rcl_interp(int32_t *x, int32_t *y) {
+    uintptr_t client = rcl_client();
+    int32_t cx = 0;
+    int32_t cy = 0;
+
+    if (x) *x = 0;
+    if (y) *y = 0;
+    if (!client) return 0;
+    if (!rcl_read_int(client + RCL_CLIENT_POS_X_OFF, &cx)) return 0;
+    if (!rcl_read_int(client + RCL_CLIENT_POS_Y_OFF, &cy)) return 0;
+
+    if (x) *x = cx;
+    if (y) *y = cy;
+
+    return 1;
+}
+
+int rcl_witness(int32_t *x, int32_t *y) {
+    int32_t wx = 0;
+    int32_t wy = 0;
+
+    if (x) *x = 0;
+    if (y) *y = 0;
+
+    if (!rcl_interp(&wx, &wy)) return 0;
+
+    if (x) *x = wx;
+    if (y) *y = wy;
+
+    return 1;
 }

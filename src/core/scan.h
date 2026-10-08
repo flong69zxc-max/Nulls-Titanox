@@ -228,4 +228,6 @@ int rcl_element_ascii(uintptr_t element);
 
 #define SCAN_MAX 256
 
+int rcl_witness(int32_t *x, int32_t *y);
+
 #endif

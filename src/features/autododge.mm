@@ -68,11 +68,13 @@ float rcl_ty_a = 0.0f;
 
 int rcl_moving = 0;
 
+rcl_seg_t rcl_seg[RCL_SEG_MAX];
+
+int rcl_seg_count = 0;
+
 float rcl_start_x = 0.0f;
 
 float rcl_start_y = 0.0f;
-
-int rcl_drive_logs = 0;
 
 float rcl_last_x_b = 0.0f;
 
@@ -1744,8 +1746,6 @@ int rcl_decide(int32_t ownX, int32_t ownY) {
         rcl_ty_a = py;
     }
 
-    rcl_walk_want(rcl_moving, ownX, ownY, (int32_t)rcl_tx_a, (int32_t)rcl_ty_a);
-
     return picked;
 }
 
@@ -1756,12 +1756,6 @@ void rcl_autododge(void) {
         tagOnce = 1;
 
     }
-
-    rcl_input_release();
-
-    rcl_stick(0, 0.0f, 0.0f);
-
-    rcl_route(rcl_active);
 
     if (RCL_STATE_EVERY <= 1 || (rcl_ticks_a % (uint64_t)RCL_STATE_EVERY) == 0) rcl_state();
 
@@ -2026,10 +2020,6 @@ void rcl_autododge(void) {
 
     rcl_own_elem_2 = objects[ownIndex].object;
 
-    rcl_walk_ent = objects[ownIndex].object;
-
-    rcl_walk_pump();
-
     ownTeam = (rcl_team_off == (int)RCL_OBJ_TEAM_OFF) ? objects[ownIndex].teamOld
                                                         : objects[ownIndex].teamNew;
     ownX = objects[ownIndex].x;
@@ -2150,7 +2140,14 @@ void rcl_autododge(void) {
             rcl_ty = (int32_t)rcl_ty_a;
         }
 
-        rcl_drive();
+        if (rcl_active) {
+            int32_t moveX = (int32_t)rcl_tx_a;
+            int32_t moveY = (int32_t)rcl_ty_a;
+
+            rcl_enqueue(moveX, moveY);
+            rcl_move_to(moveX, moveY, (float)ownX, (float)ownY);
+            rcl_predict(moveX, moveY);
+        }
 
     }
 
@@ -2237,8 +2234,6 @@ void rcl_autododge(void) {
         }
 
         rcl_watch(ownX, ownY);
-
-        rcl_engaged_frame = 1;
 
         rcl_wrote_tick = rcl_ticks_a;
         rcl_wrote_valid = 1;
@@ -2555,4 +2550,109 @@ void rcl_stat_tick(float px, float py) {
             break;
         }
     }
+}
+
+int rcl_mode(void) {
+    int mates = rcl_mate_n;
+    int en = rcl_enemy_n;
+
+    if (!RCL_MODE_TUNE) return 2;
+    if (mates <= 0 && en <= 1) return 0;
+    if (mates <= 0) return 1;
+    if (mates <= 2) return 2;
+
+    return 3;
+}
+
+float rcl_look_ms(void) {
+    static const float looks[4] = { 420.0f, 550.0f, 650.0f, 800.0f };
+
+    return looks[rcl_mode()];
+}
+
+int rcl_proj_vel(const rcl_proj_t *p, float *vxOut, float *vyOut) {
+    uint64_t dt = 0;
+
+    if (!p->elem || !p->hasPrev) return 0;
+
+    dt = p->qtick - p->ptick;
+    if (dt == 0 || dt > RCL_DT_MAX) dt = 1;
+
+    *vxOut = (float)(p->x - p->px) / (float)dt;
+    *vyOut = (float)(p->y - p->py) / (float)dt;
+
+    return 1;
+}
+
+void rcl_select(float px, float py) {
+    float speed = rcl_walk_step * 60.0f;
+    float reach = 0.0f;
+    int i = 0;
+
+    if (speed < 120.0f) speed = 120.0f;
+    if (speed > 1200.0f) speed = 1200.0f;
+
+    reach = speed * RCL_HORIZON;
+    rcl_sel_n = 0;
+
+    for (i = 0; i < rcl_seg_count && rcl_sel_n < RCL_SEL_MAX; i++) {
+        const rcl_seg_t *seg = &rcl_seg[i];
+        float d = rcl_seg_dist(px, py, seg->ax, seg->ay, seg->bx, seg->by);
+
+        if (d > reach + seg->inflatedR) continue;
+
+        rcl_sel[rcl_sel_n++] = i;
+    }
+}
+
+uintptr_t rcl_bs(void) {
+    return rcl_client();
+}
+
+int rcl_joy_read(uintptr_t bs, float *ax, float *ay, float *bx, float *by,
+                             uint32_t *mode, float *cs, float *sn) {
+    int32_t m = 0;
+
+    if (!bs) return 0;
+
+    if (!rcl_read_float(bs + RCL_BS_AX, ax)) return 0;
+    if (!rcl_read_float(bs + RCL_BS_AY, ay)) return 0;
+    if (!rcl_read_float(bs + RCL_BS_BX, bx)) return 0;
+    if (!rcl_read_float(bs + RCL_BS_BY, by)) return 0;
+
+    *mode = 0;
+
+    if (rcl_read_int(bs + RCL_BS_MODE, &m)) *mode = (uint32_t)m;
+
+    if (!rcl_read_float(bs + RCL_BS_COS, cs)) *cs = 1.0f;
+    if (!rcl_read_float(bs + RCL_BS_SIN, sn)) *sn = 0.0f;
+
+    return 1;
+}
+
+int rcl_joy_angle(float *outAngle) {
+    float ax = 0.0f;
+    float ay = 0.0f;
+    float bx = 0.0f;
+    float by = 0.0f;
+    float cs = 1.0f;
+    float sn = 0.0f;
+    float rx = 0.0f;
+    float ry = 0.0f;
+    float len = 0.0f;
+    uint32_t mode = 0;
+
+    if (!rcl_joy_read(rcl_bs(), &ax, &ay, &bx, &by, &mode, &cs, &sn)) return 0;
+    if (mode != 2 && mode != 3) return 0;
+
+    rx = (ax - bx) * cs + (ay - by) * sn;
+    ry = (ay - by) * cs - (ax - bx) * sn;
+
+    len = sqrtf(rx * rx + ry * ry);
+
+    if (len < 0.001f) return 0;
+
+    *outAngle = atan2f(-ry, rx);
+
+    return 1;
 }

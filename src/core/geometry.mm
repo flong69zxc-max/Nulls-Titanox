@@ -1,5 +1,7 @@
 #include "../recoil.h"
 
+uint64_t rcl_ticks_a = 0;
+
 int rcl_find_joy_done = 0;
 
 

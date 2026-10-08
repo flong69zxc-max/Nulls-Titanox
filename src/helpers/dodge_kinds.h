@@ -15,7 +15,7 @@
 #define RCL_FIT_RAY 6
 #define RCL_FIT_THIN 7
 #define RCL_FIT_FALLBACK 8
-#define RCL_FIT_NONE -1
+#define RCL_FIT_NONE (-1)
 
 #define RCL_K_BLOB 0x01
 #define RCL_K_LOCKPATH 0x02

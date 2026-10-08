@@ -143,7 +143,7 @@ const rcl_kind_t *rcl_kind_of(const char *name)
 {
     int i = rcl_kind_index(name);
 
-    return i < 0 ? NULL : &rcl_kinds[i];
+    return i < 0 ? nullptr : &rcl_kinds[i];
 }
 
 const rcl_fit_t *rcl_fit_of(const char *name)
@@ -167,7 +167,7 @@ float rcl_proj_radius(const rcl_proj_t *p, float speed)
     base = p->elem;
 
     {
-        void *def = NULL;
+        void *def = nullptr;
 
         if (rcl_read_ptr(p->elem + (uintptr_t)RCL_ELEM_DEF_OFF, &def) && def) base = (uintptr_t)def;
     }

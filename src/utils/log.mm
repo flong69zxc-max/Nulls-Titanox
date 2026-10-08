@@ -1,6 +1,6 @@
 #include "../recoil.h"
 
-static rcl_log_sink_t g_sink = NULL;
+static rcl_log_sink_t g_sink = nullptr;
 static bool g_enabled = false;
 static rcl_log_entry_t g_pending[RCL_LOG_MAX_PENDING];
 static int g_pending_count = 0;
@@ -156,7 +156,7 @@ void rcl_log_reset_counters(void)
 }
 void rcl_log_set_enabled(int value)
 {
-    bool next = value ? true : false;
+    bool next = value != 0;
 
     if (next == g_enabled) return;
 

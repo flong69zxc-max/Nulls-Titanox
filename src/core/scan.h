@@ -547,7 +547,6 @@ uintptr_t rcl_controller(void);
 void rcl_death_signals(uintptr_t ownElem, int32_t ownX, int32_t ownY);
 void rcl_alive(int32_t ownX, int32_t ownY);
 int rcl_own(int32_t *xOut, int32_t *yOut);
-void rcl_state(void);
 uint64_t rcl_word_2(uintptr_t address);
 const char *rcl_header_reason(uintptr_t manager, int32_t *countOut, int32_t *capOut);
 uintptr_t rcl_coord_x_off(void);

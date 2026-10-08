@@ -16,11 +16,11 @@ void rcl_run_autoaim(void)
     int ownY = rcl_addr_gety ? ((fn_get_coord_t)rcl_addr_gety)(ownChar) : 0;
     int ownTeam = rcl_addr_getteam ? ((fn_get_team_t)rcl_addr_getteam)(battleMode) : 0;
 
-    void *objMgr = NULL;
+    void *objMgr = nullptr;
     if (!rcl_read_ptr((uintptr_t)battleMode + OFF_BATTLEMODE_OBJECTMANAGERPTR, &objMgr)) return;
     if (!rcl_object_plausible(objMgr)) return;
 
-    void *rawObjects = NULL;
+    void *rawObjects = nullptr;
     int32_t count = 0;
 
     if (!rcl_read_ptr((uintptr_t)objMgr + OFF_OBJECTMANAGER_OBJECTSARRAY, &rawObjects)) return;
@@ -31,7 +31,7 @@ void rcl_run_autoaim(void)
     if (!objects || count <= 0) return;
 
     if (count > SCAN_MAX) count = SCAN_MAX;
-    void *probe = NULL;
+    void *probe = nullptr;
 
     if (!rcl_read_ptr((uintptr_t)objects, &probe)) return;
     if (count > 1 &&
@@ -76,7 +76,7 @@ void rcl_run_autoaim(void)
 
     if (!found) return;
 
-    void *screen = NULL;
+    void *screen = nullptr;
     if (!rcl_read_ptr(rcl_addr_battlescreen, &screen)) return;
 
     if (!rcl_object_plausible(screen))

@@ -27,7 +27,7 @@ int rcl_cal_n = 0;
 
 int rcl_ok(float v, float lo, float hi)
 {
-    if (!(v >= lo && v <= hi)) return 0;
+    if (v < lo || v > hi) return 0;
 
     return 1;
 }
@@ -45,7 +45,7 @@ float rcl_own_r = 0.0f;
 static float rcl_dodge_speed = RCL_DODGE_CHAR_SPEED;
 static void rcl_dodge_speed_probe(void)
 {
-    void *def = NULL;
+    void *def = nullptr;
     int32_t raw = 0;
 
     if (!rcl_own_elem) return;
@@ -331,9 +331,9 @@ static void rcl_ad_collect(float mx, float my, float myRadius, uint64_t nowMs)
     for (i = 0; i < RCL_PROJ_MAX; i++)
     {
         const rcl_proj_t *p = &rcl_projs[i];
-        const rcl_kind_t *spec = NULL;
-        const rcl_fit_t *fit = NULL;
-        const char *name = NULL;
+        const rcl_kind_t *spec = nullptr;
+        const rcl_fit_t *fit = nullptr;
+        const char *name = nullptr;
         int shaped = 0;
         int lockPath = 0;
         int blob = 0;
@@ -359,7 +359,7 @@ static void rcl_ad_collect(float mx, float my, float myRadius, uint64_t nowMs)
         {
             const rcl_hazard_t *cap = &rcl_ad_caps[c];
             float until = (cap->t1 - (float)nowMs) / 1000.0f;
-            rcl_ad_hazard_t *h = NULL;
+            rcl_ad_hazard_t *h = nullptr;
 
             if (until <= 0.0f) continue;
             if (rcl_ad_hazard_n >= RCL_AD_HAZARD_MAX) break;
@@ -770,8 +770,6 @@ void rcl_autododge(void)
         tagOnce = 1;
     }
 
-    if (RCL_STATE_EVERY <= 1 || (rcl_ticks_a % (uint64_t)RCL_STATE_EVERY) == 0) rcl_state();
-
     rcl_paircal();
 
     rcl_obj_t objects[RCL_OBJECT_MAX];
@@ -817,7 +815,7 @@ void rcl_autododge(void)
 
     {
         uint64_t probeNow = (uint64_t)(CFAbsoluteTimeGetCurrent() * 1000.0);
-        void *resolved = NULL;
+        void *resolved = nullptr;
         int changed = (rcl_probe_object != source);
         int managerChanged = 0;
         int periodic = 0;
@@ -830,7 +828,7 @@ void rcl_autododge(void)
         {
             if (!rcl_read_ptr(source + RCL_MODE_MANAGER_OFF, &resolved) || !resolved)
             {
-                resolved = NULL;
+                resolved = nullptr;
             }
         }
         else

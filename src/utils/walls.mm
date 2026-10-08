@@ -8,8 +8,8 @@ int rcl_h = 0;
 
 uintptr_t rcl_map_object(void)
 {
-    void *client = NULL;
-    void *map = NULL;
+    void *client = nullptr;
+    void *map = nullptr;
 
     if (!rcl_scene_object) return 0;
     if (!rcl_read_ptr((uintptr_t)rcl_scene_object + RCL_MAP_BASE_OFF, &client) || !client) return 0;
@@ -20,8 +20,8 @@ uintptr_t rcl_map_object(void)
 
 int rcl_cell(int tx, int ty, int *proj, int *move)
 {
-    void *tile = NULL;
-    void *type = NULL;
+    void *tile = nullptr;
+    void *type = nullptr;
     uint8_t bm = 0;
     uint8_t bp = 0;
 

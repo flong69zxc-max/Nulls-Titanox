@@ -94,8 +94,8 @@ int rcl_enqueue_type(int x, int y, int type)
     uintptr_t inputFn = rcl_entry_2(RCL_ADDINPUT_RVA);
     int32_t vx = x;
     int32_t vy = y;
-    void *mgr = NULL;
-    void *msg = NULL;
+    void *mgr = nullptr;
+    void *msg = nullptr;
 
     rcl_seq_before = -1;
     rcl_seq_after = -1;
@@ -125,7 +125,7 @@ int rcl_enqueue_type(int x, int y, int type)
 
     if (RCL_QUEUE_GUARD && rcl_qguard_probe < 1)
     {
-        void *mvt = NULL;
+        void *mvt = nullptr;
         int32_t back = 0;
 
         rcl_qguard_probe++;
@@ -158,7 +158,7 @@ int rcl_enqueue_type(int x, int y, int type)
     rcl_read_int((uintptr_t)mgr + RCL_MGR_SEQ_OFF, &rcl_seq_before);
 
     {
-        void *mgrInner = NULL;
+        void *mgrInner = nullptr;
 
         if (!rcl_read_ptr((uintptr_t)mgr + RCL_CI_MGR_QUEUE_OFF, &mgrInner) || !mgrInner)
         {
@@ -176,8 +176,8 @@ int rcl_enqueue_type(int x, int y, int type)
         {
             if (rcl_qguard_skip < RCL_QGUARD_LOGS)
             {
-                void *mvt = NULL;
-                void *gvt = NULL;
+                void *mvt = nullptr;
+                void *gvt = nullptr;
 
                 rcl_qguard_skip++;
 
@@ -193,7 +193,7 @@ int rcl_enqueue_type(int x, int y, int type)
 
     rcl_seq_after = -1;
     rcl_read_int((uintptr_t)mgr + RCL_MGR_SEQ_OFF, &rcl_seq_after);
-    rcl_q_after = rcl_queue_count(NULL);
+    rcl_q_after = rcl_queue_count(nullptr);
     if (RCL_QUEUE)
     {
         if ((uint64_t)(rcl_q_after > 0 ? rcl_q_after : 0) > rcl_q_max)
@@ -212,7 +212,7 @@ int rcl_enqueue(int x, int y)
 
 static int rcl_pred_probe(uintptr_t pred, int *alignOut, int *readOut, int *writeOut, int *vtOut)
 {
-    void *vtRaw = NULL;
+    void *vtRaw = nullptr;
     uintptr_t vt = 0;
 
     if (alignOut) *alignOut = 0;
@@ -246,7 +246,7 @@ static int rcl_pred_probe(uintptr_t pred, int *alignOut, int *readOut, int *writ
 
 static int rcl_pred_ok(uintptr_t pred)
 {
-    return rcl_pred_probe(pred, NULL, NULL, NULL, NULL);
+    return rcl_pred_probe(pred, nullptr, nullptr, nullptr, nullptr);
 }
 
 static int rcl_move_pair_ok(uintptr_t obj, int32_t *outX, int32_t *outY)
@@ -271,7 +271,7 @@ static int rcl_move_obj_ok(uintptr_t obj)
 {
     if (!obj) return 0;
     if (!rcl_instance_shaped(obj)) return 0;
-    if (!rcl_move_pair_ok(obj, NULL, NULL)) return 0;
+    if (!rcl_move_pair_ok(obj, nullptr, nullptr)) return 0;
 
     return 1;
 }
@@ -280,17 +280,17 @@ static uintptr_t rcl_move_carrier(void)
 {
     uintptr_t ctrl = rcl_controller();
     uintptr_t mover = 0;
-    void *mgr = NULL;
+    void *mgr = nullptr;
 
     if (ctrl)
     {
-        mover = rcl_hop(ctrl, NULL);
+        mover = rcl_hop(ctrl, nullptr);
 
         if (mover && rcl_pointer_plausible(mover)) return mover;
 
         if (rcl_read_ptr(ctrl + (uintptr_t)RCL_MGR_OFF, &mgr) && mgr)
         {
-            mover = rcl_hop((uintptr_t)mgr, NULL);
+            mover = rcl_hop((uintptr_t)mgr, nullptr);
 
             if (rcl_move_obj_ok(mover)) return mover;
         }
@@ -300,7 +300,7 @@ static uintptr_t rcl_move_carrier(void)
 
     if (rcl_scene_object)
     {
-        mover = rcl_hop(rcl_scene_object, NULL);
+        mover = rcl_hop(rcl_scene_object, nullptr);
 
         if (rcl_move_obj_ok(mover)) return mover;
 
@@ -333,21 +333,21 @@ void *rcl_msg_alloc(void)
         return ((void *(*)(size_t))got)((size_t)RCL_MSG_SIZE);
     }
 
-    return NULL;
+    return nullptr;
 }
 
 void *rcl_manager(void)
 {
     uintptr_t battleFn = rcl_entry_2(RCL_GETBATTLE_RVA);
-    void *battle = NULL;
-    void *mgr = NULL;
+    void *battle = nullptr;
+    void *mgr = nullptr;
 
-    if (!battleFn) return NULL;
+    if (!battleFn) return nullptr;
 
     battle = ((void *(*)(void))battleFn)();
 
-    if (!battle) return NULL;
-    if (!rcl_read_ptr((uintptr_t)battle + RCL_MGR_OFF, &mgr) || !mgr) return NULL;
+    if (!battle) return nullptr;
+    if (!rcl_read_ptr((uintptr_t)battle + RCL_MGR_OFF, &mgr) || !mgr) return nullptr;
 
     return mgr;
 }
@@ -355,7 +355,7 @@ void *rcl_manager(void)
 int rcl_queue_count(uintptr_t *mgrOut)
 {
     void *mgr = rcl_manager();
-    void *queue = NULL;
+    void *queue = nullptr;
     int32_t count = -1;
 
     if (mgrOut) *mgrOut = (uintptr_t)mgr;
@@ -383,7 +383,7 @@ int rcl_pred_set(int x, int y)
 
     if (!setFn) return 0;
 
-    pred = rcl_hop(rcl_controller(), NULL);
+    pred = rcl_hop(rcl_controller(), nullptr);
 
     if (!rcl_pred_ok(pred))
     {
@@ -400,6 +400,7 @@ int rcl_move_to(int32_t x, int32_t y, float ox, float oy)
     uintptr_t fn = 0;
     uintptr_t own = 0;
     uintptr_t ctrl = 0;
+    void (*move_fn)(void *, int, int, int) = nullptr;
     int32_t px = x;
     int32_t py = y;
     int32_t zero = 0;
@@ -420,7 +421,7 @@ int rcl_move_to(int32_t x, int32_t y, float ox, float oy)
 
     if (!fn) return 0;
     if (!own && !ctrl) return 0;
-    if (own && !rcl_move_pair_ok(own, NULL, NULL)) own = 0;
+    if (own && !rcl_move_pair_ok(own, nullptr, nullptr)) own = 0;
 
     if (!own && !ctrl) return 0;
 
@@ -432,9 +433,11 @@ int rcl_move_to(int32_t x, int32_t y, float ox, float oy)
         rcl_write_bytes(ctrl + (uintptr_t)RCL_CTRL_MOVE_ZERO_OFF, &zero, sizeof(zero));
     }
 
-    if (ctrl) ((void (*)(void *, int, int, int))fn)((void *)ctrl, (int)x, (int)y, (int)RCL_MOVE_FLAG_10);
+    move_fn = (void (*)(void *, int, int, int))fn;
 
-    if (own && own != ctrl) ((void (*)(void *, int, int, int))fn)((void *)own, (int)x, (int)y, (int)RCL_MOVE_FLAG_10);
+    if (ctrl) move_fn((void *)ctrl, (int)x, (int)y, (int)RCL_MOVE_FLAG_10);
+
+    if (own && own != ctrl) move_fn((void *)own, (int)x, (int)y, (int)RCL_MOVE_FLAG_10);
 
     if (ctrl)
     {

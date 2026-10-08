@@ -148,22 +148,18 @@ void poll_for_game(int tick);
 static inline BOOL rcl_region_flags(uintptr_t address, vm_prot_t *flags)
 {
     vm_prot_t protection = 0;
-
     if (flags)
     {
         *flags = 0;
     }
-
     if (!rcl_query_region(address, &protection, NULL, NULL, NULL))
     {
         return NO;
     }
-
     if (flags)
     {
         *flags = protection;
     }
-
     return YES;
 }
 
@@ -173,15 +169,12 @@ static inline BOOL rcl_addr_readable(uintptr_t address, size_t length)
     {
         return NO;
     }
-
     uintptr_t end = address + length;
     if (end < address)
     {
         return NO;
     }
-
     uintptr_t cursor = address;
-
     for (int guard = 0; cursor < end && guard < 64; guard++)
     {
         vm_prot_t flags = 0;
@@ -193,35 +186,28 @@ static inline BOOL rcl_addr_readable(uintptr_t address, size_t length)
         {
             return NO;
         }
-
         vm_address_t region = (vm_address_t)cursor;
         vm_size_t size = 0;
         vm_region_basic_info_data_64_t info;
         mach_msg_type_number_t infoCount = VM_REGION_BASIC_INFO_COUNT_64;
         mach_port_t objectName = MACH_PORT_NULL;
-
         kern_return_t kr = vm_region_64(mach_task_self(), &region, &size, VM_REGION_BASIC_INFO_64,
                                         (vm_region_info_t)&info, &infoCount, &objectName);
-
         if (objectName != MACH_PORT_NULL)
         {
             mach_port_deallocate(mach_task_self(), objectName);
         }
-
         if (kr != KERN_SUCCESS || size == 0)
         {
             return NO;
         }
-
         uintptr_t next = (uintptr_t)region + (uintptr_t)size;
         if (next <= cursor)
         {
             return NO;
         }
-
         cursor = next;
     }
-
     return cursor >= end;
 }
 
@@ -231,18 +217,14 @@ static inline BOOL rcl_read_word(uintptr_t address, uint32_t *out)
     {
         return NO;
     }
-
     uint32_t value = 0;
     vm_size_t got = 0;
-
     kern_return_t kr =
         vm_read_overwrite(mach_task_self(), (vm_address_t)address, sizeof(value), (vm_address_t)&value, &got);
-
     if (kr != KERN_SUCCESS || got != sizeof(value))
     {
         return NO;
     }
-
     *out = value;
     return YES;
 }
@@ -263,9 +245,7 @@ static inline uintptr_t rcl_image_slide(uintptr_t imageBase)
     {
         return 0;
     }
-
     const struct mach_header_64 *header = (const struct mach_header_64 *)imageBase;
-
     if (!rcl_addr_readable(imageBase, sizeof(struct mach_header_64)))
     {
         return 0;
@@ -282,19 +262,15 @@ static inline uintptr_t rcl_image_slide(uintptr_t imageBase)
     {
         return 0;
     }
-
     const uint8_t *cursor = (const uint8_t *)(header + 1);
     const uint8_t *limit = cursor + header->sizeofcmds;
-
     for (uint32_t i = 0; i < header->ncmds; i++)
     {
         if (cursor + sizeof(struct load_command) > limit)
         {
             return 0;
         }
-
         const struct load_command *command = (const struct load_command *)cursor;
-
         if (command->cmdsize < sizeof(struct load_command))
         {
             return 0;
@@ -303,25 +279,20 @@ static inline uintptr_t rcl_image_slide(uintptr_t imageBase)
         {
             return 0;
         }
-
         if (command->cmd == LC_SEGMENT_64)
         {
             if (command->cmdsize < sizeof(struct segment_command_64))
             {
                 return 0;
             }
-
             const struct segment_command_64 *segment = (const struct segment_command_64 *)command;
-
             if (strcmp(segment->segname, "__TEXT") == 0)
             {
                 return imageBase - (uintptr_t)segment->vmaddr;
             }
         }
-
         cursor += command->cmdsize;
     }
-
     return 0;
 }
 
@@ -332,9 +303,7 @@ static inline BOOL rcl_image_segment_contains(uintptr_t imageBase, uintptr_t add
     {
         return NO;
     }
-
     const struct mach_header_64 *header = (const struct mach_header_64 *)imageBase;
-
     if (!rcl_addr_readable(imageBase, sizeof(struct mach_header_64)))
     {
         return NO;
@@ -351,21 +320,16 @@ static inline BOOL rcl_image_segment_contains(uintptr_t imageBase, uintptr_t add
     {
         return NO;
     }
-
     uintptr_t slide = rcl_image_slide(imageBase);
-
     const uint8_t *cursor = (const uint8_t *)(header + 1);
     const uint8_t *limit = cursor + header->sizeofcmds;
-
     for (uint32_t i = 0; i < header->ncmds; i++)
     {
         if (cursor + sizeof(struct load_command) > limit)
         {
             return NO;
         }
-
         const struct load_command *command = (const struct load_command *)cursor;
-
         if (command->cmdsize < sizeof(struct load_command))
         {
             return NO;
@@ -374,19 +338,15 @@ static inline BOOL rcl_image_segment_contains(uintptr_t imageBase, uintptr_t add
         {
             return NO;
         }
-
         if (command->cmd == LC_SEGMENT_64)
         {
             if (command->cmdsize < sizeof(struct segment_command_64))
             {
                 return NO;
             }
-
             const struct segment_command_64 *segment = (const struct segment_command_64 *)command;
-
             uintptr_t start = (uintptr_t)segment->vmaddr + slide;
             uintptr_t end = start + (uintptr_t)segment->vmsize;
-
             if (address >= start && address < end)
             {
                 BOOL executable = (segment->initprot & VM_PROT_EXECUTE) ? YES : NO;
@@ -409,10 +369,8 @@ static inline BOOL rcl_image_segment_contains(uintptr_t imageBase, uintptr_t add
                 return YES;
             }
         }
-
         cursor += command->cmdsize;
     }
-
     return NO;
 }
 
@@ -421,12 +379,10 @@ static inline BOOL rcl_image_text_contains(uintptr_t imageBase, uintptr_t addres
     uintptr_t start = 0;
     uintptr_t end = 0;
     uint32_t prot = 0;
-
     if (!rcl_image_segment_contains(imageBase, address, NO, &start, &end, &prot))
     {
         return NO;
     }
-
     return (prot & VM_PROT_EXECUTE) ? YES : NO;
 }
 
@@ -436,9 +392,7 @@ static inline BOOL rcl_object_plausible(void *object)
     {
         return NO;
     }
-
     uintptr_t address = (uintptr_t)object;
-
     if (address < 0x100000000ULL)
     {
         return NO;
@@ -451,7 +405,6 @@ static inline BOOL rcl_object_plausible(void *object)
     {
         return NO;
     }
-
     uintptr_t vtable = 0;
     if (!rcl_read_bytes(address, &vtable, sizeof(vtable)))
     {
@@ -465,7 +418,6 @@ static inline BOOL rcl_object_plausible(void *object)
     {
         return NO;
     }
-
     uintptr_t firstEntry = 0;
     if (!rcl_read_bytes(vtable, &firstEntry, sizeof(firstEntry)))
     {
@@ -475,7 +427,6 @@ static inline BOOL rcl_object_plausible(void *object)
     {
         return NO;
     }
-
     return rcl_addr_executable(firstEntry);
 }
 
@@ -491,8 +442,6 @@ int rcl_small(long value);
 float rcl_as_float(uint32_t bits);
 void rcl_discriminate(uintptr_t manager);
 void rcl_probe(uintptr_t manager, uintptr_t mode, int verbose);
-uintptr_t rcl_bounds_obj(uintptr_t receiver);
-int rcl_clamp(int32_t *x, int32_t *y);
 uint64_t rcl_us(void);
 void rcl_paircal(void);
 

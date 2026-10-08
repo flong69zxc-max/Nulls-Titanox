@@ -77,7 +77,6 @@ static int rcl_cross_profile(const rcl_proj_t *p, uint64_t now_ms, rcl_hazard_t 
     float t0 = 0.0f;
     float t1 = 0.0f;
     int n = 0;
-
     if (cx == 0.0f || cy == 0.0f)
     {
         return 0;
@@ -86,25 +85,19 @@ static int rcl_cross_profile(const rcl_proj_t *p, uint64_t now_ms, rcl_hazard_t 
     {
         return 0;
     }
-
     land_at = rcl_dp_time(p->spawnedAt, now_ms) + spec->flight_time_ms;
     t0 = land_at - RCL_DP_TICK_MS;
     t1 = land_at + burst_life + RCL_DP_TICK_MS;
-
     if (n < max_out)
     {
         rcl_hz_seg(&out[n], p->name, cx - arm_length, cy, cx + arm_length, cy, spec->child_radius, t0, t1);
-
         n++;
     }
-
     if (n < max_out)
     {
         rcl_hz_seg(&out[n], p->name, cx, cy - arm_length, cx, cy + arm_length, spec->child_radius, t0, t1);
-
         n++;
     }
-
     return n;
 }
 
@@ -115,19 +108,15 @@ static void rcl_spike_endpoint(const rcl_proj_t *p, float *ex, float *ey, float 
     float dir_x = 0.0f;
     float dir_y = 0.0f;
     float dist = 0.0f;
-
     if (ang != ang)
     {
         ang = 0.0f;
     }
-
     rad = ang * RCL_DP_PI / 180.0f;
     dir_x = cosf(rad);
     dir_y = sinf(rad);
-
     dist = rcl_wall_trace((float)p->spawnX, (float)p->spawnY, dir_x, dir_y, RCL_DP_FLIGHT_DIST,
                           RCL_WALL_BLOCKS_PROJECTILES);
-
     *ex = (float)p->spawnX + dir_x * dist;
     *ey = (float)p->spawnY + dir_y * dist;
     *edist = dist;
@@ -140,56 +129,44 @@ static int rcl_cactus_profile(const rcl_proj_t *p, uint64_t now_ms, rcl_hazard_t
     float end_dist = 0.0f;
     float burst_at = 0.0f;
     int n = 0;
-
     rcl_spike_endpoint(p, &end_x, &end_y, &end_dist);
-
     burst_at = rcl_dp_time(p->spawnedAt, now_ms) + RCL_DP_FLIGHT_TIME_MS * (end_dist / RCL_DP_FLIGHT_DIST);
-
     if (p->spawnAreaRadius > 0)
     {
         if (n < max_out)
         {
             rcl_hz_blob(&out[n], p->name, end_x, end_y, (float)p->spawnAreaRadius, burst_at,
                         burst_at + (float)(p->spawnAreaActiveTime ? p->spawnAreaActiveTime : (int)RCL_DP_BLAST_MS));
-
             n++;
         }
     }
-
     if (rcl_spike_variant == 1)
     {
         float t0 = burst_at - RCL_DP_TICK_MS;
         float t1 = burst_at + RCL_DP_BURST_LIFE_MS + RCL_DP_TICK_MS;
         int i = 0;
-
         for (i = 0; i < 3; i++)
         {
             float a = (float)i * RCL_DP_PI / 3.0f;
             float dx = cosf(a) * RCL_DP_ARM_LENGTH;
             float dy = sinf(a) * RCL_DP_ARM_LENGTH;
-
             if (n < max_out)
             {
                 rcl_hz_seg(&out[n], p->name, end_x - dx, end_y - dy, end_x + dx, end_y + dy, RCL_DP_CHILD_RADIUS, t0,
                            t1);
-
                 n++;
             }
         }
-
         return n;
     }
-
     {
         int s = 0;
-
         for (s = 0; s < RCL_DP_SPOKES; s++)
         {
             float rot = (float)s * (2.0f * RCL_DP_PI / (float)RCL_DP_SPOKES);
             float cr = cosf(rot);
             float sr = sinf(rot);
             int k = 0;
-
             for (k = 0; k + 1 < RCL_DP_ARC_N; k++)
             {
                 float ta = rcl_spike_arc[k][0];
@@ -198,19 +175,16 @@ static int rcl_cactus_profile(const rcl_proj_t *p, uint64_t now_ms, rcl_hazard_t
                 float tb = rcl_spike_arc[k + 1][0];
                 float bx = rcl_spike_arc[k + 1][1];
                 float by = rcl_spike_arc[k + 1][2];
-
                 if (n < max_out)
                 {
                     rcl_hz_seg(&out[n], p->name, end_x + ax * cr - ay * sr, end_y + ax * sr + ay * cr,
                                end_x + bx * cr - by * sr, end_y + bx * sr + by * cr, RCL_DP_CHILD_RADIUS, burst_at + ta,
                                burst_at + tb);
-
                     n++;
                 }
             }
         }
     }
-
     return n;
 }
 
@@ -218,7 +192,6 @@ int rcl_shape_hazards(const rcl_proj_t *p, uint64_t now_ms, rcl_hazard_t *out, i
 {
     static const rcl_cross_spec_t cross_bomber = {125.0f, 3000.0f, 200.0f, 800.0f, 1015.0f};
     static const rcl_cross_spec_t cross_ulti = {375.0f, 3000.0f, 100.0f, 1600.0f, 1115.0f};
-
     if (!p || !p->name)
     {
         return 0;
@@ -227,32 +200,26 @@ int rcl_shape_hazards(const rcl_proj_t *p, uint64_t now_ms, rcl_hazard_t *out, i
     {
         return 0;
     }
-
     if (strcmp(p->name, "CrossBomberProjectile") == 0)
     {
         return rcl_cross_profile(p, now_ms, out, max_out, &cross_bomber);
     }
-
     if (strcmp(p->name, "CrossBomberUltiProjectile") == 0)
     {
         return rcl_cross_profile(p, now_ms, out, max_out, &cross_ulti);
     }
-
     if (strcmp(p->name, "CactusProjectile") == 0)
     {
         if (!rcl_spike_variant)
         {
             return 0;
         }
-
         return rcl_cactus_profile(p, now_ms, out, max_out);
     }
-
     if (strcmp(p->name, "CactusSpike") == 0)
     {
         return 0;
     }
-
     return 0;
 }
 
@@ -274,7 +241,6 @@ int rcl_blocks_linear(const char *name)
     {
         return 1;
     }
-
     return 0;
 }
 
@@ -285,7 +251,6 @@ void rcl_note_burst_death(const rcl_proj_death_t *rec)
     float angle = 0.0f;
     float chord = 0.0f;
     float deviation = 0.0f;
-
     if (rcl_spike_variant)
     {
         return;
@@ -298,29 +263,23 @@ void rcl_note_burst_death(const rcl_proj_death_t *rec)
     {
         return;
     }
-
     dx = rec->x - rec->spawnX;
     dy = rec->y - rec->spawnY;
-
     if (dx * dx + dy * dy < 1)
     {
         return;
     }
-
     angle = rec->angle;
     if (angle != angle)
     {
         angle = 0.0f;
     }
-
     chord = atan2f((float)dy, (float)dx) * 180.0f / RCL_DP_PI;
-
     deviation = fmodf(chord - angle, 360.0f);
     deviation = fmodf(deviation + 540.0f, 360.0f) - 180.0f;
     if (deviation < 0.0f)
     {
         deviation = -deviation;
     }
-
     rcl_spike_variant = deviation > RCL_DP_CURVE_DEV_DEG ? 2 : 1;
 }

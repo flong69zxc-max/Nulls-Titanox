@@ -11,7 +11,6 @@ static int rcl_flag_index(const char *name)
     {
         return -1;
     }
-
     for (int i = 0; i < g_flag_count; i++)
     {
         if (strcmp(g_flag_names[i], name) == 0)
@@ -19,18 +18,15 @@ static int rcl_flag_index(const char *name)
             return i;
         }
     }
-
     return -1;
 }
 void rcl_flag_set(const char *name, int value)
 {
     int index = rcl_flag_index(name);
-
     if (index < 0)
     {
         return;
     }
-
     if (value)
     {
         g_flags |= (1u << index);
@@ -44,12 +40,10 @@ void rcl_flag_set(const char *name, int value)
 int rcl_flag_state(const char *name)
 {
     int index = rcl_flag_index(name);
-
     if (index < 0)
     {
         return 0;
     }
-
     return (g_flags & (1u << index)) ? 1 : 0;
 }
 int rcl_feature_setup(const char *label, void (*setup)(void))
@@ -58,9 +52,7 @@ int rcl_feature_setup(const char *label, void (*setup)(void))
     {
         return 0;
     }
-
     setup();
     rcl_log_info("%s ready", label ? label : "feature");
-
     return 1;
 }

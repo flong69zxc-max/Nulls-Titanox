@@ -128,12 +128,10 @@ static const rcl_kind_t rcl_kinds[RCL_KIND_COUNT] = {
 int rcl_kind_index(const char *name)
 {
     int i = 0;
-
     if (!name || !name[0])
     {
         return -1;
     }
-
     for (i = 0; i < RCL_KIND_COUNT; i++)
     {
         if (strcmp(rcl_kinds[i].name, name) == 0)
@@ -141,26 +139,22 @@ int rcl_kind_index(const char *name)
             return i;
         }
     }
-
     return -1;
 }
 
 const rcl_kind_t *rcl_kind_of(const char *name)
 {
     int i = rcl_kind_index(name);
-
     return i < 0 ? nullptr : &rcl_kinds[i];
 }
 
 const rcl_fit_t *rcl_fit_of(const char *name)
 {
     const rcl_kind_t *kind = rcl_kind_of(name);
-
     if (kind && kind->fit >= 0 && kind->fit < RCL_FIT_COUNT)
     {
         return &rcl_fits[kind->fit];
     }
-
     return &rcl_fits[RCL_FIT_FALLBACK];
 }
 
@@ -168,7 +162,6 @@ float rcl_proj_radius(const rcl_proj_t *p, float speed)
 {
     uintptr_t base = 0;
     int off = 0;
-
     if (!p)
     {
         return 0.0f;
@@ -177,43 +170,33 @@ float rcl_proj_radius(const rcl_proj_t *p, float speed)
     {
         return 0.0f;
     }
-
     base = p->elem;
-
     {
         void *def = nullptr;
-
         if (rcl_read_ptr(p->elem + (uintptr_t)RCL_ELEM_DEF_OFF, &def) && def)
         {
             base = (uintptr_t)def;
         }
     }
-
     if (rcl_rad_off >= 0)
     {
         float r = 0.0f;
-
         if (base && rcl_read_float(base + (uintptr_t)rcl_rad_off, &r) && rcl_ok(r, 0.0f, 600.0f))
         {
             rcl_rad_est = r;
-
             return r;
         }
-
         return rcl_ok(rcl_rad_est, 0.0f, 600.0f) ? rcl_rad_est : 0.0f;
     }
-
     if (!base)
     {
         return 0.0f;
     }
-
     for (off = 0x20; off <= 0x120; off += 4)
     {
         float v = 0.0f;
         float r = 0.0f;
         float d = 0.0f;
-
         if (!rcl_read_float(base + (uintptr_t)off, &v))
         {
             continue;
@@ -222,7 +205,6 @@ float rcl_proj_radius(const rcl_proj_t *p, float speed)
         {
             continue;
         }
-
         d = v - speed;
         if (d < 0.0f)
         {
@@ -232,7 +214,6 @@ float rcl_proj_radius(const rcl_proj_t *p, float speed)
         {
             continue;
         }
-
         if (!rcl_read_float(base + (uintptr_t)off + 4, &r))
         {
             continue;
@@ -241,7 +222,6 @@ float rcl_proj_radius(const rcl_proj_t *p, float speed)
         {
             continue;
         }
-
         if (rcl_cal_off_seen == off && rcl_ok(rcl_cal_rad_seen - r, -1.0f, 1.0f))
         {
             rcl_cal_n++;
@@ -252,17 +232,13 @@ float rcl_proj_radius(const rcl_proj_t *p, float speed)
             rcl_cal_rad_seen = r;
             rcl_cal_n = 1;
         }
-
         if (rcl_cal_n < 6)
         {
             return 0.0f;
         }
-
         rcl_rad_off = off + 4;
         rcl_rad_est = r;
-
         return r;
     }
-
     return 150.0f;
 }

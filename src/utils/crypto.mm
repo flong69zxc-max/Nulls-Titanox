@@ -38,21 +38,17 @@ static void rcl_sha_block(rcl_sha_ctx_t *c, const uint8_t *p)
     uint32_t g = 0;
     uint32_t hh = 0;
     int i = 0;
-
     for (i = 0; i < 16; i++)
     {
         w[i] = ((uint32_t)p[i * 4] << 24) | ((uint32_t)p[i * 4 + 1] << 16) | ((uint32_t)p[i * 4 + 2] << 8) |
                (uint32_t)p[i * 4 + 3];
     }
-
     for (i = 16; i < 64; i++)
     {
         uint32_t s0 = rcl_ror(w[i - 15], 7) ^ rcl_ror(w[i - 15], 18) ^ (w[i - 15] >> 3);
         uint32_t s1 = rcl_ror(w[i - 2], 17) ^ rcl_ror(w[i - 2], 19) ^ (w[i - 2] >> 10);
-
         w[i] = w[i - 16] + s0 + w[i - 7] + s1;
     }
-
     a = c->h[0];
     b = c->h[1];
     cc = c->h[2];
@@ -61,7 +57,6 @@ static void rcl_sha_block(rcl_sha_ctx_t *c, const uint8_t *p)
     f = c->h[5];
     g = c->h[6];
     hh = c->h[7];
-
     for (i = 0; i < 64; i++)
     {
         uint32_t S1 = rcl_ror(e, 6) ^ rcl_ror(e, 11) ^ rcl_ror(e, 25);
@@ -70,7 +65,6 @@ static void rcl_sha_block(rcl_sha_ctx_t *c, const uint8_t *p)
         uint32_t S0 = rcl_ror(a, 2) ^ rcl_ror(a, 13) ^ rcl_ror(a, 22);
         uint32_t maj = (a & b) ^ (a & cc) ^ (b & cc);
         uint32_t t2 = S0 + maj;
-
         hh = g;
         g = f;
         f = e;
@@ -80,7 +74,6 @@ static void rcl_sha_block(rcl_sha_ctx_t *c, const uint8_t *p)
         b = a;
         a = t1 + t2;
     }
-
     c->h[0] += a;
     c->h[1] += b;
     c->h[2] += cc;
@@ -101,23 +94,17 @@ static void rcl_sha_init(rcl_sha_ctx_t *c)
 static void rcl_sha_update(rcl_sha_ctx_t *c, const uint8_t *p, size_t length)
 {
     size_t i = 0;
-
     c->bits += (uint64_t)length * 8ULL;
-
     while (i < length)
     {
         size_t k = (size_t)64 - c->n;
-
         if (k > length - i)
         {
             k = length - i;
         }
-
         memcpy(c->buf + c->n, p + i, k);
-
         c->n += k;
         i += k;
-
         if (c->n == 64)
         {
             rcl_sha_block(c, c->buf);
@@ -132,17 +119,13 @@ static void rcl_sha_final(rcl_sha_ctx_t *c, uint8_t out[32])
     uint64_t bits = c->bits;
     size_t padlen = (c->n < 56) ? ((size_t)56 - c->n) : ((size_t)120 - c->n);
     int i = 0;
-
     pad[0] = 0x80;
     memset(pad + 1, 0, padlen - 1);
-
     for (i = 0; i < 8; i++)
     {
         pad[padlen + (size_t)i] = (uint8_t)(bits >> (56 - 8 * i));
     }
-
     rcl_sha_update(c, pad, padlen + 8);
-
     for (i = 0; i < 8; i++)
     {
         out[i * 4] = (uint8_t)(c->h[i] >> 24);
@@ -155,7 +138,6 @@ static void rcl_sha_final(rcl_sha_ctx_t *c, uint8_t out[32])
 void rcl_sha(const uint8_t *data, size_t length, uint8_t out[32])
 {
     rcl_sha_ctx_t c;
-
     rcl_sha_init(&c);
     rcl_sha_update(&c, data, length);
     rcl_sha_final(&c, out);
@@ -164,12 +146,10 @@ void rcl_sha(const uint8_t *data, size_t length, uint8_t out[32])
 void rcl_ci_make_block(const uint8_t key16[16], const uint8_t mask16[16], uint8_t pad, uint8_t out[64])
 {
     int i = 0;
-
     for (i = 0; i < 16; i++)
     {
         out[i] = (uint8_t)(key16[i] ^ mask16[i]);
     }
-
     memset(out + 16, pad, 64 - 16);
 }
 
@@ -186,10 +166,8 @@ uint32_t rcl_ci_compute_token(const uint8_t key16[16], const uint8_t cmd16[16], 
     uint32_t typeC = 0;
     uint32_t token = 0;
     int i = 0;
-
     typeRaw = (uint32_t)cmd16[4] | ((uint32_t)cmd16[5] << 8) | ((uint32_t)cmd16[6] << 16) | ((uint32_t)cmd16[7] << 24);
     typeC = (typeRaw <= 0x16) ? table[typeRaw] : (uint32_t)0xdeadbeef;
-
     for (i = 0; i < 12; i++)
     {
         msg[i] = cmd16[4 + i];
@@ -202,23 +180,18 @@ uint32_t rcl_ci_compute_token(const uint8_t key16[16], const uint8_t cmd16[16], 
     msg[17] = (uint8_t)(typeC >> 8);
     msg[18] = (uint8_t)(typeC >> 16);
     msg[19] = (uint8_t)(typeC >> 24);
-
     rcl_ci_make_block(key16, innerMask, (uint8_t)0x36, block);
     memcpy(innerBuf, block, 64);
     memcpy(innerBuf + 64, msg, 0x14);
     rcl_sha(innerBuf, sizeof(innerBuf), inner);
-
     rcl_ci_make_block(key16, outerMask, (uint8_t)0x5c, block);
     memcpy(outerBuf, block, 64);
     memcpy(outerBuf + 64, inner, 32);
     rcl_sha(outerBuf, sizeof(outerBuf), digest);
-
     token = (uint32_t)digest[0] | (((uint32_t)digest[1] & (uint32_t)0x7f) << 8);
-
     if (token <= (uint32_t)1)
     {
         token = (uint32_t)1;
     }
-
     return token;
 }

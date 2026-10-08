@@ -3287,12 +3287,7 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
 
         {
             void *def = NULL;
-            void *area = NULL;
             uint8_t indirect = 0;
-            int32_t rendering = 0;
-            int32_t spd = 0;
-            int32_t rad = 0;
-            uintptr_t fn = 0;
 
             rcl_projs[slot].name = NULL;
             rcl_projs[slot].angle = 0.0f;
@@ -3320,93 +3315,16 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
                 {
                     rcl_projs[slot].isThrower = indirect ? 1 : 0;
                 }
-
-                fn = rcl_entry_2(RCL_PROJ_SPEED_RVA);
-
-                if (fn)
-                {
-                    spd = ((int32_t (*)(void *))fn)(def);
-
-                    if (spd < 1) spd = 1;
-
-                    rcl_projs[slot].speed = (float)spd;
-                }
-
-                fn = rcl_entry_2(RCL_PROJ_RADIUS_RVA);
-
-                if (fn)
-                {
-                    rad = ((int32_t (*)(void *))fn)(def);
-
-                    if (rad < 0) rad = 0;
-
-                    rcl_projs[slot].radius = (float)rad;
-                }
-
-                fn = rcl_entry_2(RCL_PROJ_RENDERING_RVA);
-
-                if (fn) rendering = ((int32_t (*)(void *))fn)(def);
-
-                fn = rcl_entry_2(RCL_PROJ_ISBEAM_RVA);
-
-                if (fn) rcl_projs[slot].isBeam = ((int32_t (*)(void *))fn)(def) ? 1 : 0;
-
-                fn = rcl_entry_2(RCL_PROJ_SPAWNAREA_RVA);
-
-                if (fn)
-                {
-                    area = ((void *(*)(void *))fn)(def);
-
-                    if (area)
-                    {
-                        fn = rcl_entry_2(RCL_AREA_RADIUS_RVA);
-
-                        if (fn)
-                        {
-                            rad = ((int32_t (*)(void *))fn)(area);
-
-                            if (rad > 0) rcl_projs[slot].spawnAreaRadius = rad;
-                        }
-
-                        fn = rcl_entry_2(RCL_AREA_ACTIVE_RVA);
-
-                        if (fn)
-                        {
-                            rad = ((int32_t (*)(void *))fn)(area);
-
-                            if (rad > 0) rcl_projs[slot].spawnAreaActiveTime = rad;
-                        }
-                    }
-                }
             }
 
-            fn = rcl_entry_2(RCL_PROJ_TARGETX_RVA);
-
-            if (fn) rcl_projs[slot].targetX = ((int32_t (*)(uintptr_t))fn)((uintptr_t)element);
-
-            fn = rcl_entry_2(RCL_PROJ_TARGETY_RVA);
-
-            if (fn) rcl_projs[slot].targetY = ((int32_t (*)(uintptr_t))fn)((uintptr_t)element);
-
-            if (rendering == RCL_PROJ_RENDERING_LINE)
             {
                 int32_t raw = 0;
 
                 if (rcl_read_int((uintptr_t)element + (uintptr_t)RCL_PROJ_ANGLE_OFF, &raw) &&
-                    raw > 0)
+                    raw > 0 && raw <= 360)
                 {
-                    int32_t deg = raw <= 360 ? raw : (raw % 360);
-
-                    rcl_projs[slot].angle = (float)deg;
+                    rcl_projs[slot].angle = (float)raw;
                 }
-            }
-
-            if (rcl_projs[slot].angle > 0.0f)
-            {
-                float rr = rcl_projs[slot].angle * 0.017453292f;
-
-                rcl_projs[slot].vx = cosf(rr) * rcl_projs[slot].speed;
-                rcl_projs[slot].vy = sinf(rr) * rcl_projs[slot].speed;
             }
         }
 

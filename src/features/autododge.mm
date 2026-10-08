@@ -141,9 +141,13 @@ static void rcl_ad_clear_heading(void)
 
 static float rcl_ad_ball_radius(const rcl_proj_t *p)
 {
-    if (p->radius > 0.0f) return p->radius;
+    float r = p->radius;
 
-    return 100.0f;
+    if (r <= 0.0f) r = rcl_proj_radius(p, 1.0f);
+
+    if (r > 0.0f) return r;
+
+    return RCL_PROJ_RADIUS_DEFAULT;
 }
 
 static float rcl_ad_traveled(const rcl_proj_t *p)
@@ -346,7 +350,7 @@ static void rcl_ad_collect(float mx, float my, float myRadius, uint64_t nowMs)
         float dx = 0.0f;
         float dy = 0.0f;
 
-        if (!p->elem || !p->gid) continue;
+        if (!p->elem) continue;
         if (rcl_ad_is_mine(p)) continue;
 
         shaped = rcl_shape_hazards(p, nowMs, rcl_ad_caps, RCL_AD_CAP_MAX);
@@ -400,6 +404,15 @@ static void rcl_ad_collect(float mx, float my, float myRadius, uint64_t nowMs)
 
         vx = p->vx;
         vy = p->vy;
+
+        if (vx == 0.0f && vy == 0.0f)
+        {
+            if (!rcl_proj_vel(p, &vx, &vy))
+            {
+                vx = 0.0f;
+                vy = 0.0f;
+            }
+        }
 
         if (!rcl_ok(vx, -100000000.0f, 100000000.0f) || !rcl_ok(vy, -100000000.0f, 100000000.0f))
         {
@@ -654,7 +667,6 @@ static int rcl_ad_update(float mx, float my)
 
     if (!rcl_ok(mx, -100000000.0f, 100000000.0f)) return 0;
     if (!rcl_ok(my, -100000000.0f, 100000000.0f)) return 0;
-    if (!mx && !my) return 0;
 
     rcl_dodge_speed_probe();
 

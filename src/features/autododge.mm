@@ -1121,6 +1121,10 @@ static int rcl_ad_send_move_7(float tx, float ty, float mx, float my)
 #define RCL_BDC_PANIC_R_2 1.35f
 #define RCL_BDC_ROLL_DT_2 0.078f
 #define RCL_BDC_DIR_MAX (RCL_AD_DIR_COUNT + RCL_BDC_EXTRA)
+#define RCL_BDC_WALL_W_2 900.0f
+#define RCL_BDC_WALL_KEEP_2 260.0f
+#define RCL_BDC_MINE_W_2 3.0f
+#define RCL_BDC_STATIC_V_2 400.0f
 
 static int rcl_bdc_sel[RCL_BD_THREAT_MAX];
 static int rcl_bdc_sel_n = 0;
@@ -1294,6 +1298,13 @@ static float rcl_bdc_score_dir_6(float dx, float dy, float mx, float my, float m
                 }
                 score += RCL_BDC_ALONG_HIT * along;
             }
+        }
+    }
+    {
+        float clear = rcl_wall_trace(mx, my, dx, dy, RCL_BDC_WALL_KEEP_2, RCL_WALL_BLOCKS_MOVEMENT);
+        if (clear < RCL_BDC_WALL_KEEP_2)
+        {
+            score += RCL_BDC_WALL_W_2 * (RCL_BDC_WALL_KEEP_2 - clear) / RCL_BDC_WALL_KEEP_2;
         }
     }
     score += rcl_bdc_side_cost_6(mx, my, dx, dy);
@@ -1813,6 +1824,15 @@ static void rcl_bdc_pick_6(float mx, float my, float myR, float ix, float iy, fl
     rcl_bdc_have_last = 1;
     rcl_bdc_lock_6 = RCL_BDC_LOCK_TICKS;
     rcl_bdc_seen++;
+}
+
+void rcl_dodge_drop(void)
+{
+    rcl_dodge_speed = 0.0f;
+    rcl_bdc_have_last = 0;
+    rcl_bdc_lock_6 = 0;
+    rcl_bdc_last_x = 0.0f;
+    rcl_bdc_last_y = 0.0f;
 }
 
 static int rcl_ad_update_7(float mx, float my)

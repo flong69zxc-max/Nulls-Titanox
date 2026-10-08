@@ -147,6 +147,10 @@ int rcl_enqueue_type(int x, int y, int type)
     {
         (void)rcl_pred_set(x, y);
     }
+    if (!rcl_object_live_2((uintptr_t)mgr))
+    {
+        return 0;
+    }
     ((void (*)(void *, void *))inputFn)(mgr, msg);
     return 1;
 }
@@ -263,6 +267,10 @@ static int rcl_move_pair_ok(uintptr_t obj, int32_t *outX, int32_t *outY)
 static int rcl_move_obj_ok(uintptr_t obj)
 {
     if (!obj)
+    {
+        return 0;
+    }
+    if (!rcl_object_live_2(obj))
     {
         return 0;
     }

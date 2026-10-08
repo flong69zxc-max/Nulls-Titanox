@@ -2522,8 +2522,56 @@ int rcl_battle_gate(int scene)
     return rcl_battle_active;
 }
 
+int rcl_object_live_2(uintptr_t obj)
+{
+    uintptr_t isa = 0;
+
+    if (!obj)
+    {
+        return 0;
+    }
+    if (!rcl_read_ptr(obj, (void **)&isa))
+    {
+        return 0;
+    }
+    if (!rcl_vtable_is_data(isa))
+    {
+        return 0;
+    }
+    return 1;
+}
+
+void rcl_engine_drop(void)
+{
+    int i = 0;
+
+    rcl_scene_object = 0;
+    rcl_players_object = 0;
+    rcl_players_array = 0;
+    rcl_players_count = 0;
+    rcl_manager_ptr = 0;
+    rcl_own_elem = 0;
+    rcl_own_elem_2 = 0;
+    rcl_proj_other = 0;
+    rcl_snapshot_first = NO;
+    rcl_snapshot_second = NO;
+    rcl_battle_active = 0;
+    for (i = 0; i < 16; i++)
+    {
+        rcl_projs[i].elem = 0;
+    }
+    rcl_dodge_drop();
+    rcl_wall_drop();
+}
+
 void rcl_run_workload(void)
 {
+    if (!rcl_battle_active || !rcl_object_live_2(rcl_scene_object))
+    {
+        rcl_engine_drop();
+        return;
+    }
+
     rcl_tick_begin();
     rcl_wall_maybe_refresh((uint64_t)(CFAbsoluteTimeGetCurrent() * 1000.0));
     rcl_locate_battle_mode();

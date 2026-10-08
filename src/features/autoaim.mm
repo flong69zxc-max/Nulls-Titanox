@@ -220,12 +220,12 @@ void rcl_run_autoaim(void)
         return;
     }
     void *battleMode = ((fn_get_inst_t)rcl_addr_getinstance)();
-    if (!rcl_object_plausible(battleMode))
+    if (!rcl_object_live_2((uintptr_t)battleMode))
     {
         return;
     }
     void *ownChar = ((fn_get_own_char_t)rcl_addr_getownchar)(battleMode);
-    if (!rcl_object_plausible(ownChar))
+    if (!rcl_object_live_2((uintptr_t)ownChar))
     {
         return;
     }

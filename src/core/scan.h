@@ -579,6 +579,8 @@ extern uintptr_t rcl_slot_adopted;
 extern int rcl_battle_active;
 extern int rcl_battle_last_tick;
 extern int rcl_hb_sig_prev;
+int rcl_object_live_2(uintptr_t obj);
+void rcl_engine_drop(void);
 int rcl_battle_gate(int scene);
 
 extern uint64_t rcl_ticks_b;

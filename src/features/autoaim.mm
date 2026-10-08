@@ -2,41 +2,75 @@
 
 void rcl_run_autoaim(void)
 {
-    if (!rcl_flag_state("aimbot")) return;
+    if (!rcl_flag_state("aimbot"))
+    {
+        return;
+    }
 
-    if (!rcl_addr_getinstance || !rcl_addr_getownchar || !rcl_addr_battlescreen) return;
+    if (!rcl_addr_getinstance || !rcl_addr_getownchar || !rcl_addr_battlescreen)
+    {
+        return;
+    }
 
     void *battleMode = ((fn_get_inst_t)rcl_addr_getinstance)();
-    if (!rcl_object_plausible(battleMode)) return;
+    if (!rcl_object_plausible(battleMode))
+    {
+        return;
+    }
 
     void *ownChar = ((fn_get_own_char_t)rcl_addr_getownchar)(battleMode);
-    if (!rcl_object_plausible(ownChar)) return;
+    if (!rcl_object_plausible(ownChar))
+    {
+        return;
+    }
 
     int ownX = rcl_addr_getx ? ((fn_get_coord_t)rcl_addr_getx)(ownChar) : 0;
     int ownY = rcl_addr_gety ? ((fn_get_coord_t)rcl_addr_gety)(ownChar) : 0;
     int ownTeam = rcl_addr_getteam ? ((fn_get_team_t)rcl_addr_getteam)(battleMode) : 0;
 
     void *objMgr = nullptr;
-    if (!rcl_read_ptr((uintptr_t)battleMode + RCL_MODE_MANAGER_OFF, &objMgr)) return;
-    if (!rcl_object_plausible(objMgr)) return;
+    if (!rcl_read_ptr((uintptr_t)battleMode + RCL_MODE_MANAGER_OFF, &objMgr))
+    {
+        return;
+    }
+    if (!rcl_object_plausible(objMgr))
+    {
+        return;
+    }
 
     void *rawObjects = nullptr;
     int32_t count = 0;
 
-    if (!rcl_read_ptr((uintptr_t)objMgr + RCL_MGR_ARRAY_OFF, &rawObjects)) return;
-    if (!rcl_read_int((uintptr_t)objMgr + RCL_MGR_COUNT_OFF, &count)) return;
+    if (!rcl_read_ptr((uintptr_t)objMgr + RCL_MGR_ARRAY_OFF, &rawObjects))
+    {
+        return;
+    }
+    if (!rcl_read_int((uintptr_t)objMgr + RCL_MGR_COUNT_OFF, &count))
+    {
+        return;
+    }
 
     void **objects = (void **)rawObjects;
 
-    if (!objects || count <= 0) return;
+    if (!objects || count <= 0)
+    {
+        return;
+    }
 
-    if (count > SCAN_MAX) count = SCAN_MAX;
+    if (count > SCAN_MAX)
+    {
+        count = SCAN_MAX;
+    }
     void *probe = nullptr;
 
-    if (!rcl_read_ptr((uintptr_t)objects, &probe)) return;
-    if (count > 1 &&
-        !rcl_read_ptr((uintptr_t)objects + (uintptr_t)(count - 1) * sizeof(void *), &probe))
+    if (!rcl_read_ptr((uintptr_t)objects, &probe))
+    {
         return;
+    }
+    if (count > 1 && !rcl_read_ptr((uintptr_t)objects + (uintptr_t)(count - 1) * sizeof(void *), &probe))
+    {
+        return;
+    }
 
     float closestDistSq = 1.0e18f;
     int targetX = 0;
@@ -47,16 +81,34 @@ void rcl_run_autoaim(void)
     {
         void *obj = objects[i];
 
-        if (!obj || obj == ownChar) continue;
-        if (!rcl_object_plausible(obj)) continue;
+        if (!obj || obj == ownChar)
+        {
+            continue;
+        }
+        if (!rcl_object_plausible(obj))
+        {
+            continue;
+        }
 
         uint8_t objDead = 0;
-        if (!rcl_read_byte((uintptr_t)obj + RCL_OBJ_DEADFLAG_OFF, &objDead)) continue;
-        if (objDead) continue;
+        if (!rcl_read_byte((uintptr_t)obj + RCL_OBJ_DEADFLAG_OFF, &objDead))
+        {
+            continue;
+        }
+        if (objDead)
+        {
+            continue;
+        }
 
         int32_t team = 0;
-        if (!rcl_read_int((uintptr_t)obj + RCL_OBJ_TEAM_OFF, &team)) continue;
-        if (team == ownTeam) continue;
+        if (!rcl_read_int((uintptr_t)obj + RCL_OBJ_TEAM_OFF, &team))
+        {
+            continue;
+        }
+        if (team == ownTeam)
+        {
+            continue;
+        }
 
         int ex = rcl_addr_getx ? ((fn_get_coord_t)rcl_addr_getx)(obj) : 0;
         int ey = rcl_addr_gety ? ((fn_get_coord_t)rcl_addr_gety)(obj) : 0;
@@ -74,10 +126,16 @@ void rcl_run_autoaim(void)
         }
     }
 
-    if (!found) return;
+    if (!found)
+    {
+        return;
+    }
 
     void *screen = nullptr;
-    if (!rcl_read_ptr(rcl_addr_battlescreen, &screen)) return;
+    if (!rcl_read_ptr(rcl_addr_battlescreen, &screen))
+    {
+        return;
+    }
 
     if (!rcl_object_plausible(screen))
     {

@@ -7,24 +7,13 @@
 #define RCL_FIT_COUNT 9
 #define RCL_KIND_COUNT 117
 
-#define RCL_FIT_ORBIT 0
-#define RCL_FIT_LONG 1
-#define RCL_FIT_THICK 2
-#define RCL_FIT_BROAD 3
-#define RCL_FIT_HALF 4
-#define RCL_FIT_PLAIN 5
-#define RCL_FIT_RAY 6
-#define RCL_FIT_THIN 7
 #define RCL_FIT_FALLBACK 8
-#define RCL_FIT_NONE (-1)
 
 #define RCL_K_BLOB 0x01
 #define RCL_K_LOCKPATH 0x02
 #define RCL_K_DROP 0x04
 #define RCL_K_FADE 0x08
 #define RCL_K_HOME 0x10
-#define RCL_K_STRIP 0x20
-#define RCL_K_BLAST 0x40
 
 typedef struct
 {

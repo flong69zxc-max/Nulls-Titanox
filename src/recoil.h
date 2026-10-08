@@ -19,7 +19,7 @@
 #import <string.h>
 #import <unistd.h>
 #import <signal.h>
-#import "./offsets.h"
+#include "./core/offsets.h"
 #include "hook.h"
 #if __has_include(<ptrauth.h>)
 #import <ptrauth.h>
@@ -27,7 +27,6 @@
 
 #include "./core/rcl_types.h"
 
-#include "./helpers/aim_lead.h"
 #include "./helpers/dodge_kinds.h"
 #include "./helpers/dodge_profiles.h"
 #include "./utils/crypto.h"

@@ -8,7 +8,6 @@
 #define RCL_TYPE_MOVE 0x2
 #define RCL_QUEUE 1
 #define RCL_QUEUE_GUARD_MGR 0
-#define RCL_QGUARD_LOGS 3
 #define RCL_PRED_SET 1
 #define RCL_PRED_FLAG 1
 #define RCL_MOVE_ON 1

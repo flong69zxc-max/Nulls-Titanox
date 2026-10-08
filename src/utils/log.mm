@@ -12,9 +12,18 @@ static char g_repeat_keys[RCL_LOG_REPEAT_MAX][RCL_LOG_TEXT_MAX];
 
 static const char *rcl_log_level_name(int level)
 {
-    if (level == RCL_LOG_WARN) return "warn";
-    if (level == RCL_LOG_ERROR) return "error";
-    if (level == RCL_LOG_INFO) return "info";
+    if (level == RCL_LOG_WARN)
+    {
+        return "warn";
+    }
+    if (level == RCL_LOG_ERROR)
+    {
+        return "error";
+    }
+    if (level == RCL_LOG_INFO)
+    {
+        return "info";
+    }
 
     return "debug";
 }
@@ -46,7 +55,10 @@ static void rcl_log_arm(void)
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)RCL_LOG_FLUSH_MS * NSEC_PER_MSEC),
                    dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-                     if (token != g_timer_token) return;
+                     if (token != g_timer_token)
+                     {
+                         return;
+                     }
 
                      rcl_log_flush();
                    });
@@ -65,16 +77,25 @@ void rcl_log_flush(void)
       count = g_pending_count;
       g_pending_count = 0;
 
-      if (count <= 0) return;
+      if (count <= 0)
+      {
+          return;
+      }
 
       batch = (rcl_log_entry_t *)malloc(sizeof(rcl_log_entry_t) * (size_t)count);
 
-      if (batch) memcpy(batch, g_pending, sizeof(rcl_log_entry_t) * (size_t)count);
+      if (batch)
+      {
+          memcpy(batch, g_pending, sizeof(rcl_log_entry_t) * (size_t)count);
+      }
 
       sink = g_sink ? g_sink : rcl_log_default_sink;
     });
 
-    if (!batch) return;
+    if (!batch)
+    {
+        return;
+    }
 
     sink(batch, count);
 
@@ -83,7 +104,10 @@ void rcl_log_flush(void)
 
 static void rcl_log_push(int level, const char *text)
 {
-    if (!g_enabled) return;
+    if (!g_enabled)
+    {
+        return;
+    }
 
     __block bool flush_now = false;
 
@@ -115,12 +139,18 @@ static void rcl_log_push(int level, const char *text)
       }
     });
 
-    if (flush_now) rcl_log_flush();
+    if (flush_now)
+    {
+        rcl_log_flush();
+    }
 }
 
 static void rcl_log_emit(int level, const char *format, va_list args)
 {
-    if (!format) return;
+    if (!format)
+    {
+        return;
+    }
 
     char text[RCL_LOG_TEXT_MAX];
 
@@ -158,7 +188,10 @@ void rcl_log_set_enabled(int value)
 {
     bool next = value != 0;
 
-    if (next == g_enabled) return;
+    if (next == g_enabled)
+    {
+        return;
+    }
 
     g_enabled = next;
 

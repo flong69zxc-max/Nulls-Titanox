@@ -36,8 +36,8 @@ typedef struct
     int ownerClass;
 } rcl_objhit_t;
 
-typedef uint64_t (*rcl_slot_fn_t)(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
-                                  uint64_t a5, uint64_t a6, uint64_t a7);
+typedef uint64_t (*rcl_slot_fn_t)(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5,
+                                  uint64_t a6, uint64_t a7);
 
 typedef struct
 {
@@ -62,8 +62,6 @@ typedef struct
     int posDistinct;
     int refused;
 } rcl_trail_t;
-
-typedef void (*rcl_setpred_t)(void *self, int x, int y);
 
 typedef struct
 {

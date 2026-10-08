@@ -79,6 +79,8 @@ static void rcl_dodge_speed_probe(void)
 #define RCL_AD_WALL_BODY 240.0f
 #define RCL_AD_TICK_MS 16.0f
 #define RCL_AD_TICK_MAX_MS 250.0f
+#define RCL_AD_ENQ_MS 100
+#define RCL_AD_ENQ_STEP_SQ 900
 
 typedef struct
 {
@@ -1122,8 +1124,6 @@ static int rcl_ad_send_move_7(float tx, float ty, float mx, float my)
 #define RCL_BDC_FAR 1.0e18f
 #define RCL_BDC_EPS 1.0f
 #define RCL_BDC_ROLL_STEPS_2 5
-#define RCL_AD_ENQ_MS 100
-#define RCL_AD_ENQ_STEP_SQ 900
 #define RCL_BD_PRE_RANGE_2 1500.0f
 #define RCL_BD_PRE_SPD_2 2600.0f
 #define RCL_BD_PRE_HIT_2 55.0f

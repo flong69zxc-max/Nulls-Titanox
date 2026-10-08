@@ -7,29 +7,31 @@
 #define RCL_AIM_VEL_DEAD 14.0f
 #define RCL_AIM_COORD_MAX 200000.0f
 #define RCL_AIM_CONF_MIN 0.20f
-#define RCL_AIM_LATENCY_2 0.033f
-#define RCL_AIM_T_MAX_2 2.50f
-#define RCL_AIM_LEAD_MAX_2 6000.0f
+#define RCL_AIM_LATENCY 0.033f
+#define RCL_AIM_T_MAX 2.50f
+#define RCL_AIM_LEAD_MAX 6000.0f
+#define RCL_AIM_LEAD_HEADROOM 4.0f
+#define RCL_AIM_LEAD_RATIO_MAX 2.0f
 
 static uintptr_t rcl_aim_hist_id = 0;
-static uintptr_t rcl_aim_lock_1 = 0;
+static uintptr_t rcl_aim_lock = 0;
 static int rcl_aim_hist_n = 0;
 static int rcl_aim_hist_at = 0;
 static float rcl_aim_hist_x[RCL_AIM_HIST];
 static float rcl_aim_hist_y[RCL_AIM_HIST];
 static uint64_t rcl_aim_hist_ms[RCL_AIM_HIST];
 
-static float rcl_aim_own_speed_2 = 0.0f;
-static uintptr_t rcl_aim_own_char_1 = 0;
-static const rcl_aim_ahead_t *rcl_aim_own_row_2 = nullptr;
+static float rcl_aim_own_speed = 0.0f;
+static uintptr_t rcl_aim_own_char = 0;
+static const char *rcl_aim_own_code = nullptr;
 
-static void rcl_aim_own_reset_2(void)
+static void rcl_aim_own_reset(void)
 {
-    rcl_aim_own_speed_2 = 0.0f;
-    rcl_aim_own_row_2 = nullptr;
+    rcl_aim_own_speed = 0.0f;
+    rcl_aim_own_code = nullptr;
 }
 
-static float rcl_aim_shot_speed_2(void)
+static float rcl_aim_shot_speed(void)
 {
     float sum = 0.0f;
     float avg;
@@ -52,7 +54,7 @@ static float rcl_aim_shot_speed_2(void)
             const rcl_aim_ahead_t *own = rcl_aim_ahead_by_projectile(p->name);
             if (own)
             {
-                rcl_aim_own_row_2 = own;
+                rcl_aim_own_code = own->code;
             }
         }
         spd = sqrtf(p->vx * p->vx + p->vy * p->vy);
@@ -68,17 +70,17 @@ static float rcl_aim_shot_speed_2(void)
         avg = sum / (float)n;
         if (avg >= RCL_AIM_SHOT_SPEED_MIN && avg <= RCL_AIM_SHOT_SPEED_MAX)
         {
-            rcl_aim_own_speed_2 = avg;
+            rcl_aim_own_speed = avg;
             return avg;
         }
     }
-    if (rcl_aim_own_speed_2 >= RCL_AIM_SHOT_SPEED_MIN && rcl_aim_own_speed_2 <= RCL_AIM_SHOT_SPEED_MAX)
+    if (rcl_aim_own_speed >= RCL_AIM_SHOT_SPEED_MIN && rcl_aim_own_speed <= RCL_AIM_SHOT_SPEED_MAX)
     {
-        return rcl_aim_own_speed_2;
+        return rcl_aim_own_speed;
     }
-    if (rcl_aim_own_row_2)
+    if (rcl_aim_own_code)
     {
-        float known = (float)rcl_aim_own_row_2->shotSpeed;
+        float known = (float)rcl_aim_ahead_speed(rcl_aim_own_code);
         if (known >= RCL_AIM_SHOT_SPEED_MIN && known <= RCL_AIM_SHOT_SPEED_MAX)
         {
             return known;
@@ -173,7 +175,7 @@ static int rcl_aim_target_vel(float *vxOut, float *vyOut, float *confOut)
     return 1;
 }
 
-static float rcl_aim_intercept_iter_2(float px, float py, float tvx, float tvy, float shot)
+static float rcl_aim_intercept_iter(float px, float py, float tvx, float tvy, float shot)
 {
     float dist = sqrtf(px * px + py * py);
     float t;
@@ -193,14 +195,51 @@ static float rcl_aim_intercept_iter_2(float px, float py, float tvx, float tvy, 
     {
         return dist / shot;
     }
-    if (t > RCL_AIM_T_MAX_2)
+    if (t > RCL_AIM_T_MAX)
     {
-        t = RCL_AIM_T_MAX_2;
+        t = RCL_AIM_T_MAX;
     }
     return t;
 }
 
-static int rcl_aim_lead_2(float px, float py, float *ox, float *oy)
+static float rcl_aim_lead_ceiling(float tvx, float tvy)
+{
+    const rcl_aim_ahead_t *row;
+    int base;
+    float speed;
+    float ratio;
+    if (!rcl_aim_own_code)
+    {
+        return RCL_AIM_LEAD_MAX;
+    }
+    row = rcl_aim_ahead_of(rcl_aim_own_code);
+    if (!row)
+    {
+        return RCL_AIM_LEAD_MAX;
+    }
+    if (row->flags & (RCL_AIM_AHEAD_LOBBED | RCL_AIM_AHEAD_BEAM | RCL_AIM_AHEAD_MELEE))
+    {
+        return RCL_AIM_LEAD_MAX;
+    }
+    base = rcl_aim_ahead_lead(rcl_aim_own_code);
+    if (base <= 0)
+    {
+        return RCL_AIM_LEAD_MAX;
+    }
+    speed = sqrtf(tvx * tvx + tvy * tvy);
+    ratio = speed / (float)RCL_AIM_AHEAD_ENEMY_SPEED;
+    if (ratio < 1.0f)
+    {
+        ratio = 1.0f;
+    }
+    if (ratio > RCL_AIM_LEAD_RATIO_MAX)
+    {
+        ratio = RCL_AIM_LEAD_RATIO_MAX;
+    }
+    return (float)base * RCL_AIM_LEAD_HEADROOM * ratio;
+}
+
+static int rcl_aim_lead(float px, float py, float *ox, float *oy)
 {
     float tvx = 0.0f;
     float tvy = 0.0f;
@@ -208,25 +247,27 @@ static int rcl_aim_lead_2(float px, float py, float *ox, float *oy)
     float shot;
     float t;
     float lead;
+    float ceiling;
     *ox = 0.0f;
     *oy = 0.0f;
     if (!rcl_aim_target_vel(&tvx, &tvy, &conf))
     {
         return 0;
     }
-    shot = rcl_aim_shot_speed_2();
-    t = rcl_aim_intercept_iter_2(px, py, tvx, tvy, shot) + RCL_AIM_LATENCY_2;
-    if (t > RCL_AIM_T_MAX_2)
+    shot = rcl_aim_shot_speed();
+    t = rcl_aim_intercept_iter(px, py, tvx, tvy, shot) + RCL_AIM_LATENCY;
+    if (t > RCL_AIM_T_MAX)
     {
-        t = RCL_AIM_T_MAX_2;
+        t = RCL_AIM_T_MAX;
     }
     *ox = tvx * t;
     *oy = tvy * t;
     lead = sqrtf((*ox) * (*ox) + (*oy) * (*oy));
-    if (lead > RCL_AIM_LEAD_MAX_2)
+    ceiling = rcl_aim_lead_ceiling(tvx, tvy);
+    if (lead > ceiling)
     {
-        *ox = (*ox) / lead * RCL_AIM_LEAD_MAX_2;
-        *oy = (*oy) / lead * RCL_AIM_LEAD_MAX_2;
+        *ox = (*ox) / lead * ceiling;
+        *oy = (*oy) / lead * ceiling;
     }
     return 1;
 }
@@ -251,10 +292,10 @@ void rcl_run_autoaim(void)
     {
         return;
     }
-    if (rcl_aim_own_char_1 != (uintptr_t)ownChar)
+    if (rcl_aim_own_char != (uintptr_t)ownChar)
     {
-        rcl_aim_own_char_1 = (uintptr_t)ownChar;
-        rcl_aim_own_reset_2();
+        rcl_aim_own_char = (uintptr_t)ownChar;
+        rcl_aim_own_reset();
     }
     int ownX = rcl_addr_getx ? ((fn_get_coord_t)rcl_addr_getx)(ownChar) : 0;
     int ownY = rcl_addr_gety ? ((fn_get_coord_t)rcl_addr_gety)(ownChar) : 0;
@@ -289,7 +330,7 @@ void rcl_run_autoaim(void)
     }
     if (!rcl_addr_readable((uintptr_t)objects, (size_t)count * sizeof(void *)))
     {
-        rcl_aim_lock_1 = 0;
+        rcl_aim_lock = 0;
         return;
     }
     void *probe = nullptr;
@@ -348,7 +389,7 @@ void rcl_run_autoaim(void)
         float dx = (float)(ex - ownX);
         float dy = (float)(ey - ownY);
         float distSq = dx * dx + dy * dy;
-        if (obj == (void *)rcl_aim_lock_1 && distSq > 1.0f)
+        if (obj == (void *)rcl_aim_lock && distSq > 1.0f)
         {
             lockDistSq = distSq;
             lockX = ex;
@@ -380,7 +421,7 @@ void rcl_run_autoaim(void)
     {
         targetX = lockX;
         targetY = lockY;
-        bestObj = (void *)rcl_aim_lock_1;
+        bestObj = (void *)rcl_aim_lock;
         found = YES;
     }
     if (!found && closestDistSqBlind < 1.0e18f)
@@ -392,10 +433,10 @@ void rcl_run_autoaim(void)
     }
     if (!found)
     {
-        rcl_aim_lock_1 = 0;
+        rcl_aim_lock = 0;
         return;
     }
-    rcl_aim_lock_1 = (uintptr_t)bestObj;
+    rcl_aim_lock = (uintptr_t)bestObj;
     {
         float px = (float)(targetX - ownX);
         float py = (float)(targetY - ownY);
@@ -406,7 +447,7 @@ void rcl_run_autoaim(void)
             rcl_aim_hist_reset((uintptr_t)bestObj);
         }
         rcl_aim_hist_push((float)targetX, (float)targetY);
-        if (rcl_aim_lead_2(px, py, &lx, &ly))
+        if (rcl_aim_lead(px, py, &lx, &ly))
         {
             targetX += (int)lx;
             targetY += (int)ly;

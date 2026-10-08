@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #define RCL_MSG_SIZE 0x48
+#define RCL_MSG_SLACK 0x58
 #define RCL_TYPE_MOVE 0x2
 #define RCL_QUEUE_GUARD_MGR 0
 #define RCL_PRED_SET 1

@@ -14,6 +14,8 @@ static uint8_t rcl_ci_outer[0x10];
 
 static int rcl_ci_ready = 0;
 
+static int rcl_msg_ok(void *ptr, size_t size);
+
 int rcl_ci_load_constants(void)
 {
     int i = 0;
@@ -100,63 +102,34 @@ uint32_t rcl_ci_sign(void *ci, void *battle)
 
 int rcl_enqueue_type(int x, int y, int type)
 {
+    uintptr_t ctorFn = 0;
+    uintptr_t inputFn = 0;
+    uintptr_t battleFn = 0;
+    int32_t vx = x;
+    int32_t vy = y;
+    void *battle = nullptr;
+    void *mgr = nullptr;
+    void *msg = nullptr;
+
     if (!rcl_coord_ok)
     {
         return 0;
     }
 
-    uintptr_t ctorFn = rcl_entry_2(RCL_MSGCTOR_RVA);
-    uintptr_t inputFn = rcl_entry_2(RCL_ADDINPUT_RVA);
-    int32_t vx = x;
-    int32_t vy = y;
-    void *mgr = nullptr;
-    void *msg = nullptr;
+    ctorFn = rcl_entry_2(RCL_MSGCTOR_RVA);
+    inputFn = rcl_entry_2(RCL_ADDINPUT_RVA);
+    battleFn = rcl_entry_2(RCL_GETBATTLE_RVA);
 
-    if (!inputFn)
+    if (!inputFn || !ctorFn || !battleFn)
     {
         return 0;
     }
 
-    msg = rcl_msg_alloc();
+    battle = ((void *(*)(void))battleFn)();
 
-    if (!msg)
+    if (!rcl_object_plausible(battle))
     {
         return 0;
-    }
-
-    if (!ctorFn)
-    {
-        return 0;
-    }
-    if (!rcl_addr_writable((uintptr_t)msg, (size_t)RCL_MSG_SIZE))
-    {
-        return 0;
-    }
-
-    memset(msg, 0, (size_t)RCL_MSG_SIZE);
-
-    ((void (*)(void *, int))ctorFn)(msg, RCL_TYPE_MOVE);
-
-    rcl_write_bytes((uintptr_t)msg + RCL_TYPE_OFF, &type, sizeof(type));
-    rcl_write_bytes((uintptr_t)msg + RCL_X_OFF, &vx, sizeof(vx));
-    rcl_write_bytes((uintptr_t)msg + RCL_Y_OFF, &vy, sizeof(vy));
-    {
-        uintptr_t battleFn = rcl_entry_2(RCL_GETBATTLE_RVA);
-
-        if (battleFn)
-        {
-            void *battle = ((void *(*)(void))battleFn)();
-
-            if (battle)
-            {
-                rcl_ci_sign(msg, battle);
-            }
-        }
-    }
-
-    if (type == (int)RCL_TYPE_MOVE)
-    {
-        (void)rcl_pred_set(x, y);
     }
 
     mgr = rcl_manager();
@@ -178,6 +151,28 @@ int rcl_enqueue_type(int x, int y, int type)
     if (RCL_QUEUE_GUARD_MGR && !rcl_manager_shape((uintptr_t)mgr))
     {
         return 0;
+    }
+
+    msg = rcl_msg_alloc();
+
+    if (!rcl_msg_ok(msg, (size_t)RCL_MSG_SIZE + (size_t)RCL_MSG_SLACK))
+    {
+        return 0;
+    }
+
+    memset(msg, 0, (size_t)RCL_MSG_SIZE + (size_t)RCL_MSG_SLACK);
+
+    ((void (*)(void *, int))ctorFn)(msg, RCL_TYPE_MOVE);
+
+    rcl_write_bytes((uintptr_t)msg + RCL_TYPE_OFF, &type, sizeof(type));
+    rcl_write_bytes((uintptr_t)msg + RCL_X_OFF, &vx, sizeof(vx));
+    rcl_write_bytes((uintptr_t)msg + RCL_Y_OFF, &vy, sizeof(vy));
+
+    rcl_ci_sign(msg, battle);
+
+    if (type == (int)RCL_TYPE_MOVE)
+    {
+        (void)rcl_pred_set(x, y);
     }
 
     ((void (*)(void *, void *))inputFn)(mgr, msg);
@@ -391,19 +386,66 @@ uintptr_t rcl_entry_2(uintptr_t rva)
     return rcl_base + rva;
 }
 
+static int rcl_msg_ok(void *ptr, size_t size)
+{
+    if (!ptr)
+    {
+        return 0;
+    }
+    if (((uintptr_t)ptr & 7ULL) != 0)
+    {
+        return 0;
+    }
+    if (!rcl_addr_readable((uintptr_t)ptr, size))
+    {
+        return 0;
+    }
+    if (!rcl_addr_writable((uintptr_t)ptr, size))
+    {
+        return 0;
+    }
+
+    return 1;
+}
+
 void *rcl_msg_alloc(void)
 {
     uintptr_t stub = rcl_entry_2(RCL_ALLOC_RVA);
     uintptr_t got = 0;
+    size_t size = (size_t)RCL_MSG_SIZE + (size_t)RCL_MSG_SLACK;
+    void *mem = nullptr;
+
+    mem = malloc(size);
+
+    if (rcl_msg_ok(mem, size))
+    {
+        memset(mem, 0, size);
+
+        return mem;
+    }
 
     if (stub)
     {
-        return ((void *(*)(size_t))stub)((size_t)RCL_MSG_SIZE);
+        mem = ((void *(*)(size_t))stub)(size);
+
+        if (rcl_msg_ok(mem, size))
+        {
+            memset(mem, 0, size);
+
+            return mem;
+        }
     }
 
     if (rcl_base && rcl_read_ptr(rcl_base + RCL_ALLOC_GOT_RVA, (void **)&got) && got)
     {
-        return ((void *(*)(size_t))got)((size_t)RCL_MSG_SIZE);
+        mem = ((void *(*)(size_t))got)(size);
+
+        if (rcl_msg_ok(mem, size))
+        {
+            memset(mem, 0, size);
+
+            return mem;
+        }
     }
 
     return nullptr;

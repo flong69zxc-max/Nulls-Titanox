@@ -335,6 +335,14 @@ int rcl_word(uintptr_t address, uint32_t *out);
 #include "hook.h"
 
 void rcl_slot_note(int index, void *self, uint64_t arg1);
+uint64_t rcl_probe_call(int index, void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5,
+                        uint64_t a6, uint64_t a7);
+uint64_t rcl_probe_0(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5, uint64_t a6,
+                     uint64_t a7);
+uint64_t rcl_probe_1(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5, uint64_t a6,
+                     uint64_t a7);
+uint64_t rcl_probe_2(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5, uint64_t a6,
+                     uint64_t a7);
 uint64_t rcl_hook_dispatches(void);
 uint64_t rcl_object_dispatches(void);
 

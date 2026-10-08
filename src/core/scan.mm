@@ -1911,6 +1911,69 @@ uint64_t rcl_slot_repl_33(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint6
     return r;
 }
 
+static int rcl_probe_left[RCL_PROBE_SLOTS] = { RCL_PROBE_LOG_MAX, RCL_PROBE_LOG_MAX, RCL_PROBE_LOG_MAX };
+
+static void rcl_probe_log(int index, void *self, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5,
+                          uint64_t a6, uint64_t ret)
+{
+    rcl_log_info("probe[%d] rva=%#llx self=%#llx a1=%#llx a2=%#llx a3=%#llx a4=%#llx a5=%#llx a6=%#llx ret=%#llx",
+                 index, (unsigned long long)rcl_slot_specs[RCL_PROBE_BASE + index].rva,
+                 (unsigned long long)(uintptr_t)self, a1, a2, a3, a4, a5, a6, ret);
+}
+
+uint64_t rcl_probe_call(int index, void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5,
+                        uint64_t a6, uint64_t a7)
+{
+    uint64_t ret = 0;
+    int slot = RCL_PROBE_BASE + index;
+    int log_now = 0;
+    uint32_t wx = 0;
+    uint32_t wy = 0;
+
+    if (index < 0 || index >= RCL_PROBE_SLOTS) return 0;
+
+    log_now = rcl_probe_left[index] > 0;
+
+    if (log_now) rcl_probe_left[index]--;
+
+    if (rcl_slot_orig[slot]) ret = rcl_slot_orig[slot](a0, a1, a2, a3, a4, a5, a6, a7);
+
+    if (log_now)
+    {
+        rcl_probe_log(index, a0, a1, a2, a3, a4, a5, a6, ret);
+
+        if (index == 2 && ret)
+        {
+            rcl_word(ret + (uintptr_t)RCL_OBJ_X_OFF, &wx);
+            rcl_word(ret + (uintptr_t)RCL_OBJ_Y_OFF, &wy);
+
+            rcl_log_info("probe[2] ret_x=%u ret_y=%u", wx, wy);
+        }
+
+        rcl_log_flush();
+    }
+
+    return ret;
+}
+
+uint64_t rcl_probe_0(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5, uint64_t a6,
+                     uint64_t a7)
+{
+    return rcl_probe_call(0, a0, a1, a2, a3, a4, a5, a6, a7);
+}
+
+uint64_t rcl_probe_1(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5, uint64_t a6,
+                     uint64_t a7)
+{
+    return rcl_probe_call(1, a0, a1, a2, a3, a4, a5, a6, a7);
+}
+
+uint64_t rcl_probe_2(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5, uint64_t a6,
+                     uint64_t a7)
+{
+    return rcl_probe_call(2, a0, a1, a2, a3, a4, a5, a6, a7);
+}
+
 const rcl_hook_t rcl_slot_specs[RCL_SLOT_COUNT] = {
     { 0x00ad4ed0ULL, (void *)rcl_slot_repl_0, 0 },
     { 0x00ad521cULL, (void *)rcl_slot_repl_1, 0 },
@@ -1946,6 +2009,9 @@ const rcl_hook_t rcl_slot_specs[RCL_SLOT_COUNT] = {
     { 0x00b89c10ULL, (void *)rcl_slot_repl_31, 0 },
     { RVA_LOGICBATTLEMODECLIENT_UPDATE, (void *)rcl_slot_repl_32, 0 },
     { RVA_BATTLESCREEN__UPDATEMOVEMENT, (void *)rcl_slot_repl_33, 0 },
+    { 0x0099dee8ULL, (void *)rcl_probe_0, 0 },
+    { 0x009d8a68ULL, (void *)rcl_probe_1, 0 },
+    { 0x007c76d8ULL, (void *)rcl_probe_2, 0 },
 };
 
 void rcl_slot_note(int index, void *self, uint64_t arg1)

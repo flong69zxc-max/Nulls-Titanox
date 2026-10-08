@@ -221,11 +221,7 @@ static int rcl_bd_style_2(const char *name, const rcl_kind_t *spec, int thrower,
 
 static float rcl_ad_ball_radius(const rcl_proj_t *p)
 {
-    float r = (float)p->dataRadius;
-    if (r <= 0.0f)
-    {
-        r = p->radius;
-    }
+    float r = p->radius;
     if (r <= 0.0f)
     {
         r = rcl_proj_radius(p, 1.0f);

@@ -40,7 +40,7 @@ static dispatch_queue_t rcl_log_serial(void)
     static dispatch_queue_t queue = NULL;
     static dispatch_once_t once = 0;
     dispatch_once(&once, ^{
-      queue = dispatch_queue_create("recoil.log", DISPATCH_QUEUE_SERIAL);
+        queue = dispatch_queue_create("recoil.log", DISPATCH_QUEUE_SERIAL);
     });
     return queue;
 }
@@ -50,11 +50,11 @@ static void rcl_log_arm(void)
     uint64_t token = ++g_timer_token;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)RCL_LOG_FLUSH_MS * NSEC_PER_MSEC),
                    dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-                     if (token != g_timer_token)
-                     {
-                         return;
-                     }
-                     rcl_log_flush();
+                       if (token != g_timer_token)
+                       {
+                           return;
+                       }
+                       rcl_log_flush();
                    });
 }
 
@@ -64,20 +64,20 @@ void rcl_log_flush(void)
     __block rcl_log_entry_t *batch = NULL;
     __block rcl_log_sink_t sink = NULL;
     dispatch_sync(rcl_log_serial(), ^{
-      g_timer_armed = false;
-      g_timer_token++;
-      count = g_pending_count;
-      g_pending_count = 0;
-      if (count <= 0)
-      {
-          return;
-      }
-      batch = (rcl_log_entry_t *)malloc(sizeof(rcl_log_entry_t) * (size_t)count);
-      if (batch)
-      {
-          memcpy(batch, g_pending, sizeof(rcl_log_entry_t) * (size_t)count);
-      }
-      sink = g_sink ? g_sink : rcl_log_default_sink;
+        g_timer_armed = false;
+        g_timer_token++;
+        count = g_pending_count;
+        g_pending_count = 0;
+        if (count <= 0)
+        {
+            return;
+        }
+        batch = (rcl_log_entry_t *)malloc(sizeof(rcl_log_entry_t) * (size_t)count);
+        if (batch)
+        {
+            memcpy(batch, g_pending, sizeof(rcl_log_entry_t) * (size_t)count);
+        }
+        sink = g_sink ? g_sink : rcl_log_default_sink;
     });
     if (!batch)
     {
@@ -95,25 +95,25 @@ static void rcl_log_push(int level, const char *text)
     }
     __block bool flush_now = false;
     dispatch_sync(rcl_log_serial(), ^{
-      if (g_pending_count >= RCL_LOG_MAX_PENDING)
-      {
-          memmove(g_pending, g_pending + 1, sizeof(rcl_log_entry_t) * (RCL_LOG_MAX_PENDING - 1));
-          g_pending_count = RCL_LOG_MAX_PENDING - 1;
-      }
-      rcl_log_entry_t *entry = &g_pending[g_pending_count++];
-      entry->level = level;
-      strncpy(entry->text, text ? text : "", RCL_LOG_TEXT_MAX - 1);
-      entry->text[RCL_LOG_TEXT_MAX - 1] = 0;
-      if (g_pending_count >= RCL_LOG_BATCH_SIZE)
-      {
-          g_timer_armed = false;
-          g_timer_token++;
-          flush_now = true;
-      }
-      else if (!g_timer_armed)
-      {
-          rcl_log_arm();
-      }
+        if (g_pending_count >= RCL_LOG_MAX_PENDING)
+        {
+            memmove(g_pending, g_pending + 1, sizeof(rcl_log_entry_t) * (RCL_LOG_MAX_PENDING - 1));
+            g_pending_count = RCL_LOG_MAX_PENDING - 1;
+        }
+        rcl_log_entry_t *entry = &g_pending[g_pending_count++];
+        entry->level = level;
+        strncpy(entry->text, text ? text : "", RCL_LOG_TEXT_MAX - 1);
+        entry->text[RCL_LOG_TEXT_MAX - 1] = 0;
+        if (g_pending_count >= RCL_LOG_BATCH_SIZE)
+        {
+            g_timer_armed = false;
+            g_timer_token++;
+            flush_now = true;
+        }
+        else if (!g_timer_armed)
+        {
+            rcl_log_arm();
+        }
     });
     if (flush_now)
     {
@@ -150,9 +150,9 @@ void rcl_log_info(const char *format, ...)
 void rcl_log_reset_counters(void)
 {
     dispatch_sync(rcl_log_serial(), ^{
-      memset(g_repeat_counts, 0, sizeof(g_repeat_counts));
-      memset(g_repeat_at, 0, sizeof(g_repeat_at));
-      memset(g_repeat_keys, 0, sizeof(g_repeat_keys));
+        memset(g_repeat_counts, 0, sizeof(g_repeat_counts));
+        memset(g_repeat_at, 0, sizeof(g_repeat_at));
+        memset(g_repeat_keys, 0, sizeof(g_repeat_keys));
     });
 }
 void rcl_log_set_enabled(int value)

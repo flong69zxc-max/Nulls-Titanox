@@ -923,7 +923,7 @@ void poll_for_game(int tick)
         return;
     }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-      poll_for_game(tick + 1);
+        poll_for_game(tick + 1);
     });
 }
 
@@ -2466,27 +2466,27 @@ void rcl_start_timer(void)
     dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)interval), interval,
                               (uint64_t)(0.25 * NSEC_PER_SEC));
     dispatch_source_set_event_handler(timer, ^{
-      rcl_slot_pump();
-      int scene = rcl_state_tick();
-      int gate = rcl_battle_gate(scene);
-      int battle = gate || scene;
-      int fallback = rcl_battle_gate_2(battle);
-      int ready = rcl_scan_ready(battle || fallback);
-      int needScan = !scene && !rcl_players_object;
-      if (needScan != rcl_scan_armed)
-      {
-          rcl_scan_armed = needScan;
-      }
-      if (needScan && ready && rcl_scan_allowed((unsigned long long)rcl_object_dispatches(), rcl_hook_dispatches()))
-      {
-          rcl_locate_battle_mode();
-      }
-      rcl_modesig_tick();
-      rcl_ticks_b++;
-      if ((rcl_ticks_b % RCL_HB_TICKS) == 0)
-      {
-          rcl_hb_sig_prev = rcl_modesig_hits;
-      }
+        rcl_slot_pump();
+        int scene = rcl_state_tick();
+        int gate = rcl_battle_gate(scene);
+        int battle = gate || scene;
+        int fallback = rcl_battle_gate_2(battle);
+        int ready = rcl_scan_ready(battle || fallback);
+        int needScan = !scene && !rcl_players_object;
+        if (needScan != rcl_scan_armed)
+        {
+            rcl_scan_armed = needScan;
+        }
+        if (needScan && ready && rcl_scan_allowed((unsigned long long)rcl_object_dispatches(), rcl_hook_dispatches()))
+        {
+            rcl_locate_battle_mode();
+        }
+        rcl_modesig_tick();
+        rcl_ticks_b++;
+        if ((rcl_ticks_b % RCL_HB_TICKS) == 0)
+        {
+            rcl_hb_sig_prev = rcl_modesig_hits;
+        }
     });
     dispatch_resume(timer);
     rcl_scan_timer = timer;
@@ -2606,7 +2606,7 @@ void setup(void)
 __attribute__((constructor)) void start(void)
 {
     dispatch_async(dispatch_get_main_queue(), ^{
-      poll_for_game(0);
+        poll_for_game(0);
     });
 }
 

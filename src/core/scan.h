@@ -8,12 +8,9 @@ typedef struct
 {
     uintptr_t at;
     uintptr_t vt;
-    uintptr_t owner;
     int32_t gid;
     int32_t team;
-    int32_t ownerIdx;
     int dead;
-    int ownerClass;
 } rcl_objhit_t;
 
 typedef uint64_t (*rcl_slot_fn_t)(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5,
@@ -30,17 +27,7 @@ typedef struct
     uintptr_t manager;
     int32_t count;
     int32_t capacity;
-    int live;
-    int nonEmpty;
-    int stable;
-    int rawOk;
-    char rawSeg;
-    int ascii;
-    int sampled;
-    int noVt;
-    int teamDistinct;
     int posDistinct;
-    int refused;
 } rcl_trail_t;
 
 typedef struct
@@ -773,6 +760,5 @@ int rcl_element_ascii(uintptr_t element);
 #define SCAN_MAX 256
 
 int rcl_witness(int32_t *x, int32_t *y);
-
 
 #endif

@@ -405,30 +405,6 @@ void *rcl_manager(void)
     return mgr;
 }
 
-int rcl_queue_count(uintptr_t *mgrOut)
-{
-    void *mgr = rcl_manager();
-    void *queue = nullptr;
-    int32_t count = -1;
-    if (mgrOut)
-    {
-        *mgrOut = (uintptr_t)mgr;
-    }
-    if (!mgr)
-    {
-        return -1;
-    }
-    if (!rcl_read_ptr((uintptr_t)mgr + RCL_QUEUE_OFF, &queue) || !queue)
-    {
-        return -1;
-    }
-    if (!rcl_read_int((uintptr_t)queue + RCL_QUEUE_COUNT_OFF, &count))
-    {
-        return -1;
-    }
-    return (int)count;
-}
-
 int rcl_pred_set(int x, int y)
 {
     uintptr_t setFn = 0;

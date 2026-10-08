@@ -15,7 +15,6 @@
 uintptr_t rcl_entry_2(uintptr_t rva);
 void *rcl_msg_alloc(void);
 void *rcl_manager(void);
-int rcl_queue_count(uintptr_t *mgrOut);
 int rcl_pred_set(int x, int y);
 int rcl_move_to(int32_t x, int32_t y, float ox, float oy);
 extern uintptr_t rcl_pred_last;

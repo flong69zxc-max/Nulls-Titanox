@@ -418,9 +418,11 @@ int rcl_move_to(int32_t x, int32_t y, float ox, float oy)
     own = rcl_move_carrier();
     ctrl = rcl_controller();
 
-    if (!fn || !own) return 0;
+    if (!fn) return 0;
+    if (!own && !ctrl) return 0;
+    if (own && !rcl_move_pair_ok(own, NULL, NULL)) own = 0;
 
-    if (!rcl_move_pair_ok(own, NULL, NULL)) return 0;
+    if (!own && !ctrl) return 0;
 
     if (ctrl)
     {
@@ -430,7 +432,9 @@ int rcl_move_to(int32_t x, int32_t y, float ox, float oy)
         rcl_write_bytes(ctrl + (uintptr_t)RCL_CTRL_MOVE_ZERO_OFF, &zero, sizeof(zero));
     }
 
-    ((void (*)(void *, int, int, int))fn)((void *)own, (int)x, (int)y, (int)RCL_MOVE_FLAG_10);
+    if (ctrl) ((void (*)(void *, int, int, int))fn)((void *)ctrl, (int)x, (int)y, (int)RCL_MOVE_FLAG_10);
+
+    if (own && own != ctrl) ((void (*)(void *, int, int, int))fn)((void *)own, (int)x, (int)y, (int)RCL_MOVE_FLAG_10);
 
     if (ctrl)
     {

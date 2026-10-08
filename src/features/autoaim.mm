@@ -11,32 +11,47 @@
 #define RCL_AIM_CONF_MIN 0.20f
 
 static uintptr_t rcl_aim_hist_id = 0;
+static uintptr_t rcl_aim_lock_1 = 0;
 static int rcl_aim_hist_n = 0;
 static int rcl_aim_hist_at = 0;
 static float rcl_aim_hist_x[RCL_AIM_HIST];
 static float rcl_aim_hist_y[RCL_AIM_HIST];
 static uint64_t rcl_aim_hist_ms[RCL_AIM_HIST];
 
-static float rcl_aim_shot_speed(void)
+static float rcl_aim_shot_speed_1(void)
 {
     float sum = 0.0f;
     int n = 0;
     int i;
-    for (i = 0; i < 16; i++)
+    int pass;
+    for (pass = 0; pass < 2; pass++)
     {
-        const rcl_proj_t *p = &rcl_projs[i];
-        float spd;
-        if (!p->elem)
+        sum = 0.0f;
+        n = 0;
+        for (i = 0; i < 16; i++)
         {
-            continue;
+            const rcl_proj_t *p = &rcl_projs[i];
+            float spd;
+            if (!p->elem)
+            {
+                continue;
+            }
+            if (pass == 0 && (!rcl_own_team_seen || p->team < 0 || p->team != rcl_own_team_a))
+            {
+                continue;
+            }
+            spd = sqrtf(p->vx * p->vx + p->vy * p->vy);
+            if (spd < RCL_AIM_SHOT_SPEED_MIN || spd > RCL_AIM_SHOT_SPEED_MAX)
+            {
+                continue;
+            }
+            sum += spd;
+            n++;
         }
-        spd = sqrtf(p->vx * p->vx + p->vy * p->vy);
-        if (spd < RCL_AIM_SHOT_SPEED_MIN || spd > RCL_AIM_SHOT_SPEED_MAX)
+        if (n > 0)
         {
-            continue;
+            break;
         }
-        sum += spd;
-        n++;
     }
     if (n > 0)
     {
@@ -185,7 +200,7 @@ static int rcl_aim_lead(float px, float py, float *ox, float *oy)
     {
         return 0;
     }
-    shot = rcl_aim_shot_speed();
+    shot = rcl_aim_shot_speed_1();
     dist = sqrtf(px * px + py * py);
     t = rcl_aim_intercept(px, py, tvx, tvy, shot);
     if (t < 0.0f)
@@ -263,6 +278,11 @@ void rcl_run_autoaim(void)
     {
         count = SCAN_MAX;
     }
+    if (!rcl_addr_readable((uintptr_t)objects, (size_t)count * sizeof(void *)))
+    {
+        rcl_aim_lock_1 = 0;
+        return;
+    }
     void *probe = nullptr;
     if (!rcl_read_ptr((uintptr_t)objects, &probe))
     {
@@ -274,10 +294,14 @@ void rcl_run_autoaim(void)
     }
     float closestDistSq = 1.0e18f;
     float closestDistSqBlind = 1.0e18f;
+    float lockDistSq = 0.0f;
     int targetX = 0;
     int targetY = 0;
     int blindX = 0;
     int blindY = 0;
+    int lockX = 0;
+    int lockY = 0;
+    int lockSeen = 0;
     void *bestObj = nullptr;
     void *blindObj = nullptr;
     BOOL found = NO;
@@ -315,6 +339,13 @@ void rcl_run_autoaim(void)
         float dx = (float)(ex - ownX);
         float dy = (float)(ey - ownY);
         float distSq = dx * dx + dy * dy;
+        if (obj == (void *)rcl_aim_lock_1 && distSq > 1.0f)
+        {
+            lockDistSq = distSq;
+            lockX = ex;
+            lockY = ey;
+            lockSeen = 1;
+        }
         if (distSq > 1.0f && distSq < closestDistSqBlind)
         {
             closestDistSqBlind = distSq;
@@ -336,6 +367,13 @@ void rcl_run_autoaim(void)
         bestObj = obj;
         found = YES;
     }
+    if (lockSeen && (!found || lockDistSq <= closestDistSq * 1.25f))
+    {
+        targetX = lockX;
+        targetY = lockY;
+        bestObj = (void *)rcl_aim_lock_1;
+        found = YES;
+    }
     if (!found && closestDistSqBlind < 1.0e18f)
     {
         targetX = blindX;
@@ -345,8 +383,10 @@ void rcl_run_autoaim(void)
     }
     if (!found)
     {
+        rcl_aim_lock_1 = 0;
         return;
     }
+    rcl_aim_lock_1 = (uintptr_t)bestObj;
     {
         float px = (float)(targetX - ownX);
         float py = (float)(targetY - ownY);

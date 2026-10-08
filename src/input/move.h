@@ -49,7 +49,6 @@ void rcl_drag(int engaged, int haveOwn, int32_t ownX, int32_t ownY, float dirX, 
 void rcl_stick(int engaged, float dirX, float dirY);
 void rcl_route(int engaged);
 void rcl_threats(void);
-int rcl_body_blocked(float x, float y, float ownX, float ownY);
 uintptr_t rcl_client(void);
 
 

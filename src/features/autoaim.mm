@@ -1,6 +1,8 @@
 #include "../recoil.h"
 
 void rcl_run_autoaim(void) {
+    if (!rcl_flag_state("aimbot")) return;
+
     if (!rcl_addr_getinstance || !rcl_addr_getownchar || !rcl_addr_battlescreen) return;
 
     void *battleMode = ((fn_get_inst_t)rcl_addr_getinstance)();

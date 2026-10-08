@@ -1,6 +1,8 @@
 #include "../recoil.h"
 
 void rcl_run_autododge(int from_update) {
+    if (!rcl_flag_state("autododge")) return;
+
     if (rcl_in_drive) {
 
         return;
@@ -30,6 +32,7 @@ void setup(void) {
     rcl_setup_done = YES;
 
     rcl_log_set_enabled(RCL_LOGS_ON);
+    rcl_flag_set("logs", RCL_LOGS_ON);
     rcl_log_info("setup base=%#llx", (unsigned long long)rcl_base);
 
     rcl_load_function_starts();
@@ -39,7 +42,7 @@ void setup(void) {
     rcl_objc_arm(rcl_base, "MetalView", "render", rcl_objc_body);
     rcl_objc_arm(rcl_base, "NullView", "render", rcl_objc_body);
 
-    rcl_slot_hooks_install();
+    rcl_feature_setup("slot hooks", rcl_slot_hooks_install);
 
     rcl_start_timer();
 

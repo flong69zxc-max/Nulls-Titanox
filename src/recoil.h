@@ -3,6 +3,7 @@
 
 #include "./core/types.h"
 #include "./helpers/aim_lead.h"
+#include "./helpers/dodge_kinds.h"
 #include "./helpers/dodge_profiles.h"
 #include "./core/memory.h"
 #include "./core/geometry.h"
@@ -11,6 +12,7 @@
 #include "./input/move.h"
 #include "./core/scan.h"
 #include "./utils/walls.h"
+#include "./utils/flags.h"
 
 #include "./input/joystick.h"
 

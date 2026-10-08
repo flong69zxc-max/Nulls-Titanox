@@ -1,9 +1,8 @@
-#ifndef RECOIL_HELPERS_AUTODODGE_CONFIG_H
-#define RECOIL_HELPERS_AUTODODGE_CONFIG_H
+#ifndef RECOIL_HELPERS_DODGE_PROFILES_H
+#define RECOIL_HELPERS_DODGE_PROFILES_H
 
 #include "../core/types.h"
 
-#include "../core/imports.h"
 #define RCL_ONESHOT 1
 #define RCL_BODY_CLEAR 180.0f
 #define RCL_TEAM_STRICT 1
@@ -59,5 +58,14 @@
 #define RCL_MEAS_DT_MAX 8.0f
 #define RCL_MEAS_SPEED_MIN 300.0f
 #define RCL_MEAS_SPEED_MAX 8500.0f
+
+int rcl_body_blocked(float x, float y, float ownX, float ownY);
+int rcl_body_blocked_2(float px, float py, float dirX, float dirY, float len);
+float rcl_body_score(float px, float py, float dirX, float dirY, float len);
+float rcl_body_score_2(float px, float py, float dirX, float dirY, float len);
+float rcl_score(float px, float py, float dirX, float dirY, float len);
+int rcl_valid_point(float x, float y);
+int rcl_passed(float px, float py);
+int rcl_wall_blocked(float x0, float y0, float x1, float y1);
 
 #endif

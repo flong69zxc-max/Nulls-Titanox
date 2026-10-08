@@ -9,8 +9,6 @@
 #define RCL_STATE_EVERY 240
 #define RCL_WALK_EVERY 5
 
-
-
 static float rcl_dodge_px = 0.0f;
 static float rcl_dodge_py = 0.0f;
 static int rcl_dodge_have = 0;
@@ -18,80 +16,15 @@ static float rcl_freest_hx = 0.0f;
 static float rcl_freest_hy = 0.0f;
 static int rcl_freest_have = 0;
 
-static int rcl_dodge_is_proj(uintptr_t obj) {
-    void *vt = NULL;
-    intptr_t cls = 0;
-
-    if (!obj) return 0;
-    if (!rcl_read_ptr(obj, &vt) || !vt) return 0;
-
-    cls = (intptr_t)((uintptr_t)vt - rcl_base);
-
-#if RCL_DODGE_PROJ_ONLY
-    return (cls == (intptr_t)RCL_CLASS_PROJ_RVA) ? 1 : 0;
-#else
-    (void)cls;
-
-    return 1;
-#endif
-}
-
-
-
-
-
-
-
-
-
-
-
-
 __thread int rcl_in_drive = 0;
 
-
-
-
 int32_t rcl_pl_mine[RCL_PLAYER_MAX];
-
-
-
-
-
-
-
-
-
-
-
 
 int rcl_new_tick = -1;
 
 int rcl_prev_seg = -1;
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 uint64_t rcl_human = 0;
-
-
-
-
-
-
-
-
 
 int32_t rcl_tx = 0;
 
@@ -125,11 +58,6 @@ int rcl_js_owns(void) {
 
 int rcl_build_tick = -1;
 
-
-
-
-
-
 int rcl_have_angle = 0;
 
 float rcl_angle = 0.0f;
@@ -144,25 +72,7 @@ float rcl_start_x = 0.0f;
 
 float rcl_start_y = 0.0f;
 
-
-
-
 int rcl_drive_logs = 0;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 float rcl_last_x_b = 0.0f;
 
@@ -170,28 +80,13 @@ float rcl_last_y_b = 0.0f;
 
 int rcl_last_ok = 0;
 
-
 float rcl_mom_live = 0.0f;
 
 int rcl_crit_reaction = 0;
 
 uint64_t rcl_crit_last = 0;
 
-
-
-
-
 float rcl_shot_speed[RCL_PROJ_MAX];
-
-
-
-
-
-
-
-
-
-
 
 int rcl_track_gid[RCL_SEG_MAX];
 
@@ -219,14 +114,11 @@ float rcl_track_ux[RCL_SEG_MAX];
 
 float rcl_track_uy[RCL_SEG_MAX];
 
-
 uint64_t rcl_howto_logs = 0;
 
 int rcl_side_last = -1;
 
 int rcl_shot_key[RCL_SEG_MAX];
-
-
 
 uint64_t rcl_own_obj_last = 0;
 
@@ -235,10 +127,6 @@ uint64_t rcl_no_threat_since = 0;
 int rcl_pick_key_c = 0;
 
 int rcl_pick_key_t = 0;
-
-
-
-
 
 int rcl_sel[RCL_SEL_MAX];
 
@@ -254,24 +142,11 @@ int32_t rcl_prev_x = 0;
 
 int32_t rcl_prev_y = 0;
 
-
-
-
-
-
 int rcl_cal_off_seen = -1;
 
 float rcl_cal_rad_seen = 0.0f;
 
 int rcl_cal_n = 0;
-
-
-
-
-
-
-
-
 
 int rcl_ok(float v, float lo, float hi) {
     if (!(v >= lo && v <= hi)) return 0;
@@ -281,92 +156,15 @@ int rcl_ok(float v, float lo, float hi) {
 
 int rcl_rad_off = -1;
 
-
-
 float rcl_rad_est = 0.0f;
-
 
 float rcl_own_r = 0.0f;
 
-
-
 int rcl_clip_win = 0;
-
 
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
 
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
-
-float rcl_proj_radius(const rcl_proj_t *p, float speed) {
-    uintptr_t base = 0;
-    int off = 0;
-
-    if (!RCL_GEOM) return 0.0f;
-    if (!p) return 0.0f;
-    if (speed < 1.0f) return 0.0f;
-
-    base = p->elem;
-
-    {
-        void *def = NULL;
-
-        if (rcl_read_ptr(p->elem + (uintptr_t)RCL_ELEM_DEF_OFF, &def) && def)
-            base = (uintptr_t)def;
-    }
-
-    if (rcl_rad_off >= 0) {
-        float r = 0.0f;
-
-        if (base && rcl_read_float(base + (uintptr_t)rcl_rad_off, &r) &&
-            rcl_ok(r, RCL_RADIUS_MIN, RCL_RADIUS_MAX)) {
-            rcl_rad_est = r;
-
-            return r;
-        }
-
-        return rcl_ok(rcl_rad_est, RCL_RADIUS_MIN, RCL_RADIUS_MAX) ? rcl_rad_est : 0.0f;
-    }
-
-    if (!base) return 0.0f;
-
-    for (off = RCL_CAL_OFF_LO; off <= RCL_CAL_OFF_HI; off += RCL_CAL_STEP) {
-        float v = 0.0f;
-        float r = 0.0f;
-        float d = 0.0f;
-
-
-        if (!rcl_read_float(base + (uintptr_t)off, &v)) continue;
-        if (!rcl_ok(v, 1.0f, 1.0e6f)) continue;
-
-        d = v - speed;
-        if (d < 0.0f) d = -d;
-        if (d > speed * RCL_CAL_TOL) continue;
-
-        if (!rcl_read_float(base + (uintptr_t)off + 4, &r)) continue;
-        if (!rcl_ok(r, RCL_RADIUS_MIN, RCL_RADIUS_MAX)) continue;
-
-        if (rcl_cal_off_seen == off && rcl_ok(rcl_cal_rad_seen - r, -1.0f, 1.0f)) {
-            rcl_cal_n++;
-        } else {
-            rcl_cal_off_seen = off;
-            rcl_cal_rad_seen = r;
-            rcl_cal_n = 1;
-        }
-
-        if (rcl_cal_n < RCL_CAL_TICKS) return 0.0f;
-
-        rcl_rad_off = off + 4;
-        rcl_rad_est = r;
-
-
-        return r;
-    }
-
-
-
-
-    return RCL_DATA_PROJ_R;
-}
 
 void rcl_build(void) {
     int k;
@@ -420,7 +218,6 @@ void rcl_build(void) {
             continue;
         }
 
-
         rem = speed * (RCL_PROJ_LIFE_MS / 1000.0f);
 
         if (rem > RCL_DEFAULT_RANGE) rem = RCL_DEFAULT_RANGE;
@@ -450,7 +247,6 @@ void rcl_build(void) {
             int inView = (dist2own <= RCL_VIEW_RANGE) ? 1 : 0;
             int keep = (hits || inView) ? 1 : 0;
 
-
             if (rcl_dodge_have) {
                 float toOwn = (px0 - (float)p->x) * nx + (py0 - (float)p->y) * ny;
 
@@ -477,7 +273,6 @@ void rcl_build(void) {
             float rem0 = rem;
 
             rem = rcl_clip_range((float)p->x, (float)p->y, vx / len, vy / len, rem);
-
 
             if (rem < rem0 - 0.5f) rcl_clip_win++;
         }
@@ -681,45 +476,6 @@ int rcl_flee(float px, float py, float *tx, float *ty) {
     return 1;
 }
 
-int rcl_body_blocked_2(float px, float py, float dirX, float dirY, float len) {
-    float ex = 0.0f;
-    float ey = 0.0f;
-    int i = 0;
-
-    if (!RCL_MATE_AVOID) return 0;
-    if (rcl_pl_n <= 0) return 0;
-    if (len < 1.0f) return 0;
-
-    ex = px + dirX * len;
-    ey = py + dirY * len;
-
-    for (i = 0; i < rcl_pl_n; i++) {
-        if (rcl_seg_dist(px, py, ex, ey, (float)rcl_pl_x[i], (float)rcl_pl_y[i]) <
-            RCL_MATE_CLEAR_2) {
-            return 1;
-        }
-    }
-
-    return 0;
-}
-
-float rcl_body_score(float px, float py, float dirX, float dirY, float len) {
-    float ex = px + dirX * len;
-    float ey = py + dirY * len;
-    float best = 1.0e9f;
-    int i = 0;
-
-    if (rcl_pl_n <= 0) return best;
-
-    for (i = 0; i < rcl_pl_n; i++) {
-        float d = rcl_seg_dist(px, py, ex, ey, (float)rcl_pl_x[i], (float)rcl_pl_y[i]);
-
-        if (d < best) best = d;
-    }
-
-    return best;
-}
-
                                                                                                                                               
 
 float rcl_clearance_b(float px, float py, float dirX, float dirY) {
@@ -739,39 +495,6 @@ float rcl_clearance_b(float px, float py, float dirX, float dirY) {
 
             if (d < best) best = d;
         }
-    }
-
-
-    return best;
-}
-
-float rcl_score(float px, float py, float dirX, float dirY, float len) {
-    rcl_select(px, py);
-
-    return rcl_clearance_b(px, py, dirX, dirY) +
-           RCL_BODY_W * rcl_body_score_2(px, py, dirX, dirY, len);
-}
-
-float rcl_body_score_2(float px, float py, float dirX, float dirY, float len) {
-    float ex = px + dirX * len;
-    float ey = py + dirY * len;
-    float best = 1.0e9f;
-    int i = 0;
-
-    if (!RCL_BODY_SCAN) return rcl_body_score(px, py, dirX, dirY, len);
-    if (rcl_dodge_probe_usable <= 0) return rcl_body_score(px, py, dirX, dirY, len);
-
-    for (i = 0; i < rcl_dodge_probe_usable; i++) {
-        const rcl_obj_t *o = &rcl_dodge_probe_list[i];
-        float d = 0.0f;
-
-        if (o->gid < RCL_PLAYER_GID) continue;
-        if (o->gid >= RCL_SHOT_GID) continue;
-        if (rcl_own_elem_2 && o->object == rcl_own_elem_2) continue;
-
-        d = rcl_seg_dist(px, py, ex, ey, (float)o->x, (float)o->y);
-
-        if (d < best) best = d;
     }
 
     return best;
@@ -842,31 +565,6 @@ void rcl_unblock(float px, float py, float len, float *dirX, float *dirY) {
 
 }
 
-int rcl_valid_point(float x, float y) {
-    int32_t cx = (int32_t)x;
-    int32_t cy = (int32_t)y;
-
-    rcl_clamp(&cx, &cy);
-
-    if (cx != (int32_t)x || cy != (int32_t)y) return 0;
-
-    if (rcl_mate_blocked(x, y)) {
-
-        return 0;
-    }
-
-    if (rcl_body_blocked(x, y, (float)rcl_own_x, (float)rcl_own_y)) {
-        return 0;
-    }
-
-    if (rcl_enemy_blocked(x, y, (float)rcl_own_x, (float)rcl_own_y)) {
-
-        return 0;
-    }
-
-    return 1;
-}
-
 int rcl_walk_into_bullet(float px, float py, float dirX, float dirY, float travel) {
     float pvx = dirX * RCL_DATA_SPEED;
     float pvy = dirY * RCL_DATA_SPEED;
@@ -933,20 +631,6 @@ float rcl_safe_angle(float px, float py, float desiredDeg, int *ok) {
     return desiredDeg;
 }
 
-int rcl_passed(float px, float py) {
-    float ax = rcl_tx_a - rcl_start_x;
-    float ay = rcl_ty_a - rcl_start_y;
-    float len2 = ax * ax + ay * ay;
-    float bx = 0.0f;
-    float by = 0.0f;
-
-    if (len2 <= 0.0f) return 1;
-
-    bx = px - rcl_start_x;
-    by = py - rcl_start_y;
-
-    return (ax * bx + ay * by) >= len2 ? 1 : 0;
-}
 static float rcl_js_clear(float px, float py, float mvx, float mvy) {
     float best = 1.0e9f;
     int i = 0;
@@ -1065,7 +749,6 @@ int rcl_freest(float px, float py, float *tx, float *ty) {
     *tx = bestX;
     *ty = bestY;
 
-
     return 1;
 }
 
@@ -1086,16 +769,6 @@ float rcl_all_clear(float x, float y) {
     return best;
 }
 
-int rcl_wall_blocked(float x0, float y0, float x1, float y1) {
-    int32_t ox = (int32_t)x1;
-    int32_t oy = (int32_t)y1;
-
-    if (!rcl_live || !rcl_armed) return -1;
-    if (rcl_w <= 0 || rcl_h <= 0) return -1;
-
-    return rcl_clip_walk((int32_t)x0, (int32_t)y0, (int32_t)x1, (int32_t)y1,
-                         (int32_t)RCL_TILE_SIZE, rcl_grid, rcl_w, rcl_h, &ox, &oy);
-}
                                                                                                                                                                                                                                                                                                 
 
                                                                                                                                                                                                                                                                                                                                                                                                                                        
@@ -1145,7 +818,6 @@ static void rcl_dodge_state_tick(float px, float py) {
         rcl_released = 1;
 
         rcl_enqueue((int32_t)px, (int32_t)py);
-
 
         return;
     }
@@ -1198,9 +870,7 @@ typedef struct {
 static int rcl_js_picked = 0;
 static float rcl_dodge_ox = 0.0f;
 
-
 uint64_t rcl_aim_frames = 0;
-
 
 static float rcl_dodge_oy = 0.0f;
 
@@ -1356,7 +1026,6 @@ static void rcl_dodge_collect(float px, float py) {
 
             continue;
         }
-
 
         if (!rcl_read_byte(p->elem + (uintptr_t)RCL_OBJ_DEADFLAG_OFF, &dead)) continue;
         if (dead != 0) continue;
@@ -1774,8 +1443,6 @@ static int rcl_dodge_decide(float px, float py, float *outX, float *outY, int *u
 
     rcl_dodge_collect(rcl_dodge_ox, rcl_dodge_oy);
 
-
-
     mr = rcl_own_radius();
 
     if (mr < RCL_OWN_RADIUS_MIN) mr = RCL_DATA_OWN_R;
@@ -1815,7 +1482,6 @@ static int rcl_dodge_decide(float px, float py, float *outX, float *outY, int *u
 }
 
 int rcl_aim_ok = 0;
-
 
 static int32_t rcl_aim_hx[RCL_AIM_PRED_MAX];
 static int32_t rcl_aim_hy[RCL_AIM_PRED_MAX];
@@ -1937,7 +1603,6 @@ int rcl_aim(void) {
 
     rcl_aim_ok = rcl_enqueue_type(rcl_aim_tx, rcl_aim_ty, (int)RCL_TYPE_ATTACK);
 
-
     return rcl_aim_ok;
 }
 
@@ -1956,7 +1621,6 @@ int rcl_decide(int32_t ownX, int32_t ownY) {
     rcl_js_tick = rcl_ticks_a;
 
     rcl_life_now = rcl_life_3(px, py);
-
 
     if (rcl_life_now != 1) {
         rcl_moving = 0;
@@ -1984,7 +1648,6 @@ int rcl_decide(int32_t ownX, int32_t ownY) {
             rcl_crit_last = rcl_ticks_a;
         }
     }
-
 
     rcl_dodge_state_tick(px, py);
 
@@ -2083,15 +1746,11 @@ int rcl_decide(int32_t ownX, int32_t ownY) {
 
     rcl_walk_want(rcl_moving, ownX, ownY, (int32_t)rcl_tx_a, (int32_t)rcl_ty_a);
 
-
-
-
     return picked;
 }
 
 void rcl_autododge(void) {
     static int tagOnce = 0;
-
 
     if (!tagOnce) {
         tagOnce = 1;
@@ -2103,8 +1762,6 @@ void rcl_autododge(void) {
     rcl_stick(0, 0.0f, 0.0f);
 
     rcl_route(rcl_active);
-
-
 
     if (RCL_STATE_EVERY <= 1 || (rcl_ticks_a % (uint64_t)RCL_STATE_EVERY) == 0) rcl_state();
 
@@ -2129,7 +1786,6 @@ void rcl_autododge(void) {
 
     rcl_dodge_calls++;
 
-
     if (!rcl_base) return;
 
     if (rcl_dodge_calls <= RCL_CALL_LOGS ||
@@ -2138,7 +1794,6 @@ void rcl_autododge(void) {
         int32_t probeGid = 0;
         int32_t probeTeam = 0;
         int32_t probeCount = 0;
-
 
         rcl_own_by_min_gid(rcl_tick_array, rcl_tick_count, &probeOwn, &probeGid);
 
@@ -2189,7 +1844,6 @@ void rcl_autododge(void) {
     if (!sourceIsMode && !rcl_players_object && source && strcmp(sourceKind, "trail") == 0 &&
         rcl_trail_best >= 0 && rcl_trail_best < rcl_trail_count && rcl_trail[rcl_trail_best].live == 0) {
     }
-
 
     rcl_ticks_a++;
 
@@ -2277,7 +1931,6 @@ void rcl_autododge(void) {
 
         managerChanged = ((uintptr_t)resolved != rcl_manager_ptr);
 
-
         {
             int32_t liveCount = 0;
 
@@ -2309,7 +1962,6 @@ void rcl_autododge(void) {
         }
     }
 
-
     if (!rcl_setpred_state) {
         return;
     }
@@ -2330,7 +1982,6 @@ void rcl_autododge(void) {
     }
 
     memset(objects, 0, sizeof(objects));
-
 
     usable = rcl_collect(rcl_manager_ptr, objects, RCL_OBJECT_MAX);
 
@@ -2383,7 +2034,6 @@ void rcl_autododge(void) {
                                                         : objects[ownIndex].teamNew;
     ownX = objects[ownIndex].x;
     ownY = objects[ownIndex].y;
-
 
     {
         int i = 0;
@@ -2460,7 +2110,6 @@ void rcl_autododge(void) {
 
     rcl_alive(ownX, ownY);
 
-
     rcl_side_hits = 0;
     rcl_side_projs = 0;
 
@@ -2480,7 +2129,6 @@ void rcl_autododge(void) {
 
             return;
         }
-
 
         if (rcl_life(objects[ownIndex].object, ownX, ownY)) return;
 
@@ -2506,11 +2154,9 @@ void rcl_autododge(void) {
 
     }
 
-
     if (threats == 0 && rcl_side_hits == 0) {
         return;
     }
-
 
     {
         float length = sqrtf(escapeX * escapeX + escapeY * escapeY);
@@ -2568,7 +2214,6 @@ void rcl_autododge(void) {
             rcl_issued = 1;
         }
 
-
         if (targetX > RCL_COORD_ABS_MAX) targetX = RCL_COORD_ABS_MAX;
         if (targetX < -RCL_COORD_ABS_MAX) targetX = -RCL_COORD_ABS_MAX;
         if (targetY > RCL_COORD_ABS_MAX) targetY = RCL_COORD_ABS_MAX;
@@ -2593,10 +2238,7 @@ void rcl_autododge(void) {
 
         rcl_watch(ownX, ownY);
 
-
         rcl_engaged_frame = 1;
-
-
 
         rcl_wrote_tick = rcl_ticks_a;
         rcl_wrote_valid = 1;
@@ -2732,30 +2374,6 @@ void rcl_threats(void) {
     }
 }
 
-int rcl_body_blocked(float x, float y, float ownX, float ownY) {
-    int i = 0;
-
-    if (rcl_pl_n <= 0) return 0;
-
-    for (i = 0; i < rcl_pl_n; i++) {
-        float px = 0.0f;
-        float py = 0.0f;
-
-        if (rcl_pl_mine[i]) continue;
-
-        px = (float)rcl_pl_x[i];
-        py = (float)rcl_pl_y[i];
-
-        if (rcl_seg_dist(ownX, ownY, x, y, px, py) < RCL_BODY_CLEAR) {
-
-
-            return 1;
-        }
-    }
-
-    return 0;
-}
-
 float rcl_own_radius(void) {
     float r = 0.0f;
 
@@ -2770,15 +2388,10 @@ float rcl_own_radius(void) {
         return r;
     }
 
-
     return RCL_DATA_OWN_R;
 }
 
-
-
-
 uint64_t rcl_bucket_abs[RCL_ADV_BUCKETS];
-
 
 uint64_t rcl_learn_win[3][3][2];
 
@@ -2848,7 +2461,6 @@ void rcl_stat_tick(float px, float py) {
                 {
                     float dl = sqrtf(dx * dx + dy * dy);
 
-
                     if (dl > 0.001f) {
                         rcl_track_ux[i] = dx / dl;
                         rcl_track_uy[i] = dy / dl;
@@ -2908,7 +2520,6 @@ void rcl_stat_tick(float px, float py) {
 
         if (k < 0) k = 0;
         if (k >= RCL_ADV_BUCKETS) k = RCL_ADV_BUCKETS - 1;
-
 
         if (rcl_track_hit[i]) rcl_bucket_abs[k]++;
 

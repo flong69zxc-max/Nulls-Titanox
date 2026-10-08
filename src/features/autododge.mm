@@ -189,6 +189,10 @@ static void rcl_ad_build_ring(void)
 static int rcl_bd_style_2(const char *name, const rcl_kind_t *spec, int thrower, int beam)
 {
     const char *n = name ? name : "";
+    if (spec && (spec->flags & RCL_K_DROP))
+    {
+        return RCL_STY_ARC_2;
+    }
     if (thrower)
     {
         return RCL_STY_ARC_2;
@@ -501,7 +505,7 @@ static void rcl_ad_collect_7(float mx, float my, float myRadius, uint64_t nowMs)
         }
         name = p->name ? p->name : "";
         spec = rcl_kind_of(name);
-        if (spec && (spec->flags & RCL_K_DROP))
+        if (spec && (spec->flags & RCL_K_DROP) && p->vx * p->vx + p->vy * p->vy < 1.0f)
         {
             continue;
         }
@@ -1070,15 +1074,37 @@ static void rcl_ad_clamp_target(float *tx, float *ty)
     *ty = rcl_ad_clamp_to_map(*ty, h);
 }
 
+static int32_t rcl_ad_enq_x = 0;
+static int32_t rcl_ad_enq_y = 0;
+static uint64_t rcl_ad_enq_ms = 0;
+static int rcl_ad_enq_ok = 0;
+
 static int rcl_ad_send_move_7(float tx, float ty, float mx, float my)
 {
+    int ok = 0;
     if (!(tx == tx) || !(ty == ty))
     {
         return 0;
     }
     rcl_ad_clamp_target(&tx, &ty);
     rcl_move_to((int32_t)tx, (int32_t)ty, mx, my);
-    return rcl_enqueue((int32_t)tx, (int32_t)ty);
+    {
+        int32_t ex = (int32_t)tx;
+        int32_t ey = (int32_t)ty;
+        int32_t qx = ex - rcl_ad_enq_x;
+        int32_t qy = ey - rcl_ad_enq_y;
+        uint64_t eq = rcl_ad_now_ms();
+        if (!rcl_ad_enq_ok || qx * qx + qy * qy >= RCL_AD_ENQ_STEP_SQ ||
+            eq - rcl_ad_enq_ms >= (uint64_t)RCL_AD_ENQ_MS)
+        {
+            rcl_ad_enq_x = ex;
+            rcl_ad_enq_y = ey;
+            rcl_ad_enq_ms = eq;
+            rcl_ad_enq_ok = 1;
+            ok = rcl_enqueue(ex, ey);
+        }
+    }
+    return ok;
 }
 
 #define RCL_BDC_EXTRA 12
@@ -1096,6 +1122,15 @@ static int rcl_ad_send_move_7(float tx, float ty, float mx, float my)
 #define RCL_BDC_FAR 1.0e18f
 #define RCL_BDC_EPS 1.0f
 #define RCL_BDC_ROLL_STEPS_2 5
+#define RCL_AD_ENQ_MS 100
+#define RCL_AD_ENQ_STEP_SQ 900
+#define RCL_BD_PRE_RANGE_2 1500.0f
+#define RCL_BD_PRE_SPD_2 2600.0f
+#define RCL_BD_PRE_HIT_2 55.0f
+#define RCL_BDC_PRE_W_2 0.45f
+#define RCL_STY_PRE_2 6
+#define RCL_BDC_PANIC_T_2 0.34f
+#define RCL_BDC_PANIC_R_2 1.35f
 #define RCL_BDC_ROLL_DT_2 0.078f
 #define RCL_BDC_DIR_MAX (RCL_AD_DIR_COUNT + RCL_BDC_EXTRA)
 
@@ -1201,6 +1236,7 @@ static float rcl_bdc_score_dir_6(float dx, float dy, float mx, float my, float m
         float px = p->x - mx;
         float py = p->y - my;
         float minD2 = px * px + py * py;
+        float tMin = 0.0f;
         int st;
         for (st = 1; st <= RCL_BDC_ROLL_STEPS_2; st++)
         {
@@ -1211,7 +1247,12 @@ static float rcl_bdc_score_dir_6(float dx, float dy, float mx, float my, float m
             if (d2 < minD2)
             {
                 minD2 = d2;
+                tMin = t;
             }
+        }
+        if (tMin < RCL_BDC_PANIC_T_2)
+        {
+            r *= RCL_BDC_PANIC_R_2;
         }
         if (minD2 < RCL_BDC_EPS)
         {
@@ -1230,6 +1271,10 @@ static float rcl_bdc_score_dir_6(float dx, float dy, float mx, float my, float m
             else if (p->style_2 == RCL_STY_SPREAD_2 || p->style_2 == RCL_STY_BURST_2)
             {
                 w *= RCL_BDC_SPREAD_W_2;
+            }
+            else if (p->style_2 == RCL_STY_PRE_2)
+            {
+                w *= RCL_BDC_PRE_W_2;
             }
             score += w * (r * r) / minD2;
             if (p->style_2 == RCL_STY_ARC_2 || p->style_2 == RCL_STY_SPREAD_2 || p->style_2 == RCL_STY_BURST_2)
@@ -1391,8 +1436,28 @@ static int rcl_bdc_extra_dirs_6(float mx, float my)
     return at - RCL_AD_DIR_COUNT;
 }
 
+static void rcl_bd_pre_2(float mx, float my, float myR)
+{
+    int i;
+    for (i = 0; i < rcl_enemy_n && i < 12; i++)
+    {
+        float dx = (float)rcl_enemy_x[i] - mx;
+        float dy = (float)rcl_enemy_y[i] - my;
+        float d2 = dx * dx + dy * dy;
+        float d;
+        if (d2 > RCL_BD_PRE_RANGE_2 * RCL_BD_PRE_RANGE_2 || d2 < 1.0f)
+        {
+            continue;
+        }
+        d = sqrtf(d2);
+        rcl_bd_push_2((float)rcl_enemy_x[i], (float)rcl_enemy_y[i], dx / d * RCL_BD_PRE_SPD_2, dy / d * RCL_BD_PRE_SPD_2,
+                      myR * 0.5f, myR + RCL_BD_PRE_HIT_2, 0, RCL_STY_PRE_2, d, 0.0f);
+    }
+}
+
 static void rcl_bdc_pick_6(float mx, float my, float myR, float ix, float iy, float speed, float *ox, float *oy)
 {
+    rcl_bd_pre_2(mx, my, myR);
     float rx = ix;
     float ry = iy;
     int hasRef = (ix != 0.0f || iy != 0.0f) ? 1 : 0;
@@ -1534,6 +1599,32 @@ static void rcl_bdc_pick_6(float mx, float my, float myR, float ix, float iy, fl
     best = freeBest >= 0 ? freeBest : wallBest;
     bestScore = rcl_bdc_scores_6[best];
     cand = best;
+    if (rcl_bdc_have_last && bestScore < RCL_BDC_FAR)
+    {
+        float lim = bestScore * RCL_BDC_TIE;
+        float bdot = -2.0f;
+        int pick = best;
+        for (i = 0; i < count; i++)
+        {
+            float dot;
+            if (rcl_bdc_wallc_6[i] >= RCL_BDC_WALL_HIT && freeBest >= 0)
+            {
+                continue;
+            }
+            if (rcl_bdc_scores_6[i] > lim)
+            {
+                continue;
+            }
+            dot = rcl_bdc_dirs_6[i][0] * rcl_bdc_last_x + rcl_bdc_dirs_6[i][1] * rcl_bdc_last_y;
+            if (dot > bdot)
+            {
+                bdot = dot;
+                pick = i;
+            }
+        }
+        cand = pick;
+        bestScore = rcl_bdc_scores_6[cand];
+    }
     impactBest = rcl_bdc_impacts_6[best];
     if (rcl_bdc_have_last && best < RCL_AD_DIR_COUNT)
     {

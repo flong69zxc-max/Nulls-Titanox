@@ -9,15 +9,12 @@
 
 extern uintptr_t rcl_base;
 
-
 extern const char *rcl_image_names[4];
-extern const rcl_rva_entry_t rcl_rvas[32];
 extern uintptr_t *rcl_starts;
 extern size_t rcl_starts_count;
 extern BOOL rcl_setup_done;
 extern BOOL rcl_aim_rejected;
 extern __thread BOOL rcl_inside_hook;
-extern uint64_t rcl_dodge_calls;
 extern int rcl_dump_np;
 extern BOOL rcl_mode_strong;
 extern uintptr_t rcl_players_object;
@@ -42,7 +39,6 @@ extern uintptr_t rcl_addr_setprediction;
 extern uintptr_t rcl_addr_battlescreen;
 extern volatile int rcl_at;
 extern int rcl_no_source_passes;
-extern int rcl_route_logged;
 extern int rcl_sig_ticks;
 extern uintptr_t rcl_sig_last;
 extern uintptr_t rcl_players_array;
@@ -51,7 +47,6 @@ extern uint64_t rcl_walk_tick;
 extern int rcl_walk_count;
 extern int rcl_coord_fixed_logged;
 extern uint64_t rcl_time;
-extern uint64_t rcl_slow;
 extern uint64_t rcl_q_max;
 extern uintptr_t rcl_owner;
 extern int rcl_wired;
@@ -60,20 +55,11 @@ extern rcl_region_t rcl_heap_regions[RCL_HEAP_REGION_MAX];
 extern int rcl_heap_region_count;
 extern uintptr_t rcl_heap_window_low;
 extern uintptr_t rcl_heap_window_high;
-extern const uintptr_t rcl_mode_vtables[36];
 extern rcl_trail_t rcl_trail[RCL_TRAIL_MAX];
 extern int rcl_trail_count;
-extern int rcl_gate_last;
 extern int rcl_dodge_probe_usable;
-extern uintptr_t rcl_last_own;
-extern int32_t rcl_last_tx;
-extern int32_t rcl_last_ty;
 extern int rcl_issued;
 extern uintptr_t rcl_own_elem_2;
-extern int rcl_human_2;
-extern uint64_t rcl_queue_skips;
-extern int32_t rcl_tx_b;
-extern int32_t rcl_ty_b;
 extern uint64_t rcl_hold;
 
 BOOL rcl_query_region(uintptr_t address, vm_prot_t *protection, vm_prot_t *maxProtection, mach_vm_size_t *regionSize, uintptr_t *regionStart);
@@ -86,7 +72,6 @@ BOOL rcl_read_float(uintptr_t address, float *out);
 BOOL rcl_writable(uintptr_t address, size_t length);
 void rcl_note(uintptr_t address, const void *src, size_t length, int denied);
 BOOL rcl_write_bytes(uintptr_t address, const void *src, size_t length);
-BOOL rcl_write_float(uintptr_t address, float value);
 BOOL rcl_read_ptr(uintptr_t address, void **out);
 void *rcl_read_global_ptr(uintptr_t rva);
 uintptr_t rcl_callable(uintptr_t rva);
@@ -98,10 +83,8 @@ BOOL rcl_segment_range(const char *name, uintptr_t *lo, uintptr_t *hi);
 void rcl_image_span_refresh(void);
 const char *rcl_image_segment_name(uintptr_t value);
 void rcl_heap_regions_refresh(void);
-BOOL rcl_heap_contains(uintptr_t value);
 BOOL rcl_vtable_shaped(uintptr_t value);
 BOOL rcl_heap_resident(uintptr_t value);
-BOOL rcl_gameobject_shape(uintptr_t object);
 BOOL rcl_instance_shaped(uintptr_t object);
 BOOL rcl_manager_shape(uintptr_t manager);
 BOOL rcl_vtable_in_image(uintptr_t vtable);
@@ -315,7 +298,6 @@ static inline BOOL rcl_object_plausible(void *object) {
 extern int rcl_find_joy_done;
 extern uint64_t rcl_ticks_a;
 extern uintptr_t rcl_manager_ptr;
-extern uint64_t rcl_dec_us;
 extern int rcl_logs_a;
 extern int rcl_seeded;
 extern int32_t rcl_last_x_a;
@@ -334,14 +316,6 @@ void rcl_paircal(void);
 uintptr_t rcl_pair_base(void);
 
 #define RCL_COORD_SOFT 0
-#define RCL_WALL_CLIP 1
-#define RCL_REBUILD_TICKS 60
-#define RCL_MIN_PASSES 3
-#define RCL_MIN_CLIP 60.0f
-#define RCL_MIN_IMG_PCT 0
-#define RCL_MAX_SOLID_PCT 60
-#define RCL_MAX_CLIP_PCT 70
-#define RCL_MIN_SEGS 4
 #define RCL_NP_DUMPS 8
 #define RCL_ELEMS 8
 #define RCL_WORDS_2 24
@@ -366,7 +340,6 @@ int rcl_word(uintptr_t address, uint32_t *out);
 void rcl_slot_note(int index, void *self, uint64_t arg1);
 uint64_t rcl_hook_dispatches(void);
 uint64_t rcl_object_dispatches(void);
-int rcl_manager_live_count(uintptr_t manager);
 
 extern int rcl_bar_logged;
 extern int rcl_fb_logged;
@@ -431,7 +404,6 @@ uint64_t rcl_slot_repl_9(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64
 int rcl_snapshot(uintptr_t *objectOut, uintptr_t *arrayOut, int32_t *countOut);
 void rcl_tick_begin(void);
 
-
 extern uintptr_t rcl_slot_object[RCL_SLOT_COUNT];
 extern uintptr_t rcl_slot_arg[RCL_SLOT_COUNT];
 extern uint64_t rcl_slot_hits[RCL_SLOT_COUNT];
@@ -453,7 +425,6 @@ void rcl_run_workload(void);
 void setup(void);
 void rcl_run_autododge(int from_update);
 
-#define RCL_MANAGER_MIN_OBJECTS 3
 #define RCL_WIRE_OWNER 1
 #define RCL_HOPCHOSEN_DIRECT 2
 #define RCL_DRIVE_FROM_UPDATE 0
@@ -466,8 +437,6 @@ void rcl_run_autododge(int from_update);
 #define RCL_IDLE_TICKS 15
 #define RCL_IDLE_RETRY_TICKS 300
 #define RCL_STATE_BATTLE 5
-#define RCL_MODE_MIN_TYPES 2
-#define RCL_MODE_TYPE_MAX 16
 #define RCL_SNAPSHOT_DELAY 1.2
 #define RCL_LOGS_ON 0
 
@@ -484,9 +453,6 @@ extern uintptr_t rcl_own_ptr_b;
 extern int rcl_own_index_3;
 extern uintptr_t rcl_scan_container;
 extern int rcl_own_logged;
-extern uint64_t rcl_wrote_tick;
-extern int rcl_wrote_valid;
-extern int rcl_check_done;
 extern uintptr_t rcl_hop_scene;
 extern int rcl_coord_logs;
 extern int rcl_last_choice;
@@ -502,8 +468,6 @@ extern uint64_t rcl_last_write_ms;
 extern rcl_obj_t rcl_dodge_probe_list[RCL_OBJECT_MAX];
 extern int rcl_gidless;
 extern int rcl_stage;
-extern int32_t rcl_last_x;
-extern int32_t rcl_last_y;
 extern int rcl_dead;
 extern int rcl_own_team_a;
 extern int rcl_proj_other;
@@ -515,16 +479,9 @@ extern int rcl_proj_have;
 extern int rcl_proj_dumps;
 extern uint64_t rcl_proj_diff_logs;
 extern uintptr_t rcl_own_elem;
-extern int rcl_own_logs_b;
 extern int32_t rcl_own_gid;
 extern rcl_proj_t rcl_projs[RCL_PROJ_MAX];
-extern int rcl_side_hits;
-extern int rcl_side_projs;
 extern int rcl_signal_logs;
-extern float rcl_walk_step;
-extern int32_t rcl_prev_x_3;
-extern int32_t rcl_prev_y_3;
-extern int rcl_prev_ok;
 
 int rcl_modesig_hit(uintptr_t at);
 void rcl_modesig_tick(void);
@@ -542,13 +499,11 @@ void rcl_read_map(uintptr_t mode);
 void rcl_gidless_scan(uintptr_t manager);
 uintptr_t rcl_list_gid_off(uintptr_t array, int32_t count);
 void rcl_proj_track(uintptr_t elem, uintptr_t classRva, int32_t gid, int32_t team);
-int rcl_mode_real(uintptr_t mode, uintptr_t *vtOut, uintptr_t *chainOut, uintptr_t *innerOut);
 void rcl_own_probe(void);
 int rcl_own_latch(const rcl_obj_t *objects, int usable, int *indexOut, const char **fromOut);
 int rcl_vt_ok(uintptr_t obj, uintptr_t *vtOut);
 int rcl_cand_ok(uintptr_t cand, const char **why, uintptr_t *vtOut);
 uintptr_t rcl_hop(uintptr_t base, int *whyOut);
-uintptr_t rcl_own_obj(void);
 uintptr_t rcl_client(void);
 int rcl_own_by_min_gid(uintptr_t array, int32_t count, uintptr_t *elemOut, int32_t *gidOut);
 int rcl_own_from_list(const rcl_obj_t *objects, int usable, int *indexOut, const char **fromOut);
@@ -558,13 +513,9 @@ int rcl_resolve_own_2(const rcl_obj_t *objects, int usable, int *indexOut, const
 int rcl_proj_scan(uintptr_t manager, int32_t count);
 
 uintptr_t rcl_controller(void);
-void rcl_watch(int32_t ownX, int32_t ownY);
 void rcl_death_signals(uintptr_t ownElem, int32_t ownX, int32_t ownY);
 void rcl_alive(int32_t ownX, int32_t ownY);
 int rcl_own(int32_t *xOut, int32_t *yOut);
-float rcl_step(void);
-void rcl_measure(void);
-int rcl_proj_mine(const rcl_proj_t *p);
 void rcl_state(void);
 uint64_t rcl_word_2(uintptr_t address);
 const char *rcl_header_reason(uintptr_t manager, int32_t *countOut, int32_t *capOut);
@@ -572,9 +523,6 @@ uintptr_t rcl_coord_x_off(void);
 uintptr_t rcl_coord_y_off(void);
 
 int rcl_ctrl_bounds(uintptr_t base, int32_t *wOut, int32_t *hOut);
-
-
-
 
 extern int rcl_own_x;
 extern int rcl_own_y;
@@ -606,9 +554,7 @@ extern int rcl_state_code;
 extern int rcl_team_trust;
 extern uint64_t rcl_tick_stamp;
 void rcl_clear_life(void);
-int rcl_enemy_blocked(float x, float y, float ownX, float ownY);
 int rcl_life(uintptr_t ownElem, int32_t ownX, int32_t ownY);
-int rcl_mate_blocked(float x, float y);
 int rcl_own_from_slot(uintptr_t *objectOut, int32_t *gidOut);
 void rcl_own_index_probe(void);
 int rcl_own_ok(int32_t x, int32_t y);
@@ -620,16 +566,6 @@ void rcl_respawn_event(int32_t x, int32_t y, int32_t px, int32_t py);
 void rcl_roster(uintptr_t ownElem, int ownIndex, int ownTeam, const rcl_obj_t *objects, int usable);
 int rcl_team_at(const rcl_obj_t *objects, int index);
 
-int rcl_object_live(uintptr_t object);
-
-#define RCL_ENEMY_HARD 150.0f
-#define RCL_ENEMY_FAR 400.0f
-#define RCL_ENEMY_MARGIN 60.0f
-#define RCL_PROJ_OWNER 1
-#define RCL_SPAWN_R 520.0f
-#define RCL_WALK_MIN 1.0f
-#define RCL_WALK_MAX 60.0f
-#define RCL_WALK_EMA 0.12f
 #define RCL_CLUSTER 700.0f
 #define RCL_DEAD_ONCE 1
 #define RCL_GIDLESS 1
@@ -639,7 +575,6 @@ int rcl_object_live(uintptr_t object);
 #define RCL_SOFT_MIN_POS 2
 #define RCL_SOFT_MIN_DIST 2
 #define RCL_LOGS_a 12
-#define RCL_MATE_CLEAR 240.0f
 #define RCL_ATTRIB_R (700.0f * 700.0f)
 #define RCL_ATTRIB_MARGIN 1.5f
 #define RCL_RESPAWN_JUMP 1200

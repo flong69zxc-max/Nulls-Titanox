@@ -63,7 +63,6 @@ uint32_t rcl_ci_sign(void *ci, void *battle) {
         return 0;
     }
 
-
     return token;
 #else
     (void)ci;
@@ -73,13 +72,11 @@ uint32_t rcl_ci_sign(void *ci, void *battle) {
 #endif
 }
 
-
 int rcl_enqueue_type(int x, int y, int type) {
     if (!rcl_coord_ok) {
 
         return 0;
     }
-
 
     uintptr_t ctorFn = rcl_entry_2(RCL_MSGCTOR_RVA);
     uintptr_t inputFn = rcl_entry_2(RCL_ADDINPUT_RVA);
@@ -126,7 +123,6 @@ int rcl_enqueue_type(int x, int y, int type) {
     {
         uintptr_t battleFn = rcl_entry_2(RCL_GETBATTLE_RVA);
 
-
         if (battleFn) {
             void *battle = ((void *(*)(void))battleFn)();
 
@@ -145,7 +141,6 @@ int rcl_enqueue_type(int x, int y, int type) {
 
     rcl_read_int((uintptr_t)mgr + RCL_MGR_SEQ_OFF, &rcl_seq_before);
 
-
     {
         void *mgrInner = NULL;
 
@@ -154,7 +149,6 @@ int rcl_enqueue_type(int x, int y, int type) {
             return 0;
         }
     }
-
 
     if (RCL_QUEUE_GUARD || RCL_QUEUE_GUARD_MGR) {
         int msgOk = rcl_instance_shaped((uintptr_t)msg);
@@ -187,15 +181,12 @@ int rcl_enqueue_type(int x, int y, int type) {
         }
     }
 
-
-
     return 1;
 }
 
 int rcl_enqueue(int x, int y) {
     return rcl_enqueue_type(x, y, (int)RCL_TYPE_MOVE);
 }
-
 
 static int rcl_pred_probe(uintptr_t pred, int *alignOut, int *readOut, int *writeOut, int *vtOut) {
     void *vtRaw = NULL;
@@ -367,25 +358,3 @@ int rcl_move_to(int32_t x, int32_t y, float ox, float oy) {
 }
 
 uintptr_t rcl_pred_last = 0;
-
-int rcl_predict(int32_t x, int32_t y) {
-    uintptr_t battleFn = rcl_entry_2(RCL_GETBATTLE_RVA);
-    void *battle = NULL;
-
-    if (!RCL_PREDICT) return 0;
-    if (!rcl_addr_setprediction) return 0;
-    if (!battleFn) return 0;
-
-    battle = ((void *(*)(void))battleFn)();
-
-    if (!battle) {
-
-        return 0;
-    }
-
-    ((void (*)(void *, int, int, int))rcl_addr_setprediction)(battle, x, y, RCL_PREDICT_FLAG);
-
-    rcl_pred_last = (uintptr_t)battle;
-
-    return 1;
-}

@@ -7,114 +7,29 @@ const char *rcl_image_names[4] = {
     NULL
 };
 
-const rcl_rva_entry_t rcl_rvas[32] = {
-    { "RVA_BATTLEMODE_GETINSTANCE", RVA_BATTLEMODE_GETINSTANCE },
-    { "RVA_BATTLESCREEN__BATTLESCREEN", RVA_BATTLESCREEN__BATTLESCREEN },
-    { "RVA_BATTLESCREEN__UPDATEMOVEMENT", RVA_BATTLESCREEN__UPDATEMOVEMENT },
-    { "RVA_BATTLESCREEN__UPDATEAUTOSHOOT", RVA_BATTLESCREEN__UPDATEAUTOSHOOT },
-    { "RVA_BATTLESCREEN_GETCLOSESTTARGETFORAUTOSHOOT", RVA_BATTLESCREEN_GETCLOSESTTARGETFORAUTOSHOOT },
-    { "RVA_BATTLESCREEN__TRYTOACTIVATESKILL", RVA_BATTLESCREEN__TRYTOACTIVATESKILL },
-    { "RVA_LOGICBATTLEMODECLIENT_UPDATE", RVA_LOGICBATTLEMODECLIENT_UPDATE },
-    { "RVA_LOGICBATTLEMODECLIENT_GETOWNCHARACTER", RVA_LOGICBATTLEMODECLIENT_GETOWNCHARACTER },
-    { "RVA_LOGICBATTLEMODECLIENT_GETOWNPLAYERTEAM", RVA_LOGICBATTLEMODECLIENT_GETOWNPLAYERTEAM },
-    { "RVA_LOGICBATTLEMODECLIENT_SETCLIENTPREDICTIONMOVETO", RVA_LOGICBATTLEMODECLIENT_SETCLIENTPREDICTIONMOVETO },
-    { "RVA_LOGICGAMEOBJECTCLIENT_GETDATA", RVA_LOGICGAMEOBJECTCLIENT_GETDATA },
-    { "RVA_LOGICGAMEOBJECTCLIENT_GETGLOBALID", RVA_LOGICGAMEOBJECTCLIENT_GETGLOBALID },
-    { "RVA_LOGICGAMEOBJECTCLIENT_GETX", RVA_LOGICGAMEOBJECTCLIENT_GETX },
-    { "RVA_LOGICGAMEOBJECTCLIENT_GETY", RVA_LOGICGAMEOBJECTCLIENT_GETY },
-    { "RVA_LOGICPROJECTILEDATA_GETSPEED", RVA_LOGICPROJECTILEDATA_GETSPEED },
-    { "RVA_LOGICPROJECTILEDATA_GETRADIUS", RVA_LOGICPROJECTILEDATA_GETRADIUS },
-    { "RVA_LOGICTILEMAP__ISPLAYERLINEOFSIGHTCLEAR", RVA_LOGICTILEMAP__ISPLAYERLINEOFSIGHTCLEAR },
-    { "RVA_LOGICGAMEPLAYUTIL__GETCLOSESTANYCOLLISION", RVA_LOGICGAMEPLAYUTIL__GETCLOSESTANYCOLLISION },
-    { "RVA_CLIENTINPUTMESSAGE_SENDMOVEMENT", RVA_CLIENTINPUTMESSAGE_SENDMOVEMENT },
-    { "RVA_STAGE_ADDCHILD", RVA_STAGE_ADDCHILD },
-    { "RVA_STRINGTABLE_GETMOVIECLIP", RVA_STRINGTABLE_GETMOVIECLIP },
-    { "RVA_MOVIECLIP__GETTEXTFIELDBYNAME", RVA_MOVIECLIP__GETTEXTFIELDBYNAME },
-    { "RVA_TEXTFIELD_SETTEXT", RVA_TEXTFIELD_SETTEXT },
-    { "RVA_DISPLAYOBJECT__SETXY", RVA_DISPLAYOBJECT__SETXY },
-    { "RVA_LOGICGAMEOBJECTMANAGERCLIENT__GETGAMEOBJECTS", RVA_LOGICGAMEOBJECTMANAGERCLIENT__GETGAMEOBJECTS },
-    { "RVA_BATTLESCREEN_FIREWRAPPERFN", RVA_BATTLESCREEN_FIREWRAPPERFN },
-    { "RVA_BATTLESCREEN_ACTIVATESKILL", RVA_BATTLESCREEN_ACTIVATESKILL },
-    { "RVA_LOGICCHARACTERDATA_GETCOLLISIONRADIUS", RVA_LOGICCHARACTERDATA_GETCOLLISIONRADIUS },
-    { "RVA_MESSAGEMANAGER__RECEIVEMESSAGE", RVA_MESSAGEMANAGER__RECEIVEMESSAGE },
-    { "RVA_COMBATHUD__SETMOVESTICKSTATE", RVA_COMBATHUD__SETMOVESTICKSTATE },
-    { "RVA_COMBATHUD__SETSHOOTSTICKSTATE", RVA_COMBATHUD__SETSHOOTSTICKSTATE },
-    { NULL, 0 }
-};
-
-
-
 BOOL rcl_setup_done = NO;
-
-
 
 BOOL rcl_aim_rejected = NO;
 
 __thread BOOL rcl_inside_hook = NO;
 
-uint64_t rcl_dodge_calls = 0;
-
-
 int rcl_dump_np = 0;
-
 
 BOOL rcl_mode_strong = NO;
 
-
-
-
 int rcl_manager_count = 0;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 uintptr_t rcl_objvote_best_owner = 0;
 
-
-
-
-
-
 int rcl_objvote_best_teamcount = 0;
-
 
 rcl_objhit_t rcl_objhits[RCL_OBJ_HIT_DUMP_MAX];
 
 int rcl_objhit_count = 0;
 
-
-
 int rcl_objvote_max_votes = 0;
 
-
-
-
-
-
-
-
 int rcl_trail_best = 0;
-
-
-
-
-
-
 
 int rcl_votescan_attempts = 0;
 
@@ -125,7 +40,6 @@ BOOL rcl_snapshot_first = NO;
 BOOL rcl_snapshot_second = NO;
 
 double rcl_snapshot_start = 0.0;
-
 
 uintptr_t rcl_addr_getinstance = 0;
 
@@ -139,78 +53,29 @@ uintptr_t rcl_addr_gety = 0;
 
 uintptr_t rcl_addr_setprediction = 0;
 
-
-
-
-
-
-
 uintptr_t rcl_addr_battlescreen = 0;
 
-
-
-
-
-
-
-
-
-
-
-
 volatile int rcl_at = 0;
-
-
 
 uintptr_t rcl_slot_object[RCL_SLOT_COUNT] = { 0 };
 
 uintptr_t rcl_slot_arg[RCL_SLOT_COUNT] = { 0 };
 
-
-
-
-
-
 int rcl_no_source_passes = 0;
-
-int rcl_route_logged = 0;
-
-
 
 uintptr_t rcl_slot_adopted = 0;
 
-
-
-
-
-
-
-
 int rcl_sig_ticks = 0;
-
 
 uintptr_t rcl_sig_last = 0;
 
-
-
-
-
-
 uint64_t rcl_walk_tick = 0;
-
 
 int rcl_walk_count = -1;
 
 int rcl_coord_fixed_logged = 0;
 
-
-
 uint64_t rcl_time = 0;
-
-uint64_t rcl_slow = 0;
-
-
-
 
 BOOL rcl_query_region(uintptr_t address,
                              vm_prot_t *protection,
@@ -316,8 +181,6 @@ BOOL rcl_read_float(uintptr_t address, float *out) {
     return rcl_read_bytes(address, out, 4);
 }
 
-
-
 BOOL rcl_writable(uintptr_t address, size_t length) {
     uintptr_t end = address + length;
     uintptr_t cursor = address;
@@ -367,7 +230,6 @@ BOOL rcl_write_bytes(uintptr_t address, const void *src, size_t length) {
     if (RCL_WRITE_GUARD && !rcl_writable(address, length)) {
         rcl_note(address, src, length, 1);
 
-
         return NO;
     }
 
@@ -377,13 +239,6 @@ BOOL rcl_write_bytes(uintptr_t address, const void *src, size_t length) {
 
     return YES;
 }
-
-BOOL rcl_write_float(uintptr_t address, float value) {
-    if (address & 3) return NO;
-
-    return rcl_write_bytes(address, &value, sizeof(value));
-}
-
 BOOL rcl_read_ptr(uintptr_t address, void **out) {
     if (!out) return NO;
     if (address & 7) return NO;
@@ -545,17 +400,7 @@ BOOL find_game_image(uintptr_t *out_base) {
     return NO;
 }
 
-
-
 uint64_t rcl_q_max = 0;
-
-
-
-
-
-
-
-
 
 uintptr_t rcl_owner = 0;
 
@@ -679,7 +524,6 @@ uintptr_t rcl_heap_window_low = 0;
 
 uintptr_t rcl_heap_window_high = 0;
 
-
 void rcl_heap_regions_refresh(void) {
     uintptr_t cursor = 0x10000;
     uintptr_t lowest = 0;
@@ -717,35 +561,8 @@ void rcl_heap_regions_refresh(void) {
     rcl_heap_window_low = lowest;
     rcl_heap_window_high = highest;
 
-
     rcl_image_span_refresh();
 }
-
-BOOL rcl_heap_contains(uintptr_t value) {
-    int lo = 0;
-    int hi = rcl_heap_region_count - 1;
-
-    if (!value) return NO;
-
-    if (!rcl_heap_region_count) return rcl_image_segment_name(value) ? NO : YES;
-
-    if (value < rcl_heap_window_low || value >= rcl_heap_window_high) return NO;
-
-    while (lo <= hi) {
-        int mid = lo + (hi - lo) / 2;
-
-        if (value < rcl_heap_regions[mid].low) {
-            hi = mid - 1;
-        } else if (value >= rcl_heap_regions[mid].high) {
-            lo = mid + 1;
-        } else {
-            return YES;
-        }
-    }
-
-    return NO;
-}
-
 BOOL rcl_vtable_shaped(uintptr_t value) {
     const char *segment = rcl_image_segment_name(value);
 
@@ -763,23 +580,6 @@ BOOL rcl_heap_resident(uintptr_t value) {
 
     return rcl_image_segment_name(value) ? NO : YES;
 }
-BOOL rcl_gameobject_shape(uintptr_t object) {
-    void *vtable = NULL;
-    int32_t team = 0;
-    uint8_t dead = 0;
-
-    if (!rcl_pointer_plausible(object)) return NO;
-    if (!rcl_heap_resident(object)) return NO;
-    if (!rcl_read_ptr(object, &vtable)) return NO;
-    if (!rcl_vtable_shaped((uintptr_t)vtable)) return NO;
-    if (!rcl_read_int(object + RCL_OBJ_TEAM_OFF, &team)) return NO;
-    if (team < 0 || team > RCL_OBJ_TEAM_MAX) return NO;
-    if (!rcl_read_byte(object + RCL_OBJ_DEADFLAG_OFF, &dead)) return NO;
-    if (dead > 1) return NO;
-
-    return YES;
-}
-
 BOOL rcl_instance_shaped(uintptr_t object) {
     void *vtable = NULL;
 
@@ -823,34 +623,7 @@ BOOL rcl_manager_shape(uintptr_t manager) {
 }
 int rcl_trail_count = 0;
 
-
-int rcl_gate_last = -1;
-
-
-
-
-uintptr_t rcl_last_own = 0;
-
-
-int32_t rcl_last_tx = 0;
-
-int32_t rcl_last_ty = 0;
-
 int rcl_issued = 0;
-int rcl_human_2 = 0;
-
-
-
-
-uint64_t rcl_queue_skips = 0;
-
-
-
-
-
-int32_t rcl_tx_b = 0;
-
-int32_t rcl_ty_b = 0;
 
 uint64_t rcl_hold = 0;
 
@@ -912,7 +685,6 @@ uint64_t rcl_ticks_a = 0;
 
 int rcl_find_joy_done = 0;
 
-
 uintptr_t rcl_manager_ptr = 0;
 
 int rcl_collect(uintptr_t manager, rcl_obj_t *out, int capacity) {
@@ -922,9 +694,7 @@ int rcl_collect(uintptr_t manager, rcl_obj_t *out, int capacity) {
     uintptr_t gidOff = RCL_OBJ_GLOBALID_OFF;
     uint32_t walkSeq = 0;
 
-
     rcl_gidless_scan(manager);
-
 
     if (!manager) return 0;
     if (!rcl_read_ptr(manager + RCL_MGR_ARRAY_OFF, &data) || !data) return 0;
@@ -937,7 +707,6 @@ int rcl_collect(uintptr_t manager, rcl_obj_t *out, int capacity) {
 
     walkSeq = rcl_seq;
 
-
     for (int32_t i = 0; i < count && usable < capacity; i++) {
         void *element = NULL;
         void *vtable = NULL;
@@ -945,7 +714,6 @@ int rcl_collect(uintptr_t manager, rcl_obj_t *out, int capacity) {
         uintptr_t vtRva = 0;
 
         memset(&entry, 0, sizeof(entry));
-
 
         if (rcl_seq != walkSeq) {
 
@@ -1064,10 +832,8 @@ int rcl_collect(uintptr_t manager, rcl_obj_t *out, int capacity) {
             continue;
         }
 
-
         out[usable++] = entry;
     }
-
 
     return usable;
 }
@@ -1099,7 +865,6 @@ void rcl_discriminate(uintptr_t manager) {
     memset(objects, 0, sizeof(objects));
     memset(words, 0, sizeof(words));
 
-
     usable = rcl_collect(manager, objects, RCL_OBJECT_MAX);
 
     rcl_dodge_probe_usable = usable;
@@ -1108,13 +873,11 @@ void rcl_discriminate(uintptr_t manager) {
     if (usable == 0) {
         char reasons[320];
 
-
         return;
     }
 
     if (usable == 1) {
         char reasons[320];
-
 
         return;
     }
@@ -1126,7 +889,6 @@ void rcl_discriminate(uintptr_t manager) {
             return;
         }
     }
-
 
     for (int w = 0; w < RCL_WORDS_2; w++) {
         int distinct = 0;
@@ -1155,7 +917,6 @@ void rcl_discriminate(uintptr_t manager) {
 
         if (distinct <= 1) continue;
 
-
         if (teamOff < 0 && allTiny && distinct >= 2 && distinct <= RCL_TEAM_MAX) {
             teamOff = w * 4;
             teamDistinct = distinct;
@@ -1172,7 +933,6 @@ void rcl_discriminate(uintptr_t manager) {
         teamOff = -1;
         teamDistinct = 0;
     }
-
 
     {
         int order[RCL_WORDS_2];
@@ -1254,16 +1014,11 @@ void rcl_discriminate(uintptr_t manager) {
 
     }
 
-
-
     if (!rcl_coord_fixed_logged) {
         rcl_coord_fixed_logged = 1;
 
     }
 }
-
-
-
 
 uintptr_t rcl_bounds_obj(uintptr_t receiver) {
     void *out = NULL;
@@ -1299,19 +1054,13 @@ int rcl_clamp(int32_t *x, int32_t *y) {
         return 0;
     }
 
-
-
     if (*x > maxX - 2) *x = maxX - 2;
     if (*y > maxY - 2) *y = maxY - 2;
     if (*x <= 1) *x = 0;
     if (*y <= 1) *y = 0;
 
-
     return 1;
 }
-
-uint64_t rcl_dec_us = 0;
-
 
 uint64_t rcl_us(void) {
     static mach_timebase_info_data_t tb;
@@ -1548,8 +1297,6 @@ size_t rcl_starts_count = 0;
 
 uintptr_t rcl_setpred = 0;
 
-
-
 int rcl_live_objs = 0;
 
 int rcl_live_teams = 0;
@@ -1559,7 +1306,6 @@ int rcl_fb_on = 0;
 int rcl_fb_logged = 0;
 
 int rcl_bar_logged = 0;
-
 
 unsigned long long rcl_obj_prev = 0;
 
@@ -1577,16 +1323,11 @@ uintptr_t rcl_pub_array = 0;
 
 int32_t rcl_pub_count = 0;
 
-
-
 uintptr_t rcl_tick_object = 0;
 
 uintptr_t rcl_tick_array = 0;
 
 int32_t rcl_tick_count = 0;
-
-
-
 
 void rcl_publish(uintptr_t object, uintptr_t array, int32_t count, int32_t cap,
                              const char *why) {
@@ -1656,9 +1397,7 @@ void rcl_tick_begin(void) {
 
 uint64_t rcl_idle_start = 0;
 
-
 int rcl_idle_logged = 0;
-
 
 void rcl_slot_hooks_install(void) {
     if (!rcl_base) return;
@@ -1666,32 +1405,11 @@ void rcl_slot_hooks_install(void) {
     rcl_hooks_install(rcl_base, rcl_slot_specs, RCL_SLOT_COUNT, (void **)rcl_slot_orig);
 }
 
-
 const int rcl_object_slots[RCL_OBJ_SLOTS] = { 2, 3, 4 };
 
 uint64_t rcl_slot_hits[RCL_SLOT_COUNT] = { 0 };
 
-
-
-
-
 int rcl_pub_logs = 0;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 void rcl_slot_pump(void) {
     int first = -1;
@@ -2016,7 +1734,6 @@ uint64_t rcl_slot_repl_32(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     uint64_t r = 0;
 
-
     if (rcl_slot_orig[32]) r = rcl_slot_orig[32](a0, a1, a2, a3, a4, a5, a6, a7);
 
     return r;
@@ -2025,7 +1742,6 @@ uint64_t rcl_slot_repl_32(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
 uint64_t rcl_slot_repl_33(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {
     uint64_t r = 0;
-
 
     if (rcl_slot_orig[33]) r = rcl_slot_orig[33](a0, a1, a2, a3, a4, a5, a6, a7);
 
@@ -2103,68 +1819,6 @@ uint64_t rcl_object_dispatches(void) {
 
     return total;
 }
-
-int rcl_manager_live_count(uintptr_t manager) {
-    void *array = NULL;
-    int32_t count = 0;
-    int32_t capacity = 0;
-    int live = 0;
-
-    if (!rcl_pointer_plausible(manager)) return 0;
-    if (!rcl_heap_contains(manager)) return 0;
-    if (!rcl_read_ptr(manager + RCL_MGR_ARRAY_OFF, &array)) return 0;
-    if (!rcl_read_int(manager + RCL_MGR_COUNT_OFF, &count)) return 0;
-    if (!rcl_read_int(manager + RCL_MGR_CAP_OFF, &capacity)) return 0;
-
-    if (count < RCL_MANAGER_MIN_OBJECTS || count > RCL_MANAGER_MAX_OBJECTS) return 0;
-    if (!array) return 0;
-    if (!rcl_heap_contains((uintptr_t)array)) return 0;
-    if ((uintptr_t)array & 0xf) return 0;
-
-    if (capacity < count || capacity > RCL_MGR_CAP_MAX) return 0;
-
-    uintptr_t types[RCL_MODE_TYPE_MAX] = {0};
-    int typeCount = 0;
-    int nonEmpty = 0;
-
-    for (int32_t i = 0; i < count; i++) {
-        void *element = NULL;
-        void *vtable = NULL;
-
-        if (!rcl_read_ptr((uintptr_t)array + (uintptr_t)i * sizeof(void *), &element)) break;
-        if (!element) continue;
-
-        nonEmpty++;
-
-        if (!rcl_heap_resident((uintptr_t)element)) continue;
-        if (!rcl_read_ptr((uintptr_t)element, &vtable)) continue;
-        if (!vtable) continue;
-        if (!rcl_vtable_shaped((uintptr_t)vtable)) continue;
-
-        if (!rcl_object_live((uintptr_t)element)) continue;
-
-        live++;
-
-        uintptr_t elementRva = (uintptr_t)vtable - rcl_base;
-        BOOL known = NO;
-
-        for (int k = 0; k < typeCount; k++) {
-            if (types[k] == elementRva) {
-                known = YES;
-                break;
-            }
-        }
-
-        if (!known && typeCount < RCL_MODE_TYPE_MAX) types[typeCount++] = elementRva;
-    }
-
-    if (typeCount < RCL_MODE_MIN_TYPES) return 0;
-
-    if (live < RCL_MANAGER_MIN_OBJECTS || live * 4 < nonEmpty * 3) return 0;
-
-    return live;
-}
-
 int rcl_vtable_is_data(uintptr_t vtable) {
     const char *segment = rcl_image_segment_name(vtable);
 
@@ -2219,7 +1873,6 @@ int rcl_state_tick(void) {
 
         rcl_scene_object = scene;
 
-
     }
 
     if (!rcl_read_ptr(scene + RCL_MODE_MANAGER_OFF, &value) || !value) {
@@ -2260,11 +1913,8 @@ int rcl_state_tick(void) {
 
     }
 
-
     if (scene != rcl_hop_scene) {
         rcl_hop_scene = scene;
-
-
 
     }
 
@@ -2314,7 +1964,6 @@ int rcl_state_tick(void) {
         count != rcl_pub_count) {
         rcl_publish((uintptr_t)players, (uintptr_t)array, count, capacity, "hop-adopt");
 
-
     }
 
     rcl_manager_count = count;
@@ -2337,7 +1986,6 @@ int rcl_scan_allowed(uint64_t fired, uint64_t total) {
     }
 
     if (rcl_idle_start == 0) rcl_idle_start = rcl_ticks_b;
-
 
     if (!rcl_idle_logged && (rcl_ticks_b - rcl_idle_start) >= RCL_IDLE_TICKS) {
         rcl_idle_logged = 1;
@@ -2426,7 +2074,6 @@ void rcl_start_timer(void) {
 
     rcl_scan_timer = timer;
 
-
 }
 
 uint64_t rcl_ticks_b = 0;
@@ -2463,10 +2110,7 @@ void rcl_run_workload(void) {
 
     rcl_tick_begin();
 
-
     rcl_locate_battle_mode();
-
-    rcl_tick_begin();
 
     if (rcl_scene_object) {
         if (!rcl_snapshot_first) {
@@ -2541,78 +2185,21 @@ void start(void) {
 
 int rcl_dead_probe_done = 0;
 
-float rcl_walk_step = RCL_STEP_b;
-
 int rcl_prev_state = -1;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 int rcl_hop_chosen = -1;
 
 int rcl_hop_sticky = 0;
 
-
 int rcl_modesig_hits = 0;
-
 
 int rcl_floor_logged = 0;
 
 int rcl_fallback_logged = 0;
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 uintptr_t rcl_scan_container = 0;
 
-
 int rcl_own_logged = 0;
-
-
-
-
-
-uint64_t rcl_wrote_tick = 0;
-
-int rcl_wrote_valid = 0;
-
-int rcl_check_done = 0;
-
-
-
-
-
-
-
-
-
-
-
 
 int rcl_modesig_hit(uintptr_t at) {
     void *vt = NULL;
@@ -2679,7 +2266,6 @@ void rcl_modesig_tick(void) {
         rcl_read_int((uintptr_t)mgr + RCL_MGR_COUNT_OFF, &count);
         rcl_read_int((uintptr_t)mgr + RCL_MGR_CAP_OFF, &cap);
 
-
         if (count >= 2 && cap >= count && cap <= RCL_MGR_CAP_MAX) {
             void *mgrArray = NULL;
 
@@ -2719,8 +2305,6 @@ int rcl_element_type(uintptr_t vt, uintptr_t *wordOut) {
     }
 }
 
-
-
 uintptr_t rcl_hop_scene = 0;
 
 int rcl_container_header(uintptr_t object, uintptr_t *arrayOut, int32_t *countOut,
@@ -2741,9 +2325,7 @@ int rcl_container_header(uintptr_t object, uintptr_t *arrayOut, int32_t *countOu
     return 1;
 }
 
-
 int rcl_coord_logs = 0;
-
 
 int32_t rcl_gid_at(uintptr_t element, uintptr_t off) {
     int32_t gid = 0;
@@ -2775,11 +2357,9 @@ int32_t rcl_gid(uintptr_t element, int32_t *offOut) {
     return 0;
 }
 
-
 int rcl_last_choice = -2;
 
 int rcl_hop_logs = 0;
-
 
 int rcl_container_score(uintptr_t container) {
     void *array = NULL;
@@ -2879,7 +2459,6 @@ int rcl_container_score(uintptr_t container) {
 
     score += posOk * RCL_POS_BONUS + posDistinct * RCL_DIST_BONUS;
 
-
     return score;
 }
 int rcl_scan_ready(int battle) {
@@ -2924,7 +2503,6 @@ void rcl_locate_battle_mode(void) {
 
     if (rcl_votescan_attempts >= RCL_VOTESCAN_ATTEMPTS) {
 
-
         return;
     }
 
@@ -2937,7 +2515,6 @@ void rcl_locate_battle_mode(void) {
 
     if (rcl_votescan_attempts == 1) {
         rcl_heap_regions_refresh();
-
 
     }
 
@@ -2960,18 +2537,9 @@ int rcl_coord_ok = 0;
 
 int rcl_coord_usable = 0;
 
-
 int rcl_team_off = (int)RCL_OBJ_TEAM_OFF;
 
-
-
-
-
-
-
 uint64_t rcl_last_write_ms = 0;
-
-
 
 rcl_obj_t rcl_dodge_probe_list[RCL_OBJECT_MAX];
 
@@ -2993,7 +2561,6 @@ int rcl_verify_setprediction(void) {
         }
     }
 
-
     return 1;
 }
 
@@ -3001,7 +2568,6 @@ void rcl_read_map(uintptr_t mode) {
     void *tileMap = NULL;
     int32_t width = 0;
     int32_t height = 0;
-
 
     if (!mode) return;
 
@@ -3013,7 +2579,6 @@ void rcl_read_map(uintptr_t mode) {
 }
 
 int rcl_gidless = 0;
-
 
 void rcl_gidless_scan(uintptr_t manager) {
     void *data = NULL;
@@ -3042,11 +2607,9 @@ void rcl_gidless_scan(uintptr_t manager) {
     if (seen > 0 && withGid == 0) {
         rcl_gidless = 1;
 
-
         return;
     }
 }
-
 
 uintptr_t rcl_list_gid_off(uintptr_t array, int32_t count) {
     uintptr_t off = RCL_OBJ_GLOBALID_OFF;
@@ -3072,34 +2635,20 @@ uintptr_t rcl_list_gid_off(uintptr_t array, int32_t count) {
         off = RCL_GID_FALLBACK_OFF;
     }
 
-
     return off;
 }
 
 int rcl_stage = 0;
 
-
-int32_t rcl_last_x = 0;
-
-int32_t rcl_last_y = 0;
-
-
 int rcl_dead = 0;
 
-
 int rcl_own_team_a = -1;
-
 
 int rcl_proj_other = 0;
 
 int rcl_own_team_seen = 0;
 
-
-
-
-
 int rcl_team_other_seen = 0;
-
 
 uintptr_t rcl_proj_addr = 0;
 
@@ -3110,7 +2659,6 @@ int rcl_proj_have = 0;
 int rcl_proj_dumps = 0;
 
 uint64_t rcl_proj_diff_logs = 0;
-
 
 void rcl_proj_track(uintptr_t elem, uintptr_t classRva, int32_t gid, int32_t team) {
     uint8_t now[RCL_DIFF_BYTES];
@@ -3126,7 +2674,6 @@ void rcl_proj_track(uintptr_t elem, uintptr_t classRva, int32_t gid, int32_t tea
 
         if (rcl_proj_dumps < RCL_DUMPS) {
             rcl_proj_dumps++;
-
 
             for (i = 0; i < RCL_DIFF_BYTES; i += 8) {
                 uint64_t q = 0;
@@ -3172,47 +2719,6 @@ void rcl_proj_track(uintptr_t elem, uintptr_t classRva, int32_t gid, int32_t tea
 
     memcpy(rcl_proj_bytes, now, sizeof(now));
 }
-
-int rcl_mode_real(uintptr_t mode, uintptr_t *vtOut, uintptr_t *chainOut,
-                             uintptr_t *innerOut) {
-    void *vtable = NULL;
-    void *chain = NULL;
-    void *inner = NULL;
-    uintptr_t rva = 0;
-
-    if (vtOut) *vtOut = 0;
-    if (chainOut) *chainOut = 0;
-    if (innerOut) *innerOut = 0;
-
-    if (!mode) return 0;
-    if (!rcl_read_ptr(mode, &vtable) || !vtable) return 0;
-
-    rva = (uintptr_t)vtable - rcl_base;
-
-    if (vtOut) *vtOut = rva;
-    if (rva < RCL_DC_RVA_LO || rva >= RCL_DC_RVA_LO + RCL_DC_RVA_SIZE) return 0;
-
-    if (!rcl_read_ptr(mode + RCL_MODE_MANAGER_OFF, &chain) || !chain) return 0;
-    if (chainOut) *chainOut = (uintptr_t)chain;
-
-    if (!rcl_players_object) return 0;
-    if ((uintptr_t)chain == rcl_players_object) return 1;
-
-    if (!rcl_read_ptr((uintptr_t)chain + RCL_CLIENT_HOP_OFF, &inner) || !inner) return 0;
-    if (innerOut) *innerOut = (uintptr_t)inner;
-
-    if ((uintptr_t)inner == rcl_players_object) return 1;
-
-    return 0;
-}
-
-
-
-
-
-
-
-int rcl_own_logs_b = 0;
 
 int rcl_vt_ok(uintptr_t obj, uintptr_t *vtOut) {
     void *vt = NULL;
@@ -3309,9 +2815,6 @@ uintptr_t rcl_client(void) {
     return (uintptr_t)client;
 }
 
-
-
-
 void rcl_state_note(int state) {
     if (rcl_prev_state == 5 && state != 5) {
         rcl_own_index = -1;
@@ -3331,11 +2834,6 @@ void rcl_state_note(int state) {
 }
 
 rcl_proj_t rcl_projs[RCL_PROJ_MAX];
-
-int rcl_side_hits = 0;
-
-int rcl_side_projs = 0;
-
 
 int rcl_proj_scan(uintptr_t manager, int32_t count) {
     void *array = NULL;
@@ -3490,7 +2988,6 @@ int rcl_proj_scan(uintptr_t manager, int32_t count) {
 
 static int rcl_ctrl_logs = 0;
 
-
 static int rcl_bounds_try(uintptr_t receiver, int32_t *wOut, int32_t *hOut) {
     uintptr_t bounds = 0;
     int32_t w = 0;
@@ -3536,7 +3033,6 @@ uintptr_t rcl_controller(void) {
         return client;
     }
 
-
     if (!rcl_ctrl_logs) {
         rcl_ctrl_logs = 1;
 
@@ -3544,18 +3040,6 @@ uintptr_t rcl_controller(void) {
 
     return client;
 }
-
-void rcl_watch(int32_t ownX, int32_t ownY) {
-    if (ownX == rcl_last_x && ownY == rcl_last_y) {
-
-        return;
-    }
-
-    rcl_last_x = ownX;
-    rcl_last_y = ownY;
-}
-
-
 int rcl_signal_logs = 0;
 
 void rcl_death_signals(uintptr_t ownElem, int32_t ownX, int32_t ownY) {
@@ -3597,91 +3081,7 @@ void rcl_alive(int32_t ownX, int32_t ownY) {
 
 }
 
-
-int32_t rcl_prev_x_3 = 0;
-
-int32_t rcl_prev_y_3 = 0;
-
-int rcl_prev_ok = 0;
-
-
-float rcl_step(void) {
-
-    return RCL_STEP_b;
-}
-
-void rcl_measure(void) {
-    int32_t x = 0;
-    int32_t y = 0;
-    float d = 0.0f;
-
-    if (!rcl_own(&x, &y)) return;
-
-    if (rcl_prev_ok && !rcl_hold) {
-        float ddx = (float)(x - rcl_prev_x_3);
-        float ddy = (float)(y - rcl_prev_y_3);
-
-        d = sqrtf(ddx * ddx + ddy * ddy);
-
-        if (d > 0.5f) {
-            float inv = 1.0f / d;
-
-            rcl_last_x_b = ddx * inv;
-            rcl_last_y_b = ddy * inv;
-            rcl_last_ok = 1;
-        }
-
-        if (d > 0.5f && d < RCL_WALK_MAX * 3.0f) {
-            rcl_walk_step = rcl_walk_step * (1.0f - RCL_WALK_EMA) + d * RCL_WALK_EMA;
-
-            if (rcl_walk_step < RCL_WALK_MIN) rcl_walk_step = RCL_WALK_MIN;
-            if (rcl_walk_step > RCL_WALK_MAX) rcl_walk_step = RCL_WALK_MAX;
-        }
-    }
-
-    rcl_prev_x_3 = x;
-    rcl_prev_y_3 = y;
-    rcl_prev_ok = 1;
-}
-
-
-
-
-int rcl_proj_mine(const rcl_proj_t *p) {
-    int i = 0;
-    int bestMine = 0;
-    float best = 1.0e18f;
-    float sx = 0.0f;
-    float sy = 0.0f;
-
-    if (!RCL_PROJ_OWNER) return 0;
-    if (!rcl_team_trust) return 0;
-    if (rcl_pl_n <= 0) return 0;
-    if (rcl_own_team_b >= 0 && p->team == rcl_own_team_b) return 1;
-    if (!p->spawnX && !p->spawnY) return 0;
-
-    sx = (float)p->spawnX;
-    sy = (float)p->spawnY;
-
-    for (i = 0; i < rcl_pl_n; i++) {
-        float dx = sx - (float)rcl_pl_x[i];
-        float dy = sy - (float)rcl_pl_y[i];
-        float d = dx * dx + dy * dy;
-
-        if (d < best) {
-            best = d;
-            bestMine = rcl_pl_mine[i];
-        }
-    }
-
-    if (best > RCL_SPAWN_R * RCL_SPAWN_R) return 0;
-
-
-    return bestMine;
-}
-
 void rcl_state(void) {
-
 
     {
         uint16_t charState = 0;
@@ -3744,10 +3144,8 @@ void rcl_state(void) {
             rcl_read_int(st + RCL_MOVE_ARM_OFF, &sta);
             if (rcl_read_ptr(st, (void **)&stv) && stv >= rcl_base) stv -= rcl_base;
 
-
         }
     }
-
 
 }
 
@@ -3790,17 +3188,6 @@ uintptr_t rcl_coord_x_off(void) {
 uintptr_t rcl_coord_y_off(void) {
     return RCL_OBJ_Y_OFF;
 }
-
-
-
-const uintptr_t rcl_mode_vtables[36] = {
-    0x10012c8, 0x1001318, 0x1001368, 0x10013b8,
-    0x1001408, 0x1001458, 0x10014a8, 0x10014f8, 0x1001548, 0x1001598, 0x10015e8, 0x10016e0,
-    0x10017d8, 0x10018c0, 0x1001908, 0x10019d0, 0x1001ac8, 0x1001bc0, 0x1001cb8, 0x1001d80,
-    0x1001e48, 0x1001f10, 0x10022f0, 0x10023b8, 0x1002480, 0x1002548, 0x1002610,
-    0x10026d8, 0x10027a0, 0x1002868, 0x1002930, 0x10029f8, 0x1002ac0, 0x1002b88, 0x1002d18,
-    0,
-};
 
 rcl_trail_t rcl_trail[RCL_TRAIL_MAX];
 
@@ -3864,8 +3251,6 @@ void rcl_probe(uintptr_t manager, uintptr_t mode, int verbose) {
 
     }
 
-
-
     if (!RCL_DEAD_ONCE || !rcl_dead_probe_done) {
         rcl_dead_probe_done = 1;
     }
@@ -3896,10 +3281,8 @@ void rcl_probe(uintptr_t manager, uintptr_t mode, int verbose) {
 
     }
 
-
     rcl_coord_ok = (usable >= 2 && inRange == usable && distinct >= 2 &&
                       (distinctOld >= 2 || distinctNew >= 2)) ? 1 : 0;
-
 
     {
         int back = 0;
@@ -3963,7 +3346,6 @@ void rcl_paircal(void) {
 
 uintptr_t rcl_scene_object = 0;
 
-
 int rcl_team_at(const rcl_obj_t *objects, int index) {
     if (!objects || index < 0) return -1;
 
@@ -4008,41 +3390,6 @@ int rcl_own_side_spawn(int32_t sx, int32_t sy) {
 
     return (rcl_pl_team[best] == rcl_own_team_b) ? 1 : 0;
 }
-
-int rcl_enemy_blocked(float x, float y, float ownX, float ownY) {
-    int i = 0;
-
-    if (!rcl_team_trust || rcl_enemy_n <= 0) return 0;
-
-    for (i = 0; i < rcl_enemy_n; i++) {
-        float ex = (float)rcl_enemy_x[i];
-        float ey = (float)rcl_enemy_y[i];
-        float dc = sqrtf((x - ex) * (x - ex) + (y - ey) * (y - ey));
-        float dOwn = sqrtf((ownX - ex) * (ownX - ex) + (ownY - ey) * (ownY - ey));
-
-        if (dc < RCL_ENEMY_HARD) return 1;
-        if (dOwn > RCL_ENEMY_FAR && dc < dOwn - RCL_ENEMY_MARGIN) return 1;
-    }
-
-    return 0;
-}
-
-int rcl_mate_blocked(float x, float y) {
-    int i = 0;
-    float r2 = RCL_MATE_CLEAR * RCL_MATE_CLEAR;
-
-    if (!rcl_team_trust) return 0;
-    if (rcl_mate_n <= 0) return 0;
-
-    for (i = 0; i < rcl_mate_n; i++) {
-        float dx = x - (float)rcl_mate_x[i];
-        float dy = y - (float)rcl_mate_y[i];
-
-        if (dx * dx + dy * dy <= r2) return 1;
-    }
-
-    return 0;
-}
 void rcl_respawn_event(int32_t x, int32_t y, int32_t px, int32_t py) {
     int i = 0;
 
@@ -4064,7 +3411,6 @@ void rcl_respawn_event(int32_t x, int32_t y, int32_t px, int32_t py) {
 uintptr_t rcl_own_ptr = 0;
 
 int rcl_own_index = -1;
-
 
 const char *rcl_own_from = "none";
 
@@ -4117,7 +3463,6 @@ void rcl_own_index_probe(void) {
     }
 
 }
-
 
 void rcl_publish_own(uintptr_t elem, const char *from) {
     uintptr_t vt = 0;
@@ -4175,7 +3520,6 @@ int rcl_own_from_slot(uintptr_t *objectOut, int32_t *gidOut) {
         if (gid < RCL_GID_FLOOR || gid >= RCL_PLAYER_GID_MAX) {
             continue;
         }
-
 
         if (objectOut) *objectOut = (uintptr_t)element;
         if (gidOut) *gidOut = gid;
@@ -4352,8 +3696,6 @@ void rcl_roster(uintptr_t ownElem, int ownIndex, int ownTeam,
         }
     }
 
-
-
 }
 
 int rcl_cand_frame[RCL_CAND];
@@ -4373,7 +3715,6 @@ int rcl_pre[RCL_CAND];
 int rcl_prev_valid = 0;
 
 int rcl_respawn_tick = 0;
-
 
 void rcl_clear_life(void) {
     rcl_stage = 0;
@@ -4461,7 +3802,6 @@ int rcl_life(uintptr_t ownElem, int32_t ownX, int32_t ownY) {
 
         rcl_state_code = RCL_STATE_ALIVE;
 
-
         return 0;
     }
 
@@ -4495,7 +3835,6 @@ int rcl_resolve_own(const rcl_obj_t *objects, int usable, int *indexOut,
     {
         uintptr_t minOwn = 0;
         int32_t minGid = 0;
-
 
         if (rcl_own_by_min_gid(rcl_tick_array, rcl_tick_count, &minOwn, &minGid) &&
             minOwn) {
@@ -4539,7 +3878,6 @@ int rcl_resolve_own(const rcl_obj_t *objects, int usable, int *indexOut,
             if (indexOut) *indexOut = i;
             if (fromOut) *fromOut = "v129-gid";
 
-
             return 1;
         }
     }
@@ -4581,9 +3919,6 @@ int rcl_resolve_own(const rcl_obj_t *objects, int usable, int *indexOut,
 }
 
 uintptr_t rcl_own_ptr_a = 0;
-
-
-
 
 uintptr_t rcl_own_ptr_b = 0;
 
@@ -4683,7 +4018,6 @@ void rcl_own_probe(void) {
 
         if (sig) valid = rcl_own_verdict((uintptr_t)elem);
 
-
         if (sig && valid && !taken) {
             taken = 1;
             rcl_own_ptr_a = (uintptr_t)elem;
@@ -4717,40 +4051,6 @@ int rcl_own_latch(const rcl_obj_t *objects, int usable, int *indexOut,
     return 0;
 }
 uintptr_t rcl_own_elem = 0;
-
-
-uintptr_t rcl_own_obj(void) {
-    uintptr_t vt = 0;
-    const char *why = "?";
-
-    if (rcl_own_elem) {
-        if (rcl_cand_ok(rcl_own_elem, &why, &vt)) {
-
-            return rcl_own_elem;
-        }
-
-    }
-
-    {
-        uintptr_t cand = rcl_hop((uintptr_t)rcl_scene_object, NULL);
-
-        if (cand && rcl_cand_ok(cand, NULL, &vt)) {
-
-            return cand;
-        }
-
-        cand = rcl_hop((uintptr_t)rcl_players_object, NULL);
-
-        if (cand && rcl_cand_ok(cand, NULL, &vt)) {
-
-            return cand;
-        }
-    }
-
-
-    return 0;
-}
-
 int32_t rcl_own_gid = 0;
 
 int rcl_own_by_min_gid(uintptr_t array, int32_t count, uintptr_t *elemOut,
@@ -4818,7 +4118,6 @@ int rcl_own_from_list(const rcl_obj_t *objects, int usable, int *indexOut,
         }
     }
 
-
     if (best < 0) return 0;
 
     if (indexOut) *indexOut = best;
@@ -4858,9 +4157,7 @@ int rcl_own_scan(void) {
 
     rcl_own_probe();
 
-
     if (!rcl_setpred) rcl_setpred = rcl_entry(RCL_MODEPAIRSET_RVA);
-
 
     for (int b = 0; b < RCL_SCAN_BASES; b++) {
         if (!bases[b]) continue;
@@ -4947,26 +4244,6 @@ int rcl_own(int32_t *xOut, int32_t *yOut) {
 
     return 1;
 }
-
-int rcl_object_live(uintptr_t object) {
-    int32_t gid = 0;
-    int32_t team = 0;
-    int32_t x = 0;
-    int32_t y = 0;
-
-    if (!rcl_gameobject_shape(object)) return 0;
-    if (!rcl_read_int(object + RCL_OBJ_GLOBALID_OFF, &gid)) return 0;
-    if (gid <= 0 || gid >= RCL_GID_MAX) return 0;
-    if (!rcl_read_int(object + RCL_OBJ_TEAM_OFF, &team)) return 0;
-    if (team < 0 || team > RCL_TEAM_MAX_2) return 0;
-    if (!rcl_read_int(object + rcl_coord_x_off(), &x)) return 0;
-    if (!rcl_read_int(object + rcl_coord_y_off(), &y)) return 0;
-    if (x <= -RCL_COORD_MAX || x >= RCL_COORD_MAX) return 0;
-    if (y <= -RCL_COORD_MAX || y >= RCL_COORD_MAX) return 0;
-
-    return 1;
-}
-
 void rcl_candidates(uintptr_t ownElem, int *out) {
     uint8_t deadByte = 0;
     int32_t ownAlive = -1;

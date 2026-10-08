@@ -11,7 +11,6 @@
 #define RCL_LOG_BATCH_SIZE 32
 #define RCL_LOG_FLUSH_MS 100
 #define RCL_LOG_MAX_PENDING 512
-#define RCL_LOG_EVERY_COOLDOWN_MS 100
 #define RCL_LOG_TEXT_MAX 128
 #define RCL_LOG_REPEAT_MAX 64
 
@@ -22,14 +21,9 @@ typedef struct {
 
 typedef void (*rcl_log_sink_t)(const rcl_log_entry_t *entries, int count);
 
-void rcl_log_set_sink(rcl_log_sink_t sink);
 void rcl_log_set_enabled(int value);
-int rcl_log_enabled(void);
 void rcl_log_debug(const char *format, ...);
 void rcl_log_info(const char *format, ...);
-void rcl_log_warn(const char *format, ...);
-void rcl_log_error(const char *format, ...);
-void rcl_log_every(int interval, const char *format, ...);
 void rcl_log_reset_counters(void);
 void rcl_log_flush(void);
 

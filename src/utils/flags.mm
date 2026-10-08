@@ -18,17 +18,6 @@ static int rcl_flag_index(const char *name) {
 
     return -1;
 }
-
-int rcl_flag_register(const char *name) {
-    if (!name || g_flag_count >= RCL_FEATURE_MAX) return -1;
-    if (rcl_flag_index(name) >= 0) return 0;
-
-    g_flag_names[g_flag_count] = name;
-    g_flag_count++;
-
-    return 0;
-}
-
 void rcl_flag_set(const char *name, int value) {
     int index = rcl_flag_index(name);
 
@@ -45,11 +34,6 @@ int rcl_flag_state(const char *name) {
 
     return (g_flags & (1u << index)) ? 1 : 0;
 }
-
-uint32_t rcl_flags(void) {
-    return g_flags;
-}
-
 int rcl_feature_setup(const char *label, void (*setup)(void)) {
     if (!setup) return 0;
 

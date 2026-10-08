@@ -10,8 +10,6 @@
 #define RCL_QGUARD_LOGS 3
 #define RCL_PRED_SET 1
 #define RCL_PRED_FLAG 1
-#define RCL_PREDICT 1
-#define RCL_PREDICT_FLAG 1
 #define RCL_MOVE_ON 1
 
 uintptr_t rcl_entry_2(uintptr_t rva);
@@ -21,7 +19,6 @@ int rcl_queue_count(uintptr_t *mgrOut);
 int rcl_pred_set(int x, int y);
 int rcl_move_to(int32_t x, int32_t y, float ox, float oy);
 extern uintptr_t rcl_pred_last;
-int rcl_predict(int32_t x, int32_t y);
 
 int rcl_ci_load_constants(void);
 uint32_t rcl_ci_sign(void *ci, void *battle);

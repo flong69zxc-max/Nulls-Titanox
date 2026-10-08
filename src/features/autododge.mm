@@ -1,8 +1,5 @@
 #include "../recoil.h"
 
-#define RCL_CALL_EVERY 600
-#define RCL_CALL_LOGS 4
-#define RCL_POS_DUMPS 8
 #define RCL_STATE_EVERY 240
 #define RCL_WALK_EVERY 5
 
@@ -13,12 +10,6 @@ int32_t rcl_pl_mine[RCL_PLAYER_MAX];
 int rcl_active = 0;
 
 int rcl_moving = 0;
-
-float rcl_last_x_b = 0.0f;
-
-float rcl_last_y_b = 0.0f;
-
-int rcl_last_ok = 0;
 
 int rcl_cand_now[RCL_CAND];
 
@@ -81,13 +72,20 @@ static void rcl_dodge_speed_probe(void) {
 #define RCL_AD_WALL_BODY 240.0f
 
 typedef struct {
-    float x;
-    float y;
     float vx;
     float vy;
     float rad;
-    float left;
+    float relx;
+    float rely;
+    float p0;
+    float hmax;
 } rcl_ad_threat_t;
+
+#define RCL_AD_TILE_MEMO 64
+
+static uint32_t rcl_ad_memo_gen = 1;
+static uint32_t rcl_ad_memo_at[RCL_AD_TILE_MEMO];
+static uint8_t rcl_ad_memo_val[RCL_AD_TILE_MEMO];
 
 static rcl_ad_threat_t rcl_ad_threats[RCL_PROJ_MAX];
 static float rcl_ad_ring[RCL_AD_DIR_COUNT][2];
@@ -194,12 +192,13 @@ static void rcl_ad_collect(float mx, float my, float bodyR) {
         if (left < 0.85f * gap) continue;
 
         t = &rcl_ad_threats[n];
-        t->x = (float)p->x;
-        t->y = (float)p->y;
         t->vx = vx;
         t->vy = vy;
         t->rad = rad;
-        t->left = left;
+        t->relx = dx;
+        t->rely = dy;
+        t->p0 = dx * vx + dy * vy;
+        t->hmax = left / spd < RCL_AD_HORIZON ? left / spd : RCL_AD_HORIZON;
 
         n++;
     }
@@ -207,61 +206,76 @@ static void rcl_ad_collect(float mx, float my, float bodyR) {
     rcl_ad_threat_n = n;
 }
 
-static float rcl_ad_clearance(float mx, float my, float mvx, float mvy) {
-    float minClear = 1.0e9f;
+static float rcl_ad_clearance(float mvx, float mvy) {
+    float bestClear = 1.0e9f;
     int i;
 
     for (i = 0; i < rcl_ad_threat_n; i++) {
         const rcl_ad_threat_t *t = &rcl_ad_threats[i];
-        float spd = sqrtf(t->vx * t->vx + t->vy * t->vy);
-        float maxT = RCL_AD_HORIZON;
-        float relx = t->x - mx;
-        float rely = t->y - my;
         float vrx = t->vx - mvx;
         float vry = t->vy - mvy;
         float vv = vrx * vrx + vry * vry;
         float cx;
         float cy;
-        float clear;
-
-        if (spd > 1.0f && t->left / spd < maxT) maxT = t->left / spd;
+        float sq;
+        float thr;
 
         if (vv < 1e-6f) {
-            cx = relx;
-            cy = rely;
+            cx = t->relx;
+            cy = t->rely;
         } else {
-            float ts = -(relx * vrx + rely * vry) / vv;
+            float ts = -(t->p0 - t->relx * mvx - t->rely * mvy) / vv;
 
             if (ts < 0.0f) ts = 0.0f;
-            if (ts > maxT) ts = maxT;
+            else if (ts > t->hmax) ts = t->hmax;
 
-            cx = relx + vrx * ts;
-            cy = rely + vry * ts;
+            cx = t->relx + vrx * ts;
+            cy = t->rely + vry * ts;
         }
 
-        clear = sqrtf(cx * cx + cy * cy) - t->rad;
+        sq = cx * cx + cy * cy;
+        thr = bestClear + t->rad;
 
-        if (clear < minClear) minClear = clear;
+        if (thr > 0.0f && sq >= thr * thr) continue;
+
+        thr = sqrtf(sq) - t->rad;
+
+        if (thr < bestClear) bestClear = thr;
     }
 
-    return minClear;
+    return bestClear;
+}
+
+static int rcl_ad_tile_blocked(int tx, int ty) {
+    uint32_t slot = (uint32_t)((tx * 73856093) ^ (ty * 19349663)) & (RCL_AD_TILE_MEMO - 1);
+    int proj = 0;
+    int move = 0;
+
+    if (rcl_ad_memo_at[slot] == rcl_ad_memo_gen) return rcl_ad_memo_val[slot];
+
+    rcl_ad_memo_at[slot] = rcl_ad_memo_gen;
+
+    if (!rcl_cell(tx, ty, &proj, &move)) {
+        rcl_ad_memo_val[slot] = 0;
+
+        return 0;
+    }
+
+    rcl_ad_memo_val[slot] = (move != 0) ? 1 : 0;
+
+    return rcl_ad_memo_val[slot];
 }
 
 static int rcl_ad_blocked(float x, float y) {
     int tx = 0;
     int ty = 0;
-    int proj = 0;
-    int move = 0;
 
     if (x < 0.0f || y < 0.0f) return 1;
     if (!rcl_tiles) return 0;
 
     rcl_tile_of(x, y, &tx, &ty);
 
-    if (!rcl_cell(tx, ty, &proj, &move)) return 0;
-    if (move != 0) return 1;
-
-    return 0;
+    return rcl_ad_tile_blocked(tx, ty);
 }
 
 static int rcl_ad_blocked_wide(float x, float y, float r) {
@@ -323,6 +337,8 @@ static int rcl_ad_update(float mx, float my) {
 
     rcl_ad_tick_ms = now;
 
+    if (++rcl_ad_memo_gen == 0) rcl_ad_memo_gen = 1;
+
     speed = rcl_dodge_speed;
 
     if (speed < 120.0f) speed = 120.0f;
@@ -344,7 +360,7 @@ static int rcl_ad_update(float mx, float my) {
         return 0;
     }
 
-    stayClear = rcl_ad_clearance(mx, my, 0.0f, 0.0f);
+    stayClear = rcl_ad_clearance(0.0f, 0.0f);
     inDanger = (stayClear < RCL_AD_ENGAGE) ? 1 : 0;
 
     if (inDanger) rcl_ad_danger_ms = now;
@@ -360,7 +376,7 @@ static int rcl_ad_update(float mx, float my) {
     bestScore = -1.0e18f;
 
     for (i = 0; i < RCL_AD_DIR_COUNT; i++) {
-        float s = rcl_ad_clearance(mx, my, speed * rcl_ad_ring[i][0], speed * rcl_ad_ring[i][1]);
+        float s = rcl_ad_clearance(speed * rcl_ad_ring[i][0], speed * rcl_ad_ring[i][1]);
 
         s -= rcl_ad_wall_ahead(mx, my, rcl_ad_ring[i][0], rcl_ad_ring[i][1], speed);
 
@@ -416,135 +432,31 @@ void rcl_autododge(void) {
 
     rcl_obj_t objects[RCL_OBJECT_MAX];
     uintptr_t source = 0;
-    const char *sourceKind = "none";
-    int sourceIsMode = 0;
-    int32_t predictX = 0;
-    int32_t predictY = 0;
     int usable = 0;
     int ownIndex = -1;
     int32_t ownTeam = 0;
     int ownX = 0;
     int ownY = 0;
 
-    rcl_dodge_calls++;
-
     if (!rcl_base) return;
 
-    if (rcl_dodge_calls <= RCL_CALL_LOGS ||
-        (rcl_dodge_calls % RCL_CALL_EVERY) == 0) {
-        uintptr_t probeOwn = 0;
-        int32_t probeGid = 0;
-        int32_t probeTeam = 0;
-        int32_t probeCount = 0;
-
-        rcl_own_by_min_gid(rcl_tick_array, rcl_tick_count, &probeOwn, &probeGid);
-
-        if (probeOwn) rcl_read_int(probeOwn + RCL_OBJ_TEAM_OFF, &probeTeam);
-        if (rcl_players_object) rcl_read_int(rcl_players_object + RCL_MGR_COUNT_OFF, &probeCount);
-
-        {
-            int listIdx = -1;
-            const char *listFrom = "none";
-            int32_t listGid = -1;
-
-            if (rcl_own_from_list(rcl_dodge_probe_list, rcl_dodge_probe_usable, &listIdx, &listFrom)) {
-                listGid = rcl_dodge_probe_list[listIdx].gid;
-            }
-
-        }
-
-    }
-
-    sourceIsMode = (rcl_scene_object != 0);
+    int sourceIsMode = (rcl_scene_object != 0);
 
     if (sourceIsMode) {
         source = rcl_scene_object;
-        sourceKind = "mode";
     } else if (rcl_players_object) {
         source = rcl_players_object;
-        sourceKind = "manager";
     } else if (rcl_objvote_best_owner && rcl_objvote_best_teamcount >= RCL_OWNER_VOTE_TEAMS_MIN &&
                rcl_objvote_max_votes >= RCL_OWNER_VOTE_MIN) {
         source = rcl_objvote_best_owner;
-        sourceKind = "objvote";
     } else if (rcl_trail_count > 0 && rcl_trail_best >= 0 && rcl_trail_best < rcl_trail_count) {
         source = (uintptr_t)rcl_trail[rcl_trail_best].manager;
-        sourceKind = "trail";
     }
-
-    if (!source) {
-        rcl_no_source_passes++;
-
-        if (rcl_no_source_passes >= 5 && !rcl_route_logged) {
-            rcl_route_logged = 1;
-
-        }
-    } else {
+else {
         rcl_no_source_passes = 0;
     }
 
-    if (!sourceIsMode && !rcl_players_object && source && strcmp(sourceKind, "trail") == 0 &&
-        rcl_trail_best >= 0 && rcl_trail_best < rcl_trail_count && rcl_trail[rcl_trail_best].live == 0) {
-    }
-
     rcl_ticks_a++;
-
-    if (rcl_wrote_valid && !rcl_check_done &&
-        (rcl_ticks_a - rcl_wrote_tick) >= RCL_VERIFY_FRAMES) {
-        int32_t nowX = 0;
-        int32_t nowY = 0;
-        int32_t ctrlX_2 = 0;
-        int32_t ctrlY_2 = 0;
-        int32_t mgrX_2 = 0;
-        int32_t mgrY_2 = 0;
-        uintptr_t ctrl_2 = 0;
-        uintptr_t mgr_2 = 0;
-
-        ctrl_2 = rcl_controller();
-
-        if (ctrl_2) {
-            rcl_read_int(ctrl_2 + RCL_MOVE_X_OFF, &ctrlX_2);
-            rcl_read_int(ctrl_2 + RCL_MOVE_Y_OFF, &ctrlY_2);
-        }
-
-        if (ctrl_2 && rcl_read_ptr(ctrl_2 + RCL_MGR_OFF, (void **)&mgr_2) && mgr_2) {
-            rcl_read_int(mgr_2 + RCL_MOVE_X_OFF, &mgrX_2);
-            rcl_read_int(mgr_2 + RCL_MOVE_Y_OFF, &mgrY_2);
-        } else {
-            mgr_2 = 0;
-        }
-
-        if (rcl_scene_object && rcl_read_int(rcl_scene_object + RCL_MODE_PREDICTX_OFF, &nowX) &&
-            rcl_read_int(rcl_scene_object + RCL_MODE_PREDICTY_OFF, &nowY)) {
-
-            {
-                void *array = NULL;
-                int32_t count = 0;
-                int shown = 0;
-
-                if (rcl_players_object &&
-                    rcl_read_ptr(rcl_players_object + RCL_MGR_ARRAY_OFF, &array) && array &&
-                    rcl_read_int(rcl_players_object + RCL_MGR_COUNT_OFF, &count)) {
-                    for (int32_t i = 0; i < count && shown < RCL_POS_DUMPS; i++) {
-                        void *element = NULL;
-                        int32_t px = 0;
-                        int32_t py = 0;
-
-                        if (!rcl_read_ptr((uintptr_t)array + (uintptr_t)i * 8ULL, &element)) break;
-                        if (!element) continue;
-
-                        rcl_read_int((uintptr_t)element + RCL_OBJ_X_OFF, &px);
-                        rcl_read_int((uintptr_t)element + RCL_OBJ_Y_OFF, &py);
-
-                        shown++;
-
-                    }
-                }
-            }
-        }
-
-        rcl_check_done = 1;
-    }
 
     if (!source) {
         return;
@@ -599,22 +511,12 @@ void rcl_autododge(void) {
                     rcl_probe((uintptr_t)resolved, rcl_scene_object, loud);
 
                 if (loud) rcl_discriminate((uintptr_t)resolved);
-            } else {
             }
         }
     }
 
     if (!rcl_setpred_state) {
         return;
-    }
-
-    {
-        int gateOpen = (rcl_coord_ok || rcl_coord_usable >= RCL_MIN_USABLE) ? 1 : 0;
-
-        if (gateOpen != rcl_gate_last) {
-            rcl_gate_last = gateOpen;
-
-        }
     }
 
     if (!rcl_coord_ok && rcl_coord_usable < RCL_MIN_USABLE) return;
@@ -632,9 +534,6 @@ void rcl_autododge(void) {
         return;
     }
 
-    if (!rcl_read_int(rcl_scene_object + RCL_MODE_PREDICTX_OFF, &predictX)) predictX = 0;
-    if (!rcl_read_int(rcl_scene_object + RCL_MODE_PREDICTY_OFF, &predictY)) predictY = 0;
-
     rcl_own_scan();
 
     {
@@ -647,18 +546,6 @@ void rcl_autododge(void) {
         }
 
         rcl_publish_own(objects[ownIndex].object, ownFrom);
-
-        if (rcl_own_logs_b < 8) {
-            uintptr_t ownVt = 0;
-            uintptr_t ownCls = 0;
-
-            rcl_own_logs_b++;
-
-            rcl_vt_ok((uintptr_t)rcl_own_elem, &ownVt);
-
-            if (ownVt >= rcl_base) ownCls = ownVt - rcl_base;
-
-        }
 
         if (!rcl_own_logged) {
             rcl_own_logged = 1;
@@ -676,19 +563,7 @@ void rcl_autododge(void) {
     rcl_death_signals((ownIndex >= 0 && ownIndex < usable) ? objects[ownIndex].object : 0, ownX,
                            ownY);
 
-    if (RCL_ELEM_RESET && ownIndex >= 0 && ownIndex < usable &&
-        objects[ownIndex].object != rcl_last_own) {
-
-        rcl_last_own = objects[ownIndex].object;
-        rcl_stage = 0;
-        rcl_last_write_ms = 0;
-        rcl_issued = 0;
-    }
-
     rcl_alive(ownX, ownY);
-
-    rcl_side_hits = 0;
-    rcl_side_projs = 0;
 
     {
         int32_t projCount = 0;
@@ -732,11 +607,6 @@ float rcl_own_radius(void) {
     return RCL_DATA_OWN_R;
 }
 
-uint64_t rcl_bucket_abs[RCL_ADV_BUCKETS];
-
-uint64_t rcl_learn_win[3][3][2];
-
-uint64_t rcl_learn_loss[3][3][2];
 int rcl_proj_vel(const rcl_proj_t *p, float *vxOut, float *vyOut) {
     uint64_t dt = 0;
 

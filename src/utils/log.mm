@@ -34,11 +34,6 @@ static dispatch_queue_t rcl_log_serial(void) {
 
     return queue;
 }
-
-static uint64_t rcl_log_now_ms(void) {
-    return rcl_us() / 1000ULL;
-}
-
 static void rcl_log_arm(void) {
     g_timer_armed = true;
 
@@ -137,81 +132,6 @@ void rcl_log_info(const char *format, ...) {
     rcl_log_emit(RCL_LOG_INFO, format, args);
     va_end(args);
 }
-
-void rcl_log_warn(const char *format, ...) {
-    va_list args;
-
-    va_start(args, format);
-    rcl_log_emit(RCL_LOG_WARN, format, args);
-    va_end(args);
-}
-
-void rcl_log_error(const char *format, ...) {
-    va_list args;
-
-    va_start(args, format);
-    rcl_log_emit(RCL_LOG_ERROR, format, args);
-    va_end(args);
-}
-
-static int rcl_log_repeat_slot(const char *text) {
-    int freeSlot = -1;
-
-    for (int i = 0; i < RCL_LOG_REPEAT_MAX; i++) {
-        if (g_repeat_keys[i][0] == 0) {
-            if (freeSlot < 0) freeSlot = i;
-
-            continue;
-        }
-
-        if (strcmp(g_repeat_keys[i], text) == 0) return i;
-    }
-
-    if (freeSlot < 0) return -1;
-
-    strncpy(g_repeat_keys[freeSlot], text, RCL_LOG_TEXT_MAX - 1);
-    g_repeat_keys[freeSlot][RCL_LOG_TEXT_MAX - 1] = 0;
-
-    return freeSlot;
-}
-
-void rcl_log_every(int interval, const char *format, ...) {
-    if (!g_enabled || !format) return;
-
-    char text[RCL_LOG_TEXT_MAX];
-
-    va_list args;
-
-    va_start(args, format);
-    vsnprintf(text, sizeof(text), format, args);
-    va_end(args);
-
-    const char *key = text;
-    int step = interval > 0 ? interval : 1;
-    uint64_t now = rcl_log_now_ms();
-
-    __block bool emit = false;
-
-    dispatch_sync(rcl_log_serial(), ^{
-        int slot = rcl_log_repeat_slot(key);
-
-        if (slot < 0) return;
-
-        uint32_t count = g_repeat_counts[slot] + 1;
-
-        g_repeat_counts[slot] = count;
-
-        if (count % (uint32_t)step != 0) return;
-        if ((now - g_repeat_at[slot]) < RCL_LOG_EVERY_COOLDOWN_MS) return;
-
-        g_repeat_at[slot] = now;
-
-        emit = true;
-    });
-
-    if (emit) rcl_log_push(RCL_LOG_DEBUG, text);
-}
-
 void rcl_log_reset_counters(void) {
     dispatch_sync(rcl_log_serial(), ^{
         memset(g_repeat_counts, 0, sizeof(g_repeat_counts));
@@ -219,17 +139,6 @@ void rcl_log_reset_counters(void) {
         memset(g_repeat_keys, 0, sizeof(g_repeat_keys));
     });
 }
-
-void rcl_log_set_sink(rcl_log_sink_t sink) {
-    dispatch_sync(rcl_log_serial(), ^{
-        g_sink = sink;
-    });
-}
-
-int rcl_log_enabled(void) {
-    return g_enabled ? 1 : 0;
-}
-
 void rcl_log_set_enabled(int value) {
     bool next = value ? true : false;
 

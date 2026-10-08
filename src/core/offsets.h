@@ -127,6 +127,7 @@ typedef struct {
 #define RCL_GID_FALLBACK_OFF 0x50ULL
 #define RCL_SETINPUT_RVA 0xac3a58ULL
 #define RCL_MOVE_RVA 0xac3a58ULL
+#define RCL_HOOK_DEDUP_US 500ULL
 #define RCL_MOVE_FLAG_10 1
 #define RCL_MOVE_X_OFF 0x10cULL
 #define RCL_MOVE_Y_OFF 0x110ULL
@@ -163,7 +164,6 @@ typedef struct {
 #define RCL_OBJ_TEAM_OFF 0x40ULL
 #define RCL_OBJ_OWNERINDEX_OFF 0x3cULL
 #define RCL_OBJ_DEADFLAG_OFF 0xd0ULL
-#define RCL_TILES_OFF 0x20ULL
 #define RCL_TYPE_MOVE_OFF 0x56ULL
 #define RCL_TYPE_PROJ_OFF 0x57ULL
 #define RCL_BOUNDS_X_OFF 0xccULL
@@ -183,7 +183,6 @@ typedef struct {
 #define RCL_ELEM_ID_OFF_2 0x48ULL
 #define RCL_ELEM_TEAM_OFF_2 0x4cULL
 #define RCL_ARRAY_OFF 0x0ULL
-#define RCL_COUNT_OFF_4 0xdcULL
 
 #define RCL_COUNT_OFF 0xcULL
 #define RCL_OWNIDX_OFF_2 0xe0ULL

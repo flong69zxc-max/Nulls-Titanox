@@ -468,8 +468,8 @@ void rcl_image_span_refresh(void) {
             const struct segment_command_64 *segment = (const struct segment_command_64 *)command;
 
             if (segment->vmsize) {
-                uintptr_t start = slide + (uintptr_t)segment->vmaddr;
-                uintptr_t end = start + (uintptr_t)segment->vmsize;
+;
+;
 
             }
         }
@@ -784,7 +784,7 @@ int rcl_collect(uintptr_t manager, rcl_obj_t *out, int capacity) {
                 float npF70 = 0.0f;
                 float npF74 = 0.0f;
                 void *np38 = NULL;
-                uintptr_t npRva = vtRva;
+;
 
                 rcl_dump_np++;
 
@@ -871,13 +871,13 @@ void rcl_discriminate(uintptr_t manager) {
     if (usable > 0) memcpy(rcl_dodge_probe_list, objects, (size_t)usable * sizeof(rcl_dodge_probe_list[0]));
 
     if (usable == 0) {
-        char reasons[320];
+;
 
         return;
     }
 
     if (usable == 1) {
-        char reasons[320];
+;
 
         return;
     }
@@ -1038,8 +1038,8 @@ int rcl_clamp(int32_t *x, int32_t *y) {
     uintptr_t bounds = rcl_bounds_obj(receiver);
     int32_t maxX = 0;
     int32_t maxY = 0;
-    int32_t ox = *x;
-    int32_t oy = *y;
+;
+;
 
     if (!bounds) {
 
@@ -1869,7 +1869,7 @@ int rcl_state_tick(void) {
     scene = (uintptr_t)value;
 
     if (scene != rcl_scene_object) {
-        uintptr_t scenePrev = rcl_scene_object;
+;
 
         rcl_scene_object = scene;
 
@@ -2147,9 +2147,18 @@ void rcl_run_autododge(int from_update) {
     rcl_in_drive = 0;
 }
 
+static uint64_t rcl_work_us = 0;
+
 static void rcl_objc_body(void) {
+    uint64_t now = 0;
+
     if (rcl_inside_hook) return;
 
+    now = rcl_us();
+
+    if (now && rcl_work_us && (now - rcl_work_us) < RCL_HOOK_DEDUP_US) return;
+
+    rcl_work_us = now;
     rcl_inside_hook = YES;
     rcl_run_workload();
     rcl_inside_hook = NO;
@@ -3208,14 +3217,14 @@ void rcl_probe(uintptr_t manager, uintptr_t mode, int verbose) {
     if (mode) rcl_read_map(mode);
 
     {
-        static int v142_walk_logs = 0;
+;
 
     }
 
     usable = rcl_collect(manager, objects, RCL_OBJECT_MAX);
 
     {
-        static int v142_leave_logs = 0;
+;
 
     }
 
@@ -3247,7 +3256,7 @@ void rcl_probe(uintptr_t manager, uintptr_t mode, int verbose) {
     rcl_team_off = (int)RCL_OBJ_TEAM_OFF;
 
     {
-        char reasons[320];
+;
 
     }
 
@@ -3418,7 +3427,7 @@ uint64_t rcl_tick_stamp = 0;
 
 void rcl_own_index_probe(void) {
     uintptr_t cand[2];
-    static const char *cname[2] = { "container", "scene" };
+;
     uintptr_t array = rcl_players_array;
     int32_t count = rcl_players_count;
     int taken = 0;
@@ -3433,8 +3442,8 @@ void rcl_own_index_probe(void) {
     for (b = 0; b < 2; b++) {
         int32_t idx = -1;
         int32_t team = -1;
-        int32_t eid = 0;
-        int32_t eteam = 0;
+;
+;
         void *elem = NULL;
         int hit = 0;
 
@@ -3476,7 +3485,7 @@ void rcl_publish_own(uintptr_t elem, const char *from) {
     rcl_own_elem = elem;
 
     if (rcl_pub_logs < RCL_PUB_LOGS) {
-        uintptr_t cls = (vt >= rcl_base) ? (vt - rcl_base) : 0;
+;
 
         rcl_pub_logs++;
 
@@ -3567,7 +3576,7 @@ int rcl_enemy_n = 0;
 void rcl_roster(uintptr_t ownElem, int ownIndex, int ownTeam,
                             const rcl_obj_t *objects, int usable) {
     int i = 0;
-    int matesBefore = rcl_mate_n;
+;
     int ownSide = 0;
     int hist[RCL_PLAYER_MAX];
     int hn = 0;
@@ -3962,7 +3971,7 @@ int rcl_own_verdict(uintptr_t element) {
 
 void rcl_own_probe(void) {
     uintptr_t cand[2];
-    static const char *cname[2] = { "container", "scene" };
+;
     int taken = 0;
     int b;
 
@@ -4128,7 +4137,7 @@ int rcl_own_from_list(const rcl_obj_t *objects, int usable, int *indexOut,
 
 int rcl_own_scan(void) {
     uintptr_t bases[RCL_SCAN_BASES];
-    const char *names[RCL_SCAN_BASES] = { "mode", "client", "inputMgr" };
+;
     uintptr_t array = rcl_players_array;
     int32_t count = rcl_players_count;
     uintptr_t client = 0;

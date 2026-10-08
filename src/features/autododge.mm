@@ -372,17 +372,26 @@ static int rcl_ad_update(float mx, float my) {
     }
 
     prevIdx = rcl_ad_heading;
-    bestIdx = 0;
-    bestScore = -1.0e18f;
 
     for (i = 0; i < RCL_AD_DIR_COUNT; i++) {
         float s = rcl_ad_clearance(speed * rcl_ad_ring[i][0], speed * rcl_ad_ring[i][1]);
 
-        s -= rcl_ad_wall_ahead(mx, my, rcl_ad_ring[i][0], rcl_ad_ring[i][1], speed);
-
         if (prevIdx >= 0) {
             s += RCL_AD_MOMENTUM * (rcl_ad_ring[i][0] * rcl_ad_ring[prevIdx][0] +
                                     rcl_ad_ring[i][1] * rcl_ad_ring[prevIdx][1]);
+        }
+
+        rcl_ad_scores[i] = s;
+    }
+
+    bestIdx = 0;
+    bestScore = -1.0e18f;
+
+    for (i = 0; i < RCL_AD_DIR_COUNT; i++) {
+        float s = rcl_ad_scores[i];
+
+        if (i == prevIdx || s > bestScore) {
+            s -= rcl_ad_wall_ahead(mx, my, rcl_ad_ring[i][0], rcl_ad_ring[i][1], speed);
         }
 
         rcl_ad_scores[i] = s;

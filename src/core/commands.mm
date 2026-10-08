@@ -242,20 +242,42 @@ static int rcl_move_pair_ok(uintptr_t obj, int32_t *outX, int32_t *outY) {
     return 1;
 }
 
+static int rcl_move_obj_ok(uintptr_t obj) {
+    if (!obj) return 0;
+    if (!rcl_instance_shaped(obj)) return 0;
+    if (!rcl_move_pair_ok(obj, NULL, NULL)) return 0;
+
+    return 1;
+}
+
 static uintptr_t rcl_move_carrier(void) {
     uintptr_t bs = rcl_client();
-    uintptr_t s = 0;
-    uintptr_t r = 0;
+    uintptr_t joy = 0;
+    uintptr_t cand = 0;
 
-    if (!bs) return 0;
+    if (bs) {
+        if (rcl_read_ptr(bs + (uintptr_t)RCL_JOY_TARGET_OFF, (void **)&joy) && joy) {
+            cand = rcl_hop(joy, NULL);
 
-    if (!rcl_read_ptr(bs + (uintptr_t)RCL_JOY_TARGET_OFF, (void **)&s) || !s) return 0;
+            if (rcl_move_obj_ok(cand)) return cand;
+        }
 
-    r = rcl_hop(s, NULL);
+        cand = rcl_hop(bs, NULL);
 
-    if (!r) return 0;
+        if (rcl_move_obj_ok(cand)) return cand;
 
-    return r;
+        if (rcl_move_obj_ok(bs)) return bs;
+    }
+
+    if (rcl_scene_object) {
+        if (rcl_move_obj_ok((uintptr_t)rcl_scene_object)) return (uintptr_t)rcl_scene_object;
+
+        cand = rcl_hop((uintptr_t)rcl_scene_object, NULL);
+
+        if (rcl_move_obj_ok(cand)) return cand;
+    }
+
+    return 0;
 }
 
 uintptr_t rcl_entry_2(uintptr_t rva) {

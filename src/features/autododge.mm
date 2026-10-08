@@ -5,13 +5,13 @@
 
 __thread int rcl_in_drive = 0;
 
-int32_t rcl_pl_mine[RCL_PLAYER_MAX];
+int32_t rcl_pl_mine[12];
 
 int rcl_active = 0;
 
 int rcl_moving = 0;
 
-int rcl_cand_now[RCL_CAND];
+int rcl_cand_now[3];
 
 int rcl_cand_seen = 0;
 
@@ -323,12 +323,12 @@ static void rcl_ad_collect(float mx, float my, float myRadius, uint64_t nowMs)
 
     rcl_ad_hazard_n = 0;
 
-    for (i = 0; i < rcl_proj_death_n && i < RCL_PROJ_DEATH_MAX; i++)
+    for (i = 0; i < rcl_proj_death_n && i < 16; i++)
     {
         rcl_note_burst_death(&rcl_proj_deaths[i]);
     }
 
-    for (i = 0; i < RCL_PROJ_MAX; i++)
+    for (i = 0; i < 16; i++)
     {
         const rcl_proj_t *p = &rcl_projs[i];
         const rcl_kind_t *spec = nullptr;
@@ -772,7 +772,7 @@ void rcl_autododge(void)
 
     rcl_paircal();
 
-    rcl_obj_t objects[RCL_OBJECT_MAX];
+    rcl_obj_t objects[64];
     uintptr_t source = 0;
     int usable = 0;
     int ownIndex = -1;
@@ -879,7 +879,7 @@ void rcl_autododge(void)
 
     memset(objects, 0, sizeof(objects));
 
-    usable = rcl_collect(rcl_manager_ptr, objects, RCL_OBJECT_MAX);
+    usable = rcl_collect(rcl_manager_ptr, objects, 64);
 
     if (usable < RCL_MIN_USABLE_2)
     {
@@ -926,11 +926,11 @@ void rcl_autododge(void)
 
         rcl_own_team_a = (int)ownTeam;
 
-        if (ownIndex >= 0 && ownTeam >= 0 && ownTeam <= RCL_TEAM_MAX_2) rcl_own_team_seen = 1;
+        if (ownIndex >= 0 && ownTeam >= 0 && ownTeam <= 15) rcl_own_team_seen = 1;
 
         rcl_roster(rcl_own_elem_2, ownIndex, (int)ownTeam, objects, usable);
 
-        if (ownIndex < 0 || ownIndex >= usable || ownIndex >= RCL_OBJECT_MAX)
+        if (ownIndex < 0 || ownIndex >= usable || ownIndex >= 64)
         {
 
             return;
@@ -949,7 +949,7 @@ float rcl_own_radius(void)
 {
     float r = 0.0f;
 
-    if (!RCL_GEOM) return 0.0f;
+    if (!1) return 0.0f;
 
     if (rcl_own_r > 1.0f)
     {
@@ -961,7 +961,7 @@ float rcl_own_radius(void)
         return r;
     }
 
-    return RCL_DATA_OWN_R;
+    return 120.0f;
 }
 
 int rcl_proj_vel(const rcl_proj_t *p, float *vxOut, float *vyOut)
@@ -971,7 +971,7 @@ int rcl_proj_vel(const rcl_proj_t *p, float *vxOut, float *vyOut)
     if (!p->elem || !p->hasPrev) return 0;
 
     dt = p->qtick - p->ptick;
-    if (dt == 0 || dt > RCL_DT_MAX) dt = 1;
+    if (dt == 0 || dt > 12) dt = 1;
 
     *vxOut = (float)(p->x - p->px) / (float)dt;
     *vyOut = (float)(p->y - p->py) / (float)dt;

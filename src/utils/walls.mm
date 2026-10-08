@@ -62,8 +62,8 @@ void rcl_tile_of(float x, float y, int *tx, int *ty)
         return;
     }
 
-    *tx = (int)(x / RCL_TILE_SIZE);
-    *ty = (int)(y / RCL_TILE_SIZE);
+    *tx = (int)(x / 300.0f);
+    *ty = (int)(y / 300.0f);
 }
 
 static uint8_t rcl_wall_grid[RCL_WALL_MAX_TOTAL_TILES];

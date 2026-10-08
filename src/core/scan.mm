@@ -18,7 +18,7 @@ uintptr_t rcl_objvote_best_owner = 0;
 
 int rcl_objvote_best_teamcount = 0;
 
-rcl_objhit_t rcl_objhits[RCL_OBJ_HIT_DUMP_MAX];
+rcl_objhit_t rcl_objhits[64];
 
 int rcl_objhit_count = 0;
 
@@ -50,9 +50,9 @@ uintptr_t rcl_addr_battlescreen = 0;
 
 volatile int rcl_at = 0;
 
-uintptr_t rcl_slot_object[RCL_SLOT_COUNT] = { 0 };
+uintptr_t rcl_slot_object[34] = { 0 };
 
-uintptr_t rcl_slot_arg[RCL_SLOT_COUNT] = { 0 };
+uintptr_t rcl_slot_arg[34] = { 0 };
 
 int rcl_no_source_passes = 0;
 
@@ -204,7 +204,7 @@ void rcl_note(uintptr_t, const void *src, size_t length, int)
     uint32_t value = 0;
 
     if (n < 0) n = 0;
-    if (n >= RCL_JOURNAL) n = 0;
+    if (n >= 24) n = 0;
 
     if (src && length)
     {
@@ -213,7 +213,7 @@ void rcl_note(uintptr_t, const void *src, size_t length, int)
         memcpy(&value, src, take);
     }
 
-    rcl_at = (n + 1) % RCL_JOURNAL;
+    rcl_at = (n + 1) % 24;
 }
 
 BOOL rcl_write_bytes(uintptr_t address, const void *src, size_t length)
@@ -221,7 +221,7 @@ BOOL rcl_write_bytes(uintptr_t address, const void *src, size_t length)
     if (!src || !length) return NO;
     if (!address) return NO;
 
-    if (RCL_WRITE_GUARD && !rcl_writable(address, length))
+    if (1 && !rcl_writable(address, length))
     {
         rcl_note(address, src, length, 1);
 
@@ -534,7 +534,7 @@ const char *rcl_image_segment_name(uintptr_t value)
     return nullptr;
 }
 
-rcl_region_t rcl_heap_regions[RCL_HEAP_REGION_MAX];
+rcl_region_t rcl_heap_regions[512];
 
 int rcl_heap_region_count = 0;
 
@@ -549,7 +549,7 @@ void rcl_heap_regions_refresh(void)
     uintptr_t highest = 0;
     int count = 0;
 
-    for (int guard = 0; guard < 8192 && count < RCL_HEAP_REGION_MAX; guard++)
+    for (int guard = 0; guard < 8192 && count < 512; guard++)
     {
         vm_prot_t protection = 0;
         mach_vm_size_t size = 0;
@@ -589,8 +589,8 @@ BOOL rcl_vtable_shaped(uintptr_t value)
     if (!segment) return NO;
     if (value % 8) return NO;
 
-    if (strcmp(segment, RCL_VTABLE_SEGMENT) == 0) return YES;
-    if (strcmp(segment, RCL_VTABLE_SEGMENT_ALT) == 0) return YES;
+    if (strcmp(segment, "__DATA_CONST") == 0) return YES;
+    if (strcmp(segment, "__DATA") == 0) return YES;
 
     return NO;
 }
@@ -626,9 +626,9 @@ BOOL rcl_manager_shape(uintptr_t manager)
     if (!rcl_read_ptr(manager + RCL_MGR_ARRAY_OFF, &array)) return NO;
     if (!rcl_read_int(manager + RCL_MGR_COUNT_OFF, &count)) return NO;
     if (!rcl_read_int(manager + RCL_MGR_CAP_OFF, &capacity)) return NO;
-    if (count < 0 || count > RCL_MANAGER_MAX_OBJECTS) return NO;
+    if (count < 0 || count > 96) return NO;
 
-    if (capacity < count || capacity > RCL_MGR_CAP_MAX) return NO;
+    if (capacity < count || capacity > 4096) return NO;
 
     if (array && !rcl_heap_resident((uintptr_t)array)) return NO;
 
@@ -664,7 +664,7 @@ BOOL rcl_vtable_in_image(uintptr_t vtable)
         return YES;
     }
 
-    if (rcl_segment_range(RCL_VTABLE_SEGMENT_ALT, &lo, &hi) && vtable >= lo && vtable < hi)
+    if (rcl_segment_range("__DATA", &lo, &hi) && vtable >= lo && vtable < hi)
     {
         return YES;
     }
@@ -810,7 +810,7 @@ int rcl_collect(uintptr_t manager, rcl_obj_t *out, int capacity)
             continue;
         }
 
-        if (entry.gid >= RCL_PLAYER_GID_MAX)
+        if (entry.gid >= 2000000)
         {
 
             rcl_proj_track(entry.object, vtRva, entry.gid, entry.teamOld);
@@ -850,8 +850,7 @@ int rcl_collect(uintptr_t manager, rcl_obj_t *out, int capacity)
             continue;
         }
 
-        if (entry.x <= -RCL_COORD_ABS_MAX || entry.x >= RCL_COORD_ABS_MAX ||
-            entry.y <= -RCL_COORD_ABS_MAX || entry.y >= RCL_COORD_ABS_MAX)
+        if (entry.x <= -1000000 || entry.x >= 1000000 || entry.y <= -1000000 || entry.y >= 1000000)
         {
             if (rcl_coord_logs < 6)
             {
@@ -871,8 +870,7 @@ int rcl_collect(uintptr_t manager, rcl_obj_t *out, int capacity)
             }
         }
 
-        if ((entry.teamOld < 0 || entry.teamOld > RCL_OBJ_TEAM_MAX) &&
-            (entry.teamNew < 0 || entry.teamNew > RCL_OBJ_TEAM_MAX))
+        if ((entry.teamOld < 0 || entry.teamOld > 7) && (entry.teamNew < 0 || entry.teamNew > 7))
         {
 
             continue;
@@ -904,7 +902,7 @@ float rcl_as_float(uint32_t bits)
 
 void rcl_discriminate(uintptr_t manager)
 {
-    rcl_obj_t objects[RCL_OBJECT_MAX];
+    rcl_obj_t objects[64];
     uint32_t words[RCL_ELEMS][RCL_WORDS_2];
     int usable = 0;
     int n = 0;
@@ -918,7 +916,7 @@ void rcl_discriminate(uintptr_t manager)
     memset(objects, 0, sizeof(objects));
     memset(words, 0, sizeof(words));
 
-    usable = rcl_collect(manager, objects, RCL_OBJECT_MAX);
+    usable = rcl_collect(manager, objects, 64);
 
     rcl_dodge_probe_usable = usable;
     if (usable > 0)
@@ -1527,12 +1525,12 @@ void rcl_slot_hooks_install(void)
 {
     if (!rcl_base) return;
 
-    rcl_hooks_install(rcl_base, rcl_slot_specs, RCL_SLOT_COUNT, (void **)rcl_slot_orig);
+    rcl_hooks_install(rcl_base, rcl_slot_specs, 34, (void **)rcl_slot_orig);
 }
 
-const int rcl_object_slots[RCL_OBJ_SLOTS] = { 2, 3, 4 };
+const int rcl_object_slots[3] = { 2, 3, 4 };
 
-uint64_t rcl_slot_hits[RCL_SLOT_COUNT] = { 0 };
+uint64_t rcl_slot_hits[34] = { 0 };
 
 int rcl_pub_logs = 0;
 
@@ -1540,7 +1538,7 @@ void rcl_slot_pump(void)
 {
     int first = -1;
 
-    for (int i = 0; i < RCL_SLOT_COUNT; i++)
+    for (int i = 0; i < 34; i++)
     {
         if (!rcl_slot_object[i]) continue;
 
@@ -1566,7 +1564,7 @@ void rcl_slot_pump(void)
     }
 }
 
-rcl_slot_fn_t rcl_slot_orig[RCL_SLOT_COUNT] = { nullptr };
+rcl_slot_fn_t rcl_slot_orig[34] = { nullptr };
 
 uint64_t rcl_slot_repl_0(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5,
                          uint64_t a6, uint64_t a7)
@@ -1908,14 +1906,14 @@ uint64_t rcl_slot_repl_33(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint6
     return r;
 }
 
-const rcl_hook_t rcl_slot_specs[RCL_SLOT_COUNT] = {
+const rcl_hook_t rcl_slot_specs[34] = {
     { RCL_SLOT_RVA_0, (void *)rcl_slot_repl_0, 0 },
     { RCL_SLOT_RVA_1, (void *)rcl_slot_repl_1, 0 },
     { RCL_SLOT_NONE, (void *)rcl_slot_repl_2, 0 },
     { RCL_SLOT_NONE, (void *)rcl_slot_repl_3, 0 },
     { RCL_SLOT_NONE, (void *)rcl_slot_repl_4, 0 },
     { RCL_SLOT_RVA_5, (void *)rcl_slot_repl_5, 1 },
-    { RCL_SLOT_RVA_6, (void *)rcl_slot_repl_6, 1 },
+    { 0, (void *)rcl_slot_repl_6, 1 },
     { RCL_SLOT_NONE, (void *)rcl_slot_repl_7, 0 },
     { RCL_SLOT_NONE, (void *)rcl_slot_repl_8, 0 },
     { RCL_SLOT_NONE, (void *)rcl_slot_repl_9, 0 },
@@ -1934,8 +1932,8 @@ const rcl_hook_t rcl_slot_specs[RCL_SLOT_COUNT] = {
     { RCL_SLOT_NONE, (void *)rcl_slot_repl_22, 0 },
     { RCL_SLOT_RVA_23, (void *)rcl_slot_repl_23, 0 },
     { RCL_SLOT_RVA_24, (void *)rcl_slot_repl_24, 0 },
-    { RCL_SLOT_RVA_25, (void *)rcl_slot_repl_25, 0 },
-    { RCL_SLOT_RVA_26, (void *)rcl_slot_repl_26, 0 },
+    { 0, (void *)rcl_slot_repl_25, 0 },
+    { 0, (void *)rcl_slot_repl_26, 0 },
     { RCL_SLOT_NONE, (void *)rcl_slot_repl_27, 0 },
     { RCL_SLOT_RVA_28, (void *)rcl_slot_repl_28, 0 },
     { RCL_SLOT_RVA_29, (void *)rcl_slot_repl_29, 0 },
@@ -1947,7 +1945,7 @@ const rcl_hook_t rcl_slot_specs[RCL_SLOT_COUNT] = {
 
 void rcl_slot_note(int index, void *self, uint64_t arg1)
 {
-    if (index < 0 || index >= RCL_SLOT_COUNT) return;
+    if (index < 0 || index >= 34) return;
 
     rcl_slot_hits[index]++;
 
@@ -1960,7 +1958,7 @@ uint64_t rcl_hook_dispatches(void)
 {
     uint64_t total = 0;
 
-    for (int i = 0; i < RCL_SLOT_COUNT; i++) total += rcl_slot_hits[i];
+    for (int i = 0; i < 34; i++) total += rcl_slot_hits[i];
 
     return total;
 }
@@ -1969,7 +1967,7 @@ uint64_t rcl_object_dispatches(void)
 {
     uint64_t total = 0;
 
-    for (int i = 0; i < RCL_OBJ_SLOTS; i++) total += rcl_slot_hits[rcl_object_slots[i]];
+    for (int i = 0; i < 3; i++) total += rcl_slot_hits[rcl_object_slots[i]];
 
     return total;
 }
@@ -1996,11 +1994,11 @@ int rcl_state_tick(void)
     void *array = nullptr;
     int32_t count = 0;
     int32_t capacity = 0;
-    uintptr_t hopArray[RCL_HOPS] = { 0 };
-    int32_t hopCount[RCL_HOPS] = { 0 };
-    int32_t hopCap[RCL_HOPS] = { 0 };
-    int hopOk[RCL_HOPS] = { 0 };
-    int score[RCL_HOPS];
+    uintptr_t hopArray[2] = { 0 };
+    int32_t hopCount[2] = { 0 };
+    int32_t hopCap[2] = { 0 };
+    int hopOk[2] = { 0 };
+    int score[2];
     int chosen = -1;
 
     if (slot) rcl_read_int(slot + RCL_STATE_ENUM_OFF, &state);
@@ -2015,7 +2013,7 @@ int rcl_state_tick(void)
 
     if (!slot) return 0;
 
-    if (state != RCL_STATE_BATTLE)
+    if (state != 5)
     {
 
         return 0;
@@ -2334,7 +2332,7 @@ static void rcl_objc_body(void)
 
     now = rcl_us();
 
-    if (now && rcl_work_us && (now - rcl_work_us) < RCL_HOOK_DEDUP_US) return;
+    if (now && rcl_work_us && (now - rcl_work_us) < 500) return;
 
     rcl_work_us = now;
     rcl_inside_hook = YES;
@@ -2409,7 +2407,7 @@ int rcl_modesig_hit(uintptr_t at)
     if (!rcl_read_ptr(at + RCL_MODE_MANAGER_OFF, &mgr) || !mgr) return 0;
     if (!rcl_pointer_plausible((uintptr_t)mgr)) return 0;
     if (!rcl_read_int((uintptr_t)mgr + RCL_MGR_COUNT_OFF, &count)) return 0;
-    if (count < 2 || count > RCL_MANAGER_MAX_OBJECTS) return 0;
+    if (count < 2 || count > 96) return 0;
 
     return 1;
 }
@@ -2459,7 +2457,7 @@ void rcl_modesig_tick(void)
         rcl_read_int((uintptr_t)mgr + RCL_MGR_COUNT_OFF, &count);
         rcl_read_int((uintptr_t)mgr + RCL_MGR_CAP_OFF, &cap);
 
-        if (count >= 2 && cap >= count && cap <= RCL_MGR_CAP_MAX)
+        if (count >= 2 && cap >= count && cap <= 4096)
         {
             void *mgrArray = nullptr;
 
@@ -2760,7 +2758,7 @@ int rcl_team_off = (int)RCL_OBJ_TEAM_OFF;
 
 uint64_t rcl_last_write_ms = 0;
 
-rcl_obj_t rcl_dodge_probe_list[RCL_OBJECT_MAX];
+rcl_obj_t rcl_dodge_probe_list[64];
 
 void rcl_read_map(uintptr_t mode)
 {
@@ -2858,7 +2856,7 @@ int rcl_team_other_seen = 0;
 
 uintptr_t rcl_proj_addr = 0;
 
-uint8_t rcl_proj_bytes[RCL_DIFF_BYTES];
+uint8_t rcl_proj_bytes[0x100];
 
 int rcl_proj_have = 0;
 
@@ -2868,7 +2866,7 @@ uint64_t rcl_proj_diff_logs = 0;
 
 void rcl_proj_track(uintptr_t elem, uintptr_t, int32_t, int32_t)
 {
-    uint8_t now[RCL_DIFF_BYTES];
+    uint8_t now[0x100];
     int i;
 
     if (!elem) return;
@@ -2884,7 +2882,7 @@ void rcl_proj_track(uintptr_t elem, uintptr_t, int32_t, int32_t)
         {
             rcl_proj_dumps++;
 
-            for (i = 0; i < RCL_DIFF_BYTES; i += 8)
+            for (i = 0; i < 0x100; i += 8)
             {
                 uint64_t q = 0;
                 int32_t lo = 0;
@@ -2911,7 +2909,7 @@ void rcl_proj_track(uintptr_t elem, uintptr_t, int32_t, int32_t)
         return;
     }
 
-    for (i = 0; i < RCL_DIFF_BYTES; i++)
+    for (i = 0; i < 0x100; i++)
     {
         if (rcl_proj_bytes[i] == now[i]) continue;
 
@@ -3058,13 +3056,13 @@ void rcl_state_note(int state)
     rcl_prev_state = state;
 }
 
-rcl_proj_t rcl_projs[RCL_PROJ_MAX];
+rcl_proj_t rcl_projs[16];
 
-rcl_proj_death_t rcl_proj_deaths[RCL_PROJ_DEATH_MAX];
+rcl_proj_death_t rcl_proj_deaths[16];
 
 int rcl_proj_death_n = 0;
 
-static char rcl_proj_name_buf[RCL_PROJ_MAX][RCL_PROJ_NAME_MAX];
+static char rcl_proj_name_buf[16][64];
 
 static int rcl_proj_read_name(uintptr_t data, char *dst, int cap)
 {
@@ -3083,7 +3081,7 @@ static int rcl_proj_read_name(uintptr_t data, char *dst, int cap)
     if (!rcl_read_int(str + (uintptr_t)RCL_SC_LEN_OFF, &len)) return 0;
     if (len <= 0 || len >= cap) return 0;
 
-    if (len <= RCL_SC_INLINE_MAX)
+    if (len <= 7)
     {
         src = str + (uintptr_t)RCL_SC_DATA_OFF;
     }
@@ -3112,7 +3110,7 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
     if (count > RCL_COUNT_MAX) count = RCL_COUNT_MAX;
     if (!rcl_read_ptr(manager + RCL_MGR_ARRAY_OFF, &array) || !array) return 0;
 
-    for (k = 0; k < RCL_PROJ_MAX; k++)
+    for (k = 0; k < 16; k++)
     {
         rcl_projs[k].classRva = (uintptr_t)-1;
     }
@@ -3120,7 +3118,7 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
     rcl_proj_other = 0;
     rcl_proj_death_n = 0;
 
-    for (i = 0; i < count && found < RCL_PROJ_MAX; i++)
+    for (i = 0; i < count && found < 16; i++)
     {
         void *element = nullptr;
         void *vtable = nullptr;
@@ -3137,7 +3135,7 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
 
         gid = rcl_gid((uintptr_t)element, nullptr);
 
-        if (gid < RCL_PLAYER_GID_MAX) continue;
+        if (gid < 2000000) continue;
 
         {
             static uintptr_t seenCls[4] = { 0, 0, 0, 0 };
@@ -3161,7 +3159,7 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
             }
         }
 
-        if (RCL_PROJ_CLASS_ONLY && vtRva != (uintptr_t)RCL_CLASS_PROJ_RVA)
+        if (1 && vtRva != (uintptr_t)RCL_CLASS_PROJ_RVA)
         {
 
             continue;
@@ -3170,7 +3168,7 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
         if (!rcl_read_int((uintptr_t)element + RCL_OBJ_X_OFF, &px)) continue;
         if (!rcl_read_int((uintptr_t)element + RCL_OBJ_Y_OFF, &py)) continue;
 
-        for (k = 0; k < RCL_PROJ_MAX; k++)
+        for (k = 0; k < 16; k++)
         {
             if (rcl_projs[k].elem != (uintptr_t)element) continue;
 
@@ -3181,7 +3179,7 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
 
         if (slot < 0)
         {
-            for (k = 0; k < RCL_PROJ_MAX; k++)
+            for (k = 0; k < 16; k++)
             {
                 if (rcl_projs[k].classRva != (uintptr_t)-1) continue;
 
@@ -3221,8 +3219,7 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
             int32_t pteam = -1;
             int attributed = 0;
 
-            if (rcl_read_int((uintptr_t)element + teamOff, &pteam) && pteam >= 0 &&
-                pteam <= RCL_OBJ_TEAM_MAX)
+            if (rcl_read_int((uintptr_t)element + teamOff, &pteam) && pteam >= 0 && pteam <= 7)
             {
                 rcl_projs[slot].team = pteam;
             }
@@ -3267,7 +3264,7 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
 
             if (rcl_read_ptr((uintptr_t)element + (uintptr_t)RCL_ELEM_DEF_OFF, &def) && def)
             {
-                if (rcl_proj_read_name((uintptr_t)def, rcl_proj_name_buf[slot], RCL_PROJ_NAME_MAX))
+                if (rcl_proj_read_name((uintptr_t)def, rcl_proj_name_buf[slot], 64))
                 {
                     rcl_projs[slot].name = rcl_proj_name_buf[slot];
                 }
@@ -3299,11 +3296,11 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
         found++;
     }
 
-    for (k = 0; k < RCL_PROJ_MAX; k++)
+    for (k = 0; k < 16; k++)
     {
         if (rcl_projs[k].classRva != (uintptr_t)-1) continue;
 
-        if (rcl_projs[k].elem && rcl_projs[k].name && rcl_proj_death_n < RCL_PROJ_DEATH_MAX)
+        if (rcl_projs[k].elem && rcl_projs[k].name && rcl_proj_death_n < 16)
         {
             rcl_proj_death_t *rec = &rcl_proj_deaths[rcl_proj_death_n];
 
@@ -3455,8 +3452,8 @@ const char *rcl_header_reason(uintptr_t manager, int32_t *countOut, int32_t *cap
     if (count <= 0) return "count-zero";
     if (!rcl_read_int(manager + RCL_MGR_CAP_OFF, &capacity)) return "cap-unreadable";
     if (count > capacity) return "count-above-cap";
-    if (capacity > RCL_MGR_CAP_MAX) return "cap-above-ceiling";
-    if (count > RCL_MANAGER_MAX_OBJECTS) return "count-above-ceiling";
+    if (capacity > 4096) return "cap-above-ceiling";
+    if (count > 96) return "count-above-ceiling";
 
     if (countOut) *countOut = count;
     if (capOut) *capOut = capacity;
@@ -3474,11 +3471,11 @@ uintptr_t rcl_coord_y_off(void)
     return RCL_OBJ_Y_OFF;
 }
 
-rcl_trail_t rcl_trail[RCL_TRAIL_MAX];
+rcl_trail_t rcl_trail[8];
 
 void rcl_probe(uintptr_t manager, uintptr_t mode, int verbose)
 {
-    rcl_obj_t objects[RCL_OBJECT_MAX];
+    rcl_obj_t objects[64];
     int usable = 0;
     int inRange = 0;
     int distinct = 0;
@@ -3497,7 +3494,7 @@ void rcl_probe(uintptr_t manager, uintptr_t mode, int verbose)
         ;
     }
 
-    usable = rcl_collect(manager, objects, RCL_OBJECT_MAX);
+    usable = rcl_collect(manager, objects, 64);
 
     {
         ;
@@ -3505,8 +3502,8 @@ void rcl_probe(uintptr_t manager, uintptr_t mode, int verbose)
 
     for (int i = 0; i < usable; i++)
     {
-        if (objects[i].x > -RCL_COORD_ABS_MAX && objects[i].x < RCL_COORD_ABS_MAX &&
-            objects[i].y > -RCL_COORD_ABS_MAX && objects[i].y < RCL_COORD_ABS_MAX)
+        if (objects[i].x > -1000000 && objects[i].x < 1000000 && objects[i].y > -1000000 &&
+            objects[i].y < 1000000)
         {
             inRange++;
         }
@@ -3700,7 +3697,7 @@ void rcl_respawn_event(int32_t, int32_t, int32_t, int32_t)
     rcl_pending = 1;
     rcl_pending_tick = (int)rcl_ticks_a;
 
-    for (i = 0; i < RCL_CAND; i++)
+    for (i = 0; i < 3; i++)
     {
         rcl_pre[i] = rcl_cand_frame[i];
         rcl_cand_changes[i] = 0;
@@ -3790,7 +3787,7 @@ void rcl_publish_own(uintptr_t elem, const char *)
 int rcl_own_from_slot(uintptr_t *objectOut, int32_t *gidOut)
 {
     uintptr_t scene = rcl_scene_object;
-    uintptr_t hop[RCL_HOPS] = { 0 };
+    uintptr_t hop[2] = { 0 };
     void *outer = nullptr;
     int k;
 
@@ -3809,7 +3806,7 @@ int rcl_own_from_slot(uintptr_t *objectOut, int32_t *gidOut)
         }
     }
 
-    for (k = 0; k < RCL_HOPS; k++)
+    for (k = 0; k < 2; k++)
     {
         void *array = nullptr;
         void *element = nullptr;
@@ -3826,7 +3823,7 @@ int rcl_own_from_slot(uintptr_t *objectOut, int32_t *gidOut)
 
         gid = rcl_gid((uintptr_t)element, nullptr);
 
-        if (gid < RCL_GID_FLOOR || gid >= RCL_PLAYER_GID_MAX)
+        if (gid < RCL_GID_FLOOR || gid >= 2000000)
         {
             continue;
         }
@@ -3852,25 +3849,25 @@ int rcl_state_code = RCL_STATE_INIT;
 
 int rcl_pl_n = 0;
 
-int32_t rcl_pl_x[RCL_PLAYER_MAX];
+int32_t rcl_pl_x[12];
 
-int32_t rcl_pl_y[RCL_PLAYER_MAX];
+int32_t rcl_pl_y[12];
 
-int32_t rcl_pl_team[RCL_PLAYER_MAX];
+int32_t rcl_pl_team[12];
 
 int rcl_mate_n = 0;
 
-int32_t rcl_mate_x[RCL_MATE_MAX];
+int32_t rcl_mate_x[8];
 
-int32_t rcl_mate_y[RCL_MATE_MAX];
+int32_t rcl_mate_y[8];
 
 int rcl_own_team_b = -1;
 
 int rcl_team_trust = 1;
 
-int32_t rcl_enemy_x[RCL_PLAYER_MAX];
+int32_t rcl_enemy_x[12];
 
-int32_t rcl_enemy_y[RCL_PLAYER_MAX];
+int32_t rcl_enemy_y[12];
 
 int rcl_enemy_n = 0;
 
@@ -3879,7 +3876,7 @@ void rcl_roster(uintptr_t ownElem, int ownIndex, int ownTeam, const rcl_obj_t *o
     int i = 0;
     ;
     int ownSide = 0;
-    int hist[RCL_PLAYER_MAX];
+    int hist[12];
     int hn = 0;
 
     rcl_pl_n = 0;
@@ -3888,14 +3885,14 @@ void rcl_roster(uintptr_t ownElem, int ownIndex, int ownTeam, const rcl_obj_t *o
     rcl_own_team_b = ownTeam;
     rcl_team_trust = 1;
 
-    for (i = 0; i < usable && rcl_pl_n < RCL_PLAYER_MAX; i++)
+    for (i = 0; i < usable && rcl_pl_n < 12; i++)
     {
         int32_t team = 0;
         int isOwn = 0;
         int h = 0;
 
-        if (objects[i].gid < RCL_PLAYER_GID) continue;
-        if (objects[i].gid >= RCL_SHOT_GID) continue;
+        if (objects[i].gid < 1000000) continue;
+        if (objects[i].gid >= 2000000) continue;
 
         team = rcl_team_at(objects, i);
         isOwn =
@@ -3920,7 +3917,7 @@ void rcl_roster(uintptr_t ownElem, int ownIndex, int ownTeam, const rcl_obj_t *o
             if (hist[h] == team) break;
         }
 
-        if (h == hn && hn < RCL_PLAYER_MAX)
+        if (h == hn && hn < 12)
         {
             hist[hn++] = team;
         }
@@ -3929,7 +3926,7 @@ void rcl_roster(uintptr_t ownElem, int ownIndex, int ownTeam, const rcl_obj_t *o
 
         ownSide++;
 
-        if (rcl_mate_n >= RCL_MATE_MAX) continue;
+        if (rcl_mate_n >= 8) continue;
 
         rcl_mate_x[rcl_mate_n] = objects[i].x;
         rcl_mate_y[rcl_mate_n] = objects[i].y;
@@ -3991,14 +3988,14 @@ void rcl_roster(uintptr_t ownElem, int ownIndex, int ownTeam, const rcl_obj_t *o
 
                 if (sqrtf(dx * dx + dy * dy) <= RCL_CLUSTER)
                 {
-                    if (m < RCL_MATE_MAX)
+                    if (m < 8)
                     {
                         rcl_mate_x[m] = rcl_pl_x[k];
                         rcl_mate_y[m] = rcl_pl_y[k];
                         m++;
                     }
                 }
-                else if (e < RCL_PLAYER_MAX)
+                else if (e < 12)
                 {
                     rcl_enemy_x[e] = rcl_pl_x[k];
                     rcl_enemy_y[e] = rcl_pl_y[k];
@@ -4013,7 +4010,7 @@ void rcl_roster(uintptr_t ownElem, int ownIndex, int ownTeam, const rcl_obj_t *o
 
     if (rcl_team_trust)
     {
-        for (i = 0; i < rcl_pl_n && rcl_enemy_n < RCL_PLAYER_MAX; i++)
+        for (i = 0; i < rcl_pl_n && rcl_enemy_n < 12; i++)
         {
             if (rcl_pl_mine[i]) continue;
             if (rcl_pl_team[i] == ownTeam) continue;
@@ -4025,9 +4022,9 @@ void rcl_roster(uintptr_t ownElem, int ownIndex, int ownTeam, const rcl_obj_t *o
     }
 }
 
-int rcl_cand_frame[RCL_CAND];
+int rcl_cand_frame[3];
 
-int rcl_cand_changes[RCL_CAND];
+int rcl_cand_changes[3];
 
 int rcl_dead_slot = -1;
 
@@ -4037,7 +4034,7 @@ int rcl_pending = 0;
 
 int rcl_pending_tick = 0;
 
-int rcl_pre[RCL_CAND];
+int rcl_pre[3];
 
 int rcl_prev_valid = 0;
 
@@ -4064,7 +4061,7 @@ int rcl_life(uintptr_t ownElem, int32_t ownX, int32_t ownY)
 
     if (rcl_cand_seen)
     {
-        for (i = 0; i < RCL_CAND; i++)
+        for (i = 0; i < 3; i++)
         {
             if (rcl_cand_now[i] != rcl_cand_frame[i])
             {
@@ -4075,7 +4072,7 @@ int rcl_life(uintptr_t ownElem, int32_t ownX, int32_t ownY)
         }
     }
 
-    for (i = 0; i < RCL_CAND; i++) rcl_cand_frame[i] = rcl_cand_now[i];
+    for (i = 0; i < 3; i++) rcl_cand_frame[i] = rcl_cand_now[i];
     rcl_cand_seen = 1;
 
     if (rcl_pending && ((int)rcl_ticks_a - rcl_pending_tick) >= RCL_HOLD_FRAMES)
@@ -4085,7 +4082,7 @@ int rcl_life(uintptr_t ownElem, int32_t ownX, int32_t ownY)
 
         rcl_pending = 0;
 
-        for (i = 0; i < RCL_CAND; i++)
+        for (i = 0; i < 3; i++)
         {
             if (rcl_pre[i] < 0 || rcl_cand_now[i] < 0) continue;
             if (rcl_cand_now[i] == rcl_pre[i]) continue;
@@ -4304,8 +4301,7 @@ int rcl_own_verdict(uintptr_t element)
         return 0;
     }
 
-    if (x <= -RCL_COORD_ABS_MAX || x >= RCL_COORD_ABS_MAX || y <= -RCL_COORD_ABS_MAX ||
-        y >= RCL_COORD_ABS_MAX)
+    if (x <= -1000000 || x >= 1000000 || y <= -1000000 || y >= 1000000)
     {
         return 0;
     }
@@ -4363,7 +4359,7 @@ void rcl_own_probe(void)
                         sig = 1;
                         sigField = (const char *)"idAt48";
                     }
-                    else if (team >= 0 && team <= RCL_OBJ_TEAM_MAX && eteam == team)
+                    else if (team >= 0 && team <= 7 && eteam == team)
                     {
                         sig = 2;
                         sigField = (const char *)"teamAt4c";
@@ -4407,8 +4403,8 @@ int rcl_own_latch(const rcl_obj_t *objects, int usable, int *indexOut, const cha
     for (i = 0; i < usable; i++)
     {
         if (objects[i].object != rcl_own_elem_2) continue;
-        if (objects[i].gid < RCL_GID_FLOOR || objects[i].gid >= RCL_PLAYER_GID_MAX) return 0;
-        if (objects[i].teamOld < 0 || objects[i].teamOld > RCL_TEAM_MAX_2) return 0;
+        if (objects[i].gid < RCL_GID_FLOOR || objects[i].gid >= 2000000) return 0;
+        if (objects[i].teamOld < 0 || objects[i].teamOld > 15) return 0;
 
         if (indexOut) *indexOut = i;
         if (fromOut) *fromOut = "latched";
@@ -4441,9 +4437,9 @@ int rcl_own_by_min_gid(uintptr_t array, int32_t count, uintptr_t *elemOut, int32
 
         gid = rcl_gid((uintptr_t)element, nullptr);
 
-        if (gid < RCL_GID_FLOOR || gid >= RCL_PLAYER_GID_MAX) continue;
+        if (gid < RCL_GID_FLOOR || gid >= 2000000) continue;
         if (!rcl_read_int((uintptr_t)element + RCL_OBJ_TEAM_OFF, &team)) continue;
-        if (team < 0 || team > RCL_TEAM_MAX_2) continue;
+        if (team < 0 || team > 15) continue;
 
         if (!best || gid < bestGid)
         {
@@ -4479,8 +4475,8 @@ int rcl_own_from_list(const rcl_obj_t *objects, int usable, int *indexOut, const
     {
         int32_t gid = objects[i].gid;
 
-        if (gid < RCL_GID_FLOOR || gid >= RCL_PLAYER_GID_MAX) continue;
-        if (objects[i].teamOld < 0 || objects[i].teamOld > RCL_TEAM_MAX_2) continue;
+        if (gid < RCL_GID_FLOOR || gid >= 2000000) continue;
+        if (objects[i].teamOld < 0 || objects[i].teamOld > 15) continue;
 
         accepted++;
 

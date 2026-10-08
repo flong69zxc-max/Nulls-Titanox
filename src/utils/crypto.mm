@@ -173,8 +173,8 @@ uint32_t rcl_ci_compute_token(const uint8_t key16[16], const uint8_t cmd16[16],
                               const uint32_t *table, const uint8_t innerMask[16],
                               const uint8_t outerMask[16])
 {
-    uint8_t msg[RCL_CI_TOKEN_MSG_LEN];
-    uint8_t innerBuf[64 + RCL_CI_TOKEN_MSG_LEN];
+    uint8_t msg[0x14];
+    uint8_t innerBuf[64 + 0x14];
     uint8_t outerBuf[64 + 32];
     uint8_t block[64];
     uint8_t inner[32];
@@ -186,8 +186,7 @@ uint32_t rcl_ci_compute_token(const uint8_t key16[16], const uint8_t cmd16[16],
 
     typeRaw = (uint32_t)cmd16[4] | ((uint32_t)cmd16[5] << 8) | ((uint32_t)cmd16[6] << 16) |
               ((uint32_t)cmd16[7] << 24);
-    typeC =
-        (typeRaw <= RCL_CI_MAX_TABLE_TYPE) ? table[typeRaw] : (uint32_t)RCL_CI_FALLBACK_TYPE_CONST;
+    typeC = (typeRaw <= 0x16) ? table[typeRaw] : (uint32_t)0xdeadbeef;
 
     for (i = 0; i < 12; i++) msg[i] = cmd16[4 + i];
     for (i = 0; i < 4; i++) msg[12 + i] = cmd16[i];
@@ -196,19 +195,19 @@ uint32_t rcl_ci_compute_token(const uint8_t key16[16], const uint8_t cmd16[16],
     msg[18] = (uint8_t)(typeC >> 16);
     msg[19] = (uint8_t)(typeC >> 24);
 
-    rcl_ci_make_block(key16, innerMask, (uint8_t)RCL_CI_HASH_PAD_INNER, block);
+    rcl_ci_make_block(key16, innerMask, (uint8_t)0x36, block);
     memcpy(innerBuf, block, 64);
-    memcpy(innerBuf + 64, msg, RCL_CI_TOKEN_MSG_LEN);
+    memcpy(innerBuf + 64, msg, 0x14);
     rcl_sha(innerBuf, sizeof(innerBuf), inner);
 
-    rcl_ci_make_block(key16, outerMask, (uint8_t)RCL_CI_HASH_PAD_OUTER, block);
+    rcl_ci_make_block(key16, outerMask, (uint8_t)0x5c, block);
     memcpy(outerBuf, block, 64);
     memcpy(outerBuf + 64, inner, 32);
     rcl_sha(outerBuf, sizeof(outerBuf), digest);
 
-    token = (uint32_t)digest[0] | (((uint32_t)digest[1] & (uint32_t)RCL_CI_TOKEN_MASK) << 8);
+    token = (uint32_t)digest[0] | (((uint32_t)digest[1] & (uint32_t)0x7f) << 8);
 
-    if (token <= (uint32_t)RCL_CI_TOKEN_MIN) token = (uint32_t)RCL_CI_TOKEN_MIN;
+    if (token <= (uint32_t)1) token = (uint32_t)1;
 
     return token;
 }

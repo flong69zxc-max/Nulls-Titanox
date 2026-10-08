@@ -130,12 +130,9 @@ typedef struct
 
 #define RCL_SC_LEN_OFF 0x4ULL
 #define RCL_SC_DATA_OFF 0x8ULL
-#define RCL_SC_INLINE_MAX 7
 #define RCL_PROJ_ANGLE_OFF 0x1d4ULL
 #define RCL_PROJ_ISTHROWER_OFF 0xb8ULL
 #define RCL_PROJ_DATA_NAME_OFF 0x58ULL
-#define RCL_PROJ_NAME_MAX 64
-#define RCL_PROJ_DEATH_MAX 16
 
 #define RVA_BATTLEMODE_GETINSTANCE 0ULL
 #define RVA_BATTLESCREEN__UPDATEMOVEMENT 0x7a60f4ULL
@@ -162,21 +159,16 @@ typedef struct
 #define RCL_GID_FALLBACK_OFF 0x50ULL
 #define RCL_SETINPUT_RVA 0xac3a58ULL
 #define RCL_MOVE_RVA 0xac3a58ULL
-#define RCL_HOOK_DEDUP_US 500ULL
 #define RCL_CTRL_MOVE_X_OFF 0xfccULL
 #define RCL_CTRL_MOVE_Y_OFF 0xfd0ULL
 #define RCL_CTRL_MOVE_ON_OFF 0xf9cULL
 #define RCL_CTRL_MOVE_ZERO_OFF 0xfa0ULL
 #define RCL_CTRL_ANIM_RATE_OFF 0xf74ULL
 #define RCL_CTRL_ANIM_FLAGS_OFF 0xf7fULL
-#define RCL_CTRL_ANIM_RATE_BITS 0x3d4ccccdUL
-#define RCL_CTRL_ANIM_FLAGS_VAL 0x0101U
-#define RCL_MOVE_FLAG_10 1
 #define RCL_MOVE_X_OFF 0x10cULL
 #define RCL_MOVE_Y_OFF 0x110ULL
 #define RCL_MOVE_KEY_OFF 0x114ULL
 #define RCL_MOVE_ARM_OFF 0xacULL
-#define RCL_MOVE_COORD_LIMIT 200000
 #define RCL_ALLOC_RVA 0x00d8da2cULL
 #define RCL_MSGCTOR_RVA 0x00a95798ULL
 #define RCL_CI_MGR_QUEUE_OFF 0x20ULL
@@ -247,206 +239,22 @@ typedef struct
 #define RCL_TILE_TYPE_MOVE_OFF RCL_TYPE_MOVE_OFF
 #define RCL_TILE_TYPE_PROJ_OFF RCL_TYPE_PROJ_OFF
 
-#define RCL_STATE_BATTLE 5
-
 #define RCL_CI_TYPE_TABLE_RVA 0x00e1e058ULL
 #define RCL_CI_TABLE_TYPES 0x17ULL
-#define RCL_CI_MAX_TABLE_TYPE 0x16UL
-#define RCL_CI_FALLBACK_TYPE_CONST 0xdeadbeefUL
-#define RCL_CI_HASH_MASK_SIZE 0x10UL
-#define RCL_CI_HASH_PAD_INNER 0x36
-#define RCL_CI_HASH_PAD_OUTER 0x5c
 #define RCL_CI_HASH_INNER_MASK_RVA 0x00e1bbd0ULL
 #define RCL_CI_HASH_OUTER_MASK_RVA 0x00e1bbf0ULL
 #define RCL_BM_HASH_ENABLED_OFF 0x70ULL
 #define RCL_BM_HASH_KEY_OFF 0x60ULL
 #define RCL_CI_TOKEN_OFF 0x34UL
 #define RCL_CI_TOKEN_READ_OFF 0x4UL
-#define RCL_CI_TOKEN_READ_LEN 0x10UL
-#define RCL_CI_TOKEN_MSG_LEN 0x14UL
-#define RCL_CI_TOKEN_MASK 0x7fUL
-#define RCL_CI_TOKEN_MIN 1UL
 
 #define RCL_IMAGE_TEXT_WINDOW 0x4000ULL
 #define RCL_CLASS_PROJ_RVA 0x000ff57b0ULL
-#define RCL_PROJ_CLASS_ONLY 1
 
-#define RCL_WRITE_GUARD 1
-#define RCL_MGR_CAP_MAX 4096
-#define RCL_MANAGER_MAX_OBJECTS 96
 #define RCL_DC_RVA_SIZE 0xd4000ULL
-#define RCL_OBJ_HIT_DUMP_MAX 64
-#define RCL_QUEUE_GUARD 0
 
-#define RCL_DT_MAX 12
-
-#define RCL_OBJ_TEAM_MAX 7
-#define RCL_JOURNAL 24
-#define RCL_TILE_SIZE 300.0f
-#define RCL_BS_MODE 0x8ac
-#define RCL_PLAYER_GID 1000000
-#define RCL_SHOT_GID 2000000
-#define RCL_MATE_MAX 8
-#define RCL_PLAYER_MAX 12
-#define RCL_CAND 3
-#define RCL_PROJ_MAX 16
-#define RCL_DIFF_BYTES 0x100
-#define RCL_COORD_ABS_MAX 1000000
-#define RCL_OBJECT_MAX 64
 #define RCL_IMAGE_SPAN 0x1164000ULL
-#define RCL_OBJ_SLOTS 3
-#define RCL_HOPS 2
-#define RCL_TEAM_MAX_2 15
-#define RCL_PLAYER_GID_MAX 2000000
-#define RCL_VTABLE_SEGMENT "__DATA_CONST"
-#define RCL_VTABLE_SEGMENT_ALT "__DATA"
-#define RCL_SLOT_COUNT 34
-#define RCL_HEAP_REGION_MAX 512
 #define RCL_HEAP_REGION_MAX_SIZE 0x100000000ULL
-#define RCL_TRAIL_MAX 8
-#define RCL_GEOM 1
-#define RCL_RADIUS_MIN 0.0f
-#define RCL_RADIUS_MAX 600.0f
-#define RCL_CAL_OFF_LO 0x20
-#define RCL_CAL_OFF_HI 0x120
-#define RCL_CAL_STEP 4
-#define RCL_CAL_TOL 0.06f
-#define RCL_CAL_TICKS 6
-#ifndef RCL_DODGE_PROJ_ONLY
-
-#ifndef RCL_PROJ_ANGLE_OFF
-
-#ifndef RCL_JS_ENEMY_W
-#endif
-
-#endif
-
-#ifndef RCL_JS_SPEED_FALLBACK
-#endif
-
-#ifndef RCL_JS_RADIUS_FALLBACK
-#endif
-
-#endif
-#ifndef RCL_HIT_MARGIN
-#endif
-#ifndef RCL_DODGE_CLEAR_R
-#endif
-#ifndef RCL_RAGE_FORCE
-#endif
-#ifndef RCL_LOOKAHEAD_MAX
-#endif
-#ifndef RCL_ENGAGE_NEAR
-#endif
-#ifndef RCL_JS_DODGE
-#endif
-#ifndef RCL_DIR_COUNT
-#endif
-#ifndef RCL_HORIZON_S
-#endif
-#ifndef RCL_DATA_MOMENTUM
-#endif
-#ifndef RCL_WALL_PENALTY
-#endif
-#ifndef RCL_DATA_SPEED
-#endif
-#ifndef RCL_DATA_OWN_R
-#define RCL_DATA_OWN_R 120.0f
-#endif
-#ifndef RCL_DATA_PROJ_R
-#define RCL_DATA_PROJ_R 150.0f
-#endif
-#ifndef RCL_DATA_HOLD
-#endif
-#ifndef RCL_DATA_BAND
-#endif
-#ifndef RCL_DATA_CRIT_EVERY
-#endif
-#ifndef RCL_JS_CLEAR_STEPS
-#endif
-#ifndef RCL_PROJ_LIFE_MS
-#endif
-#ifndef RCL_OVERSHOOT
-#endif
-#ifndef RCL_FREEST_RADII
-#endif
-#ifndef RCL_FREEST_LOGS
-#endif
-#ifndef RCL_BODY_GAIN
-#endif
-#ifndef RCL_ETA_PENALTY
-#endif
-#ifndef RCL_JS_NOPREDICT
-#endif
-#ifndef RCL_GEOM
-#define RCL_GEOM 1
-#endif
-#ifndef RCL_GEOM_LOGS
-#endif
-#ifndef RCL_RADIUS_MIN
-#define RCL_RADIUS_MIN 0.0f
-#endif
-#ifndef RCL_RADIUS_MAX
-#define RCL_RADIUS_MAX 600.0f
-#endif
-#ifndef RCL_RADIUS_MARGIN
-#endif
-#ifndef RCL_CAL_OFF_LO
-#define RCL_CAL_OFF_LO 0x20
-#endif
-#ifndef RCL_CAL_OFF_HI
-#define RCL_CAL_OFF_HI 0x120
-#endif
-#ifndef RCL_CAL_STEP
-#define RCL_CAL_STEP 4
-#endif
-#ifndef RCL_CAL_TOL
-#define RCL_CAL_TOL 0.06f
-#endif
-#ifndef RCL_CONTACT_LOGS
-#endif
-#ifndef RCL_SNAP
-#endif
-#ifndef RCL_SNAP_DELTA
-#endif
-#ifndef RCL_SNAP_HARD_OFF
-#endif
-#ifndef RCL_SNAP_MAG
-#endif
-#ifndef RCL_SNAP_LOGS
-#endif
-#ifndef RCL_SIDE_FLIP
-#endif
-#ifndef RCL_SIDE_STALE
-#endif
-#ifndef RCL_CAL_TICKS
-#define RCL_CAL_TICKS 6
-#endif
-#ifndef RCL_CAL_MISS
-#endif
-#ifndef RCL_WALL_LOGS
-#endif
-#ifndef RCL_TEAM_LOGS
-#endif
-#define RCL_DATA_OWN_R 120.0f
-#define RCL_GEOM 1
-#define RCL_RADIUS_MAX 600.0f
-#ifndef RCL_DODGE_PROJ_ONLY
-#endif
-#ifndef RCL_PROJ_ACTIVE_BYPASS
-#endif
-#ifndef RCL_JS_STICK
-#endif
-#ifndef RCL_JS_HOLD
-#endif
-#ifndef RCL_STICK_RAW_WRITE
-#define RCL_PRED_SPAN 0x118
-#endif
-#ifndef RCL_LOG_PLANS
-#endif
-
-#define RCL_OFFSET_TABLE_REV 5
-#define RCL_CANDIDATES_UNVERIFIED 1
 
 #define RVA_CLIENTINPUTMANAGER_ADDINPUT 0x74675cULL
 #define RVA_CLIENTINPUT_CONSTRUCTOR_INT 0xa95798ULL

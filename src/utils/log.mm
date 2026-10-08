@@ -165,7 +165,7 @@ static void rcl_log_push(int level, const char *text)
         }
     });
 
-    if (flush_now || g_log_file) rcl_log_flush();
+    if (flush_now) rcl_log_flush();
 }
 
 static void rcl_log_emit(int level, const char *format, va_list args)

@@ -9,6 +9,9 @@
 #define RCL_AIM_T_MAX 1.20f
 #define RCL_AIM_COORD_MAX 200000.0f
 #define RCL_AIM_CONF_MIN 0.20f
+#define RCL_AIM_LATENCY_2 0.033f
+#define RCL_AIM_T_MAX_2 2.50f
+#define RCL_AIM_LEAD_MAX_2 6000.0f
 
 static uintptr_t rcl_aim_hist_id = 0;
 static uintptr_t rcl_aim_lock_1 = 0;
@@ -18,48 +21,46 @@ static float rcl_aim_hist_x[RCL_AIM_HIST];
 static float rcl_aim_hist_y[RCL_AIM_HIST];
 static uint64_t rcl_aim_hist_ms[RCL_AIM_HIST];
 
-static float rcl_aim_shot_speed_1(void)
+static float rcl_aim_own_speed_2 = 0.0f;
+
+static float rcl_aim_shot_speed_2(void)
 {
     float sum = 0.0f;
+    float avg;
     int n = 0;
     int i;
-    int pass;
-    for (pass = 0; pass < 2; pass++)
+    for (i = 0; i < 16; i++)
     {
-        sum = 0.0f;
-        n = 0;
-        for (i = 0; i < 16; i++)
+        const rcl_proj_t *p = &rcl_projs[i];
+        float spd;
+        if (!p->elem)
         {
-            const rcl_proj_t *p = &rcl_projs[i];
-            float spd;
-            if (!p->elem)
-            {
-                continue;
-            }
-            if (pass == 0 && (!rcl_own_team_seen || p->team < 0 || p->team != rcl_own_team_a))
-            {
-                continue;
-            }
-            spd = sqrtf(p->vx * p->vx + p->vy * p->vy);
-            if (spd < RCL_AIM_SHOT_SPEED_MIN || spd > RCL_AIM_SHOT_SPEED_MAX)
-            {
-                continue;
-            }
-            sum += spd;
-            n++;
+            continue;
         }
-        if (n > 0)
+        if (!rcl_own_team_seen || p->team < 0 || p->team != rcl_own_team_a)
         {
-            break;
+            continue;
         }
+        spd = sqrtf(p->vx * p->vx + p->vy * p->vy);
+        if (spd < RCL_AIM_SHOT_SPEED_MIN || spd > RCL_AIM_SHOT_SPEED_MAX)
+        {
+            continue;
+        }
+        sum += spd;
+        n++;
     }
     if (n > 0)
     {
-        float avg = sum / (float)n;
+        avg = sum / (float)n;
         if (avg >= RCL_AIM_SHOT_SPEED_MIN && avg <= RCL_AIM_SHOT_SPEED_MAX)
         {
+            rcl_aim_own_speed_2 = avg;
             return avg;
         }
+    }
+    if (rcl_aim_own_speed_2 >= RCL_AIM_SHOT_SPEED_MIN && rcl_aim_own_speed_2 <= RCL_AIM_SHOT_SPEED_MAX)
+    {
+        return rcl_aim_own_speed_2;
     }
     return RCL_AIM_SHOT_SPEED_FALLBACK;
 }
@@ -150,48 +151,39 @@ static int rcl_aim_target_vel(float *vxOut, float *vyOut, float *confOut)
     return 1;
 }
 
-static float rcl_aim_intercept(float px, float py, float tvx, float tvy, float shot)
+static float rcl_aim_intercept_iter_2(float px, float py, float tvx, float tvy, float shot)
 {
-    float a = tvx * tvx + tvy * tvy - shot * shot;
-    float b = 2.0f * (px * tvx + py * tvy);
-    float c = px * px + py * py;
-    float disc;
-    float t1;
-    float t2;
+    float dist = sqrtf(px * px + py * py);
+    float t;
+    int k;
     if (shot <= 1.0f)
     {
-        return -1.0f;
+        return 0.0f;
     }
-    if (fabsf(a) < 0.0001f)
+    t = dist / shot;
+    for (k = 0; k < 4; k++)
     {
-        return -1.0f;
+        float ax = px + tvx * t;
+        float ay = py + tvy * t;
+        t = sqrtf(ax * ax + ay * ay) / shot;
     }
-    disc = b * b - 4.0f * a * c;
-    if (disc < 0.0f)
+    if (!(t == t) || t < 0.0f)
     {
-        return -1.0f;
+        return dist / shot;
     }
-    disc = sqrtf(disc);
-    t1 = (-b - disc) / (2.0f * a);
-    t2 = (-b + disc) / (2.0f * a);
-    if (t1 > 0.0f && (t2 <= 0.0f || t1 < t2))
+    if (t > RCL_AIM_T_MAX_2)
     {
-        return t1;
+        t = RCL_AIM_T_MAX_2;
     }
-    if (t2 > 0.0f)
-    {
-        return t2;
-    }
-    return -1.0f;
+    return t;
 }
 
-static int rcl_aim_lead(float px, float py, float *ox, float *oy)
+static int rcl_aim_lead_2(float px, float py, float *ox, float *oy)
 {
     float tvx = 0.0f;
     float tvy = 0.0f;
     float conf = 0.0f;
     float shot;
-    float dist;
     float t;
     float lead;
     *ox = 0.0f;
@@ -200,29 +192,19 @@ static int rcl_aim_lead(float px, float py, float *ox, float *oy)
     {
         return 0;
     }
-    shot = rcl_aim_shot_speed_1();
-    dist = sqrtf(px * px + py * py);
-    t = rcl_aim_intercept(px, py, tvx, tvy, shot);
-    if (t < 0.0f)
+    shot = rcl_aim_shot_speed_2();
+    t = rcl_aim_intercept_iter_2(px, py, tvx, tvy, shot) + RCL_AIM_LATENCY_2;
+    if (t > RCL_AIM_T_MAX_2)
     {
-        t = dist / shot;
-    }
-    t *= conf;
-    if (t < 0.0f)
-    {
-        t = 0.0f;
-    }
-    if (t > RCL_AIM_T_MAX)
-    {
-        t = RCL_AIM_T_MAX;
+        t = RCL_AIM_T_MAX_2;
     }
     *ox = tvx * t;
     *oy = tvy * t;
     lead = sqrtf((*ox) * (*ox) + (*oy) * (*oy));
-    if (lead > RCL_AIM_LEAD_MAX)
+    if (lead > RCL_AIM_LEAD_MAX_2)
     {
-        *ox = (*ox) / lead * RCL_AIM_LEAD_MAX;
-        *oy = (*oy) / lead * RCL_AIM_LEAD_MAX;
+        *ox = (*ox) / lead * RCL_AIM_LEAD_MAX_2;
+        *oy = (*oy) / lead * RCL_AIM_LEAD_MAX_2;
     }
     return 1;
 }
@@ -397,7 +379,7 @@ void rcl_run_autoaim(void)
             rcl_aim_hist_reset((uintptr_t)bestObj);
         }
         rcl_aim_hist_push((float)targetX, (float)targetY);
-        if (rcl_aim_lead(px, py, &lx, &ly))
+        if (rcl_aim_lead_2(px, py, &lx, &ly))
         {
             targetX += (int)lx;
             targetY += (int)ly;

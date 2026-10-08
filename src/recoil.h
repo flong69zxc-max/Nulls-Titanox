@@ -32,6 +32,7 @@
 #include "./utils/walls.h"
 #include "./utils/flags.h"
 #include "./utils/brawlers.h"
+#include "./utils/aim_ahead.h"
 
 #include "objc.h"
 #include "./core/scan.h"

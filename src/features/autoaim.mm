@@ -20,6 +20,14 @@ static float rcl_aim_hist_y[RCL_AIM_HIST];
 static uint64_t rcl_aim_hist_ms[RCL_AIM_HIST];
 
 static float rcl_aim_own_speed_2 = 0.0f;
+static uintptr_t rcl_aim_own_char_1 = 0;
+static const rcl_aim_ahead_t *rcl_aim_own_row_2 = nullptr;
+
+static void rcl_aim_own_reset_2(void)
+{
+    rcl_aim_own_speed_2 = 0.0f;
+    rcl_aim_own_row_2 = nullptr;
+}
 
 static float rcl_aim_shot_speed_2(void)
 {
@@ -38,6 +46,14 @@ static float rcl_aim_shot_speed_2(void)
         if (!rcl_own_team_seen || p->team < 0 || p->team != rcl_own_team_a)
         {
             continue;
+        }
+        if (p->name)
+        {
+            const rcl_aim_ahead_t *own = rcl_aim_ahead_by_projectile(p->name);
+            if (own)
+            {
+                rcl_aim_own_row_2 = own;
+            }
         }
         spd = sqrtf(p->vx * p->vx + p->vy * p->vy);
         if (spd < RCL_AIM_SHOT_SPEED_MIN || spd > RCL_AIM_SHOT_SPEED_MAX)
@@ -59,6 +75,14 @@ static float rcl_aim_shot_speed_2(void)
     if (rcl_aim_own_speed_2 >= RCL_AIM_SHOT_SPEED_MIN && rcl_aim_own_speed_2 <= RCL_AIM_SHOT_SPEED_MAX)
     {
         return rcl_aim_own_speed_2;
+    }
+    if (rcl_aim_own_row_2)
+    {
+        float known = (float)rcl_aim_own_row_2->shotSpeed;
+        if (known >= RCL_AIM_SHOT_SPEED_MIN && known <= RCL_AIM_SHOT_SPEED_MAX)
+        {
+            return known;
+        }
     }
     return RCL_AIM_SHOT_SPEED_FALLBACK;
 }
@@ -226,6 +250,11 @@ void rcl_run_autoaim(void)
     if (!rcl_object_plausible(ownChar))
     {
         return;
+    }
+    if (rcl_aim_own_char_1 != (uintptr_t)ownChar)
+    {
+        rcl_aim_own_char_1 = (uintptr_t)ownChar;
+        rcl_aim_own_reset_2();
     }
     int ownX = rcl_addr_getx ? ((fn_get_coord_t)rcl_addr_getx)(ownChar) : 0;
     int ownY = rcl_addr_gety ? ((fn_get_coord_t)rcl_addr_gety)(ownChar) : 0;

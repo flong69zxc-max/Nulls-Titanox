@@ -46,7 +46,6 @@ uintptr_t rcl_addr_getx = 0;
 
 uintptr_t rcl_addr_gety = 0;
 
-uintptr_t rcl_addr_setprediction = 0;
 
 uintptr_t rcl_addr_battlescreen = 0;
 
@@ -718,7 +717,6 @@ uintptr_t rcl_base = 0;
 
 uint64_t rcl_ticks_a = 0;
 
-int rcl_find_joy_done = 0;
 
 uintptr_t rcl_manager_ptr = 0;
 
@@ -2724,7 +2722,6 @@ void rcl_resolve_addresses(void)
     rcl_addr_getx = rcl_callable(RVA_LOGICGAMEOBJECTCLIENT_GETX);
     rcl_addr_gety = rcl_callable(RVA_LOGICGAMEOBJECTCLIENT_GETY);
 
-    rcl_addr_setprediction = rcl_callable(RCL_RVA_SETPREDICTION);
 
     rcl_addr_battlescreen = rcl_base + RVA_BATTLESCREEN__BATTLESCREEN;
     if (!rcl_addr_readable(rcl_addr_battlescreen, sizeof(void *))) rcl_addr_battlescreen = 0;
@@ -2758,7 +2755,6 @@ void rcl_locate_battle_mode(void)
     }
 }
 
-int rcl_setpred_state = -1;
 
 int rcl_probe_done = 0;
 
@@ -2776,29 +2772,6 @@ uint64_t rcl_last_write_ms = 0;
 
 rcl_obj_t rcl_dodge_probe_list[RCL_OBJECT_MAX];
 
-int rcl_verify_setprediction(void)
-{
-    static const uint32_t expected[3] = { 0xb901d401u, 0xb901d802u, 0xd65f03c0u };
-    uint32_t words[3] = { 0, 0, 0 };
-    uintptr_t address = 0;
-
-    if (!rcl_base) return 0;
-
-    address = rcl_base + RCL_RVA_SETPREDICTION;
-
-    if (!rcl_addr_readable(address, sizeof(words))) return 0;
-    if (!rcl_read_bytes(address, words, sizeof(words))) return 0;
-
-    for (int i = 0; i < 3; i++)
-    {
-        if (words[i] != expected[i])
-        {
-            return 0;
-        }
-    }
-
-    return 1;
-}
 
 void rcl_read_map(uintptr_t mode)
 {
@@ -3470,72 +3443,6 @@ void rcl_alive(int32_t /*ownX*/, int32_t /*ownY*/)
 
 void rcl_state(void)
 {
-
-    {
-        uint16_t charState = 0;
-        uint16_t sceneState = 0;
-        int32_t charMode = 0;
-
-        if (rcl_own_elem_2)
-        {
-            rcl_read_bytes(rcl_own_elem_2 + RCL_JOYSTATE_OFF, &charState, sizeof(charState));
-            rcl_read_int(rcl_own_elem_2 + RCL_BS_MODE, &charMode);
-        }
-
-        if (rcl_scene_object)
-        {
-            rcl_read_bytes(rcl_scene_object + RCL_JOYSTATE_OFF, &sceneState, sizeof(sceneState));
-        }
-
-        uint8_t gate70 = 0;
-
-        if (rcl_pred_last)
-        {
-            rcl_read_bytes(rcl_pred_last + RCL_GATE_OFF, &gate70, sizeof(gate70));
-        }
-
-        uint16_t enState[2] = { 0, 0 };
-        int32_t enMode[2] = { 0, 0 };
-        int seen = 0;
-        int k = 0;
-
-        for (k = 0; k < rcl_dodge_probe_usable && seen < 2; k++)
-        {
-            const rcl_obj_t *o = &rcl_dodge_probe_list[k];
-            uint16_t st = 0;
-            int32_t md = 0;
-
-            if (!o->object) continue;
-            if (o->gid < RCL_PLAYER_GID) continue;
-            if (o->gid >= RCL_SHOT_GID) continue;
-            if (rcl_own_elem_2 && o->object == rcl_own_elem_2) continue;
-            if (!rcl_read_bytes((uintptr_t)o->object + RCL_JOYSTATE_OFF, &st, sizeof(st))) continue;
-
-            rcl_read_int((uintptr_t)o->object + RCL_BS_MODE, &md);
-            enState[seen] = st;
-            enMode[seen] = md;
-            seen++;
-        }
-    }
-
-    {
-        uintptr_t st = 0;
-
-        if (rcl_read_ptr(rcl_client() + RCL_MGR_OFF, (void **)&st) && st)
-        {
-            int32_t stx = 0;
-            int32_t sty = 0;
-            int32_t stk = 0;
-            int32_t sta = 0;
-            uintptr_t stv = 0;
-
-            rcl_read_int(st + RCL_MOVE_X_OFF, &stx);
-            rcl_read_int(st + RCL_MOVE_Y_OFF, &sty);
-            rcl_read_int(st + RCL_MOVE_KEY_OFF, &stk);
-            rcl_read_int(st + RCL_MOVE_ARM_OFF, &sta);
-            if (rcl_read_ptr(st, (void **)&stv) && stv >= rcl_base) stv -= rcl_base;
-        }
-    }
 }
 
 uint64_t rcl_word_2(uintptr_t address)
@@ -4680,11 +4587,6 @@ int rcl_own_scan(void)
     if (!found && rcl_scan_container != array)
     {
         rcl_scan_container = array;
-    }
-
-    if (!rcl_find_joy_done)
-    {
-        rcl_find_joy_done = 1;
     }
 
     return found;

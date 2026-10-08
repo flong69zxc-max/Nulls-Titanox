@@ -815,11 +815,6 @@ void rcl_autododge(void)
         return;
     }
 
-    if (rcl_setpred_state < 0)
-    {
-        rcl_setpred_state = rcl_verify_setprediction();
-    }
-
     {
         uint64_t probeNow = (uint64_t)(CFAbsoluteTimeGetCurrent() * 1000.0);
         void *resolved = NULL;
@@ -875,11 +870,6 @@ void rcl_autododge(void)
                 if (loud) rcl_discriminate((uintptr_t)resolved);
             }
         }
-    }
-
-    if (!rcl_setpred_state)
-    {
-        return;
     }
 
     if (!rcl_coord_ok && rcl_coord_usable < RCL_MIN_USABLE) return;

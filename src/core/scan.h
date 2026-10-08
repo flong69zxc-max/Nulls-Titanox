@@ -35,7 +35,6 @@ extern uintptr_t rcl_addr_getownchar;
 extern uintptr_t rcl_addr_getteam;
 extern uintptr_t rcl_addr_getx;
 extern uintptr_t rcl_addr_gety;
-extern uintptr_t rcl_addr_setprediction;
 extern uintptr_t rcl_addr_battlescreen;
 extern volatile int rcl_at;
 extern int rcl_no_source_passes;
@@ -295,7 +294,6 @@ static inline BOOL rcl_object_plausible(void *object)
     return rcl_addr_executable(firstEntry);
 }
 
-extern int rcl_find_joy_done;
 extern uint64_t rcl_ticks_a;
 extern uintptr_t rcl_manager_ptr;
 extern int rcl_logs_a;
@@ -490,7 +488,6 @@ extern uintptr_t rcl_hop_scene;
 extern int rcl_coord_logs;
 extern int rcl_last_choice;
 extern int rcl_hop_logs;
-extern int rcl_setpred_state;
 extern int rcl_probe_done;
 extern uintptr_t rcl_probe_object;
 extern uint64_t rcl_probe_last_ms;
@@ -529,7 +526,6 @@ int rcl_own_verdict(uintptr_t element);
 int rcl_scan_ready(int battle);
 void rcl_resolve_addresses(void);
 void rcl_locate_battle_mode(void);
-int rcl_verify_setprediction(void);
 void rcl_read_map(uintptr_t mode);
 void rcl_gidless_scan(uintptr_t manager);
 uintptr_t rcl_list_gid_off(uintptr_t array, int32_t count);

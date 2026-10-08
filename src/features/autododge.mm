@@ -79,10 +79,9 @@ static void rcl_dodge_speed_probe(void)
 #define RCL_AD_WALL_BODY 240.0f
 #define RCL_AD_TICK_MS 16.0f
 #define RCL_AD_TICK_MAX_MS 250.0f
-#define RCL_BDC_LOCK_TICKS 8
-#define RCL_BDC_SWITCH_MARGIN 0.12f
-#define RCL_BDC_REFINE_STEP 0.35f
-#define RCL_BDC_REFINE_MIN 0.02f
+#define RCL_AD_TURN_MAX 0.209f
+#define RCL_AD_TURN_PANIC 0.785f
+#define RCL_AD_PI 3.14159265358979f
 
 typedef struct
 {
@@ -1121,14 +1120,6 @@ static int rcl_ad_send_move_7(float tx, float ty, float mx, float my)
 #define RCL_BDC_PANIC_R_2 1.35f
 #define RCL_BDC_ROLL_DT_2 0.078f
 #define RCL_BDC_DIR_MAX (RCL_AD_DIR_COUNT + RCL_BDC_EXTRA)
-#define RCL_BDC_WALL_W_2 900.0f
-#define RCL_BDC_WALL_KEEP_2 260.0f
-#define RCL_BDC_MINE_W_2 3.0f
-#define RCL_BDC_STATIC_V_2 400.0f
-#define RCL_BDC_TIME_W_2 1000.0f
-#define RCL_BDC_HORIZON_2 2.5f
-#define RCL_BDC_COMFORT_W_2 0.35f
-#define RCL_BDC_FLIP_MULT_2 3.0f
 
 static int rcl_bdc_sel[RCL_BD_THREAT_MAX];
 static int rcl_bdc_sel_n = 0;
@@ -1144,8 +1135,6 @@ static uint64_t rcl_bdc_idle = 0;
 static int rcl_bdc_hold = 0;
 static int rcl_bdc_last_cand = -1;
 static float rcl_bdc_out_impact_6 = 0.0f;
-static int rcl_bdc_lock_6 = 0;
-static int rcl_bdc_threat_n_6 = 0;
 static uint64_t rcl_bdc_turn = 0;
 
 static int rcl_bdc_aimed_one(const rcl_bd_threat_t *p, float mx, float my, float myR)
@@ -1227,7 +1216,6 @@ static float rcl_bdc_side_cost_6(float mx, float my, float dx, float dy)
 static float rcl_bdc_score_dir_6(float dx, float dy, float mx, float my, float myR, float speed)
 {
     float score = 0.0f;
-    float minD = 0.0f;
     int i;
     for (i = 0; i < rcl_bdc_sel_n; i++)
     {
@@ -1277,7 +1265,6 @@ static float rcl_bdc_score_dir_6(float dx, float dy, float mx, float my, float m
                 w *= RCL_BDC_PRE_W_2;
             }
             score += w * (r * r) / minD2;
-            score += RCL_BDC_COMFORT_W_2 / (1.0f + sqrtf(minD2));
             if (p->style_2 == RCL_STY_ARC_2 || p->style_2 == RCL_STY_SPREAD_2 || p->style_2 == RCL_STY_BURST_2)
             {
                 float toward = 0.0f;
@@ -1305,13 +1292,6 @@ static float rcl_bdc_score_dir_6(float dx, float dy, float mx, float my, float m
                 }
                 score += RCL_BDC_ALONG_HIT * along;
             }
-        }
-    }
-    {
-        float clear = rcl_wall_trace(mx, my, dx, dy, RCL_BDC_WALL_KEEP_2, RCL_WALL_BLOCKS_MOVEMENT);
-        if (clear < RCL_BDC_WALL_KEEP_2)
-        {
-            score += RCL_BDC_WALL_W_2 * (RCL_BDC_WALL_KEEP_2 - clear) / RCL_BDC_WALL_KEEP_2;
         }
     }
     score += rcl_bdc_side_cost_6(mx, my, dx, dy);
@@ -1463,44 +1443,6 @@ static void rcl_bd_pre_2(float mx, float my, float myR)
     }
 }
 
-static float rcl_bd_refine_6(float mx, float my, float myR, float speed, float dx, float dy, float *ox, float *oy)
-{
-    float best = rcl_bdc_score_dir_6(dx, dy, mx, my, myR, speed);
-    float step = RCL_BDC_REFINE_STEP;
-    float a = atan2f(dy, dx);
-    int guard = 0;
-    while (step > RCL_BDC_REFINE_MIN && guard < 24)
-    {
-        float na = 0.0f;
-        float v = 0.0f;
-        int moved = 0;
-        guard++;
-        na = a - step;
-        v = rcl_bdc_score_dir_6(cosf(na), sinf(na), mx, my, myR, speed);
-        if (v > best + 1e-4f)
-        {
-            best = v;
-            a = na;
-            moved = 1;
-        }
-        na = a + step;
-        v = rcl_bdc_score_dir_6(cosf(na), sinf(na), mx, my, myR, speed);
-        if (v > best + 1e-4f)
-        {
-            best = v;
-            a = na;
-            moved = 1;
-        }
-        if (!moved)
-        {
-            step *= 0.5f;
-        }
-    }
-    *ox = cosf(a);
-    *oy = sinf(a);
-    return best;
-}
-
 static void rcl_bdc_pick_6(float mx, float my, float myR, float ix, float iy, float speed, float *ox, float *oy)
 {
     rcl_bd_pre_2(mx, my, myR);
@@ -1630,10 +1572,9 @@ static void rcl_bdc_pick_6(float mx, float my, float myR, float ix, float iy, fl
     for (i = 0; i < count; i++)
     {
         rcl_bdc_wallc_6[i] = rcl_bdc_wall_cost(mx, my, rcl_bdc_dirs_6[i][0], rcl_bdc_dirs_6[i][1]);
-        rcl_bdc_impacts_6[i] = rcl_bdc_impact_dir_6(rcl_bdc_dirs_6[i][0], rcl_bdc_dirs_6[i][1], mx, my, myR, speed);
         rcl_bdc_scores_6[i] = rcl_bdc_score_dir_6(rcl_bdc_dirs_6[i][0], rcl_bdc_dirs_6[i][1], mx, my, myR, speed) +
-                              rcl_bdc_wallc_6[i] +
-                              RCL_BDC_TIME_W_2 * (RCL_BDC_HORIZON_2 - rcl_bdc_impacts_6[i]);
+                              rcl_bdc_wallc_6[i];
+        rcl_bdc_impacts_6[i] = rcl_bdc_impact_dir_6(rcl_bdc_dirs_6[i][0], rcl_bdc_dirs_6[i][1], mx, my, myR, speed);
         if (rcl_bdc_wallc_6[i] < RCL_BDC_WALL_HIT && (freeBest < 0 || rcl_bdc_scores_6[i] < bestScore))
         {
             bestScore = rcl_bdc_scores_6[i];
@@ -1791,62 +1732,62 @@ static void rcl_bdc_pick_6(float mx, float my, float myR, float ix, float iy, fl
         rcl_bdc_last_cand = cand;
         rcl_bdc_hold = 0;
     }
-    if (rcl_bdc_have_last)
-    {
-        float hx = rcl_bdc_last_x;
-        float hy = rcl_bdc_last_y;
-        float fx = 0.0f;
-        float fy = 0.0f;
-        float held = rcl_bdc_score_dir_6(hx, hy, mx, my, myR, speed);
-        float best = rcl_bdc_score_dir_6(rcl_bdc_dirs_6[cand][0], rcl_bdc_dirs_6[cand][1], mx, my, myR,
-                                        speed);
-        float margin = RCL_BDC_SWITCH_MARGIN;
-        if (hx * rcl_bdc_dirs_6[cand][0] + hy * rcl_bdc_dirs_6[cand][1] < 0.0f)
-        {
-            margin *= RCL_BDC_FLIP_MULT_2;
-        }
-        if (held > RCL_BDC_PANIC_T_2 && (rcl_bdc_lock_6 > 0 || held >= best - margin))
-        {
-            rcl_bdc_out_impact_6 = held;
-            rcl_bdc_last_x = hx;
-            rcl_bdc_last_y = hy;
-            *ox = hx;
-            *oy = hy;
-            rcl_bdc_have_last = 1;
-            rcl_bdc_lock_6 = RCL_BDC_LOCK_TICKS;
-            rcl_bdc_seen++;
-            return;
-        }
-        fx = rcl_bdc_dirs_6[cand][0];
-        fy = rcl_bdc_dirs_6[cand][1];
-        rcl_bdc_out_impact_6 = best;
-        rcl_bdc_last_x = fx;
-        rcl_bdc_last_y = fy;
-        *ox = fx;
-        *oy = fy;
-        rcl_bdc_have_last = 1;
-        rcl_bdc_lock_6 = RCL_BDC_LOCK_TICKS;
-        rcl_bdc_seen++;
-        return;
-    }
-
     rcl_bdc_out_impact_6 = rcl_bdc_impacts_6[cand];
     *ox = rcl_bdc_dirs_6[cand][0];
     *oy = rcl_bdc_dirs_6[cand][1];
     rcl_bdc_last_x = *ox;
     rcl_bdc_last_y = *oy;
     rcl_bdc_have_last = 1;
-    rcl_bdc_lock_6 = RCL_BDC_LOCK_TICKS;
     rcl_bdc_seen++;
 }
 
-void rcl_dodge_drop(void)
+static void rcl_bd_slew_6(float *ox, float *oy, float impact)
 {
-    rcl_dodge_speed = 0.0f;
-    rcl_bdc_have_last = 0;
-    rcl_bdc_lock_6 = 0;
-    rcl_bdc_last_x = 0.0f;
-    rcl_bdc_last_y = 0.0f;
+    float cap;
+    float a0;
+    float a1;
+    float d;
+
+    if (!rcl_bdc_have_last)
+    {
+        return;
+    }
+
+    if (*ox == 0.0f && *oy == 0.0f)
+    {
+        return;
+    }
+
+    cap = (impact <= RCL_BDC_T_URGENT) ? RCL_AD_TURN_PANIC : RCL_AD_TURN_MAX;
+    a0 = atan2f(rcl_bdc_last_y, rcl_bdc_last_x);
+    a1 = atan2f(*oy, *ox);
+    d = a1 - a0;
+
+    while (d > RCL_AD_PI)
+    {
+        d -= 2.0f * RCL_AD_PI;
+    }
+
+    while (d < -RCL_AD_PI)
+    {
+        d += 2.0f * RCL_AD_PI;
+    }
+
+    if (d > cap)
+    {
+        d = cap;
+    }
+
+    if (d < -cap)
+    {
+        d = -cap;
+    }
+
+    a1 = a0 + d;
+    *ox = cosf(a1);
+    *oy = sinf(a1);
+    rcl_bdc_last_x = *ox;
+    rcl_bdc_last_y = *oy;
 }
 
 static int rcl_ad_update_7(float mx, float my)
@@ -1874,18 +1815,6 @@ static int rcl_ad_update_7(float mx, float my)
         rcl_dodge_speed_probe();
     }
     rcl_ad_build_ring();
-    if (rcl_bdc_lock_6 > 0)
-    {
-        if (rcl_bd_threat_n > rcl_bdc_threat_n_6)
-        {
-            rcl_bdc_lock_6 = 0;
-        }
-        else
-        {
-            rcl_bdc_lock_6--;
-        }
-    }
-    rcl_bdc_threat_n_6 = rcl_bd_threat_n;
     speed = rcl_dodge_speed;
     myRadius = rcl_own_radius();
     if (speed <= 0.0f)
@@ -1900,8 +1829,10 @@ static int rcl_ad_update_7(float mx, float my)
     rcl_bd_build_threats();
     if (rcl_bd_threat_n == 0)
     {
-        rcl_bdc_have_last = 0;
-        rcl_bdc_lock_6 = 0;
+        return 0;
+    }
+    if (!rcl_bd_danger(mx, my, myRadius))
+    {
         return 0;
     }
     rcl_bd_intent(&ix, &iy);
@@ -1910,6 +1841,7 @@ static int rcl_ad_update_7(float mx, float my)
     {
         return 0;
     }
+    rcl_bd_slew_6(&dirx, &diry, rcl_bdc_out_impact_6);
     tx = roundf(mx + dirx * RCL_AD_REACH);
     ty = roundf(my + diry * RCL_AD_REACH);
     rcl_ad_send_move_7(tx, ty, mx, my);

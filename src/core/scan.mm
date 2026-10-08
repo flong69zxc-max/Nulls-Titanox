@@ -1912,38 +1912,38 @@ uint64_t rcl_slot_repl_33(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint6
 }
 
 const rcl_hook_t rcl_slot_specs[RCL_SLOT_COUNT] = {
-    { 0x00ad4ed0ULL, (void *)rcl_slot_repl_0, 0 },
-    { 0x00ad521cULL, (void *)rcl_slot_repl_1, 0 },
-    { 0, (void *)rcl_slot_repl_2, 0 },
-    { 0, (void *)rcl_slot_repl_3, 0 },
-    { 0, (void *)rcl_slot_repl_4, 0 },
-    { 0x00c33690ULL, (void *)rcl_slot_repl_5, 1 },
-    { 0x00b9dc24ULL, (void *)rcl_slot_repl_6, 1 },
-    { 0, (void *)rcl_slot_repl_7, 0 },
-    { 0, (void *)rcl_slot_repl_8, 0 },
-    { 0, (void *)rcl_slot_repl_9, 0 },
-    { 0, (void *)rcl_slot_repl_10, 0 },
-    { 0x008c7fbcULL, (void *)rcl_slot_repl_11, 0 },
-    { 0x00000000ULL, (void *)rcl_slot_repl_12, 1 },
-    { 0x00bcfbe8ULL, (void *)rcl_slot_repl_13, 0 },
-    { 0x00bcfc28ULL, (void *)rcl_slot_repl_14, 0 },
-    { 0, (void *)rcl_slot_repl_15, 0 },
-    { 0x008c6150ULL, (void *)rcl_slot_repl_16, 0 },
-    { 0x00ac3f20ULL, (void *)rcl_slot_repl_17, 1 },
-    { 0x00746898ULL, (void *)rcl_slot_repl_18, 1 },
-    { 0x00b8ae88ULL, (void *)rcl_slot_repl_19, 0 },
-    { 0x00b8ac7cULL, (void *)rcl_slot_repl_20, 0 },
-    { 0, (void *)rcl_slot_repl_21, 0 },
-    { 0, (void *)rcl_slot_repl_22, 0 },
-    { 0x00b85fe0ULL, (void *)rcl_slot_repl_23, 0 },
-    { 0x00b867d8ULL, (void *)rcl_slot_repl_24, 0 },
-    { 0x00b9e188ULL, (void *)rcl_slot_repl_25, 0 },
-    { 0x00b9dc8cULL, (void *)rcl_slot_repl_26, 0 },
-    { 0, (void *)rcl_slot_repl_27, 0 },
-    { 0x008c7f9cULL, (void *)rcl_slot_repl_28, 0 },
-    { 0x008c7facULL, (void *)rcl_slot_repl_29, 0 },
-    { 0x00b898e8ULL, (void *)rcl_slot_repl_30, 0 },
-    { 0x00b89c10ULL, (void *)rcl_slot_repl_31, 0 },
+    { RCL_SLOT_RVA_0, (void *)rcl_slot_repl_0, 0 },
+    { RCL_SLOT_RVA_1, (void *)rcl_slot_repl_1, 0 },
+    { RCL_SLOT_RVA_2, (void *)rcl_slot_repl_2, 0 },
+    { RCL_SLOT_RVA_3, (void *)rcl_slot_repl_3, 0 },
+    { RCL_SLOT_RVA_4, (void *)rcl_slot_repl_4, 0 },
+    { RCL_SLOT_RVA_5, (void *)rcl_slot_repl_5, 1 },
+    { RCL_SLOT_RVA_6, (void *)rcl_slot_repl_6, 1 },
+    { RCL_SLOT_RVA_7, (void *)rcl_slot_repl_7, 0 },
+    { RCL_SLOT_RVA_8, (void *)rcl_slot_repl_8, 0 },
+    { RCL_SLOT_RVA_9, (void *)rcl_slot_repl_9, 0 },
+    { RCL_SLOT_RVA_10, (void *)rcl_slot_repl_10, 0 },
+    { RCL_SLOT_RVA_11, (void *)rcl_slot_repl_11, 0 },
+    { RCL_SLOT_RVA_12, (void *)rcl_slot_repl_12, 1 },
+    { RCL_SLOT_RVA_13, (void *)rcl_slot_repl_13, 0 },
+    { RCL_SLOT_RVA_14, (void *)rcl_slot_repl_14, 0 },
+    { RCL_SLOT_RVA_15, (void *)rcl_slot_repl_15, 0 },
+    { RCL_SLOT_RVA_16, (void *)rcl_slot_repl_16, 0 },
+    { RCL_SLOT_RVA_17, (void *)rcl_slot_repl_17, 1 },
+    { RCL_SLOT_RVA_18, (void *)rcl_slot_repl_18, 1 },
+    { RCL_SLOT_RVA_19, (void *)rcl_slot_repl_19, 0 },
+    { RCL_SLOT_RVA_20, (void *)rcl_slot_repl_20, 0 },
+    { RCL_SLOT_RVA_21, (void *)rcl_slot_repl_21, 0 },
+    { RCL_SLOT_RVA_22, (void *)rcl_slot_repl_22, 0 },
+    { RCL_SLOT_RVA_23, (void *)rcl_slot_repl_23, 0 },
+    { RCL_SLOT_RVA_24, (void *)rcl_slot_repl_24, 0 },
+    { RCL_SLOT_RVA_25, (void *)rcl_slot_repl_25, 0 },
+    { RCL_SLOT_RVA_26, (void *)rcl_slot_repl_26, 0 },
+    { RCL_SLOT_RVA_27, (void *)rcl_slot_repl_27, 0 },
+    { RCL_SLOT_RVA_28, (void *)rcl_slot_repl_28, 0 },
+    { RCL_SLOT_RVA_29, (void *)rcl_slot_repl_29, 0 },
+    { RCL_SLOT_RVA_30, (void *)rcl_slot_repl_30, 0 },
+    { RCL_SLOT_RVA_31, (void *)rcl_slot_repl_31, 0 },
     { RVA_LOGICBATTLEMODECLIENT_UPDATE, (void *)rcl_slot_repl_32, 0 },
     { RVA_BATTLESCREEN__UPDATEMOVEMENT, (void *)rcl_slot_repl_33, 0 },
 };
@@ -2492,21 +2492,21 @@ int rcl_element_type(uintptr_t vt, uintptr_t *wordOut)
 
     switch (slot)
     {
-    case 0x0014c81cULL:
+    case RCL_TYPE_SLOT_RVA_0:
         return 0;
-    case 0x00a31768ULL:
+    case RCL_TYPE_SLOT_RVA_1:
         return 1;
-    case 0x009f4ec8ULL:
+    case RCL_TYPE_SLOT_RVA_2:
         return 2;
-    case 0x00314ca0ULL:
+    case RCL_TYPE_SLOT_RVA_3:
         return 3;
-    case 0x00490b54ULL:
+    case RCL_TYPE_SLOT_RVA_4:
         return 4;
-    case 0x0086f494ULL:
+    case RCL_TYPE_SLOT_RVA_5:
         return 5;
-    case 0x00370688ULL:
+    case RCL_TYPE_SLOT_RVA_6:
         return 6;
-    case 0x00490d94ULL:
+    case RCL_TYPE_SLOT_RVA_8:
         return 8;
     default:
         return -1;

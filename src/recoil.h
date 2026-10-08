@@ -14,11 +14,10 @@
 #include "./utils/flags.h"
 
 #include "objc.h"
-#include "./runtime/slots.h"
+#include "./core/slots.h"
 #include "./core/starts.h"
-#include "./runtime/scene.h"
-#include "./runtime/setup.h"
-#include "./runtime/state.h"
+#include "./core/setup.h"
+#include "./core/state.h"
 
 #include "./features/autoaim.h"
 #include "./features/autododge.h"

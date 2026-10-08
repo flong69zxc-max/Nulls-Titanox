@@ -1,8 +1,9 @@
-#ifndef RECOIL_RUNTIME_SETUP_H
-#define RECOIL_RUNTIME_SETUP_H
+#ifndef RECOIL_CORE_SETUP_H
+#define RECOIL_CORE_SETUP_H
 
-#include "../core/types.h"
+#include "./types.h"
 
+void rcl_run_workload(void);
 void setup(void);
 void rcl_run_autododge(int from_update);
 

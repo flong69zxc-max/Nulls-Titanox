@@ -467,7 +467,6 @@ void rcl_run_autododge(int from_update);
 #define RCL_BAR_TICKS 30
 #define RCL_IDLE_TICKS 15
 #define RCL_IDLE_RETRY_TICKS 300
-#define RCL_STATE_BATTLE 5
 #define RCL_SNAPSHOT_DELAY 1.2
 #define RCL_LOGS_ON 0
 

@@ -46,7 +46,6 @@ uintptr_t rcl_addr_getx = 0;
 
 uintptr_t rcl_addr_gety = 0;
 
-
 uintptr_t rcl_addr_battlescreen = 0;
 
 volatile int rcl_at = 0;
@@ -709,14 +708,13 @@ void poll_for_game(int tick)
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
-                       poll_for_game(tick + 1);
+                     poll_for_game(tick + 1);
                    });
 }
 
 uintptr_t rcl_base = 0;
 
 uint64_t rcl_ticks_a = 0;
-
 
 uintptr_t rcl_manager_ptr = 0;
 
@@ -874,7 +872,7 @@ int rcl_collect(uintptr_t manager, rcl_obj_t *out, int capacity)
         }
 
         if ((entry.teamOld < 0 || entry.teamOld > RCL_OBJ_TEAM_MAX) &&
-              (entry.teamNew < 0 || entry.teamNew > RCL_OBJ_TEAM_MAX))
+            (entry.teamNew < 0 || entry.teamNew > RCL_OBJ_TEAM_MAX))
         {
 
             continue;
@@ -1453,8 +1451,7 @@ uintptr_t rcl_tick_array = 0;
 
 int32_t rcl_tick_count = 0;
 
-void rcl_publish(uintptr_t object, uintptr_t array, int32_t count, int32_t,
-                 const char *)
+void rcl_publish(uintptr_t object, uintptr_t array, int32_t count, int32_t, const char *)
 {
     __sync_synchronize();
 
@@ -1914,32 +1911,32 @@ uint64_t rcl_slot_repl_33(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint6
 const rcl_hook_t rcl_slot_specs[RCL_SLOT_COUNT] = {
     { RCL_SLOT_RVA_0, (void *)rcl_slot_repl_0, 0 },
     { RCL_SLOT_RVA_1, (void *)rcl_slot_repl_1, 0 },
-    { RCL_SLOT_RVA_2, (void *)rcl_slot_repl_2, 0 },
-    { RCL_SLOT_RVA_3, (void *)rcl_slot_repl_3, 0 },
-    { RCL_SLOT_RVA_4, (void *)rcl_slot_repl_4, 0 },
+    { RCL_SLOT_NONE, (void *)rcl_slot_repl_2, 0 },
+    { RCL_SLOT_NONE, (void *)rcl_slot_repl_3, 0 },
+    { RCL_SLOT_NONE, (void *)rcl_slot_repl_4, 0 },
     { RCL_SLOT_RVA_5, (void *)rcl_slot_repl_5, 1 },
     { RCL_SLOT_RVA_6, (void *)rcl_slot_repl_6, 1 },
-    { RCL_SLOT_RVA_7, (void *)rcl_slot_repl_7, 0 },
-    { RCL_SLOT_RVA_8, (void *)rcl_slot_repl_8, 0 },
-    { RCL_SLOT_RVA_9, (void *)rcl_slot_repl_9, 0 },
-    { RCL_SLOT_RVA_10, (void *)rcl_slot_repl_10, 0 },
+    { RCL_SLOT_NONE, (void *)rcl_slot_repl_7, 0 },
+    { RCL_SLOT_NONE, (void *)rcl_slot_repl_8, 0 },
+    { RCL_SLOT_NONE, (void *)rcl_slot_repl_9, 0 },
+    { RCL_SLOT_NONE, (void *)rcl_slot_repl_10, 0 },
     { RCL_SLOT_RVA_11, (void *)rcl_slot_repl_11, 0 },
-    { RCL_SLOT_RVA_12, (void *)rcl_slot_repl_12, 1 },
+    { RCL_SLOT_NONE, (void *)rcl_slot_repl_12, 1 },
     { RCL_SLOT_RVA_13, (void *)rcl_slot_repl_13, 0 },
     { RCL_SLOT_RVA_14, (void *)rcl_slot_repl_14, 0 },
-    { RCL_SLOT_RVA_15, (void *)rcl_slot_repl_15, 0 },
+    { RCL_SLOT_NONE, (void *)rcl_slot_repl_15, 0 },
     { RCL_SLOT_RVA_16, (void *)rcl_slot_repl_16, 0 },
     { RCL_SLOT_RVA_17, (void *)rcl_slot_repl_17, 1 },
     { RCL_SLOT_RVA_18, (void *)rcl_slot_repl_18, 1 },
     { RCL_SLOT_RVA_19, (void *)rcl_slot_repl_19, 0 },
     { RCL_SLOT_RVA_20, (void *)rcl_slot_repl_20, 0 },
-    { RCL_SLOT_RVA_21, (void *)rcl_slot_repl_21, 0 },
-    { RCL_SLOT_RVA_22, (void *)rcl_slot_repl_22, 0 },
+    { RCL_SLOT_NONE, (void *)rcl_slot_repl_21, 0 },
+    { RCL_SLOT_NONE, (void *)rcl_slot_repl_22, 0 },
     { RCL_SLOT_RVA_23, (void *)rcl_slot_repl_23, 0 },
     { RCL_SLOT_RVA_24, (void *)rcl_slot_repl_24, 0 },
     { RCL_SLOT_RVA_25, (void *)rcl_slot_repl_25, 0 },
     { RCL_SLOT_RVA_26, (void *)rcl_slot_repl_26, 0 },
-    { RCL_SLOT_RVA_27, (void *)rcl_slot_repl_27, 0 },
+    { RCL_SLOT_NONE, (void *)rcl_slot_repl_27, 0 },
     { RCL_SLOT_RVA_28, (void *)rcl_slot_repl_28, 0 },
     { RCL_SLOT_RVA_29, (void *)rcl_slot_repl_29, 0 },
     { RCL_SLOT_RVA_30, (void *)rcl_slot_repl_30, 0 },
@@ -2211,32 +2208,32 @@ void rcl_start_timer(void)
                               (uint64_t)(0.25 * NSEC_PER_SEC));
 
     dispatch_source_set_event_handler(timer, ^{
-        rcl_slot_pump();
+      rcl_slot_pump();
 
-        int scene = rcl_state_tick();
-        int gate = rcl_battle_gate(scene);
-        int battle = gate || scene;
-        int fallback = rcl_battle_gate_2(battle);
+      int scene = rcl_state_tick();
+      int gate = rcl_battle_gate(scene);
+      int battle = gate || scene;
+      int fallback = rcl_battle_gate_2(battle);
 
-        int ready = rcl_scan_ready(battle || fallback);
-        int needScan = !scene && !rcl_players_object;
+      int ready = rcl_scan_ready(battle || fallback);
+      int needScan = !scene && !rcl_players_object;
 
-        if (needScan != rcl_scan_armed)
-        {
-            rcl_scan_armed = needScan;
-        }
+      if (needScan != rcl_scan_armed)
+      {
+          rcl_scan_armed = needScan;
+      }
 
-        if (needScan && ready &&
-            rcl_scan_allowed((unsigned long long)rcl_object_dispatches(), rcl_hook_dispatches()))
-        {
-            rcl_locate_battle_mode();
-        }
+      if (needScan && ready &&
+          rcl_scan_allowed((unsigned long long)rcl_object_dispatches(), rcl_hook_dispatches()))
+      {
+          rcl_locate_battle_mode();
+      }
 
-        rcl_modesig_tick();
+      rcl_modesig_tick();
 
-        rcl_ticks_b++;
+      rcl_ticks_b++;
 
-        if ((rcl_ticks_b % RCL_HB_TICKS) == 0) rcl_hb_sig_prev = rcl_modesig_hits;
+      if ((rcl_ticks_b % RCL_HB_TICKS) == 0) rcl_hb_sig_prev = rcl_modesig_hits;
     });
 
     dispatch_resume(timer);
@@ -2369,7 +2366,7 @@ void setup(void)
 __attribute__((constructor)) void start(void)
 {
     dispatch_async(dispatch_get_main_queue(), ^{
-        poll_for_game(0);
+      poll_for_game(0);
     });
 }
 
@@ -2407,8 +2404,8 @@ int rcl_modesig_hit(uintptr_t at)
 
         return 0;
     }
-    if (!rcl_read_int(at + 0x124ULL, &m124) || m124 < 0x01 || m124 > 0x80) return 0;
-    if (!rcl_read_int(at + 0xecULL, &ec) || ec < -1024 || ec > 1024) return 0;
+    if (!rcl_read_int(at + RCL_MODE_MODEVAR_OFF, &m124) || m124 < 0x01 || m124 > 0x80) return 0;
+    if (!rcl_read_int(at + RCL_MODE_EC_OFF, &ec) || ec < -1024 || ec > 1024) return 0;
     if (!rcl_read_ptr(at + RCL_MODE_MANAGER_OFF, &mgr) || !mgr) return 0;
     if (!rcl_pointer_plausible((uintptr_t)mgr)) return 0;
     if (!rcl_read_int((uintptr_t)mgr + RCL_MGR_COUNT_OFF, &count)) return 0;
@@ -2457,8 +2454,8 @@ void rcl_modesig_tick(void)
 
         rcl_read_ptr(found, &vt);
         rcl_read_ptr(found + RCL_MODE_MANAGER_OFF, &mgr);
-        rcl_read_int(found + 0xecULL, &ec);
-        rcl_read_int(found + 0x124ULL, &m124);
+        rcl_read_int(found + RCL_MODE_EC_OFF, &ec);
+        rcl_read_int(found + RCL_MODE_MODEVAR_OFF, &m124);
         rcl_read_int((uintptr_t)mgr + RCL_MGR_COUNT_OFF, &count);
         rcl_read_int((uintptr_t)mgr + RCL_MGR_CAP_OFF, &cap);
 
@@ -2717,7 +2714,6 @@ void rcl_resolve_addresses(void)
     rcl_addr_getx = rcl_callable(RVA_LOGICGAMEOBJECTCLIENT_GETX);
     rcl_addr_gety = rcl_callable(RVA_LOGICGAMEOBJECTCLIENT_GETY);
 
-
     rcl_addr_battlescreen = rcl_base;
     if (!rcl_addr_readable(rcl_addr_battlescreen, sizeof(void *))) rcl_addr_battlescreen = 0;
 }
@@ -2750,7 +2746,6 @@ void rcl_locate_battle_mode(void)
     }
 }
 
-
 int rcl_probe_done = 0;
 
 uintptr_t rcl_probe_object = 0;
@@ -2766,7 +2761,6 @@ int rcl_team_off = (int)RCL_OBJ_TEAM_OFF;
 uint64_t rcl_last_write_ms = 0;
 
 rcl_obj_t rcl_dodge_probe_list[RCL_OBJECT_MAX];
-
 
 void rcl_read_map(uintptr_t mode)
 {
@@ -3552,7 +3546,6 @@ void rcl_probe(uintptr_t manager, uintptr_t mode, int verbose)
     {
         rcl_dead_probe_done = 1;
     }
-
 
     rcl_coord_usable = usable;
 

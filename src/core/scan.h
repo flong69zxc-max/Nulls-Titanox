@@ -807,6 +807,5 @@ uintptr_t rcl_tb_odata_2(uintptr_t object);
 int rcl_tb_int_2(uintptr_t data, int slot);
 int rcl_tb_name_2(uintptr_t data, char *dst, int cap);
 void rcl_tb_probe_2(void);
-void rcl_tb_dump_2(void);
 
 #endif

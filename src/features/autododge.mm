@@ -97,6 +97,10 @@ typedef struct
     float by;
     int has_segment;
     const char *name;
+    int thrower_2;
+    int style_2;
+    float left_2;
+    float boom_2;
 } rcl_ad_hazard_t;
 
 #define RCL_AD_HAZARD_MAX 96
@@ -104,8 +108,6 @@ typedef struct
 
 static rcl_ad_hazard_t rcl_ad_hazards[RCL_AD_HAZARD_MAX];
 static int rcl_ad_mine_skipped = 0;
-static int rcl_ad_team_logged_own = -2;
-static int rcl_ad_team_logged_armed = -1;
 static rcl_hazard_t rcl_ad_caps[RCL_AD_CAP_MAX];
 static float rcl_ad_ring[RCL_AD_DIR_COUNT][2];
 static float rcl_ad_scores[RCL_AD_DIR_COUNT];
@@ -134,6 +136,20 @@ static int rcl_ad_hazard_n = 0;
 #define RCL_BDC_DANGER_R 1.75f
 #define RCL_BDC_ALONG_HIT 120000.0f
 #define RCL_BDC_HIT_GATE 1.15f
+#define RCL_STY_PLAIN_2 0
+#define RCL_STY_LONG_2 1
+#define RCL_STY_SPREAD_2 2
+#define RCL_STY_ARC_2 3
+#define RCL_STY_BEAM_2 4
+#define RCL_STY_BURST_2 5
+#define RCL_BDC_ARC_W_2 2.20f
+#define RCL_BDC_LONG_W_2 1.60f
+#define RCL_BDC_SPREAD_W_2 1.45f
+#define RCL_BDC_AWAY_W_2 48000.0f
+#define RCL_BDC_REACH_PAD_2 90.0f
+#define RCL_BDC_COMMIT_MS_2 170
+#define RCL_BDC_COMMIT_GAIN_2 0.88f
+#define RCL_BDC_IDLE_HOLD_MS_2 420
 
 typedef struct
 {
@@ -143,6 +159,10 @@ typedef struct
     float vy;
     float rad;
     float hitr;
+    int thrower_2;
+    int style_2;
+    float left_2;
+    float boom_2;
 } rcl_bd_threat_t;
 
 static rcl_bd_threat_t rcl_bd_threats[RCL_BD_THREAT_MAX];
@@ -169,9 +189,43 @@ static void rcl_ad_build_ring(void)
     rcl_ad_dir_built = 1;
 }
 
+static int rcl_bd_style_2(const char *name, const rcl_kind_t *spec, int thrower, int beam)
+{
+    const char *n = name ? name : "";
+    if (thrower)
+    {
+        return RCL_STY_ARC_2;
+    }
+    if (beam)
+    {
+        return RCL_STY_BEAM_2;
+    }
+    if (spec && spec->maxRange >= 1800)
+    {
+        return RCL_STY_LONG_2;
+    }
+    if (strstr(n, "Sniper") || strstr(n, "Piper") || strstr(n, "Rail") || strstr(n, "Ricochet"))
+    {
+        return RCL_STY_LONG_2;
+    }
+    if (strstr(n, "Mechanic") || strstr(n, "Spike") || strstr(n, "Rat") || strstr(n, "Minigun"))
+    {
+        return RCL_STY_BURST_2;
+    }
+    if (strstr(n, "Shotgun") || strstr(n, "Gun") || strstr(n, "Sweep") || strstr(n, "Burst"))
+    {
+        return RCL_STY_SPREAD_2;
+    }
+    return RCL_STY_PLAIN_2;
+}
+
 static float rcl_ad_ball_radius(const rcl_proj_t *p)
 {
-    float r = p->radius;
+    float r = (float)p->dataRadius;
+    if (r <= 0.0f)
+    {
+        r = p->radius;
+    }
     if (r <= 0.0f)
     {
         r = rcl_proj_radius(p, 1.0f);
@@ -428,6 +482,9 @@ static void rcl_ad_collect_7(float mx, float my, float myRadius, uint64_t nowMs)
             h->hitr = cap->radius + myRadius;
             h->has_segment = cap->has_segment;
             h->name = p->name ? p->name : cap->name;
+            h->thrower_2 = p->isThrower ? 1 : 0;
+            h->style_2 = rcl_bd_style_2(p->name, rcl_kind_of(p->name), p->isThrower, p->isBeam);
+            h->boom_2 = cap->radius;
             if (cap->has_segment)
             {
                 h->ax = cap->ax;
@@ -561,6 +618,10 @@ static void rcl_ad_collect_7(float mx, float my, float myRadius, uint64_t nowMs)
             }
             h->fade_base = spec ? spec->fadeBase : 0.0f;
             h->fade_k = spec ? spec->fadeK : 0.0f;
+            h->thrower_2 = p->isThrower ? 1 : 0;
+            h->style_2 = rcl_bd_style_2(name, spec, p->isThrower, p->isBeam);
+            h->left_2 = left;
+            h->boom_2 = shotR;
             rcl_ad_hazard_n++;
         }
     }
@@ -612,6 +673,20 @@ static void rcl_bd_push(float x, float y, float vx, float vy, float rad, float h
     rcl_bd_threat_n++;
 }
 
+static void rcl_bd_push_2(float x, float y, float vx, float vy, float rad, float hitr, int thrower, int style, float left,
+                          float boom)
+{
+    rcl_bd_push(x, y, vx, vy, rad, hitr);
+    if (rcl_bd_threat_n > 0)
+    {
+        rcl_bd_threat_t *t = &rcl_bd_threats[rcl_bd_threat_n - 1];
+        t->thrower_2 = thrower;
+        t->style_2 = style;
+        t->left_2 = left;
+        t->boom_2 = boom;
+    }
+}
+
 static void rcl_bd_build_threats(void)
 {
     int i;
@@ -623,12 +698,17 @@ static void rcl_bd_build_threats(void)
         float vy = 0.0f;
         if (h->has_segment)
         {
-            rcl_bd_push(h->ax, h->ay, 0.0f, 0.0f, h->rad, h->hitr);
-            rcl_bd_push(h->bx, h->by, 0.0f, 0.0f, h->rad, h->hitr);
+            rcl_bd_push_2(h->ax, h->ay, 0.0f, 0.0f, h->rad, h->hitr, 0, h->style_2, 0.0f, h->boom_2);
+            rcl_bd_push_2(h->bx, h->by, 0.0f, 0.0f, h->rad, h->hitr, 0, h->style_2, 0.0f, h->boom_2);
             continue;
         }
         rcl_ad_fade_vel(h, 0.0f, &vx, &vy);
-        rcl_bd_push(h->x, h->y, vx, vy, h->rad, h->hitr);
+        if (h->thrower_2 && h->left_2 > 0.0f && h->left_2 < 420.0f)
+        {
+            rcl_bd_push_2(h->x, h->y, 0.0f, 0.0f, h->rad, h->hitr, 1, h->style_2, h->left_2, h->boom_2);
+            continue;
+        }
+        rcl_bd_push_2(h->x, h->y, vx, vy, h->rad, h->hitr, h->thrower_2, h->style_2, h->left_2, h->boom_2);
     }
 }
 
@@ -1029,10 +1109,13 @@ static int rcl_bdc_sel_n = 0;
 static float rcl_bdc_dirs_6[RCL_BDC_DIR_MAX][2];
 static float rcl_bdc_scores_6[RCL_BDC_DIR_MAX];
 static float rcl_bdc_impacts_6[RCL_BDC_DIR_MAX];
+static float rcl_bdc_wallc_6[RCL_BDC_DIR_MAX];
+static uint64_t rcl_bdc_idle_ms_2 = 0;
+static int rcl_bdc_commit_cand_2 = -1;
+static uint64_t rcl_bdc_commit_ms_2 = 0;
 static float rcl_bdc_last_x = 0.0f;
 static float rcl_bdc_last_y = 0.0f;
 static int rcl_bdc_have_last = 0;
-static uint64_t rcl_bdc_log_ms = 0;
 static uint64_t rcl_bdc_seen = 0;
 static uint64_t rcl_bdc_idle = 0;
 static int rcl_bdc_hold = 0;
@@ -1044,9 +1127,22 @@ static int rcl_bdc_aimed_one(const rcl_bd_threat_t *p, float mx, float my, float
     float r = (rcl_bd_true_r(p, myR) * RCL_BDC_TRUE_GATE + RCL_BD_TRUE_MARGIN) * RCL_BDC_HIT_GATE;
     float tHit = 0.0f;
     float d2 = rcl_bd_impact_d2(p, mx, my, &tHit);
+    float dx = 0.0f;
+    float dy = 0.0f;
+    float reach = 0.0f;
     if (tHit < 0.0f)
     {
         return 0;
+    }
+    if (p->left_2 > 0.0f)
+    {
+        dx = p->x - mx;
+        dy = p->y - my;
+        reach = p->left_2 + p->hitr + RCL_BDC_REACH_PAD_2;
+        if (dx * dx + dy * dy > reach * reach)
+        {
+            return 0;
+        }
     }
     if (d2 <= r * r)
     {
@@ -1136,7 +1232,35 @@ static float rcl_bdc_score_dir_6(float dx, float dy, float mx, float my, float m
         {
             minD2 = RCL_BDC_EPS;
         }
-        score += RCL_BDC_DANGER * (r * r) / minD2;
+        {
+            float w = RCL_BDC_DANGER;
+            if (p->style_2 == RCL_STY_ARC_2)
+            {
+                w *= RCL_BDC_ARC_W_2;
+            }
+            else if (p->style_2 == RCL_STY_LONG_2)
+            {
+                w *= RCL_BDC_LONG_W_2;
+            }
+            else if (p->style_2 == RCL_STY_SPREAD_2 || p->style_2 == RCL_STY_BURST_2)
+            {
+                w *= RCL_BDC_SPREAD_W_2;
+            }
+            score += w * (r * r) / minD2;
+            if (p->style_2 == RCL_STY_ARC_2 || p->style_2 == RCL_STY_SPREAD_2 || p->style_2 == RCL_STY_BURST_2)
+            {
+                float toward = 0.0f;
+                float dl = sqrtf(px * px + py * py);
+                if (dl > 1.0f)
+                {
+                    toward = (dx * px + dy * py) / dl;
+                    if (toward > 0.0f)
+                    {
+                        score += RCL_BDC_AWAY_W_2 * toward;
+                    }
+                }
+            }
+        }
         {
             float spd2 = p->vx * p->vx + p->vy * p->vy;
             if (spd2 > 1.0f)
@@ -1287,12 +1411,12 @@ static void rcl_bdc_pick_6(float mx, float my, float myR, float ix, float iy, fl
     float rx = ix;
     float ry = iy;
     int hasRef = (ix != 0.0f || iy != 0.0f) ? 1 : 0;
-    int refFromThreat = 0;
     int count;
     int i;
     int best = 0;
     int cand;
-    int keptPrev = 0;
+    int freeBest = -1;
+    int wallBest = -1;
     int leastBad = 0;
     float bestScore = RCL_BDC_FAR;
     float impactBest;
@@ -1321,12 +1445,6 @@ static void rcl_bdc_pick_6(float mx, float my, float myR, float ix, float iy, fl
             *oy = 0.0f;
             rcl_bdc_have_last = 0;
             rcl_bdc_idle++;
-            if (rcl_ad_now_ms() - rcl_bdc_log_ms >= 1000)
-            {
-                rcl_bdc_log_ms = rcl_ad_now_ms();
-                rcl_log_info("dodge idle threat=%d aimed=0 noIncoming=1 idle=%llu dodge=%llu", rcl_bd_threat_n,
-                             (unsigned long long)rcl_bdc_idle, (unsigned long long)rcl_bdc_seen);
-            }
             return;
         }
         if (!hasRef && rcl_bd_threat_n > 0)
@@ -1347,13 +1465,24 @@ static void rcl_bdc_pick_6(float mx, float my, float myR, float ix, float iy, fl
             rx = mx - rcl_bd_threats[nearest].x;
             ry = my - rcl_bd_threats[nearest].y;
             hasRef = 1;
-            refFromThreat = 1;
         }
         if (hasRef && (rx != 0.0f || ry != 0.0f))
         {
             float len = sqrtf(rx * rx + ry * ry);
-            *ox = rx / len;
-            *oy = ry / len;
+            float nx = rx / len;
+            float ny = ry / len;
+            if (rcl_bdc_have_last && rcl_ad_now_ms() - rcl_bdc_idle_ms_2 < (uint64_t)RCL_BDC_IDLE_HOLD_MS_2 &&
+                (rcl_bdc_last_x * nx + rcl_bdc_last_y * ny) > 0.35f)
+            {
+                *ox = rcl_bdc_last_x;
+                *oy = rcl_bdc_last_y;
+            }
+            else
+            {
+                *ox = nx;
+                *oy = ny;
+                rcl_bdc_idle_ms_2 = rcl_ad_now_ms();
+            }
         }
         else if (rcl_bdc_have_last)
         {
@@ -1408,27 +1537,27 @@ static void rcl_bdc_pick_6(float mx, float my, float myR, float ix, float iy, fl
             }
         }
         rcl_bdc_idle++;
-        if (rcl_ad_now_ms() - rcl_bdc_log_ms >= 1000)
-        {
-            rcl_bdc_log_ms = rcl_ad_now_ms();
-            rcl_log_info("dodge idle threat=%d aimed=0 dir=%.2f,%.2f idle=%llu dodge=%llu",
-                         rcl_bd_threat_n, *ox, *oy, (unsigned long long)rcl_bdc_idle,
-                         (unsigned long long)rcl_bdc_seen);
-        }
         return;
     }
     count = RCL_AD_DIR_COUNT + rcl_bdc_extra_dirs_6(mx, my);
     for (i = 0; i < count; i++)
     {
+        rcl_bdc_wallc_6[i] = rcl_bdc_wall_cost(mx, my, rcl_bdc_dirs_6[i][0], rcl_bdc_dirs_6[i][1]);
         rcl_bdc_scores_6[i] = rcl_bdc_score_dir_6(rcl_bdc_dirs_6[i][0], rcl_bdc_dirs_6[i][1], mx, my, myR, speed) +
-                            rcl_bdc_wall_cost(mx, my, rcl_bdc_dirs_6[i][0], rcl_bdc_dirs_6[i][1]);
+                              rcl_bdc_wallc_6[i];
         rcl_bdc_impacts_6[i] = rcl_bdc_impact_dir_6(rcl_bdc_dirs_6[i][0], rcl_bdc_dirs_6[i][1], mx, my, myR, speed);
-        if (rcl_bdc_scores_6[i] < bestScore)
+        if (rcl_bdc_wallc_6[i] < RCL_BDC_WALL_HIT && (freeBest < 0 || rcl_bdc_scores_6[i] < bestScore))
         {
             bestScore = rcl_bdc_scores_6[i];
-            best = i;
+            freeBest = i;
+        }
+        if (wallBest < 0 || rcl_bdc_wallc_6[i] < rcl_bdc_wallc_6[wallBest])
+        {
+            wallBest = i;
         }
     }
+    best = freeBest >= 0 ? freeBest : wallBest;
+    bestScore = rcl_bdc_scores_6[best];
     cand = best;
     impactBest = rcl_bdc_impacts_6[best];
     if (rcl_bdc_have_last && best < RCL_AD_DIR_COUNT)
@@ -1452,14 +1581,12 @@ static void rcl_bdc_pick_6(float mx, float my, float myR, float ix, float iy, fl
             rcl_bdc_impacts_6[pi] >= impactBest * RCL_BDC_KEEP_IMPACT)
         {
             cand = pi;
-            keptPrev = 1;
         }
     }
     if (rcl_bdc_impacts_6[cand] <= RCL_BDC_T_URGENT)
     {
         int s = -1;
         float sScore = RCL_BDC_FAR;
-        keptPrev = 0;
         for (i = 0; i < count; i++)
         {
             if (rcl_bdc_impacts_6[i] > RCL_BDC_T_URGENT && rcl_bdc_scores_6[i] < sScore)
@@ -1550,20 +1677,24 @@ static void rcl_bdc_pick_6(float mx, float my, float myR, float ix, float iy, fl
         rcl_bdc_last_cand = cand;
         rcl_bdc_hold = 0;
     }
+    if (cand < RCL_AD_DIR_COUNT && rcl_bdc_commit_cand_2 >= 0 && rcl_bdc_commit_cand_2 < count &&
+        rcl_bdc_impacts_6[cand] > RCL_BDC_T_URGENT && rcl_bdc_impacts_6[rcl_bdc_commit_cand_2] > RCL_BDC_T_URGENT &&
+        rcl_ad_now_ms() - rcl_bdc_commit_ms_2 < (uint64_t)RCL_BDC_COMMIT_MS_2 &&
+        rcl_bdc_scores_6[rcl_bdc_commit_cand_2] <= rcl_bdc_scores_6[cand] * RCL_BDC_COMMIT_GAIN_2 + RCL_BDC_EPS)
+    {
+        cand = rcl_bdc_commit_cand_2;
+    }
+    else
+    {
+        rcl_bdc_commit_cand_2 = (cand < RCL_AD_DIR_COUNT && cand < count) ? cand : -1;
+        rcl_bdc_commit_ms_2 = rcl_ad_now_ms();
+    }
     *ox = rcl_bdc_dirs_6[cand][0];
     *oy = rcl_bdc_dirs_6[cand][1];
     rcl_bdc_last_x = *ox;
     rcl_bdc_last_y = *oy;
     rcl_bdc_have_last = 1;
     rcl_bdc_seen++;
-    if (rcl_ad_now_ms() - rcl_bdc_log_ms >= 1000)
-    {
-        rcl_bdc_log_ms = rcl_ad_now_ms();
-        rcl_log_info("dodge seg=%d safe=%d least=%d keep=%d ref=%d threat=%d aimed=%d hold=%d turn=%llu score=%.0f imp=%.2f dir=%.2f,%.2f dodge=%llu",
-                     cand, (rcl_bdc_impacts_6[cand] > RCL_BDC_T_URGENT) ? 1 : 0, leastBad, keptPrev, refFromThreat,
-                     rcl_bd_threat_n, rcl_bdc_sel_n, rcl_bdc_hold, (unsigned long long)rcl_bdc_turn,
-                     rcl_bdc_scores_6[cand], rcl_bdc_impacts_6[cand], *ox, *oy, (unsigned long long)rcl_bdc_seen);
-    }
 }
 
 static int rcl_ad_update_7(float mx, float my)
@@ -1763,14 +1894,7 @@ void rcl_autododge(void)
         {
             rcl_own_team_seen = 1;
         }
-        if (rcl_ad_team_logged_own != rcl_own_team_a || rcl_ad_team_logged_armed != rcl_own_team_seen)
-        {
-            rcl_ad_team_logged_own = rcl_own_team_a;
-            rcl_ad_team_logged_armed = rcl_own_team_seen;
-            rcl_log_info("teamOff=%#x armed=%d ownTeam=%d mineSkipped=%d", (unsigned)rcl_team_off, rcl_own_team_seen,
-                         rcl_own_team_a, rcl_ad_mine_skipped);
-            rcl_ad_mine_skipped = 0;
-        }
+        rcl_ad_mine_skipped = 0;
         rcl_roster(rcl_own_elem_2, ownIndex, (int)ownTeam, objects, usable);
         if (ownIndex < 0 || ownIndex >= usable || ownIndex >= 64)
         {

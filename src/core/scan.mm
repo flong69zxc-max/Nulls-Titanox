@@ -2593,9 +2593,8 @@ void setup(void)
         return;
     }
     rcl_setup_done = YES;
-    rcl_log_set_enabled(RCL_LOGS_ON);
+    rcl_log_set_enabled(0);
     rcl_flag_set("logs", RCL_LOGS_ON);
-    rcl_log_info("setup base=%#llx", (unsigned long long)rcl_base);
     rcl_load_function_starts();
     rcl_resolve_addresses();
     rcl_objc_arm(rcl_base, "MetalView", "render", rcl_objc_body);
@@ -3833,76 +3832,6 @@ int rcl_tb_name_2(uintptr_t data, char *dst, int cap)
     return rcl_tb_sc_2((uintptr_t)sc, dst, cap);
 }
 
-static int rcl_tb_dump_n_2 = 0;
-static uint64_t rcl_tb_dump_ms_2 = 0;
-static int rcl_tb_probe_done_2 = 0;
-
-void rcl_tb_dump_2(void)
-{
-    uint64_t now = 0;
-    char nm[40];
-    int i = 0;
-    int ci = 0;
-    int si = 0;
-    int pi = 0;
-    int ai = 0;
-    uintptr_t data = 0;
-    if (!rcl_tb_probe_done_2)
-    {
-        rcl_tb_probe_done_2 = 1;
-        rcl_tb_probe_2();
-        ci = rcl_tb_idx_2("characters");
-        si = rcl_tb_idx_2("skills");
-        pi = rcl_tb_idx_2("projectiles");
-        ai = rcl_tb_idx_2("area_effects_logic");
-        NSLog(@"[recoil][data] tables chars=%d skills=%d projs=%d areas=%d rows=%d/%d", ci, si, pi, ai,
-              ci >= 0 ? rcl_tb_cnt_2(rcl_tb_get_2(ci)) : 0, pi >= 0 ? rcl_tb_cnt_2(rcl_tb_get_2(pi)) : 0);
-    }
-    if (rcl_tb_dump_n_2 >= RCL_TB_DUMP_MAX_2)
-    {
-        return;
-    }
-    now = (uint64_t)(CFAbsoluteTimeGetCurrent() * 1000.0);
-    if (rcl_tb_dump_n_2 > 0 && now < rcl_tb_dump_ms_2 + (uint64_t)RCL_TB_DUMP_INTERVAL_2)
-    {
-        return;
-    }
-    rcl_tb_dump_ms_2 = now;
-    rcl_tb_dump_n_2++;
-    nm[0] = 0;
-    data = rcl_tb_odata_2(rcl_tb_own_obj_2);
-    if (data)
-    {
-        rcl_tb_name_2(data, nm, (int)sizeof(nm));
-    }
-    NSLog(@"[recoil][data] own=%s rng=%d hp=%d mates=%d enemies=%d", nm[0] ? nm : "?", data ? rcl_tb_int_2(data, RCL_COL_AARANGE_2) : 0,
-          data ? rcl_tb_int_2(data, RCL_COL_HITPOINTS_2) : 0, rcl_mate_n, rcl_enemy_n);
-    for (i = 0; i < rcl_mate_n && i < 8; i++)
-    {
-        nm[0] = 0;
-        data = rcl_tb_odata_2(rcl_tb_mate_obj_2[i]);
-        if (data)
-        {
-            rcl_tb_name_2(data, nm, (int)sizeof(nm));
-        }
-        NSLog(@"[recoil][data] mate[%d] %s rng=%d hp=%d spd=%d rad=%d", i, nm[0] ? nm : "?", data ? rcl_tb_int_2(data, RCL_COL_AARANGE_2) : 0,
-              data ? rcl_tb_int_2(data, RCL_COL_HITPOINTS_2) : 0, data ? rcl_tb_int_2(data, RCL_COL_SPEED_2) : 0,
-              data ? rcl_tb_int_2(data, RCL_COL_COLLISION_2) : 0);
-    }
-    for (i = 0; i < rcl_enemy_n && i < 12; i++)
-    {
-        nm[0] = 0;
-        data = rcl_tb_odata_2(rcl_tb_enemy_obj_2[i]);
-        if (data)
-        {
-            rcl_tb_name_2(data, nm, (int)sizeof(nm));
-        }
-        NSLog(@"[recoil][data] enemy[%d] %s rng=%d hp=%d spd=%d rad=%d", i, nm[0] ? nm : "?",
-              data ? rcl_tb_int_2(data, RCL_COL_AARANGE_2) : 0, data ? rcl_tb_int_2(data, RCL_COL_HITPOINTS_2) : 0,
-              data ? rcl_tb_int_2(data, RCL_COL_SPEED_2) : 0, data ? rcl_tb_int_2(data, RCL_COL_COLLISION_2) : 0);
-    }
-}
-
 int rcl_proj_scan(uintptr_t manager, int32_t count)
 {
     void *array = nullptr;
@@ -4938,7 +4867,6 @@ void rcl_roster(uintptr_t ownElem, int ownIndex, int ownTeam, const rcl_obj_t *o
             rcl_enemy_n++;
         }
     }
-    rcl_tb_dump_2();
 }
 
 int rcl_cand_frame[3];

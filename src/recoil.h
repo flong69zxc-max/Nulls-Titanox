@@ -31,6 +31,7 @@
 #include "./utils/log.h"
 #include "./utils/walls.h"
 #include "./utils/flags.h"
+#include "./utils/brawlers.h"
 
 #include "objc.h"
 #include "./core/scan.h"

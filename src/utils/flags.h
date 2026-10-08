@@ -1,7 +1,7 @@
 #ifndef RECOIL_UTILS_FLAGS_H
 #define RECOIL_UTILS_FLAGS_H
 
-#include "../core/types.h"
+#include "../core/offsets.h"
 
 #define RCL_FEATURE_MAX 16
 

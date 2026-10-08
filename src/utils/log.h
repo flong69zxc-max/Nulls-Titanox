@@ -1,7 +1,7 @@
 #ifndef RECOIL_UTILS_LOG_H
 #define RECOIL_UTILS_LOG_H
 
-#include "../core/types.h"
+#include "../core/offsets.h"
 
 #define RCL_LOG_DEBUG 0
 #define RCL_LOG_INFO 1

@@ -1,7 +1,7 @@
 #ifndef RECOIL_FEATURES_AUTOAIM_AUTOAIM_H
 #define RECOIL_FEATURES_AUTOAIM_AUTOAIM_H
 
-#include "../core/types.h"
+#include "../core/offsets.h"
 
 void rcl_run_autoaim(void);
 

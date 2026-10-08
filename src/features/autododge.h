@@ -1,7 +1,7 @@
 #ifndef RECOIL_FEATURES_AUTODODGE_AUTODODGE_H
 #define RECOIL_FEATURES_AUTODODGE_AUTODODGE_H
 
-#include "../core/types.h"
+#include "../core/offsets.h"
 
 extern __thread int rcl_in_drive;
 extern int rcl_state_code;

@@ -9,8 +9,6 @@ static uint64_t g_timer_token = 0;
 static uint32_t g_repeat_counts[RCL_LOG_REPEAT_MAX];
 static uint64_t g_repeat_at[RCL_LOG_REPEAT_MAX];
 static char g_repeat_keys[RCL_LOG_REPEAT_MAX][RCL_LOG_TEXT_MAX];
-static FILE *g_log_file = NULL;
-static bool g_log_file_opened = false;
 
 static const char *rcl_log_level_name(int level)
 {
@@ -27,54 +25,6 @@ static void rcl_log_default_sink(const rcl_log_entry_t *entries, int count)
     {
         NSLog(@"[recoil][%s] %s", rcl_log_level_name(entries[i].level), entries[i].text);
     }
-}
-
-static void rcl_log_file_open(void)
-{
-    if (g_log_file_opened) return;
-
-    g_log_file_opened = true;
-
-    NSString *documents = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
-    NSString *temporary = NSTemporaryDirectory();
-    NSString *paths[] = { [documents stringByAppendingPathComponent:@"recoil.log"],
-                          [temporary stringByAppendingPathComponent:@"recoil.log"],
-                          @"/var/mobile/Documents/recoil.log", @"/tmp/recoil.log" };
-    int count = (int)(sizeof(paths) / sizeof(paths[0]));
-
-    for (int i = 0; i < count; i++)
-    {
-        FILE *handle = NULL;
-
-        if (!paths[i]) continue;
-
-        handle = fopen([paths[i] UTF8String], "a");
-
-        if (!handle) continue;
-
-        g_log_file = handle;
-
-        NSLog(@"[recoil] log file: %@", paths[i]);
-
-        return;
-    }
-}
-
-static void rcl_log_file_sink(const rcl_log_entry_t *entries, int count)
-{
-    if (!g_log_file)
-    {
-        rcl_log_default_sink(entries, count);
-
-        return;
-    }
-
-    for (int i = 0; i < count; i++)
-    {
-        fprintf(g_log_file, "[%s] %s\n", rcl_log_level_name(entries[i].level), entries[i].text);
-    }
-
-    fflush(g_log_file);
 }
 
 static dispatch_queue_t rcl_log_serial(void)
@@ -121,7 +71,7 @@ void rcl_log_flush(void)
 
         if (batch) memcpy(batch, g_pending, sizeof(rcl_log_entry_t) * (size_t)count);
 
-        sink = g_sink ? g_sink : (g_log_file ? rcl_log_file_sink : rcl_log_default_sink);
+        sink = g_sink ? g_sink : rcl_log_default_sink;
     });
 
     if (!batch) return;
@@ -209,8 +159,6 @@ void rcl_log_set_enabled(int value)
     bool next = value != 0;
 
     if (next == g_enabled) return;
-
-    if (next) rcl_log_file_open();
 
     g_enabled = next;
 

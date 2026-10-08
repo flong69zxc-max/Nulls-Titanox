@@ -477,7 +477,7 @@ void rcl_run_autododge(int from_update);
 #define RCL_IDLE_RETRY_TICKS 300
 #define RCL_STATE_BATTLE 5
 #define RCL_SNAPSHOT_DELAY 1.2
-#define RCL_LOGS_ON 1
+#define RCL_LOGS_ON 0
 
 extern uintptr_t rcl_scene_object;
 

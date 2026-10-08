@@ -27,8 +27,7 @@ int rcl_cal_n = 0;
 
 int rcl_ok(float v, float lo, float hi)
 {
-    if (!(v >= lo && v <= hi))
-        return 0;
+    if (!(v >= lo && v <= hi)) return 0;
 
     return 1;
 }
@@ -49,14 +48,10 @@ static void rcl_dodge_speed_probe(void)
     void *def = NULL;
     int32_t raw = 0;
 
-    if (!rcl_own_elem)
-        return;
-    if (!rcl_read_ptr(rcl_own_elem + (uintptr_t)RCL_ELEM_DEF_OFF, &def) || !def)
-        return;
-    if (!rcl_read_int((uintptr_t)def + (uintptr_t)OFF_CHARDATA_SPEED, &raw))
-        return;
-    if (raw < RCL_DODGE_SPEED_MIN || raw > RCL_DODGE_SPEED_MAX)
-        return;
+    if (!rcl_own_elem) return;
+    if (!rcl_read_ptr(rcl_own_elem + (uintptr_t)RCL_ELEM_DEF_OFF, &def) || !def) return;
+    if (!rcl_read_int((uintptr_t)def + (uintptr_t)OFF_CHARDATA_SPEED, &raw)) return;
+    if (raw < RCL_DODGE_SPEED_MIN || raw > RCL_DODGE_SPEED_MAX) return;
 
     rcl_dodge_speed = (float)raw;
 }
@@ -114,8 +109,7 @@ static void rcl_ad_build_ring(void)
 {
     int i;
 
-    if (rcl_ad_dir_built)
-        return;
+    if (rcl_ad_dir_built) return;
 
     for (i = 0; i < RCL_AD_DIR_COUNT; i++)
     {
@@ -138,8 +132,7 @@ static float rcl_ad_ball_radius(const rcl_proj_t *p)
 {
     float r = rcl_proj_radius(p, 1.0f);
 
-    if (r > 0.0f)
-        return r;
+    if (r > 0.0f) return r;
 
     return RCL_PROJ_RADIUS_DEFAULT;
 }
@@ -149,8 +142,7 @@ static float rcl_ad_traveled(const rcl_proj_t *p)
     float dx;
     float dy;
 
-    if (!p->spawnX && !p->spawnY)
-        return 0.0f;
+    if (!p->spawnX && !p->spawnY) return 0.0f;
 
     dx = (float)(p->x - p->spawnX);
     dy = (float)(p->y - p->spawnY);
@@ -160,12 +152,9 @@ static float rcl_ad_traveled(const rcl_proj_t *p)
 
 static int rcl_ad_is_mine(const rcl_proj_t *p)
 {
-    if (p->team < 0)
-        return 0;
-    if (p->team == rcl_own_team_a)
-        return 1;
-    if (rcl_own_team_b >= 0 && p->team == rcl_own_team_b)
-        return 1;
+    if (p->team < 0) return 0;
+    if (p->team == rcl_own_team_a) return 1;
+    if (rcl_own_team_b >= 0 && p->team == rcl_own_team_b) return 1;
 
     return 0;
 }
@@ -190,38 +179,29 @@ static void rcl_ad_collect(float mx, float my, float bodyR)
         float left = 0.0f;
         float gap = 0.0f;
 
-        if (!p->elem)
-            continue;
-        if (rcl_ad_is_mine(p))
-            continue;
-        if (!rcl_proj_vel(p, &vx, &vy))
-            continue;
+        if (!p->elem) continue;
+        if (rcl_ad_is_mine(p)) continue;
+        if (!rcl_proj_vel(p, &vx, &vy)) continue;
 
         spd = sqrtf(vx * vx + vy * vy);
-        if (spd < 1.0f)
-            continue;
+        if (spd < 1.0f) continue;
 
         rad = rcl_ad_ball_radius(p) + bodyR;
 
         dx = mx - (float)p->x;
         dy = my - (float)p->y;
 
-        if (dx * dx + dy * dy > zone2 + rad * rad)
-            continue;
+        if (dx * dx + dy * dy > zone2 + rad * rad) continue;
 
         along = dx * (vx / spd) + dy * (vy / spd);
-        if (along < -50.0f)
-            continue;
+        if (along < -50.0f) continue;
 
         left = RCL_AD_FALLBACK_RANGE - rcl_ad_traveled(p);
-        if (left <= 10.0f)
-            continue;
+        if (left <= 10.0f) continue;
 
         gap = sqrtf(dx * dx + dy * dy) - rad;
-        if (gap < 0.0f)
-            gap = 0.0f;
-        if (left < 0.85f * gap)
-            continue;
+        if (gap < 0.0f) gap = 0.0f;
+        if (left < 0.85f * gap) continue;
 
         t = &rcl_ad_threats[n];
         t->vx = vx;
@@ -275,13 +255,11 @@ static float rcl_ad_clearance(float mvx, float mvy)
         sq = cx * cx + cy * cy;
         thr = bestClear + t->rad;
 
-        if (thr > 0.0f && sq >= thr * thr)
-            continue;
+        if (thr > 0.0f && sq >= thr * thr) continue;
 
         thr = sqrtf(sq) - t->rad;
 
-        if (thr < bestClear)
-            bestClear = thr;
+        if (thr < bestClear) bestClear = thr;
     }
 
     return bestClear;
@@ -293,8 +271,7 @@ static int rcl_ad_tile_blocked(int tx, int ty)
     int proj = 0;
     int move = 0;
 
-    if (rcl_ad_memo_at[slot] == rcl_ad_memo_gen)
-        return rcl_ad_memo_val[slot];
+    if (rcl_ad_memo_at[slot] == rcl_ad_memo_gen) return rcl_ad_memo_val[slot];
 
     rcl_ad_memo_at[slot] = rcl_ad_memo_gen;
 
@@ -315,10 +292,8 @@ static int rcl_ad_blocked(float x, float y)
     int tx = 0;
     int ty = 0;
 
-    if (x < 0.0f || y < 0.0f)
-        return 1;
-    if (!rcl_tiles)
-        return 0;
+    if (x < 0.0f || y < 0.0f) return 1;
+    if (!rcl_tiles) return 0;
 
     rcl_tile_of(x, y, &tx, &ty);
 
@@ -327,16 +302,11 @@ static int rcl_ad_blocked(float x, float y)
 
 static int rcl_ad_blocked_wide(float x, float y, float r)
 {
-    if (rcl_ad_blocked(x, y))
-        return 1;
-    if (rcl_ad_blocked(x + r, y))
-        return 1;
-    if (rcl_ad_blocked(x - r, y))
-        return 1;
-    if (rcl_ad_blocked(x, y + r))
-        return 1;
-    if (rcl_ad_blocked(x, y - r))
-        return 1;
+    if (rcl_ad_blocked(x, y)) return 1;
+    if (rcl_ad_blocked(x + r, y)) return 1;
+    if (rcl_ad_blocked(x - r, y)) return 1;
+    if (rcl_ad_blocked(x, y + r)) return 1;
+    if (rcl_ad_blocked(x, y - r)) return 1;
 
     return 0;
 }
@@ -384,8 +354,7 @@ static int rcl_ad_update(float mx, float my)
     int chosenIdx;
     int i;
 
-    if (!rcl_own_elem)
-        return 0;
+    if (!rcl_own_elem) return 0;
 
     rcl_ad_build_ring();
     rcl_dodge_speed_probe();
@@ -397,20 +366,16 @@ static int rcl_ad_update(float mx, float my)
 
     rcl_ad_tick_ms = now;
 
-    if (++rcl_ad_memo_gen == 0)
-        rcl_ad_memo_gen = 1;
+    if (++rcl_ad_memo_gen == 0) rcl_ad_memo_gen = 1;
 
     speed = rcl_dodge_speed;
 
-    if (speed < 120.0f)
-        speed = 120.0f;
-    if (speed > 1200.0f)
-        speed = 1200.0f;
+    if (speed < 120.0f) speed = 120.0f;
+    if (speed > 1200.0f) speed = 1200.0f;
 
     bodyR = rcl_own_radius();
 
-    if (bodyR < RCL_OWN_RADIUS_MIN)
-        bodyR = RCL_OWN_RADIUS_MIN;
+    if (bodyR < RCL_OWN_RADIUS_MIN) bodyR = RCL_OWN_RADIUS_MIN;
 
     bodyR += RCL_AD_SKIN;
 
@@ -429,13 +394,11 @@ static int rcl_ad_update(float mx, float my)
     stayClear = rcl_ad_clearance(0.0f, 0.0f);
     inDanger = (stayClear < RCL_AD_ENGAGE) ? 1 : 0;
 
-    if (inDanger)
-        rcl_ad_danger_ms = now;
+    if (inDanger) rcl_ad_danger_ms = now;
 
     if (!inDanger && (rcl_ad_heading < 0 || (now - rcl_ad_danger_ms) > (uint64_t)RCL_AD_GRACE_MS))
     {
-        if (rcl_ad_heading >= 0)
-            rcl_ad_clear_heading();
+        if (rcl_ad_heading >= 0) rcl_ad_clear_heading();
 
         return 0;
     }
@@ -496,8 +459,7 @@ static int rcl_ad_update(float mx, float my)
 
     if (rcl_ad_scores[chosenIdx] <= stayClear)
     {
-        if (rcl_ad_heading >= 0)
-            rcl_ad_clear_heading();
+        if (rcl_ad_heading >= 0) rcl_ad_clear_heading();
 
         return 0;
     }
@@ -518,8 +480,7 @@ void rcl_autododge(void)
         tagOnce = 1;
     }
 
-    if (RCL_STATE_EVERY <= 1 || (rcl_ticks_a % (uint64_t)RCL_STATE_EVERY) == 0)
-        rcl_state();
+    if (RCL_STATE_EVERY <= 1 || (rcl_ticks_a % (uint64_t)RCL_STATE_EVERY) == 0) rcl_state();
 
     rcl_paircal();
 
@@ -531,8 +492,7 @@ void rcl_autododge(void)
     int ownX = 0;
     int ownY = 0;
 
-    if (!rcl_base)
-        return;
+    if (!rcl_base) return;
 
     int sourceIsMode = (rcl_scene_object != 0);
 
@@ -598,8 +558,7 @@ void rcl_autododge(void)
         {
             int32_t liveCount = 0;
 
-            if (resolved)
-                rcl_read_int((uintptr_t)resolved + RCL_MGR_COUNT_OFF, &liveCount);
+            if (resolved) rcl_read_int((uintptr_t)resolved + RCL_MGR_COUNT_OFF, &liveCount);
 
             if (resolved && liveCount > 0 && rcl_hop_chosen == 1 &&
                 (liveCount != rcl_walk_count ||
@@ -623,8 +582,7 @@ void rcl_autododge(void)
                 int loud = (changed || managerChanged || !rcl_probe_done);
                 rcl_probe((uintptr_t)resolved, rcl_scene_object, loud);
 
-                if (loud)
-                    rcl_discriminate((uintptr_t)resolved);
+                if (loud) rcl_discriminate((uintptr_t)resolved);
             }
         }
     }
@@ -634,8 +592,7 @@ void rcl_autododge(void)
         return;
     }
 
-    if (!rcl_coord_ok && rcl_coord_usable < RCL_MIN_USABLE)
-        return;
+    if (!rcl_coord_ok && rcl_coord_usable < RCL_MIN_USABLE) return;
 
     if (!rcl_scene_object)
     {
@@ -687,13 +644,11 @@ void rcl_autododge(void)
     {
         int32_t projCount = 0;
 
-        if (rcl_manager_ptr)
-            rcl_read_int(rcl_manager_ptr + RCL_MGR_COUNT_OFF, &projCount);
+        if (rcl_manager_ptr) rcl_read_int(rcl_manager_ptr + RCL_MGR_COUNT_OFF, &projCount);
 
         rcl_own_team_a = (int)ownTeam;
 
-        if (ownIndex >= 0 && ownTeam >= 0 && ownTeam <= RCL_TEAM_MAX_2)
-            rcl_own_team_seen = 1;
+        if (ownIndex >= 0 && ownTeam >= 0 && ownTeam <= RCL_TEAM_MAX_2) rcl_own_team_seen = 1;
 
         rcl_roster(rcl_own_elem_2, ownIndex, (int)ownTeam, objects, usable);
 
@@ -703,8 +658,7 @@ void rcl_autododge(void)
             return;
         }
 
-        if (rcl_life(objects[ownIndex].object, ownX, ownY))
-            return;
+        if (rcl_life(objects[ownIndex].object, ownX, ownY)) return;
 
         rcl_proj_scan(rcl_manager_ptr, projCount);
 
@@ -717,17 +671,14 @@ float rcl_own_radius(void)
 {
     float r = 0.0f;
 
-    if (!RCL_GEOM)
-        return 0.0f;
+    if (!RCL_GEOM) return 0.0f;
 
     if (rcl_own_r > 1.0f)
     {
         r = rcl_own_r;
 
-        if (r > RCL_OWN_RADIUS_MAX)
-            r = RCL_OWN_RADIUS_MAX;
-        if (r < RCL_OWN_RADIUS_MIN)
-            r = RCL_OWN_RADIUS_MIN;
+        if (r > RCL_OWN_RADIUS_MAX) r = RCL_OWN_RADIUS_MAX;
+        if (r < RCL_OWN_RADIUS_MIN) r = RCL_OWN_RADIUS_MIN;
 
         return r;
     }
@@ -739,12 +690,10 @@ int rcl_proj_vel(const rcl_proj_t *p, float *vxOut, float *vyOut)
 {
     uint64_t dt = 0;
 
-    if (!p->elem || !p->hasPrev)
-        return 0;
+    if (!p->elem || !p->hasPrev) return 0;
 
     dt = p->qtick - p->ptick;
-    if (dt == 0 || dt > RCL_DT_MAX)
-        dt = 1;
+    if (dt == 0 || dt > RCL_DT_MAX) dt = 1;
 
     *vxOut = (float)(p->x - p->px) / (float)dt;
     *vyOut = (float)(p->y - p->py) / (float)dt;

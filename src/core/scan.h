@@ -96,36 +96,29 @@ static inline BOOL rcl_region_flags(uintptr_t address, vm_prot_t *flags)
 {
     vm_prot_t protection = 0;
 
-    if (flags)
-        *flags = 0;
+    if (flags) *flags = 0;
 
-    if (!rcl_query_region(address, &protection, NULL, NULL, NULL))
-        return NO;
+    if (!rcl_query_region(address, &protection, NULL, NULL, NULL)) return NO;
 
-    if (flags)
-        *flags = protection;
+    if (flags) *flags = protection;
 
     return YES;
 }
 
 static inline BOOL rcl_addr_readable(uintptr_t address, size_t length)
 {
-    if (!address || !length)
-        return NO;
+    if (!address || !length) return NO;
 
     uintptr_t end = address + length;
-    if (end < address)
-        return NO;
+    if (end < address) return NO;
 
     uintptr_t cursor = address;
 
     for (int guard = 0; cursor < end && guard < 64; guard++)
     {
         vm_prot_t flags = 0;
-        if (!rcl_region_flags(cursor, &flags))
-            return NO;
-        if ((flags & VM_PROT_READ) == 0)
-            return NO;
+        if (!rcl_region_flags(cursor, &flags)) return NO;
+        if ((flags & VM_PROT_READ) == 0) return NO;
 
         vm_address_t region = (vm_address_t)cursor;
         vm_size_t size = 0;
@@ -141,12 +134,10 @@ static inline BOOL rcl_addr_readable(uintptr_t address, size_t length)
             mach_port_deallocate(mach_task_self(), objectName);
         }
 
-        if (kr != KERN_SUCCESS || size == 0)
-            return NO;
+        if (kr != KERN_SUCCESS || size == 0) return NO;
 
         uintptr_t next = (uintptr_t)region + (uintptr_t)size;
-        if (next <= cursor)
-            return NO;
+        if (next <= cursor) return NO;
 
         cursor = next;
     }
@@ -156,8 +147,7 @@ static inline BOOL rcl_addr_readable(uintptr_t address, size_t length)
 
 static inline BOOL rcl_read_word(uintptr_t address, uint32_t *out)
 {
-    if (!address || (address & 3) || !out)
-        return NO;
+    if (!address || (address & 3) || !out) return NO;
 
     uint32_t value = 0;
     vm_size_t got = 0;
@@ -165,8 +155,7 @@ static inline BOOL rcl_read_word(uintptr_t address, uint32_t *out)
     kern_return_t kr = vm_read_overwrite(mach_task_self(), (vm_address_t)address, sizeof(value),
                                          (vm_address_t)&value, &got);
 
-    if (kr != KERN_SUCCESS || got != sizeof(value))
-        return NO;
+    if (kr != KERN_SUCCESS || got != sizeof(value)) return NO;
 
     *out = value;
     return YES;
@@ -175,46 +164,36 @@ static inline BOOL rcl_read_word(uintptr_t address, uint32_t *out)
 static inline BOOL rcl_addr_executable(uintptr_t address)
 {
     vm_prot_t flags = 0;
-    if (!rcl_region_flags(address, &flags))
-        return NO;
+    if (!rcl_region_flags(address, &flags)) return NO;
     return (flags & VM_PROT_EXECUTE) ? YES : NO;
 }
 
 static inline uintptr_t rcl_image_slide(uintptr_t imageBase)
 {
-    if (!imageBase)
-        return 0;
+    if (!imageBase) return 0;
 
     const struct mach_header_64 *header = (const struct mach_header_64 *)imageBase;
 
-    if (!rcl_addr_readable(imageBase, sizeof(struct mach_header_64)))
-        return 0;
-    if (header->magic != MH_MAGIC_64)
-        return 0;
-    if (header->ncmds == 0 || header->ncmds > 4096)
-        return 0;
-    if (header->sizeofcmds == 0 || header->sizeofcmds > (4u * 1024u * 1024u))
-        return 0;
+    if (!rcl_addr_readable(imageBase, sizeof(struct mach_header_64))) return 0;
+    if (header->magic != MH_MAGIC_64) return 0;
+    if (header->ncmds == 0 || header->ncmds > 4096) return 0;
+    if (header->sizeofcmds == 0 || header->sizeofcmds > (4u * 1024u * 1024u)) return 0;
 
     const uint8_t *cursor = (const uint8_t *)(header + 1);
     const uint8_t *limit = cursor + header->sizeofcmds;
 
     for (uint32_t i = 0; i < header->ncmds; i++)
     {
-        if (cursor + sizeof(struct load_command) > limit)
-            return 0;
+        if (cursor + sizeof(struct load_command) > limit) return 0;
 
         const struct load_command *command = (const struct load_command *)cursor;
 
-        if (command->cmdsize < sizeof(struct load_command))
-            return 0;
-        if (cursor + command->cmdsize > limit)
-            return 0;
+        if (command->cmdsize < sizeof(struct load_command)) return 0;
+        if (cursor + command->cmdsize > limit) return 0;
 
         if (command->cmd == LC_SEGMENT_64)
         {
-            if (command->cmdsize < sizeof(struct segment_command_64))
-                return 0;
+            if (command->cmdsize < sizeof(struct segment_command_64)) return 0;
 
             const struct segment_command_64 *segment = (const struct segment_command_64 *)command;
 
@@ -234,19 +213,14 @@ static inline BOOL rcl_image_segment_contains(uintptr_t imageBase, uintptr_t add
                                               BOOL requireExec, uintptr_t *outStart,
                                               uintptr_t *outEnd, uint32_t *outProt)
 {
-    if (!imageBase || !address)
-        return NO;
+    if (!imageBase || !address) return NO;
 
     const struct mach_header_64 *header = (const struct mach_header_64 *)imageBase;
 
-    if (!rcl_addr_readable(imageBase, sizeof(struct mach_header_64)))
-        return NO;
-    if (header->magic != MH_MAGIC_64)
-        return NO;
-    if (header->ncmds == 0 || header->ncmds > 4096)
-        return NO;
-    if (header->sizeofcmds == 0 || header->sizeofcmds > (4u * 1024u * 1024u))
-        return NO;
+    if (!rcl_addr_readable(imageBase, sizeof(struct mach_header_64))) return NO;
+    if (header->magic != MH_MAGIC_64) return NO;
+    if (header->ncmds == 0 || header->ncmds > 4096) return NO;
+    if (header->sizeofcmds == 0 || header->sizeofcmds > (4u * 1024u * 1024u)) return NO;
 
     uintptr_t slide = rcl_image_slide(imageBase);
 
@@ -255,20 +229,16 @@ static inline BOOL rcl_image_segment_contains(uintptr_t imageBase, uintptr_t add
 
     for (uint32_t i = 0; i < header->ncmds; i++)
     {
-        if (cursor + sizeof(struct load_command) > limit)
-            return NO;
+        if (cursor + sizeof(struct load_command) > limit) return NO;
 
         const struct load_command *command = (const struct load_command *)cursor;
 
-        if (command->cmdsize < sizeof(struct load_command))
-            return NO;
-        if (cursor + command->cmdsize > limit)
-            return NO;
+        if (command->cmdsize < sizeof(struct load_command)) return NO;
+        if (cursor + command->cmdsize > limit) return NO;
 
         if (command->cmd == LC_SEGMENT_64)
         {
-            if (command->cmdsize < sizeof(struct segment_command_64))
-                return NO;
+            if (command->cmdsize < sizeof(struct segment_command_64)) return NO;
 
             const struct segment_command_64 *segment = (const struct segment_command_64 *)command;
 
@@ -278,14 +248,10 @@ static inline BOOL rcl_image_segment_contains(uintptr_t imageBase, uintptr_t add
             if (address >= start && address < end)
             {
                 BOOL executable = (segment->initprot & VM_PROT_EXECUTE) ? YES : NO;
-                if (requireExec && !executable)
-                    return NO;
-                if (outStart)
-                    *outStart = start;
-                if (outEnd)
-                    *outEnd = end;
-                if (outProt)
-                    *outProt = (uint32_t)segment->initprot;
+                if (requireExec && !executable) return NO;
+                if (outStart) *outStart = start;
+                if (outEnd) *outEnd = end;
+                if (outProt) *outProt = (uint32_t)segment->initprot;
                 return YES;
             }
         }
@@ -302,39 +268,29 @@ static inline BOOL rcl_image_text_contains(uintptr_t imageBase, uintptr_t addres
     uintptr_t end = 0;
     uint32_t prot = 0;
 
-    if (!rcl_image_segment_contains(imageBase, address, NO, &start, &end, &prot))
-        return NO;
+    if (!rcl_image_segment_contains(imageBase, address, NO, &start, &end, &prot)) return NO;
 
     return (prot & VM_PROT_EXECUTE) ? YES : NO;
 }
 
 static inline BOOL rcl_object_plausible(void *object)
 {
-    if (!object)
-        return NO;
+    if (!object) return NO;
 
     uintptr_t address = (uintptr_t)object;
 
-    if (address < 0x100000000ULL)
-        return NO;
-    if (address & 7)
-        return NO;
-    if (!rcl_addr_readable(address, sizeof(void *)))
-        return NO;
+    if (address < 0x100000000ULL) return NO;
+    if (address & 7) return NO;
+    if (!rcl_addr_readable(address, sizeof(void *))) return NO;
 
     uintptr_t vtable = 0;
-    if (!rcl_read_bytes(address, &vtable, sizeof(vtable)))
-        return NO;
-    if (!vtable)
-        return NO;
-    if (!rcl_addr_readable(vtable, sizeof(void *)))
-        return NO;
+    if (!rcl_read_bytes(address, &vtable, sizeof(vtable))) return NO;
+    if (!vtable) return NO;
+    if (!rcl_addr_readable(vtable, sizeof(void *))) return NO;
 
     uintptr_t firstEntry = 0;
-    if (!rcl_read_bytes(vtable, &firstEntry, sizeof(firstEntry)))
-        return NO;
-    if (!firstEntry)
-        return NO;
+    if (!rcl_read_bytes(vtable, &firstEntry, sizeof(firstEntry))) return NO;
+    if (!firstEntry) return NO;
 
     return rcl_addr_executable(firstEntry);
 }

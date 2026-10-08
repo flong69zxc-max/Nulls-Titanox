@@ -11,10 +11,11 @@ static const uint32_t RCL_SHA_K[64] = {
     0xc24b8b70UL, 0xc76c51a3UL, 0xd192e819UL, 0xd6990624UL, 0xf40e3585UL, 0x106aa070UL,
     0x19a4c116UL, 0x1e376c08UL, 0x2748774cUL, 0x34b0bcb5UL, 0x391c0cb3UL, 0x4ed8aa4aUL,
     0x5b9cca4fUL, 0x682e6ff3UL, 0x748f82eeUL, 0x78a5636fUL, 0x84c87814UL, 0x8cc70208UL,
-    0x90befffaUL, 0xa4506cebUL, 0xbef9a3f7UL, 0xc67178f2UL};
+    0x90befffaUL, 0xa4506cebUL, 0xbef9a3f7UL, 0xc67178f2UL
+};
 
-static const uint32_t RCL_SHA_IV[8] = {0x6a09e667UL, 0xbb67ae85UL, 0x3c6ef372UL, 0xa54ff53aUL,
-                                       0x510e527fUL, 0x9b05688cUL, 0x1f83d9abUL, 0x5be0cd19UL};
+static const uint32_t RCL_SHA_IV[8] = { 0x6a09e667UL, 0xbb67ae85UL, 0x3c6ef372UL, 0xa54ff53aUL,
+                                        0x510e527fUL, 0x9b05688cUL, 0x1f83d9abUL, 0x5be0cd19UL };
 
 typedef struct
 {
@@ -111,8 +112,7 @@ static void rcl_sha_update(rcl_sha_ctx_t *c, const uint8_t *p, size_t length)
     {
         size_t k = (size_t)64 - c->n;
 
-        if (k > length - i)
-            k = length - i;
+        if (k > length - i) k = length - i;
 
         memcpy(c->buf + c->n, p + i, k);
 
@@ -137,8 +137,7 @@ static void rcl_sha_final(rcl_sha_ctx_t *c, uint8_t out[32])
     pad[0] = 0x80;
     memset(pad + 1, 0, padlen - 1);
 
-    for (i = 0; i < 8; i++)
-        pad[padlen + (size_t)i] = (uint8_t)(bits >> (56 - 8 * i));
+    for (i = 0; i < 8; i++) pad[padlen + (size_t)i] = (uint8_t)(bits >> (56 - 8 * i));
 
     rcl_sha_update(c, pad, padlen + 8);
 
@@ -165,8 +164,7 @@ void rcl_ci_make_block(const uint8_t key16[16], const uint8_t mask16[16], uint8_
 {
     int i = 0;
 
-    for (i = 0; i < 16; i++)
-        out[i] = (uint8_t)(key16[i] ^ mask16[i]);
+    for (i = 0; i < 16; i++) out[i] = (uint8_t)(key16[i] ^ mask16[i]);
 
     memset(out + 16, pad, 64 - 16);
 }
@@ -191,10 +189,8 @@ uint32_t rcl_ci_compute_token(const uint8_t key16[16], const uint8_t cmd16[16],
     typeC =
         (typeRaw <= RCL_CI_MAX_TABLE_TYPE) ? table[typeRaw] : (uint32_t)RCL_CI_FALLBACK_TYPE_CONST;
 
-    for (i = 0; i < 12; i++)
-        msg[i] = cmd16[4 + i];
-    for (i = 0; i < 4; i++)
-        msg[12 + i] = cmd16[i];
+    for (i = 0; i < 12; i++) msg[i] = cmd16[4 + i];
+    for (i = 0; i < 4; i++) msg[12 + i] = cmd16[i];
     msg[16] = (uint8_t)(typeC);
     msg[17] = (uint8_t)(typeC >> 8);
     msg[18] = (uint8_t)(typeC >> 16);
@@ -212,8 +208,7 @@ uint32_t rcl_ci_compute_token(const uint8_t key16[16], const uint8_t cmd16[16],
 
     token = (uint32_t)digest[0] | (((uint32_t)digest[1] & (uint32_t)RCL_CI_TOKEN_MASK) << 8);
 
-    if (token <= (uint32_t)RCL_CI_TOKEN_MIN)
-        token = (uint32_t)RCL_CI_TOKEN_MIN;
+    if (token <= (uint32_t)RCL_CI_TOKEN_MIN) token = (uint32_t)RCL_CI_TOKEN_MIN;
 
     return token;
 }

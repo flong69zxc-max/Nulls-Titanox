@@ -26,10 +26,8 @@ int rcl_ci_load_constants(void)
 {
     int i = 0;
 
-    if (rcl_ci_ready)
-        return 1;
-    if (!rcl_base)
-        return 0;
+    if (rcl_ci_ready) return 1;
+    if (!rcl_base) return 0;
 
     for (i = 0; i < (int)RCL_CI_TABLE_TYPES; i++)
     {
@@ -58,14 +56,10 @@ uint32_t rcl_ci_sign(void *ci, void *battle)
     uint8_t enabled = 0;
     uint32_t token = 0;
 
-    if (!ci || !battle)
-        return 0;
-    if (!rcl_read_bytes((uintptr_t)battle + RCL_BM_HASH_ENABLED_OFF, &enabled, 1))
-        return 0;
-    if (enabled == 0)
-        return 0;
-    if (!rcl_ci_load_constants())
-        return 0;
+    if (!ci || !battle) return 0;
+    if (!rcl_read_bytes((uintptr_t)battle + RCL_BM_HASH_ENABLED_OFF, &enabled, 1)) return 0;
+    if (enabled == 0) return 0;
+    if (!rcl_ci_load_constants()) return 0;
     if (!rcl_read_bytes((uintptr_t)battle + RCL_BM_HASH_KEY_OFF, key, RCL_CI_HASH_MASK_SIZE))
         return 0;
     if (!rcl_read_bytes((uintptr_t)ci + RCL_CI_TOKEN_READ_OFF, cmd, RCL_CI_TOKEN_READ_LEN))
@@ -123,8 +117,7 @@ int rcl_enqueue_type(int x, int y, int type)
 
     memset(msg, 0, (size_t)RCL_MSG_SIZE);
 
-    if (ctorFn)
-        ((void (*)(void *, int))ctorFn)(msg, RCL_TYPE_MOVE);
+    if (ctorFn) ((void (*)(void *, int))ctorFn)(msg, RCL_TYPE_MOVE);
 
     rcl_write_bytes((uintptr_t)msg + RCL_TYPE_OFF, &type, sizeof(type));
     rcl_write_bytes((uintptr_t)msg + RCL_X_OFF, &vx, sizeof(vx));
@@ -148,13 +141,11 @@ int rcl_enqueue_type(int x, int y, int type)
         {
             void *battle = ((void *(*)(void))battleFn)();
 
-            if (battle)
-                rcl_ci_sign(msg, battle);
+            if (battle) rcl_ci_sign(msg, battle);
         }
     }
 
-    if (type == (int)RCL_TYPE_MOVE)
-        (void)rcl_pred_set(x, y);
+    if (type == (int)RCL_TYPE_MOVE) (void)rcl_pred_set(x, y);
 
     mgr = rcl_manager();
 
@@ -224,45 +215,31 @@ static int rcl_pred_probe(uintptr_t pred, int *alignOut, int *readOut, int *writ
     void *vtRaw = NULL;
     uintptr_t vt = 0;
 
-    if (alignOut)
-        *alignOut = 0;
-    if (readOut)
-        *readOut = 0;
-    if (writeOut)
-        *writeOut = 0;
-    if (vtOut)
-        *vtOut = 0;
+    if (alignOut) *alignOut = 0;
+    if (readOut) *readOut = 0;
+    if (writeOut) *writeOut = 0;
+    if (vtOut) *vtOut = 0;
 
-    if (!pred)
-        return 0;
-    if ((pred & 7) != 0)
-        return 0;
+    if (!pred) return 0;
+    if ((pred & 7) != 0) return 0;
 
-    if (alignOut)
-        *alignOut = 1;
+    if (alignOut) *alignOut = 1;
 
-    if (!rcl_addr_readable(pred, RCL_PRED_SPAN))
-        return 0;
+    if (!rcl_addr_readable(pred, RCL_PRED_SPAN)) return 0;
 
-    if (readOut)
-        *readOut = 1;
+    if (readOut) *readOut = 1;
 
-    if (!rcl_addr_writable(pred, RCL_PRED_SPAN))
-        return 0;
+    if (!rcl_addr_writable(pred, RCL_PRED_SPAN)) return 0;
 
-    if (writeOut)
-        *writeOut = 1;
+    if (writeOut) *writeOut = 1;
 
-    if (!rcl_read_ptr(pred, &vtRaw))
-        return 0;
+    if (!rcl_read_ptr(pred, &vtRaw)) return 0;
 
     vt = (uintptr_t)vtRaw;
 
-    if (!vt)
-        return 0;
+    if (!vt) return 0;
 
-    if (vtOut)
-        *vtOut = 1;
+    if (vtOut) *vtOut = 1;
 
     return 1;
 }
@@ -277,34 +254,24 @@ static int rcl_move_pair_ok(uintptr_t obj, int32_t *outX, int32_t *outY)
     int32_t ix = 0;
     int32_t iy = 0;
 
-    if (!obj)
-        return 0;
-    if (!rcl_read_int(obj + RCL_MOVE_X_OFF, &ix))
-        return 0;
-    if (!rcl_read_int(obj + RCL_MOVE_Y_OFF, &iy))
-        return 0;
+    if (!obj) return 0;
+    if (!rcl_read_int(obj + RCL_MOVE_X_OFF, &ix)) return 0;
+    if (!rcl_read_int(obj + RCL_MOVE_Y_OFF, &iy)) return 0;
 
-    if (ix < -RCL_MOVE_COORD_LIMIT || ix > RCL_MOVE_COORD_LIMIT)
-        return 0;
-    if (iy < -RCL_MOVE_COORD_LIMIT || iy > RCL_MOVE_COORD_LIMIT)
-        return 0;
+    if (ix < -RCL_MOVE_COORD_LIMIT || ix > RCL_MOVE_COORD_LIMIT) return 0;
+    if (iy < -RCL_MOVE_COORD_LIMIT || iy > RCL_MOVE_COORD_LIMIT) return 0;
 
-    if (outX)
-        *outX = ix;
-    if (outY)
-        *outY = iy;
+    if (outX) *outX = ix;
+    if (outY) *outY = iy;
 
     return 1;
 }
 
 static int rcl_move_obj_ok(uintptr_t obj)
 {
-    if (!obj)
-        return 0;
-    if (!rcl_instance_shaped(obj))
-        return 0;
-    if (!rcl_move_pair_ok(obj, NULL, NULL))
-        return 0;
+    if (!obj) return 0;
+    if (!rcl_instance_shaped(obj)) return 0;
+    if (!rcl_move_pair_ok(obj, NULL, NULL)) return 0;
 
     return 1;
 }
@@ -321,28 +288,23 @@ static uintptr_t rcl_move_carrier(void)
         {
             cand = rcl_hop(joy, NULL);
 
-            if (rcl_move_obj_ok(cand))
-                return cand;
+            if (rcl_move_obj_ok(cand)) return cand;
         }
 
         cand = rcl_hop(bs, NULL);
 
-        if (rcl_move_obj_ok(cand))
-            return cand;
+        if (rcl_move_obj_ok(cand)) return cand;
 
-        if (rcl_move_obj_ok(bs))
-            return bs;
+        if (rcl_move_obj_ok(bs)) return bs;
     }
 
     if (rcl_scene_object)
     {
-        if (rcl_move_obj_ok(rcl_scene_object))
-            return rcl_scene_object;
+        if (rcl_move_obj_ok(rcl_scene_object)) return rcl_scene_object;
 
         cand = rcl_hop(rcl_scene_object, NULL);
 
-        if (rcl_move_obj_ok(cand))
-            return cand;
+        if (rcl_move_obj_ok(cand)) return cand;
     }
 
     return 0;
@@ -350,10 +312,8 @@ static uintptr_t rcl_move_carrier(void)
 
 uintptr_t rcl_entry_2(uintptr_t rva)
 {
-    if (!rcl_base || !rva)
-        return 0;
-    if (!rcl_callable(rva))
-        return 0;
+    if (!rcl_base || !rva) return 0;
+    if (!rcl_callable(rva)) return 0;
 
     return rcl_base + rva;
 }
@@ -382,15 +342,12 @@ void *rcl_manager(void)
     void *battle = NULL;
     void *mgr = NULL;
 
-    if (!battleFn)
-        return NULL;
+    if (!battleFn) return NULL;
 
     battle = ((void *(*)(void))battleFn)();
 
-    if (!battle)
-        return NULL;
-    if (!rcl_read_ptr((uintptr_t)battle + RCL_MGR_OFF, &mgr) || !mgr)
-        return NULL;
+    if (!battle) return NULL;
+    if (!rcl_read_ptr((uintptr_t)battle + RCL_MGR_OFF, &mgr) || !mgr) return NULL;
 
     return mgr;
 }
@@ -401,14 +358,10 @@ int rcl_queue_count(uintptr_t *mgrOut)
     void *queue = NULL;
     int32_t count = -1;
 
-    if (mgrOut)
-        *mgrOut = (uintptr_t)mgr;
-    if (!mgr)
-        return -1;
-    if (!rcl_read_ptr((uintptr_t)mgr + RCL_QUEUE_OFF, &queue) || !queue)
-        return -1;
-    if (!rcl_read_int((uintptr_t)queue + RCL_QUEUE_COUNT_OFF, &count))
-        return -1;
+    if (mgrOut) *mgrOut = (uintptr_t)mgr;
+    if (!mgr) return -1;
+    if (!rcl_read_ptr((uintptr_t)mgr + RCL_QUEUE_OFF, &queue) || !queue) return -1;
+    if (!rcl_read_int((uintptr_t)queue + RCL_QUEUE_COUNT_OFF, &count)) return -1;
 
     return (int)count;
 }
@@ -418,8 +371,7 @@ int rcl_pred_set(int x, int y)
     uintptr_t setFn = 0;
     uintptr_t pred = 0;
 
-    if (!RCL_PRED_SET)
-        return 0;
+    if (!RCL_PRED_SET) return 0;
 
     if (!rcl_coord_ok)
     {
@@ -429,8 +381,7 @@ int rcl_pred_set(int x, int y)
 
     setFn = rcl_entry_2(RCL_SETINPUT_RVA);
 
-    if (!setFn)
-        return 0;
+    if (!setFn) return 0;
 
     pred = rcl_hop(rcl_controller(), NULL);
 
@@ -452,21 +403,16 @@ int rcl_move_to(int32_t x, int32_t y, float ox, float oy)
     (void)ox;
     (void)oy;
 
-    if (!RCL_MOVE_ON)
-        return 0;
-    if (x < -RCL_MOVE_COORD_LIMIT || x > RCL_MOVE_COORD_LIMIT)
-        return 0;
-    if (y < -RCL_MOVE_COORD_LIMIT || y > RCL_MOVE_COORD_LIMIT)
-        return 0;
+    if (!RCL_MOVE_ON) return 0;
+    if (x < -RCL_MOVE_COORD_LIMIT || x > RCL_MOVE_COORD_LIMIT) return 0;
+    if (y < -RCL_MOVE_COORD_LIMIT || y > RCL_MOVE_COORD_LIMIT) return 0;
 
     fn = rcl_entry_2(RCL_MOVE_RVA);
     own = rcl_move_carrier();
 
-    if (!fn || !own)
-        return 0;
+    if (!fn || !own) return 0;
 
-    if (!rcl_move_pair_ok(own, NULL, NULL))
-        return 0;
+    if (!rcl_move_pair_ok(own, NULL, NULL)) return 0;
 
     ((void (*)(void *, int, int, int))fn)((void *)own, (int)x, (int)y, (int)RCL_MOVE_FLAG_10);
 

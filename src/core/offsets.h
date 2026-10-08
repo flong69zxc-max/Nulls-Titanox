@@ -99,7 +99,42 @@ typedef struct
     uint64_t ptick;
     uint64_t qtick;
     int hasPrev;
+    const char *name;
+    const char *ownerName;
+    int32_t targetX;
+    int32_t targetY;
+    int32_t ownerX;
+    int32_t ownerY;
+    float speed;
+    float radius;
+    float angle;
+    uint64_t spawnedAt;
+    float vx;
+    float vy;
+    int isThrower;
+    int isBeam;
+    int32_t spawnAreaRadius;
+    int32_t spawnAreaActiveTime;
+    int32_t castRange;
 } rcl_proj_t;
+
+typedef struct
+{
+    const char *name;
+    float angle;
+    int32_t spawnX;
+    int32_t spawnY;
+    int32_t x;
+    int32_t y;
+} rcl_proj_death_t;
+
+#define RCL_SC_LEN_OFF 0x4ULL
+#define RCL_SC_DATA_OFF 0x8ULL
+#define RCL_SC_INLINE_MAX 7
+#define RCL_PROJ_ANGLE_OFF 0x1d4ULL
+#define RCL_PROJ_DATA_NAME_OFF 0x58ULL
+#define RCL_PROJ_NAME_MAX 64
+#define RCL_PROJ_DEATH_MAX 16
 
 #define RVA_BATTLEMODE_GETINSTANCE 0ULL
 #define RVA_BATTLESCREEN__BATTLESCREEN 0ULL
@@ -162,7 +197,6 @@ typedef struct
 #define RCL_CTRL_ALIVE_OFF 0xf80ULL
 
 #define RCL_BATTLE_RVA 0x1123e58ULL
-#define RCL_JOY_TARGET_OFF 0x58ULL
 #define RCL_CLIENT_OFF 0x28ULL
 #define RCL_CLIENT_POS_X_OFF 0x80ULL
 #define RCL_CLIENT_POS_Y_OFF 0x84ULL

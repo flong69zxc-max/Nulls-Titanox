@@ -514,6 +514,8 @@ extern uint64_t rcl_proj_diff_logs;
 extern uintptr_t rcl_own_elem;
 extern int32_t rcl_own_gid;
 extern rcl_proj_t rcl_projs[RCL_PROJ_MAX];
+extern rcl_proj_death_t rcl_proj_deaths[RCL_PROJ_DEATH_MAX];
+extern int rcl_proj_death_n;
 extern int rcl_signal_logs;
 
 int rcl_modesig_hit(uintptr_t at);

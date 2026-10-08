@@ -278,33 +278,21 @@ static int rcl_move_obj_ok(uintptr_t obj)
 
 static uintptr_t rcl_move_carrier(void)
 {
-    uintptr_t bs = rcl_client();
-    uintptr_t joy = 0;
-    uintptr_t cand = 0;
+    uintptr_t ctrl = rcl_controller();
+    uintptr_t mover = 0;
 
-    if (bs)
+    if (ctrl)
     {
-        if (rcl_read_ptr(bs + (uintptr_t)RCL_JOY_TARGET_OFF, (void **)&joy) && joy)
-        {
-            cand = rcl_hop(joy, NULL);
+        mover = rcl_hop(ctrl, NULL);
 
-            if (rcl_move_obj_ok(cand)) return cand;
-        }
-
-        cand = rcl_hop(bs, NULL);
-
-        if (rcl_move_obj_ok(cand)) return cand;
-
-        if (rcl_move_obj_ok(bs)) return bs;
+        if (rcl_move_obj_ok(mover)) return mover;
     }
 
     if (rcl_scene_object)
     {
-        if (rcl_move_obj_ok(rcl_scene_object)) return rcl_scene_object;
+        mover = rcl_hop(rcl_scene_object, NULL);
 
-        cand = rcl_hop(rcl_scene_object, NULL);
-
-        if (rcl_move_obj_ok(cand)) return cand;
+        if (rcl_move_obj_ok(mover)) return mover;
     }
 
     return 0;

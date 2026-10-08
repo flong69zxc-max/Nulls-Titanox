@@ -12,4 +12,24 @@
 #define RCL_OWN_RADIUS_MIN 40.0f
 #define RCL_OWN_RADIUS_MAX 200.0f
 
+typedef struct
+{
+    int has_segment;
+    float x;
+    float y;
+    float radius;
+    float t0;
+    float t1;
+    float ax;
+    float ay;
+    float bx;
+    float by;
+    const char *name;
+} rcl_hazard_t;
+
+int rcl_shape_hazards(const rcl_proj_t *p, uint64_t now_ms, rcl_hazard_t *out, int max_out);
+int rcl_blocks_linear(const char *name);
+void rcl_note_burst_death(const rcl_proj_death_t *rec);
+void rcl_reset_profiles(void);
+
 #endif

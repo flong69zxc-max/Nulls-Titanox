@@ -3097,6 +3097,47 @@ void rcl_state_note(int state)
 
 rcl_proj_t rcl_projs[RCL_PROJ_MAX];
 
+rcl_proj_death_t rcl_proj_deaths[RCL_PROJ_DEATH_MAX];
+
+int rcl_proj_death_n = 0;
+
+static char rcl_proj_name_buf[RCL_PROJ_MAX][RCL_PROJ_NAME_MAX];
+
+static int rcl_proj_read_name(uintptr_t data, char *dst, int cap)
+{
+    void *strp = NULL;
+    void *farp = NULL;
+    uintptr_t str = 0;
+    uintptr_t src = 0;
+    int32_t len = 0;
+
+    if (!data || !dst || cap <= 1) return 0;
+
+    if (!rcl_read_ptr(data + (uintptr_t)RCL_PROJ_DATA_NAME_OFF, &strp) || !strp) return 0;
+
+    str = (uintptr_t)strp;
+
+    if (!rcl_read_int(str + (uintptr_t)RCL_SC_LEN_OFF, &len)) return 0;
+    if (len <= 0 || len >= cap) return 0;
+
+    if (len <= RCL_SC_INLINE_MAX)
+    {
+        src = str + (uintptr_t)RCL_SC_DATA_OFF;
+    }
+    else
+    {
+        if (!rcl_read_ptr(str + (uintptr_t)RCL_SC_DATA_OFF, &farp) || !farp) return 0;
+
+        src = (uintptr_t)farp;
+    }
+
+    if (!rcl_read_bytes(src, dst, (size_t)len)) return 0;
+
+    dst[len] = 0;
+
+    return 1;
+}
+
 int rcl_proj_scan(uintptr_t manager, int32_t count)
 {
     void *array = NULL;
@@ -3114,6 +3155,7 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
     }
 
     rcl_proj_other = 0;
+    rcl_proj_death_n = 0;
 
     for (i = 0; i < count && found < RCL_PROJ_MAX; i++)
     {
@@ -3207,6 +3249,7 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
             rcl_projs[slot].spawnY = py;
             rcl_projs[slot].ptick = rcl_ticks_a;
             rcl_projs[slot].hasPrev = 0;
+            rcl_projs[slot].spawnedAt = (uint64_t)(CFAbsoluteTimeGetCurrent() * 1000.0);
         }
 
         {
@@ -3241,6 +3284,27 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
             }
         }
 
+        {
+            void *def = NULL;
+            float ang = 0.0f;
+
+            rcl_projs[slot].name = NULL;
+
+            if (rcl_read_ptr((uintptr_t)element + (uintptr_t)RCL_ELEM_DEF_OFF, &def) && def)
+            {
+                if (rcl_proj_read_name((uintptr_t)def, rcl_proj_name_buf[slot], RCL_PROJ_NAME_MAX))
+                {
+                    rcl_projs[slot].name = rcl_proj_name_buf[slot];
+                }
+            }
+
+            if (rcl_read_float((uintptr_t)element + (uintptr_t)RCL_PROJ_ANGLE_OFF, &ang) &&
+                ang >= -360.0f && ang <= 360.0f)
+            {
+                rcl_projs[slot].angle = ang;
+            }
+        }
+
         rcl_projs[slot].classRva = vtRva;
         rcl_projs[slot].x = px;
         rcl_projs[slot].y = py;
@@ -3254,8 +3318,22 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
     {
         if (rcl_projs[k].classRva != (uintptr_t)-1) continue;
 
+        if (rcl_projs[k].elem && rcl_projs[k].name && rcl_proj_death_n < RCL_PROJ_DEATH_MAX)
+        {
+            rcl_proj_death_t *rec = &rcl_proj_deaths[rcl_proj_death_n];
+
+            rec->name = rcl_projs[k].name;
+            rec->angle = rcl_projs[k].angle;
+            rec->spawnX = rcl_projs[k].spawnX;
+            rec->spawnY = rcl_projs[k].spawnY;
+            rec->x = rcl_projs[k].x;
+            rec->y = rcl_projs[k].y;
+            rcl_proj_death_n++;
+        }
+
         rcl_projs[k].elem = 0;
         rcl_projs[k].hasPrev = 0;
+        rcl_projs[k].name = NULL;
     }
 
     if (rcl_proj_other > 0 && !rcl_team_other_seen)

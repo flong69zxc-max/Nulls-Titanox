@@ -1,9 +1,9 @@
 Package: com.client.recoil
 Name: Recoil Tweak
-Version: 0.3.0
+Version: 1.0.1
 Architecture: iphoneos-arm64
-Description: Nulls Brawl Engine
-Maintainer: @eurogoth
+Description: Nulls Brawl Exploit
+Maintainer: recode-dev
 Author: @eurogoth
 Section: Tweaks
 License: MIT

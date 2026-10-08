@@ -774,4 +774,39 @@ int rcl_element_ascii(uintptr_t element);
 
 int rcl_witness(int32_t *x, int32_t *y);
 
+#define RCL_COL_SPEED_2 0
+#define RCL_COL_RADIUS_2 1
+#define RCL_COL_ISBEAM_2 2
+#define RCL_COL_INDIRECT_2 3
+#define RCL_COL_GRAVITY_2 4
+#define RCL_COL_HITPOINTS_2 5
+#define RCL_COL_AARANGE_2 6
+#define RCL_COL_COLLISION_2 7
+#define RCL_COL_CASTRANGE_2 8
+#define RCL_COL_MAXCASTRANGE_2 9
+#define RCL_COL_DAMAGE_2 10
+#define RCL_COL_TIMEMS_2 11
+#define RCL_COL_INNERRADIUS_2 12
+#define RCL_COL_WEAPONSKILL_2 13
+#define RCL_COL_AAPROJECTILE_2 14
+#define RCL_COL_FILENAME_2 15
+#define RCL_COL_TYPE_2 16
+#define RCL_COL_SLOTS_2 17
+
+extern uintptr_t rcl_pl_obj[12];
+extern uintptr_t rcl_tb_mate_obj_2[8];
+extern uintptr_t rcl_tb_enemy_obj_2[12];
+extern uintptr_t rcl_tb_own_obj_2;
+
+uintptr_t rcl_tb_get_2(int index);
+int rcl_tb_idx_2(const char *name);
+int rcl_tb_cnt_2(uintptr_t table);
+int rcl_tb_tname_2(uintptr_t table, char *dst, int cap);
+uintptr_t rcl_tb_row_2(int tableIndex, const char *name);
+uintptr_t rcl_tb_odata_2(uintptr_t object);
+int rcl_tb_int_2(uintptr_t data, int slot);
+int rcl_tb_name_2(uintptr_t data, char *dst, int cap);
+void rcl_tb_probe_2(void);
+void rcl_tb_dump_2(void);
+
 #endif

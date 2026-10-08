@@ -34,6 +34,11 @@ typedef struct
     int32_t spawnAreaRadius;
     int32_t spawnAreaActiveTime;
     int32_t castRange;
+    int32_t dataSpeed;
+    int32_t dataRadius;
+    int32_t dataBeam;
+    int32_t dataGravity;
+    int32_t dataRange;
 } rcl_proj_t;
 
 #define RCL_FIT_COUNT 9

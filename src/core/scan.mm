@@ -3516,6 +3516,393 @@ static int rcl_proj_read_name(uintptr_t data, char *dst, int cap)
     return 1;
 }
 
+static const char *rcl_tb_cols_2[RCL_COL_SLOTS_2] = {
+    "Speed",   "Radius",   "IsBeam",  "Indirect",       "Gravity",     "Hitpoints",
+    "AutoAttackRange",     "CollisionRadius",           "CastingRange", "MaxCastingRange",
+    "Damage",  "TimeMs",   "InnerRadius",              "WeaponSkill",  "AutoAttackProjectile",
+    "FileName", "Type",
+};
+
+static unsigned char rcl_tb_col_buf_2[RCL_COL_SLOTS_2][RCL_STR_SIZE_2];
+static int rcl_tb_col_ok_2[RCL_COL_SLOTS_2];
+static uintptr_t rcl_tb_int_fn_2 = 0;
+static uintptr_t rcl_tb_name_fn_2 = 0;
+static uintptr_t rcl_tb_rown_fn_2 = 0;
+static uintptr_t rcl_tb_ctor_fn_2 = 0;
+
+uintptr_t rcl_pl_obj[12];
+
+uintptr_t rcl_tb_mate_obj_2[8];
+
+uintptr_t rcl_tb_enemy_obj_2[12];
+
+uintptr_t rcl_tb_own_obj_2 = 0;
+
+void rcl_tb_probe_2(void)
+{
+    rcl_tb_int_fn_2 = rcl_callable(RCL_FN_DATA_INT_RVA_2);
+    rcl_tb_name_fn_2 = rcl_callable(RCL_FN_TBL_NAME_RVA_2);
+    rcl_tb_rown_fn_2 = rcl_callable(RCL_FN_TBL_ROWNAME_RVA_2);
+    rcl_tb_ctor_fn_2 = rcl_callable(RCL_FN_STR_CTOR_RVA_2);
+}
+
+static void *rcl_tb_col_2(int slot)
+{
+    if (slot < 0 || slot >= RCL_COL_SLOTS_2)
+    {
+        return nullptr;
+    }
+    if (!rcl_tb_ctor_fn_2)
+    {
+        rcl_tb_probe_2();
+    }
+    if (!rcl_tb_ctor_fn_2)
+    {
+        return nullptr;
+    }
+    if (!rcl_tb_col_ok_2[slot])
+    {
+        ((void *(*)(void *, const char *))rcl_tb_ctor_fn_2)(rcl_tb_col_buf_2[slot], rcl_tb_cols_2[slot]);
+        rcl_tb_col_ok_2[slot] = 1;
+    }
+    return rcl_tb_col_buf_2[slot];
+}
+
+static int rcl_tb_text_2(const char *text)
+{
+    int i = 0;
+    if (!text || !text[0])
+    {
+        return 0;
+    }
+    for (i = 0; text[i]; i++)
+    {
+        unsigned char c = (unsigned char)text[i];
+        if (c < 0x20 || c > 0x7e)
+        {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int rcl_tb_sc_2(uintptr_t sc, char *dst, int cap)
+{
+    int32_t len = 0;
+    uintptr_t src = 0;
+    void *farp = nullptr;
+    if (!sc || !dst || cap <= 1)
+    {
+        return 0;
+    }
+    if (!rcl_read_int(sc + (uintptr_t)RCL_SC_LEN_OFF, &len))
+    {
+        return 0;
+    }
+    if (len <= 0 || len >= cap || len > 96)
+    {
+        return 0;
+    }
+    if (len <= 7)
+    {
+        src = sc + (uintptr_t)RCL_SC_DATA_OFF;
+    }
+    else
+    {
+        if (!rcl_read_ptr(sc + (uintptr_t)RCL_SC_DATA_OFF, &farp) || !farp)
+        {
+            return 0;
+        }
+        src = (uintptr_t)farp;
+    }
+    if (!rcl_read_bytes(src, dst, (size_t)len))
+    {
+        return 0;
+    }
+    dst[len] = 0;
+    if (!rcl_tb_text_2(dst))
+    {
+        dst[0] = 0;
+        return 0;
+    }
+    return 1;
+}
+
+static int rcl_tb_eq_2(const char *a, const char *b)
+{
+    int i = 0;
+    if (!a || !b)
+    {
+        return 0;
+    }
+    for (i = 0; a[i] && b[i]; i++)
+    {
+        char ca = a[i];
+        char cb = b[i];
+        if (ca >= 'A' && ca <= 'Z')
+        {
+            ca = (char)(ca + 32);
+        }
+        if (cb >= 'A' && cb <= 'Z')
+        {
+            cb = (char)(cb + 32);
+        }
+        if (ca != cb)
+        {
+            return 0;
+        }
+    }
+    return (a[i] == 0 && b[i] == 0) ? 1 : 0;
+}
+
+uintptr_t rcl_tb_get_2(int index)
+{
+    void *table = nullptr;
+    if (!rcl_base || index < 0 || index >= RCL_TBL_MAX_2)
+    {
+        return 0;
+    }
+    if (!rcl_read_ptr(rcl_base + (uintptr_t)RCL_TBL_ARRAY_RVA_2 + (uintptr_t)index * 8ULL, &table))
+    {
+        return 0;
+    }
+    return (uintptr_t)table;
+}
+
+int rcl_tb_cnt_2(uintptr_t table)
+{
+    int32_t count = 0;
+    if (!table)
+    {
+        return 0;
+    }
+    if (!rcl_read_int(table + (uintptr_t)RCL_TBL_COUNT_OFF_2, &count))
+    {
+        return 0;
+    }
+    if (count < 0 || count > 1000000)
+    {
+        return 0;
+    }
+    return (int)count;
+}
+
+int rcl_tb_tname_2(uintptr_t table, char *dst, int cap)
+{
+    if (dst && cap > 0)
+    {
+        dst[0] = 0;
+    }
+    if (!table)
+    {
+        return 0;
+    }
+    if (!rcl_tb_name_fn_2)
+    {
+        rcl_tb_probe_2();
+    }
+    if (!rcl_tb_name_fn_2)
+    {
+        return 0;
+    }
+    return rcl_tb_sc_2(((uintptr_t (*)(void *))rcl_tb_name_fn_2)((void *)table), dst, cap);
+}
+
+int rcl_tb_idx_2(const char *name)
+{
+    int i = 0;
+    char buf[64];
+    if (!name || !name[0])
+    {
+        return -1;
+    }
+    for (i = 0; i < RCL_TBL_MAX_2; i++)
+    {
+        uintptr_t table = rcl_tb_get_2(i);
+        if (!table)
+        {
+            continue;
+        }
+        if (!rcl_tb_tname_2(table, buf, (int)sizeof(buf)))
+        {
+            continue;
+        }
+        if (rcl_tb_eq_2(buf, name))
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+uintptr_t rcl_tb_row_2(int tableIndex, const char *name)
+{
+    unsigned char sc[RCL_STR_SIZE_2];
+    uintptr_t row = 0;
+    if (!name || !name[0] || tableIndex < 0 || tableIndex >= RCL_TBL_MAX_2)
+    {
+        return 0;
+    }
+    if (!rcl_tb_ctor_fn_2 || !rcl_tb_rown_fn_2)
+    {
+        rcl_tb_probe_2();
+    }
+    if (!rcl_tb_ctor_fn_2 || !rcl_tb_rown_fn_2)
+    {
+        return 0;
+    }
+    ((void *(*)(void *, const char *))rcl_tb_ctor_fn_2)(sc, name);
+    row = ((uintptr_t (*)(void *, int))rcl_tb_rown_fn_2)(sc, tableIndex);
+    return row;
+}
+
+uintptr_t rcl_tb_odata_2(uintptr_t object)
+{
+    void *data = nullptr;
+    uintptr_t vt = 0;
+    uintptr_t entry = 0;
+    if (!object)
+    {
+        return 0;
+    }
+    if (!rcl_read_ptr(object + (uintptr_t)RCL_ELEM_DATA_OFF_2, &data) || !data)
+    {
+        return 0;
+    }
+    if (!rcl_addr_readable((uintptr_t)data, 0x80))
+    {
+        return 0;
+    }
+    if (!rcl_read_bytes((uintptr_t)data, &vt, sizeof(vt)) || !vt)
+    {
+        return 0;
+    }
+    if (!rcl_addr_readable(vt, sizeof(entry)))
+    {
+        return 0;
+    }
+    if (!rcl_read_bytes(vt, &entry, sizeof(entry)) || !entry)
+    {
+        return 0;
+    }
+    if (!rcl_addr_executable(entry))
+    {
+        return 0;
+    }
+    return (uintptr_t)data;
+}
+
+int rcl_tb_int_2(uintptr_t data, int slot)
+{
+    void *name = nullptr;
+    if (!data)
+    {
+        return 0;
+    }
+    if (!rcl_tb_int_fn_2)
+    {
+        rcl_tb_probe_2();
+    }
+    if (!rcl_tb_int_fn_2)
+    {
+        return 0;
+    }
+    name = rcl_tb_col_2(slot);
+    if (!name)
+    {
+        return 0;
+    }
+    return ((int (*)(void *, void *))rcl_tb_int_fn_2)((void *)data, name);
+}
+
+int rcl_tb_name_2(uintptr_t data, char *dst, int cap)
+{
+    void *sc = nullptr;
+    if (dst && cap > 0)
+    {
+        dst[0] = 0;
+    }
+    if (!data)
+    {
+        return 0;
+    }
+    if (!rcl_read_ptr(data + (uintptr_t)RCL_DATA_NAME_OFF_2, &sc) || !sc)
+    {
+        return 0;
+    }
+    return rcl_tb_sc_2((uintptr_t)sc, dst, cap);
+}
+
+static int rcl_tb_dump_n_2 = 0;
+static uint64_t rcl_tb_dump_ms_2 = 0;
+static int rcl_tb_probe_done_2 = 0;
+
+void rcl_tb_dump_2(void)
+{
+    uint64_t now = 0;
+    char nm[40];
+    int i = 0;
+    int ci = 0;
+    int si = 0;
+    int pi = 0;
+    int ai = 0;
+    uintptr_t data = 0;
+    if (!rcl_tb_probe_done_2)
+    {
+        rcl_tb_probe_done_2 = 1;
+        rcl_tb_probe_2();
+        ci = rcl_tb_idx_2("characters");
+        si = rcl_tb_idx_2("skills");
+        pi = rcl_tb_idx_2("projectiles");
+        ai = rcl_tb_idx_2("area_effects_logic");
+        NSLog(@"[recoil][data] tables chars=%d skills=%d projs=%d areas=%d rows=%d/%d", ci, si, pi, ai,
+              ci >= 0 ? rcl_tb_cnt_2(rcl_tb_get_2(ci)) : 0, pi >= 0 ? rcl_tb_cnt_2(rcl_tb_get_2(pi)) : 0);
+    }
+    if (rcl_tb_dump_n_2 >= RCL_TB_DUMP_MAX_2)
+    {
+        return;
+    }
+    now = (uint64_t)(CFAbsoluteTimeGetCurrent() * 1000.0);
+    if (rcl_tb_dump_n_2 > 0 && now < rcl_tb_dump_ms_2 + (uint64_t)RCL_TB_DUMP_INTERVAL_2)
+    {
+        return;
+    }
+    rcl_tb_dump_ms_2 = now;
+    rcl_tb_dump_n_2++;
+    nm[0] = 0;
+    data = rcl_tb_odata_2(rcl_tb_own_obj_2);
+    if (data)
+    {
+        rcl_tb_name_2(data, nm, (int)sizeof(nm));
+    }
+    NSLog(@"[recoil][data] own=%s rng=%d hp=%d mates=%d enemies=%d", nm[0] ? nm : "?", data ? rcl_tb_int_2(data, RCL_COL_AARANGE_2) : 0,
+          data ? rcl_tb_int_2(data, RCL_COL_HITPOINTS_2) : 0, rcl_mate_n, rcl_enemy_n);
+    for (i = 0; i < rcl_mate_n && i < 8; i++)
+    {
+        nm[0] = 0;
+        data = rcl_tb_odata_2(rcl_tb_mate_obj_2[i]);
+        if (data)
+        {
+            rcl_tb_name_2(data, nm, (int)sizeof(nm));
+        }
+        NSLog(@"[recoil][data] mate[%d] %s rng=%d hp=%d spd=%d rad=%d", i, nm[0] ? nm : "?", data ? rcl_tb_int_2(data, RCL_COL_AARANGE_2) : 0,
+              data ? rcl_tb_int_2(data, RCL_COL_HITPOINTS_2) : 0, data ? rcl_tb_int_2(data, RCL_COL_SPEED_2) : 0,
+              data ? rcl_tb_int_2(data, RCL_COL_COLLISION_2) : 0);
+    }
+    for (i = 0; i < rcl_enemy_n && i < 12; i++)
+    {
+        nm[0] = 0;
+        data = rcl_tb_odata_2(rcl_tb_enemy_obj_2[i]);
+        if (data)
+        {
+            rcl_tb_name_2(data, nm, (int)sizeof(nm));
+        }
+        NSLog(@"[recoil][data] enemy[%d] %s rng=%d hp=%d spd=%d rad=%d", i, nm[0] ? nm : "?",
+              data ? rcl_tb_int_2(data, RCL_COL_AARANGE_2) : 0, data ? rcl_tb_int_2(data, RCL_COL_HITPOINTS_2) : 0,
+              data ? rcl_tb_int_2(data, RCL_COL_SPEED_2) : 0, data ? rcl_tb_int_2(data, RCL_COL_COLLISION_2) : 0);
+    }
+}
+
 int rcl_proj_scan(uintptr_t manager, int32_t count)
 {
     void *array = nullptr;
@@ -3551,6 +3938,7 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
         int32_t px = 0;
         int32_t py = 0;
         int slot = -1;
+        int fresh = 0;
         if (!rcl_read_ptr((uintptr_t)array + (uintptr_t)i * 8ULL, &element) || !element)
         {
             continue;
@@ -3632,6 +4020,7 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
         }
         else
         {
+            fresh = 1;
             rcl_projs[slot].elem = (uintptr_t)element;
             rcl_projs[slot].px = px;
             rcl_projs[slot].py = py;
@@ -3699,6 +4088,26 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
                 if (rcl_read_int((uintptr_t)element + (uintptr_t)RCL_PROJ_ANGLE_OFF, &raw) && raw > 0 && raw <= 360)
                 {
                     rcl_projs[slot].angle = (float)raw;
+                }
+            }
+        }
+        if (fresh)
+        {
+            void *pdef = nullptr;
+            rcl_projs[slot].dataSpeed = 0;
+            rcl_projs[slot].dataRadius = 0;
+            rcl_projs[slot].dataBeam = 0;
+            rcl_projs[slot].dataGravity = 0;
+            rcl_projs[slot].dataRange = 0;
+            if (rcl_read_ptr((uintptr_t)element + (uintptr_t)RCL_ELEM_DEF_OFF, &pdef) && pdef)
+            {
+                uintptr_t pdata = rcl_tb_odata_2((uintptr_t)element);
+                if (pdata)
+                {
+                    rcl_projs[slot].dataSpeed = rcl_tb_int_2(pdata, RCL_COL_SPEED_2);
+                    rcl_projs[slot].dataRadius = rcl_tb_int_2(pdata, RCL_COL_RADIUS_2);
+                    rcl_projs[slot].dataBeam = rcl_tb_int_2(pdata, RCL_COL_ISBEAM_2);
+                    rcl_projs[slot].dataGravity = rcl_tb_int_2(pdata, RCL_COL_GRAVITY_2);
                 }
             }
         }
@@ -4408,11 +4817,13 @@ void rcl_roster(uintptr_t ownElem, int ownIndex, int ownTeam, const rcl_obj_t *o
         rcl_pl_y[rcl_pl_n] = objects[i].y;
         rcl_pl_team[rcl_pl_n] = team;
         rcl_pl_mine[rcl_pl_n] = isOwn;
+        rcl_pl_obj[rcl_pl_n] = objects[i].object;
         rcl_pl_n++;
         if (isOwn)
         {
             rcl_own_x = objects[i].x;
             rcl_own_y = objects[i].y;
+            rcl_tb_own_obj_2 = objects[i].object;
             continue;
         }
         for (h = 0; h < hn; h++)
@@ -4437,6 +4848,7 @@ void rcl_roster(uintptr_t ownElem, int ownIndex, int ownTeam, const rcl_obj_t *o
         }
         rcl_mate_x[rcl_mate_n] = objects[i].x;
         rcl_mate_y[rcl_mate_n] = objects[i].y;
+        rcl_tb_mate_obj_2[rcl_mate_n] = objects[i].object;
         rcl_mate_n++;
     }
     ownSide++;
@@ -4492,6 +4904,7 @@ void rcl_roster(uintptr_t ownElem, int ownIndex, int ownTeam, const rcl_obj_t *o
                     {
                         rcl_mate_x[m] = rcl_pl_x[k];
                         rcl_mate_y[m] = rcl_pl_y[k];
+                        rcl_tb_mate_obj_2[m] = rcl_pl_obj[k];
                         m++;
                     }
                 }
@@ -4499,6 +4912,7 @@ void rcl_roster(uintptr_t ownElem, int ownIndex, int ownTeam, const rcl_obj_t *o
                 {
                     rcl_enemy_x[e] = rcl_pl_x[k];
                     rcl_enemy_y[e] = rcl_pl_y[k];
+                    rcl_tb_enemy_obj_2[e] = rcl_pl_obj[k];
                     e++;
                 }
             }
@@ -4520,9 +4934,11 @@ void rcl_roster(uintptr_t ownElem, int ownIndex, int ownTeam, const rcl_obj_t *o
             }
             rcl_enemy_x[rcl_enemy_n] = rcl_pl_x[i];
             rcl_enemy_y[rcl_enemy_n] = rcl_pl_y[i];
+            rcl_tb_enemy_obj_2[rcl_enemy_n] = rcl_pl_obj[i];
             rcl_enemy_n++;
         }
     }
+    rcl_tb_dump_2();
 }
 
 int rcl_cand_frame[3];

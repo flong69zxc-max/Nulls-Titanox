@@ -6,7 +6,6 @@
 
 #define RCL_MSG_SIZE 0x48
 #define RCL_TYPE_MOVE 0x2
-#define RCL_QUEUE 1
 #define RCL_QUEUE_GUARD_MGR 0
 #define RCL_PRED_SET 1
 #define RCL_PRED_FLAG 1

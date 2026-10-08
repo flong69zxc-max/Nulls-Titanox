@@ -6,8 +6,6 @@
 #define RCL_CI_SIGNING_ON 0
 #endif
 
-int rcl_q_after = -1;
-
 static uint32_t rcl_ci_table[RCL_CI_TABLE_TYPES];
 
 static uint8_t rcl_ci_inner[0x10];
@@ -114,8 +112,6 @@ int rcl_enqueue_type(int x, int y, int type)
     void *mgr = nullptr;
     void *msg = nullptr;
 
-    rcl_q_after = -1;
-
     if (!inputFn)
     {
         return 0;
@@ -185,15 +181,6 @@ int rcl_enqueue_type(int x, int y, int type)
     }
 
     ((void (*)(void *, void *))inputFn)(mgr, msg);
-
-    rcl_q_after = rcl_queue_count(nullptr);
-    if (RCL_QUEUE)
-    {
-        if ((uint64_t)(rcl_q_after > 0 ? rcl_q_after : 0) > rcl_q_max)
-        {
-            rcl_q_max = (uint64_t)rcl_q_after;
-        }
-    }
 
     return 1;
 }

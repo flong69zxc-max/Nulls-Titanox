@@ -280,12 +280,22 @@ static uintptr_t rcl_move_carrier(void)
 {
     uintptr_t ctrl = rcl_controller();
     uintptr_t mover = 0;
+    void *mgr = NULL;
 
     if (ctrl)
     {
         mover = rcl_hop(ctrl, NULL);
 
-        if (rcl_move_obj_ok(mover)) return mover;
+        if (mover && rcl_pointer_plausible(mover)) return mover;
+
+        if (rcl_read_ptr(ctrl + (uintptr_t)RCL_MGR_OFF, &mgr) && mgr)
+        {
+            mover = rcl_hop((uintptr_t)mgr, NULL);
+
+            if (rcl_move_obj_ok(mover)) return mover;
+        }
+
+        if (rcl_move_obj_ok(ctrl)) return ctrl;
     }
 
     if (rcl_scene_object)
@@ -293,6 +303,8 @@ static uintptr_t rcl_move_carrier(void)
         mover = rcl_hop(rcl_scene_object, NULL);
 
         if (rcl_move_obj_ok(mover)) return mover;
+
+        if (rcl_move_obj_ok(rcl_scene_object)) return rcl_scene_object;
     }
 
     return 0;

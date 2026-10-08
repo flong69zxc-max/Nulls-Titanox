@@ -200,7 +200,7 @@ BOOL rcl_writable(uintptr_t address, size_t length)
     return cursor >= end;
 }
 
-void rcl_note(uintptr_t address, const void *src, size_t length, int denied)
+void rcl_note(uintptr_t /*address*/, const void *src, size_t length, int /*denied*/)
 {
     int n = rcl_at;
     uint32_t value = 0;
@@ -1455,7 +1455,8 @@ uintptr_t rcl_tick_array = 0;
 
 int32_t rcl_tick_count = 0;
 
-void rcl_publish(uintptr_t object, uintptr_t array, int32_t count, int32_t cap, const char *why)
+void rcl_publish(uintptr_t object, uintptr_t array, int32_t count, int32_t /*cap*/,
+                 const char * /*why*/)
 {
     __sync_synchronize();
 
@@ -2147,7 +2148,7 @@ int rcl_state_tick(void)
     return 1;
 }
 
-int rcl_scan_allowed(uint64_t fired, uint64_t total)
+int rcl_scan_allowed(uint64_t fired, uint64_t /*total*/)
 {
     if (fired > 0)
     {
@@ -2903,7 +2904,7 @@ int rcl_proj_dumps = 0;
 
 uint64_t rcl_proj_diff_logs = 0;
 
-void rcl_proj_track(uintptr_t elem, uintptr_t classRva, int32_t gid, int32_t team)
+void rcl_proj_track(uintptr_t elem, uintptr_t /*classRva*/, int32_t /*gid*/, int32_t /*team*/)
 {
     uint8_t now[RCL_DIFF_BYTES];
     int i;
@@ -3286,9 +3287,26 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
 
         {
             void *def = NULL;
-            float ang = 0.0f;
+            void *area = NULL;
+            uint8_t indirect = 0;
+            int32_t rendering = 0;
+            int32_t spd = 0;
+            int32_t rad = 0;
+            uintptr_t fn = 0;
 
             rcl_projs[slot].name = NULL;
+            rcl_projs[slot].angle = 0.0f;
+            rcl_projs[slot].speed = 0.0f;
+            rcl_projs[slot].radius = 0.0f;
+            rcl_projs[slot].vx = 0.0f;
+            rcl_projs[slot].vy = 0.0f;
+            rcl_projs[slot].isThrower = 0;
+            rcl_projs[slot].isBeam = 0;
+            rcl_projs[slot].targetX = 0;
+            rcl_projs[slot].targetY = 0;
+            rcl_projs[slot].spawnAreaRadius = 0;
+            rcl_projs[slot].spawnAreaActiveTime = 0;
+            rcl_projs[slot].castRange = 0;
 
             if (rcl_read_ptr((uintptr_t)element + (uintptr_t)RCL_ELEM_DEF_OFF, &def) && def)
             {
@@ -3296,12 +3314,99 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
                 {
                     rcl_projs[slot].name = rcl_proj_name_buf[slot];
                 }
+
+                if (rcl_read_bytes((uintptr_t)def + (uintptr_t)RCL_PROJ_ISTHROWER_OFF, &indirect,
+                                   sizeof(indirect)))
+                {
+                    rcl_projs[slot].isThrower = indirect ? 1 : 0;
+                }
+
+                fn = rcl_entry_2(RCL_PROJ_SPEED_RVA);
+
+                if (fn)
+                {
+                    spd = ((int32_t (*)(void *))fn)(def);
+
+                    if (spd < 1) spd = 1;
+
+                    rcl_projs[slot].speed = (float)spd;
+                }
+
+                fn = rcl_entry_2(RCL_PROJ_RADIUS_RVA);
+
+                if (fn)
+                {
+                    rad = ((int32_t (*)(void *))fn)(def);
+
+                    if (rad < 0) rad = 0;
+
+                    rcl_projs[slot].radius = (float)rad;
+                }
+
+                fn = rcl_entry_2(RCL_PROJ_RENDERING_RVA);
+
+                if (fn) rendering = ((int32_t (*)(void *))fn)(def);
+
+                fn = rcl_entry_2(RCL_PROJ_ISBEAM_RVA);
+
+                if (fn) rcl_projs[slot].isBeam = ((int32_t (*)(void *))fn)(def) ? 1 : 0;
+
+                fn = rcl_entry_2(RCL_PROJ_SPAWNAREA_RVA);
+
+                if (fn)
+                {
+                    area = ((void *(*)(void *))fn)(def);
+
+                    if (area)
+                    {
+                        fn = rcl_entry_2(RCL_AREA_RADIUS_RVA);
+
+                        if (fn)
+                        {
+                            rad = ((int32_t (*)(void *))fn)(area);
+
+                            if (rad > 0) rcl_projs[slot].spawnAreaRadius = rad;
+                        }
+
+                        fn = rcl_entry_2(RCL_AREA_ACTIVE_RVA);
+
+                        if (fn)
+                        {
+                            rad = ((int32_t (*)(void *))fn)(area);
+
+                            if (rad > 0) rcl_projs[slot].spawnAreaActiveTime = rad;
+                        }
+                    }
+                }
             }
 
-            if (rcl_read_float((uintptr_t)element + (uintptr_t)RCL_PROJ_ANGLE_OFF, &ang) &&
-                ang >= -360.0f && ang <= 360.0f)
+            fn = rcl_entry_2(RCL_PROJ_TARGETX_RVA);
+
+            if (fn) rcl_projs[slot].targetX = ((int32_t (*)(uintptr_t))fn)((uintptr_t)element);
+
+            fn = rcl_entry_2(RCL_PROJ_TARGETY_RVA);
+
+            if (fn) rcl_projs[slot].targetY = ((int32_t (*)(uintptr_t))fn)((uintptr_t)element);
+
+            if (rendering == RCL_PROJ_RENDERING_LINE)
             {
-                rcl_projs[slot].angle = ang;
+                int32_t raw = 0;
+
+                if (rcl_read_int((uintptr_t)element + (uintptr_t)RCL_PROJ_ANGLE_OFF, &raw) &&
+                    raw > 0)
+                {
+                    int32_t deg = raw <= 360 ? raw : (raw % 360);
+
+                    rcl_projs[slot].angle = (float)deg;
+                }
+            }
+
+            if (rcl_projs[slot].angle > 0.0f)
+            {
+                float rr = rcl_projs[slot].angle * 0.017453292f;
+
+                rcl_projs[slot].vx = cosf(rr) * rcl_projs[slot].speed;
+                rcl_projs[slot].vy = sinf(rr) * rcl_projs[slot].speed;
             }
         }
 
@@ -3406,7 +3511,7 @@ uintptr_t rcl_controller(void)
 }
 int rcl_signal_logs = 0;
 
-void rcl_death_signals(uintptr_t ownElem, int32_t ownX, int32_t ownY)
+void rcl_death_signals(uintptr_t ownElem, int32_t /*ownX*/, int32_t /*ownY*/)
 {
     static int lastDead = -999;
     static int lastOwnAlive = -999;
@@ -3438,7 +3543,7 @@ void rcl_death_signals(uintptr_t ownElem, int32_t ownX, int32_t ownY)
     rcl_signal_logs++;
 }
 
-void rcl_alive(int32_t ownX, int32_t ownY)
+void rcl_alive(int32_t /*ownX*/, int32_t /*ownY*/)
 {
     if (!rcl_dead) return;
 
@@ -3781,7 +3886,7 @@ int rcl_own_side_spawn(int32_t sx, int32_t sy)
 
     return (rcl_pl_team[best] == rcl_own_team_b) ? 1 : 0;
 }
-void rcl_respawn_event(int32_t x, int32_t y, int32_t px, int32_t py)
+void rcl_respawn_event(int32_t /*x*/, int32_t /*y*/, int32_t /*px*/, int32_t /*py*/)
 {
     int i = 0;
 
@@ -3860,7 +3965,7 @@ void rcl_own_index_probe(void)
     }
 }
 
-void rcl_publish_own(uintptr_t elem, const char *from)
+void rcl_publish_own(uintptr_t elem, const char * /*from*/)
 {
     uintptr_t vt = 0;
     const char *why = "?";

@@ -399,6 +399,13 @@ int rcl_move_to(int32_t x, int32_t y, float ox, float oy)
 {
     uintptr_t fn = 0;
     uintptr_t own = 0;
+    uintptr_t ctrl = 0;
+    int32_t px = x;
+    int32_t py = y;
+    int32_t zero = 0;
+    uint32_t rate = RCL_CTRL_ANIM_RATE_BITS;
+    uint16_t flags = RCL_CTRL_ANIM_FLAGS_VAL;
+    uint8_t moving = 1;
 
     (void)ox;
     (void)oy;
@@ -409,12 +416,27 @@ int rcl_move_to(int32_t x, int32_t y, float ox, float oy)
 
     fn = rcl_entry_2(RCL_MOVE_RVA);
     own = rcl_move_carrier();
+    ctrl = rcl_controller();
 
     if (!fn || !own) return 0;
 
     if (!rcl_move_pair_ok(own, NULL, NULL)) return 0;
 
+    if (ctrl)
+    {
+        rcl_write_bytes(ctrl + (uintptr_t)RCL_CTRL_MOVE_X_OFF, &px, sizeof(px));
+        rcl_write_bytes(ctrl + (uintptr_t)RCL_CTRL_MOVE_Y_OFF, &py, sizeof(py));
+        rcl_write_bytes(ctrl + (uintptr_t)RCL_CTRL_MOVE_ON_OFF, &moving, sizeof(moving));
+        rcl_write_bytes(ctrl + (uintptr_t)RCL_CTRL_MOVE_ZERO_OFF, &zero, sizeof(zero));
+    }
+
     ((void (*)(void *, int, int, int))fn)((void *)own, (int)x, (int)y, (int)RCL_MOVE_FLAG_10);
+
+    if (ctrl)
+    {
+        rcl_write_bytes(ctrl + (uintptr_t)RCL_CTRL_ANIM_RATE_OFF, &rate, sizeof(rate));
+        rcl_write_bytes(ctrl + (uintptr_t)RCL_CTRL_ANIM_FLAGS_OFF, &flags, sizeof(flags));
+    }
 
     return 1;
 }

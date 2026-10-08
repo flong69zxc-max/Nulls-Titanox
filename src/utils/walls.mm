@@ -142,14 +142,6 @@ int rcl_wall_build(void)
     return 1;
 }
 
-void rcl_wall_drop(void)
-{
-    rcl_wall_have = 0;
-    rcl_wall_dirty = 1;
-    rcl_wall_w = 0;
-    rcl_wall_h = 0;
-}
-
 int rcl_wall_maybe_refresh(uint64_t now_ms)
 {
     if (!rcl_wall_dirty)

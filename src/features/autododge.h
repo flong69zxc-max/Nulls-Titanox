@@ -29,6 +29,4 @@ extern int rcl_rad_off;
 extern int rcl_cal_n;
 extern float rcl_cal_rad_seen;
 
-void rcl_dodge_drop(void);
-
 #endif

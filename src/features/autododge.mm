@@ -79,9 +79,6 @@ static void rcl_dodge_speed_probe(void)
 #define RCL_AD_WALL_BODY 240.0f
 #define RCL_AD_TICK_MS 16.0f
 #define RCL_AD_TICK_MAX_MS 250.0f
-#define RCL_AD_TURN_MAX 0.209f
-#define RCL_AD_TURN_PANIC 0.785f
-#define RCL_AD_PI 3.14159265358979f
 
 typedef struct
 {
@@ -1077,23 +1074,37 @@ static void rcl_ad_clamp_target(float *tx, float *ty)
     *ty = rcl_ad_clamp_to_map(*ty, h);
 }
 
+static int32_t rcl_ad_enq_x = 0;
+static int32_t rcl_ad_enq_y = 0;
+static uint64_t rcl_ad_enq_ms = 0;
+static int rcl_ad_enq_ok = 0;
+
 static int rcl_ad_send_move_7(float tx, float ty, float mx, float my)
 {
-    int32_t ex;
-    int32_t ey;
-
+    int ok = 0;
     if (!(tx == tx) || !(ty == ty))
     {
         return 0;
     }
-
     rcl_ad_clamp_target(&tx, &ty);
-    ex = (int32_t)tx;
-    ey = (int32_t)ty;
-
-    rcl_move_to(ex, ey, mx, my);
-
-    return rcl_enqueue(ex, ey);
+    rcl_move_to((int32_t)tx, (int32_t)ty, mx, my);
+    {
+        int32_t ex = (int32_t)tx;
+        int32_t ey = (int32_t)ty;
+        int32_t qx = ex - rcl_ad_enq_x;
+        int32_t qy = ey - rcl_ad_enq_y;
+        uint64_t eq = rcl_ad_now_ms();
+        if (!rcl_ad_enq_ok || qx * qx + qy * qy >= RCL_AD_ENQ_STEP_SQ ||
+            eq - rcl_ad_enq_ms >= (uint64_t)RCL_AD_ENQ_MS)
+        {
+            rcl_ad_enq_x = ex;
+            rcl_ad_enq_y = ey;
+            rcl_ad_enq_ms = eq;
+            rcl_ad_enq_ok = 1;
+            ok = rcl_enqueue(ex, ey);
+        }
+    }
+    return ok;
 }
 
 #define RCL_BDC_EXTRA 12
@@ -1111,6 +1122,8 @@ static int rcl_ad_send_move_7(float tx, float ty, float mx, float my)
 #define RCL_BDC_FAR 1.0e18f
 #define RCL_BDC_EPS 1.0f
 #define RCL_BDC_ROLL_STEPS_2 5
+#define RCL_AD_ENQ_MS 100
+#define RCL_AD_ENQ_STEP_SQ 900
 #define RCL_BD_PRE_RANGE_2 1500.0f
 #define RCL_BD_PRE_SPD_2 2600.0f
 #define RCL_BD_PRE_HIT_2 55.0f
@@ -1134,7 +1147,6 @@ static uint64_t rcl_bdc_seen = 0;
 static uint64_t rcl_bdc_idle = 0;
 static int rcl_bdc_hold = 0;
 static int rcl_bdc_last_cand = -1;
-static float rcl_bdc_out_impact_6 = 0.0f;
 static uint64_t rcl_bdc_turn = 0;
 
 static int rcl_bdc_aimed_one(const rcl_bd_threat_t *p, float mx, float my, float myR)
@@ -1525,7 +1537,6 @@ static void rcl_bdc_pick_6(float mx, float my, float myR, float ix, float iy, fl
         rcl_bdc_last_x = *ox;
         rcl_bdc_last_y = *oy;
         rcl_bdc_have_last = 1;
-        rcl_bdc_out_impact_6 = RCL_BDC_T_URGENT + 1.0f;
         if (rcl_bd_threat_n > 0 && (*ox != 0.0f || *oy != 0.0f))
         {
             int nearest = 0;
@@ -1732,62 +1743,12 @@ static void rcl_bdc_pick_6(float mx, float my, float myR, float ix, float iy, fl
         rcl_bdc_last_cand = cand;
         rcl_bdc_hold = 0;
     }
-    rcl_bdc_out_impact_6 = rcl_bdc_impacts_6[cand];
     *ox = rcl_bdc_dirs_6[cand][0];
     *oy = rcl_bdc_dirs_6[cand][1];
     rcl_bdc_last_x = *ox;
     rcl_bdc_last_y = *oy;
     rcl_bdc_have_last = 1;
     rcl_bdc_seen++;
-}
-
-static void rcl_bd_slew_6(float *ox, float *oy, float impact)
-{
-    float cap;
-    float a0;
-    float a1;
-    float d;
-
-    if (!rcl_bdc_have_last)
-    {
-        return;
-    }
-
-    if (*ox == 0.0f && *oy == 0.0f)
-    {
-        return;
-    }
-
-    cap = (impact <= RCL_BDC_T_URGENT) ? RCL_AD_TURN_PANIC : RCL_AD_TURN_MAX;
-    a0 = atan2f(rcl_bdc_last_y, rcl_bdc_last_x);
-    a1 = atan2f(*oy, *ox);
-    d = a1 - a0;
-
-    while (d > RCL_AD_PI)
-    {
-        d -= 2.0f * RCL_AD_PI;
-    }
-
-    while (d < -RCL_AD_PI)
-    {
-        d += 2.0f * RCL_AD_PI;
-    }
-
-    if (d > cap)
-    {
-        d = cap;
-    }
-
-    if (d < -cap)
-    {
-        d = -cap;
-    }
-
-    a1 = a0 + d;
-    *ox = cosf(a1);
-    *oy = sinf(a1);
-    rcl_bdc_last_x = *ox;
-    rcl_bdc_last_y = *oy;
 }
 
 static int rcl_ad_update_7(float mx, float my)
@@ -1841,7 +1802,6 @@ static int rcl_ad_update_7(float mx, float my)
     {
         return 0;
     }
-    rcl_bd_slew_6(&dirx, &diry, rcl_bdc_out_impact_6);
     tx = roundf(mx + dirx * RCL_AD_REACH);
     ty = roundf(my + diry * RCL_AD_REACH);
     rcl_ad_send_move_7(tx, ty, mx, my);

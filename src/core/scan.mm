@@ -2718,7 +2718,7 @@ void rcl_resolve_addresses(void)
     rcl_addr_gety = rcl_callable(RVA_LOGICGAMEOBJECTCLIENT_GETY);
 
 
-    rcl_addr_battlescreen = rcl_base + RVA_BATTLESCREEN__BATTLESCREEN;
+    rcl_addr_battlescreen = rcl_base;
     if (!rcl_addr_readable(rcl_addr_battlescreen, sizeof(void *))) rcl_addr_battlescreen = 0;
 }
 void rcl_locate_battle_mode(void)

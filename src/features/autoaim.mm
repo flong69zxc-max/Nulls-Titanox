@@ -17,14 +17,14 @@ void rcl_run_autoaim(void)
     int ownTeam = rcl_addr_getteam ? ((fn_get_team_t)rcl_addr_getteam)(battleMode) : 0;
 
     void *objMgr = nullptr;
-    if (!rcl_read_ptr((uintptr_t)battleMode + OFF_BATTLEMODE_OBJECTMANAGERPTR, &objMgr)) return;
+    if (!rcl_read_ptr((uintptr_t)battleMode + RCL_MODE_MANAGER_OFF, &objMgr)) return;
     if (!rcl_object_plausible(objMgr)) return;
 
     void *rawObjects = nullptr;
     int32_t count = 0;
 
-    if (!rcl_read_ptr((uintptr_t)objMgr + OFF_OBJECTMANAGER_OBJECTSARRAY, &rawObjects)) return;
-    if (!rcl_read_int((uintptr_t)objMgr + OFF_OBJECTMANAGER_COUNT, &count)) return;
+    if (!rcl_read_ptr((uintptr_t)objMgr + RCL_MGR_ARRAY_OFF, &rawObjects)) return;
+    if (!rcl_read_int((uintptr_t)objMgr + RCL_MGR_COUNT_OFF, &count)) return;
 
     void **objects = (void **)rawObjects;
 
@@ -51,11 +51,11 @@ void rcl_run_autoaim(void)
         if (!rcl_object_plausible(obj)) continue;
 
         uint8_t objDead = 0;
-        if (!rcl_read_byte((uintptr_t)obj + OFF_GAMEOBJ_DEADFLAG, &objDead)) continue;
+        if (!rcl_read_byte((uintptr_t)obj + RCL_OBJ_DEADFLAG_OFF, &objDead)) continue;
         if (objDead) continue;
 
         int32_t team = 0;
-        if (!rcl_read_int((uintptr_t)obj + OFF_GAMEOBJ_TEAM, &team)) continue;
+        if (!rcl_read_int((uintptr_t)obj + RCL_OBJ_TEAM_OFF, &team)) continue;
         if (team == ownTeam) continue;
 
         int ex = rcl_addr_getx ? ((fn_get_coord_t)rcl_addr_getx)(obj) : 0;

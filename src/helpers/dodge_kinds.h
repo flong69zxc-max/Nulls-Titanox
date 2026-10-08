@@ -37,7 +37,7 @@ typedef struct
 } rcl_proj_t;
 
 #define RCL_FIT_COUNT 9
-#define RCL_KIND_COUNT 117
+#define RCL_KIND_COUNT 755
 
 #define RCL_FIT_FALLBACK 8
 

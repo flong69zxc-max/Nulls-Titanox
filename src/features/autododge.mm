@@ -1402,11 +1402,9 @@ void rcl_autododge(void)
 int rcl_dodge_probe_usable = 0;
 float rcl_own_radius(void)
 {
-    float r = 0.0f;
-
     if (rcl_own_r > 1.0f)
     {
-        r = rcl_own_r;
+        float r = rcl_own_r;
 
         if (r > RCL_OWN_RADIUS_MAX)
         {

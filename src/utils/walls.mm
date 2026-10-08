@@ -77,20 +77,6 @@ int rcl_cell(int tx, int ty, int *proj, int *move)
     return 1;
 }
 
-void rcl_tile_of(float x, float y, int *tx, int *ty)
-{
-    if (x < 0.0f || y < 0.0f)
-    {
-        *tx = -1;
-        *ty = -1;
-
-        return;
-    }
-
-    *tx = (int)(x / 300.0f);
-    *ty = (int)(y / 300.0f);
-}
-
 static uint8_t rcl_wall_grid[RCL_WALL_MAX_TOTAL_TILES];
 
 static int rcl_wall_w = 0;
@@ -111,25 +97,6 @@ int rcl_wall_cache_w(void)
 int rcl_wall_cache_h(void)
 {
     return rcl_wall_h;
-}
-
-int rcl_wall_ready(void)
-{
-    return rcl_wall_have;
-}
-
-void rcl_wall_mark_stale(void)
-{
-    rcl_wall_dirty = 1;
-}
-
-void rcl_wall_reset(void)
-{
-    rcl_wall_have = 0;
-    rcl_wall_w = 0;
-    rcl_wall_h = 0;
-    rcl_wall_dirty = 1;
-    rcl_wall_fail_ms = 0;
 }
 
 int rcl_wall_build(void)
@@ -384,7 +351,6 @@ float rcl_wall_trace(float x, float y, float dx, float dy, float max_dist, int m
     {
         int tx = 0;
         int ty = 0;
-        float hit = 0.0f;
 
         dist += RCL_WALL_TRACE_STEP;
         if (dist > max_dist)
@@ -397,48 +363,14 @@ float rcl_wall_trace(float x, float y, float dx, float dy, float max_dist, int m
 
         if (tx < 0 || tx >= rcl_wall_w || ty < 0 || ty >= rcl_wall_h)
         {
-            hit = dist - RCL_WALL_TRACE_BACKOFF;
+            float hit = dist - RCL_WALL_TRACE_BACKOFF;
 
             return hit > 0.0f ? hit : 0.0f;
         }
 
         if (rcl_wall_grid[ty * rcl_wall_w + tx] & mask)
         {
-            hit = dist - RCL_WALL_TRACE_BACKOFF;
-
-            return hit > 0.0f ? hit : 0.0f;
-        }
-    }
-
-    return max_dist;
-}
-
-float rcl_wall_trace_wide(float x, float y, float dx, float dy, float max_dist, float r, int mask)
-{
-    float dist = 0.0f;
-
-    if (!rcl_wall_have || max_dist <= 0.0f)
-    {
-        return max_dist;
-    }
-    if (rcl_wall_w <= 0 || rcl_wall_h <= 0)
-    {
-        return max_dist;
-    }
-
-    while (dist < max_dist)
-    {
-        float hit = 0.0f;
-
-        dist += RCL_WALL_TRACE_STEP;
-        if (dist > max_dist)
-        {
-            dist = max_dist;
-        }
-
-        if (rcl_wall_is_blocked_wide(x + dx * dist, y + dy * dist, r, mask))
-        {
-            hit = dist - RCL_WALL_TRACE_BACKOFF;
+            float hit = dist - RCL_WALL_TRACE_BACKOFF;
 
             return hit > 0.0f ? hit : 0.0f;
         }

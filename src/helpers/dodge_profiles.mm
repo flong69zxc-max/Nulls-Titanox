@@ -324,8 +324,3 @@ void rcl_note_burst_death(const rcl_proj_death_t *rec)
 
     rcl_spike_variant = deviation > RCL_DP_CURVE_DEV_DEG ? 2 : 1;
 }
-
-void rcl_reset_profiles(void)
-{
-    rcl_spike_variant = 0;
-}

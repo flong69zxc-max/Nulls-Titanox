@@ -25,8 +25,6 @@
 #import <ptrauth.h>
 #endif
 
-#include "./core/rcl_types.h"
-
 #include "./helpers/dodge_kinds.h"
 #include "./helpers/dodge_profiles.h"
 #include "./utils/crypto.h"

@@ -2,6 +2,60 @@
 #define RECOIL_SCAN_SCAN_H
 
 #include "./offsets.h"
+#include <stdint.h>
+
+typedef struct
+{
+    uintptr_t at;
+    uintptr_t vt;
+    uintptr_t owner;
+    int32_t gid;
+    int32_t team;
+    int32_t ownerIdx;
+    int dead;
+    int ownerClass;
+} rcl_objhit_t;
+
+typedef uint64_t (*rcl_slot_fn_t)(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5,
+                                  uint64_t a6, uint64_t a7);
+
+typedef struct
+{
+    uintptr_t low;
+    uintptr_t high;
+} rcl_region_t;
+
+typedef struct
+{
+    uintptr_t manager;
+    int32_t count;
+    int32_t capacity;
+    int live;
+    int nonEmpty;
+    int stable;
+    int rawOk;
+    char rawSeg;
+    int ascii;
+    int sampled;
+    int noVt;
+    int teamDistinct;
+    int posDistinct;
+    int refused;
+} rcl_trail_t;
+
+typedef struct
+{
+    uintptr_t object;
+    int32_t gid;
+    int32_t x;
+    int32_t y;
+    int32_t ownerIndex;
+    int32_t teamOld;
+    int32_t teamNew;
+    int32_t typeWord;
+    uint8_t dead;
+    uint8_t activeFlag;
+} rcl_obj_t;
 
 #import <mach-o/dyld.h>
 #import <mach-o/loader.h>
@@ -464,7 +518,8 @@ BOOL rcl_start_word(uint32_t word);
 int rcl_word(uintptr_t address, uint32_t *out);
 
 #include "hook.h"
-#include "./rcl_types.h"
+#include "./../helpers/dodge_kinds.h"
+#include "./../helpers/dodge_profiles.h"
 
 void rcl_slot_note(int index, void *self, uint64_t arg1);
 uint64_t rcl_hook_dispatches(void);

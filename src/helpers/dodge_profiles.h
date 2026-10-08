@@ -2,7 +2,18 @@
 #define RECOIL_HELPERS_DODGE_PROFILES_H
 
 #include "../core/offsets.h"
-#include "../core/rcl_types.h"
+#include <stdint.h>
+#include "./dodge_kinds.h"
+
+typedef struct
+{
+    const char *name;
+    float angle;
+    int32_t spawnX;
+    int32_t spawnY;
+    int32_t x;
+    int32_t y;
+} rcl_proj_death_t;
 
 #define RCL_OWNER_VOTE_MIN 3
 #define RCL_OWNER_VOTE_TEAMS_MIN 2
@@ -31,6 +42,5 @@ typedef struct
 int rcl_shape_hazards(const rcl_proj_t *p, uint64_t now_ms, rcl_hazard_t *out, int max_out);
 int rcl_blocks_linear(const char *name);
 void rcl_note_burst_death(const rcl_proj_death_t *rec);
-void rcl_reset_profiles(void);
 
 #endif

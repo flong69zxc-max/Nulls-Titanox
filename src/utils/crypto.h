@@ -3,6 +3,7 @@
 
 #include "../core/offsets.h"
 #include <stdint.h>
+#include <stddef.h>
 
 void rcl_sha(const uint8_t *data, size_t length, uint8_t out[32]);
 

@@ -2,7 +2,41 @@
 #define RECOIL_HELPERS_DODGE_KINDS_H
 
 #include "../core/offsets.h"
-#include "../core/rcl_types.h"
+#include <stdint.h>
+
+typedef struct
+{
+    uintptr_t elem;
+    uintptr_t classRva;
+    int32_t x;
+    int32_t y;
+    int32_t px;
+    int32_t py;
+    int32_t team;
+    int32_t spawnX;
+    int32_t spawnY;
+    int32_t gid;
+    uint64_t ptick;
+    uint64_t qtick;
+    int hasPrev;
+    const char *name;
+    const char *ownerName;
+    int32_t targetX;
+    int32_t targetY;
+    int32_t ownerX;
+    int32_t ownerY;
+    float speed;
+    float radius;
+    float angle;
+    uint64_t spawnedAt;
+    float vx;
+    float vy;
+    int isThrower;
+    int isBeam;
+    int32_t spawnAreaRadius;
+    int32_t spawnAreaActiveTime;
+    int32_t castRange;
+} rcl_proj_t;
 
 #define RCL_FIT_COUNT 9
 #define RCL_KIND_COUNT 117

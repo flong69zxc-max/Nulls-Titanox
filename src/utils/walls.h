@@ -19,13 +19,9 @@ extern int rcl_h;
 
 uintptr_t rcl_map_object(void);
 int rcl_cell(int tx, int ty, int *proj, int *move);
-void rcl_tile_of(float x, float y, int *tx, int *ty);
 
 int rcl_wall_cache_w(void);
 int rcl_wall_cache_h(void);
-int rcl_wall_ready(void);
-void rcl_wall_mark_stale(void);
-void rcl_wall_reset(void);
 void rcl_wall_notify_battle_mode_changed(uint64_t now_ms);
 int rcl_wall_build(void);
 int rcl_wall_maybe_refresh(uint64_t now_ms);
@@ -33,6 +29,5 @@ int rcl_wall_is_blocked_at(float x, float y, int mask);
 int rcl_wall_is_blocked_wide(float x, float y, float r, int mask);
 int rcl_wall_los(float ax, float ay, float bx, float by, int mask);
 float rcl_wall_trace(float x, float y, float dx, float dy, float max_dist, int mask);
-float rcl_wall_trace_wide(float x, float y, float dx, float dy, float max_dist, float r, int mask);
 
 #endif

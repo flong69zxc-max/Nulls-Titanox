@@ -14,7 +14,8 @@
 #define RCL_LOG_TEXT_MAX 128
 #define RCL_LOG_REPEAT_MAX 64
 
-typedef struct {
+typedef struct
+{
     int level;
     char text[RCL_LOG_TEXT_MAX];
 } rcl_log_entry_t;

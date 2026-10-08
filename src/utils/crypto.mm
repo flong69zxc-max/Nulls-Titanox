@@ -11,26 +11,26 @@ static const uint32_t RCL_SHA_K[64] = {
     0xc24b8b70UL, 0xc76c51a3UL, 0xd192e819UL, 0xd6990624UL, 0xf40e3585UL, 0x106aa070UL,
     0x19a4c116UL, 0x1e376c08UL, 0x2748774cUL, 0x34b0bcb5UL, 0x391c0cb3UL, 0x4ed8aa4aUL,
     0x5b9cca4fUL, 0x682e6ff3UL, 0x748f82eeUL, 0x78a5636fUL, 0x84c87814UL, 0x8cc70208UL,
-    0x90befffaUL, 0xa4506cebUL, 0xbef9a3f7UL, 0xc67178f2UL
-};
+    0x90befffaUL, 0xa4506cebUL, 0xbef9a3f7UL, 0xc67178f2UL};
 
-static const uint32_t RCL_SHA_IV[8] = {
-    0x6a09e667UL, 0xbb67ae85UL, 0x3c6ef372UL, 0xa54ff53aUL,
-    0x510e527fUL, 0x9b05688cUL, 0x1f83d9abUL, 0x5be0cd19UL
-};
+static const uint32_t RCL_SHA_IV[8] = {0x6a09e667UL, 0xbb67ae85UL, 0x3c6ef372UL, 0xa54ff53aUL,
+                                       0x510e527fUL, 0x9b05688cUL, 0x1f83d9abUL, 0x5be0cd19UL};
 
-typedef struct {
+typedef struct
+{
     uint32_t h[8];
     uint8_t buf[64];
     uint64_t bits;
     size_t n;
 } rcl_sha_ctx_t;
 
-static uint32_t rcl_ror(uint32_t v, int s) {
+static uint32_t rcl_ror(uint32_t v, int s)
+{
     return (v >> s) | (v << (32 - s));
 }
 
-static void rcl_sha_block(rcl_sha_ctx_t *c, const uint8_t *p) {
+static void rcl_sha_block(rcl_sha_ctx_t *c, const uint8_t *p)
+{
     uint32_t w[64];
     uint32_t a = 0;
     uint32_t b = 0;
@@ -42,12 +42,14 @@ static void rcl_sha_block(rcl_sha_ctx_t *c, const uint8_t *p) {
     uint32_t hh = 0;
     int i = 0;
 
-    for (i = 0; i < 16; i++) {
+    for (i = 0; i < 16; i++)
+    {
         w[i] = ((uint32_t)p[i * 4] << 24) | ((uint32_t)p[i * 4 + 1] << 16) |
                ((uint32_t)p[i * 4 + 2] << 8) | (uint32_t)p[i * 4 + 3];
     }
 
-    for (i = 16; i < 64; i++) {
+    for (i = 16; i < 64; i++)
+    {
         uint32_t s0 = rcl_ror(w[i - 15], 7) ^ rcl_ror(w[i - 15], 18) ^ (w[i - 15] >> 3);
         uint32_t s1 = rcl_ror(w[i - 2], 17) ^ rcl_ror(w[i - 2], 19) ^ (w[i - 2] >> 10);
 
@@ -63,7 +65,8 @@ static void rcl_sha_block(rcl_sha_ctx_t *c, const uint8_t *p) {
     g = c->h[6];
     hh = c->h[7];
 
-    for (i = 0; i < 64; i++) {
+    for (i = 0; i < 64; i++)
+    {
         uint32_t S1 = rcl_ror(e, 6) ^ rcl_ror(e, 11) ^ rcl_ror(e, 25);
         uint32_t ch = (e & f) ^ ((~e) & g);
         uint32_t t1 = hh + S1 + ch + RCL_SHA_K[i] + w[i];
@@ -91,35 +94,41 @@ static void rcl_sha_block(rcl_sha_ctx_t *c, const uint8_t *p) {
     c->h[7] += hh;
 }
 
-static void rcl_sha_init(rcl_sha_ctx_t *c) {
+static void rcl_sha_init(rcl_sha_ctx_t *c)
+{
     memcpy(c->h, RCL_SHA_IV, sizeof(RCL_SHA_IV));
     c->bits = 0;
     c->n = 0;
 }
 
-static void rcl_sha_update(rcl_sha_ctx_t *c, const uint8_t *p, size_t length) {
+static void rcl_sha_update(rcl_sha_ctx_t *c, const uint8_t *p, size_t length)
+{
     size_t i = 0;
 
     c->bits += (uint64_t)length * 8ULL;
 
-    while (i < length) {
+    while (i < length)
+    {
         size_t k = (size_t)64 - c->n;
 
-        if (k > length - i) k = length - i;
+        if (k > length - i)
+            k = length - i;
 
         memcpy(c->buf + c->n, p + i, k);
 
         c->n += k;
         i += k;
 
-        if (c->n == 64) {
+        if (c->n == 64)
+        {
             rcl_sha_block(c, c->buf);
             c->n = 0;
         }
     }
 }
 
-static void rcl_sha_final(rcl_sha_ctx_t *c, uint8_t out[32]) {
+static void rcl_sha_final(rcl_sha_ctx_t *c, uint8_t out[32])
+{
     uint8_t pad[72];
     uint64_t bits = c->bits;
     size_t padlen = (c->n < 56) ? ((size_t)56 - c->n) : ((size_t)120 - c->n);
@@ -128,11 +137,13 @@ static void rcl_sha_final(rcl_sha_ctx_t *c, uint8_t out[32]) {
     pad[0] = 0x80;
     memset(pad + 1, 0, padlen - 1);
 
-    for (i = 0; i < 8; i++) pad[padlen + (size_t)i] = (uint8_t)(bits >> (56 - 8 * i));
+    for (i = 0; i < 8; i++)
+        pad[padlen + (size_t)i] = (uint8_t)(bits >> (56 - 8 * i));
 
     rcl_sha_update(c, pad, padlen + 8);
 
-    for (i = 0; i < 8; i++) {
+    for (i = 0; i < 8; i++)
+    {
         out[i * 4] = (uint8_t)(c->h[i] >> 24);
         out[i * 4 + 1] = (uint8_t)(c->h[i] >> 16);
         out[i * 4 + 2] = (uint8_t)(c->h[i] >> 8);
@@ -140,7 +151,8 @@ static void rcl_sha_final(rcl_sha_ctx_t *c, uint8_t out[32]) {
     }
 }
 
-void rcl_sha(const uint8_t *data, size_t length, uint8_t out[32]) {
+void rcl_sha(const uint8_t *data, size_t length, uint8_t out[32])
+{
     rcl_sha_ctx_t c;
 
     rcl_sha_init(&c);
@@ -148,17 +160,21 @@ void rcl_sha(const uint8_t *data, size_t length, uint8_t out[32]) {
     rcl_sha_final(&c, out);
 }
 
-void rcl_ci_make_block(const uint8_t key16[16], const uint8_t mask16[16], uint8_t pad, uint8_t out[64]) {
+void rcl_ci_make_block(const uint8_t key16[16], const uint8_t mask16[16], uint8_t pad,
+                       uint8_t out[64])
+{
     int i = 0;
 
-    for (i = 0; i < 16; i++) out[i] = (uint8_t)(key16[i] ^ mask16[i]);
+    for (i = 0; i < 16; i++)
+        out[i] = (uint8_t)(key16[i] ^ mask16[i]);
 
     memset(out + 16, pad, 64 - 16);
 }
 
 uint32_t rcl_ci_compute_token(const uint8_t key16[16], const uint8_t cmd16[16],
                               const uint32_t *table, const uint8_t innerMask[16],
-                              const uint8_t outerMask[16]) {
+                              const uint8_t outerMask[16])
+{
     uint8_t msg[RCL_CI_TOKEN_MSG_LEN];
     uint8_t innerBuf[64 + RCL_CI_TOKEN_MSG_LEN];
     uint8_t outerBuf[64 + 32];
@@ -170,12 +186,15 @@ uint32_t rcl_ci_compute_token(const uint8_t key16[16], const uint8_t cmd16[16],
     uint32_t token = 0;
     int i = 0;
 
-    typeRaw = (uint32_t)cmd16[4] | ((uint32_t)cmd16[5] << 8) |
-              ((uint32_t)cmd16[6] << 16) | ((uint32_t)cmd16[7] << 24);
-    typeC = (typeRaw <= RCL_CI_MAX_TABLE_TYPE) ? table[typeRaw] : (uint32_t)RCL_CI_FALLBACK_TYPE_CONST;
+    typeRaw = (uint32_t)cmd16[4] | ((uint32_t)cmd16[5] << 8) | ((uint32_t)cmd16[6] << 16) |
+              ((uint32_t)cmd16[7] << 24);
+    typeC =
+        (typeRaw <= RCL_CI_MAX_TABLE_TYPE) ? table[typeRaw] : (uint32_t)RCL_CI_FALLBACK_TYPE_CONST;
 
-    for (i = 0; i < 12; i++) msg[i] = cmd16[4 + i];
-    for (i = 0; i < 4; i++) msg[12 + i] = cmd16[i];
+    for (i = 0; i < 12; i++)
+        msg[i] = cmd16[4 + i];
+    for (i = 0; i < 4; i++)
+        msg[12 + i] = cmd16[i];
     msg[16] = (uint8_t)(typeC);
     msg[17] = (uint8_t)(typeC >> 8);
     msg[18] = (uint8_t)(typeC >> 16);
@@ -193,7 +212,8 @@ uint32_t rcl_ci_compute_token(const uint8_t key16[16], const uint8_t cmd16[16],
 
     token = (uint32_t)digest[0] | (((uint32_t)digest[1] & (uint32_t)RCL_CI_TOKEN_MASK) << 8);
 
-    if (token <= (uint32_t)RCL_CI_TOKEN_MIN) token = (uint32_t)RCL_CI_TOKEN_MIN;
+    if (token <= (uint32_t)RCL_CI_TOKEN_MIN)
+        token = (uint32_t)RCL_CI_TOKEN_MIN;
 
     return token;
 }

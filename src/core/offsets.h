@@ -35,7 +35,8 @@ typedef void *(*fn_get_inst_t)(void);
 typedef void *(*fn_get_own_char_t)(void *);
 typedef int (*fn_get_team_t)(void *);
 typedef int (*fn_get_coord_t)(void *);
-typedef struct {
+typedef struct
+{
     uintptr_t at;
     uintptr_t vt;
     uintptr_t owner;
@@ -45,13 +46,15 @@ typedef struct {
     int dead;
     int ownerClass;
 } rcl_objhit_t;
-typedef uint64_t (*rcl_slot_fn_t)(void *a0, uint64_t a1, uint64_t a2, uint64_t a3,
-                                  uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7);
-typedef struct {
+typedef uint64_t (*rcl_slot_fn_t)(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
+                                  uint64_t a5, uint64_t a6, uint64_t a7);
+typedef struct
+{
     uintptr_t low;
     uintptr_t high;
 } rcl_region_t;
-typedef struct {
+typedef struct
+{
     uintptr_t manager;
     int32_t count;
     int32_t capacity;
@@ -68,19 +71,21 @@ typedef struct {
     int refused;
 } rcl_trail_t;
 typedef void (*rcl_setpred_t)(void *self, int x, int y);
-typedef struct {
+typedef struct
+{
     uintptr_t object;
-    int32_t   gid;
-    int32_t   x;
-    int32_t   y;
-    int32_t   ownerIndex;
-    int32_t   teamOld;
-    int32_t   teamNew;
-    int32_t   typeWord;
-    uint8_t   dead;
-    uint8_t   activeFlag;
+    int32_t gid;
+    int32_t x;
+    int32_t y;
+    int32_t ownerIndex;
+    int32_t teamOld;
+    int32_t teamNew;
+    int32_t typeWord;
+    uint8_t dead;
+    uint8_t activeFlag;
 } rcl_obj_t;
-typedef struct {
+typedef struct
+{
     uintptr_t elem;
     uintptr_t classRva;
     int32_t x;

@@ -2,6 +2,7 @@
 #define RECOIL_HELPERS_DODGE_PROFILES_H
 
 #include "../core/offsets.h"
+#include "../core/rcl_types.h"
 
 #define RCL_OWNER_VOTE_MIN 3
 #define RCL_OWNER_VOTE_TEAMS_MIN 2

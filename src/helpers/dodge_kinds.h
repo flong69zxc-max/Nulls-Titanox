@@ -2,6 +2,7 @@
 #define RECOIL_HELPERS_DODGE_KINDS_H
 
 #include "../core/offsets.h"
+#include "../core/rcl_types.h"
 
 #define RCL_FIT_COUNT 9
 #define RCL_KIND_COUNT 117

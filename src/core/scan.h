@@ -333,6 +333,7 @@ BOOL rcl_start_word(uint32_t word);
 int rcl_word(uintptr_t address, uint32_t *out);
 
 #include "hook.h"
+#include "./rcl_types.h"
 
 void rcl_slot_note(int index, void *self, uint64_t arg1);
 uint64_t rcl_hook_dispatches(void);
@@ -501,7 +502,6 @@ extern int rcl_dead;
 extern int rcl_own_team_a;
 extern int rcl_proj_other;
 extern int rcl_own_team_seen;
-extern int rcl_team_other_seen;
 extern uintptr_t rcl_proj_addr;
 extern uint8_t rcl_proj_bytes[0x100];
 extern int rcl_proj_have;

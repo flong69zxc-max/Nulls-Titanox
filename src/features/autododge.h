@@ -2,6 +2,7 @@
 #define RECOIL_FEATURES_AUTODODGE_AUTODODGE_H
 
 #include "../core/offsets.h"
+#include "../core/rcl_types.h"
 
 extern __thread int rcl_in_drive;
 extern int32_t rcl_pl_mine[12];

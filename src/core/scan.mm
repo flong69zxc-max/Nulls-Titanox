@@ -2852,8 +2852,6 @@ int rcl_proj_other = 0;
 
 int rcl_own_team_seen = 0;
 
-int rcl_team_other_seen = 0;
-
 uintptr_t rcl_proj_addr = 0;
 
 uint8_t rcl_proj_bytes[0x100];
@@ -3317,13 +3315,6 @@ int rcl_proj_scan(uintptr_t manager, int32_t count)
         rcl_projs[k].hasPrev = 0;
         rcl_projs[k].name = nullptr;
     }
-
-    if (rcl_proj_other > 0 && !rcl_team_other_seen)
-    {
-        rcl_team_other_seen = 1;
-    }
-
-    if (rcl_team_other_seen) rcl_own_team_seen = 1;
 
     return found;
 }

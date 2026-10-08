@@ -2,6 +2,7 @@
 #define RECOIL_UTILS_CRYPTO_H
 
 #include "../core/offsets.h"
+#include <stdint.h>
 
 void rcl_sha(const uint8_t *data, size_t length, uint8_t out[32]);
 

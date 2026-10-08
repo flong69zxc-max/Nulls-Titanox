@@ -2,6 +2,7 @@
 #define RECOIL_UTILS_WALLS_H
 
 #include "../core/offsets.h"
+#include <stdint.h>
 
 extern uintptr_t rcl_tiles;
 extern int rcl_w;

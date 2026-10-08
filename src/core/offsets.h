@@ -1,139 +1,11 @@
 #ifndef OFFSETS_H
 #define OFFSETS_H
 
-#import <Foundation/Foundation.h>
-#import <UIKit/UIKit.h>
-#import <objc/runtime.h>
-#import <mach/mach.h>
-#import <mach/vm_map.h>
-#import <mach/mach_time.h>
-#import <mach-o/dyld.h>
-#import <mach-o/loader.h>
-#import <dlfcn.h>
-#import <dispatch/dispatch.h>
-#import <math.h>
-#import <stdarg.h>
-#import <stdint.h>
-#import <stdio.h>
-#import <stdlib.h>
-#import <string.h>
-#import <unistd.h>
-#import <signal.h>
-#import "./offsets.h"
-#include "hook.h"
-#if __has_include(<ptrauth.h>)
-#import <ptrauth.h>
-#endif
-
-typedef void (*fn_void_2_t)(void *, void *);
-typedef void *(*fn_ptr_2_t)(void *, void *);
-typedef void (*fn_settext_t)(void *, void *, int, int);
-typedef void (*fn_setxy_t)(void *, float, float);
-typedef void (*fn_send_movement_t)(void *, float, float);
-typedef void (*fn_set_prediction_t)(void *, int, int);
-typedef void *(*fn_get_inst_t)(void);
-typedef void *(*fn_get_own_char_t)(void *);
-typedef int (*fn_get_team_t)(void *);
-typedef int (*fn_get_coord_t)(void *);
-typedef struct
-{
-    uintptr_t at;
-    uintptr_t vt;
-    uintptr_t owner;
-    int32_t gid;
-    int32_t team;
-    int32_t ownerIdx;
-    int dead;
-    int ownerClass;
-} rcl_objhit_t;
-typedef uint64_t (*rcl_slot_fn_t)(void *a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
-                                  uint64_t a5, uint64_t a6, uint64_t a7);
-typedef struct
-{
-    uintptr_t low;
-    uintptr_t high;
-} rcl_region_t;
-typedef struct
-{
-    uintptr_t manager;
-    int32_t count;
-    int32_t capacity;
-    int live;
-    int nonEmpty;
-    int stable;
-    int rawOk;
-    char rawSeg;
-    int ascii;
-    int sampled;
-    int noVt;
-    int teamDistinct;
-    int posDistinct;
-    int refused;
-} rcl_trail_t;
-typedef void (*rcl_setpred_t)(void *self, int x, int y);
-typedef struct
-{
-    uintptr_t object;
-    int32_t gid;
-    int32_t x;
-    int32_t y;
-    int32_t ownerIndex;
-    int32_t teamOld;
-    int32_t teamNew;
-    int32_t typeWord;
-    uint8_t dead;
-    uint8_t activeFlag;
-} rcl_obj_t;
-typedef struct
-{
-    uintptr_t elem;
-    uintptr_t classRva;
-    int32_t x;
-    int32_t y;
-    int32_t px;
-    int32_t py;
-    int32_t team;
-    int32_t spawnX;
-    int32_t spawnY;
-    int32_t gid;
-    uint64_t ptick;
-    uint64_t qtick;
-    int hasPrev;
-    const char *name;
-    const char *ownerName;
-    int32_t targetX;
-    int32_t targetY;
-    int32_t ownerX;
-    int32_t ownerY;
-    float speed;
-    float radius;
-    float angle;
-    uint64_t spawnedAt;
-    float vx;
-    float vy;
-    int isThrower;
-    int isBeam;
-    int32_t spawnAreaRadius;
-    int32_t spawnAreaActiveTime;
-    int32_t castRange;
-} rcl_proj_t;
-
-typedef struct
-{
-    const char *name;
-    float angle;
-    int32_t spawnX;
-    int32_t spawnY;
-    int32_t x;
-    int32_t y;
-} rcl_proj_death_t;
-
 #define RCL_SC_LEN_OFF 0x4ULL
 #define RCL_SC_DATA_OFF 0x8ULL
 #define RCL_PROJ_ANGLE_OFF 0x1d4ULL
 #define RCL_PROJ_ISTHROWER_OFF 0xb8ULL
 #define RCL_PROJ_DATA_NAME_OFF 0x58ULL
-
 #define RVA_BATTLEMODE_GETINSTANCE 0ULL
 #define RVA_BATTLESCREEN__UPDATEMOVEMENT 0x7a60f4ULL
 #define RVA_LOGICBATTLEMODECLIENT_GETOWNCHARACTER 0ULL
@@ -141,11 +13,9 @@ typedef struct
 #define RVA_LOGICBATTLEMODECLIENT_UPDATE 0ULL
 #define RVA_LOGICGAMEOBJECTCLIENT_GETX 0xa23afcULL
 #define RVA_LOGICGAMEOBJECTCLIENT_GETY 0xa23b04ULL
-
 #define OFF_BATTLESCREEN_AUTOFIREX 0xe6cULL
 #define OFF_BATTLESCREEN_AUTOFIREY 0xe70ULL
 #define OFF_CHARDATA_SPEED 0x1c4ULL
-
 #define RCL_GATE_OFF 0x70ULL
 #define RCL_MODE_MANAGER_OFF 0x28ULL
 #define RCL_MGR_ARRAY_OFF 0x0ULL
@@ -172,7 +42,6 @@ typedef struct
 #define RCL_ALLOC_RVA 0x00d8da2cULL
 #define RCL_MSGCTOR_RVA 0x00a95798ULL
 #define RCL_CI_MGR_QUEUE_OFF 0x20ULL
-
 #define RCL_ADDINPUT_RVA 0x74675cULL
 #define RCL_GETBATTLE_RVA 0x008c5130ULL
 #define RCL_MGR_OFF 0x58ULL
@@ -190,7 +59,6 @@ typedef struct
 #define RCL_CTRL_RAW_X_OFF 0xfa4ULL
 #define RCL_CTRL_RAW_Y_OFF 0xfa8ULL
 #define RCL_CTRL_ALIVE_OFF 0xf80ULL
-
 #define RCL_BATTLE_RVA 0x1123e58ULL
 #define RCL_CLIENT_OFF 0x28ULL
 #define RCL_CLIENT_POS_X_OFF 0x80ULL
@@ -211,12 +79,11 @@ typedef struct
 #define RCL_TILEMAP_HEIGHT_OFF 0xc8ULL
 #define RCL_TYPE_SLOT_OFF 0x28ULL
 #define RCL_ELEM_BACK_OFF 0x18ULL
-#define RCL_TEAM_OFF 0x4cULL
+#define RCL_TEAM_OFF RCL_OBJ_TEAM_OFF
 #define RCL_DEAD_OFF 0xd4ULL
 #define RCL_ELEM_ID_OFF_2 0x48ULL
 #define RCL_ELEM_TEAM_OFF_2 0x4cULL
 #define RCL_ARRAY_OFF 0x0ULL
-
 #define RCL_COUNT_OFF 0xcULL
 #define RCL_OWNIDX_OFF_2 0xe0ULL
 #define RCL_OWNTEAM_OFF_2 0xe4ULL
@@ -230,7 +97,6 @@ typedef struct
 #define RCL_ELEM_DEF_OFF 0x10ULL
 #define RCL_OFF 0x70ULL
 #define RCL_NP_PTR_OFF 0x38ULL
-
 #define RCL_MAP_BASE_OFF RCL_MODE_MANAGER_OFF
 #define RCL_MAP_PTR_OFF RCL_MODE_TILEMAP_OFF
 #define RCL_MAP_WIDTH_OFF RCL_TILEMAP_WIDTH_OFF
@@ -238,7 +104,6 @@ typedef struct
 #define RCL_TILE_PTR_STRIDE 0x8ULL
 #define RCL_TILE_TYPE_MOVE_OFF RCL_TYPE_MOVE_OFF
 #define RCL_TILE_TYPE_PROJ_OFF RCL_TYPE_PROJ_OFF
-
 #define RCL_CI_TYPE_TABLE_RVA 0x00e1e058ULL
 #define RCL_CI_TABLE_TYPES 0x17ULL
 #define RCL_CI_HASH_INNER_MASK_RVA 0x00e1bbd0ULL
@@ -247,15 +112,11 @@ typedef struct
 #define RCL_BM_HASH_KEY_OFF 0x60ULL
 #define RCL_CI_TOKEN_OFF 0x34UL
 #define RCL_CI_TOKEN_READ_OFF 0x4UL
-
 #define RCL_IMAGE_TEXT_WINDOW 0x4000ULL
 #define RCL_CLASS_PROJ_RVA 0x000ff57b0ULL
-
 #define RCL_DC_RVA_SIZE 0xd4000ULL
-
 #define RCL_IMAGE_SPAN 0x1164000ULL
 #define RCL_HEAP_REGION_MAX_SIZE 0x100000000ULL
-
 #define RVA_CLIENTINPUTMANAGER_ADDINPUT 0x74675cULL
 #define RVA_CLIENTINPUT_CONSTRUCTOR_INT 0xa95798ULL
 #define RVA_CLIENTINPUT_HASHINNERMASK 0xe1bbd0ULL
@@ -265,7 +126,6 @@ typedef struct
 #define RVA_LOGICBATTLEMODECLIENT_SETCLIENTPREDICTIONMOVETO 0xac3f20ULL
 #define RVA_MESSAGEMANAGER__RECEIVEMESSAGE 0x75d648ULL
 #define RVA_SETCLIENTPREDICTION 0xac3f20ULL
-
 #define OFF_BATTLEMODE_CLIENTINPUTMANAGER 0x58ULL
 #define OFF_BATTLEMODE_HASHENABLED 0x70ULL
 #define OFF_BATTLEMODE_HASHKEY 0x60ULL
@@ -339,7 +199,6 @@ typedef struct
 #define OFF_TILEMAP_WIDTH 0xc4ULL
 #define OFF_TILETYPEDATA_BLOCKSMOVEMENT 0x56ULL
 #define OFF_TILETYPEDATA_BLOCKSPROJECTILES 0x57ULL
-
 #define CAND_ANALYTICEVENT__ANALYTICEVENT 0xa89738ULL
 #define CAND_ANALYTICEVENT__SETSTRING 0xa897f8ULL
 #define CAND_BATTLESCREEN_GETCLOSESTTARGETFORAUTOSHOOT 0x7b91b8ULL
@@ -367,9 +226,7 @@ typedef struct
 #define CAND_SCROLLAREA__SCROLLTO 0xb1ab78ULL
 #define CAND_SCROLLAREA__UPDATEBOUNDS 0xb89c18ULL
 #define CAND_SCSTRING_DESTRUCT 0xd37a80ULL
-
 #define RCL_SLOT_NONE 0ULL
-
 #define RCL_SLOT_RVA_0 0x00ad4ed0ULL
 #define RCL_SLOT_RVA_1 0x00ad521cULL
 #define RCL_SLOT_RVA_5 0x00c33690ULL
@@ -390,7 +247,6 @@ typedef struct
 #define RCL_SLOT_RVA_29 0x008c7facULL
 #define RCL_SLOT_RVA_30 0x00b898e8ULL
 #define RCL_SLOT_RVA_31 0x00b89c10ULL
-
 #define RCL_TYPE_SLOT_RVA_0 0x0014c81cULL
 #define RCL_TYPE_SLOT_RVA_1 0x00a31768ULL
 #define RCL_TYPE_SLOT_RVA_2 0x009f4ec8ULL

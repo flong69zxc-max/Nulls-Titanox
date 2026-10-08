@@ -101,6 +101,9 @@ typedef struct
 #define RCL_AD_CAP_MAX 16
 
 static rcl_ad_hazard_t rcl_ad_hazards[RCL_AD_HAZARD_MAX];
+static int rcl_ad_mine_skipped = 0;
+static int rcl_ad_team_logged_own = -2;
+static int rcl_ad_team_logged_armed = -1;
 static rcl_hazard_t rcl_ad_caps[RCL_AD_CAP_MAX];
 static float rcl_ad_ring[RCL_AD_DIR_COUNT][2];
 static float rcl_ad_scores[RCL_AD_DIR_COUNT];
@@ -197,6 +200,7 @@ static float rcl_ad_traveled(const rcl_proj_t *p)
 
 static int rcl_ad_is_mine(const rcl_proj_t *p)
 {
+    if (!rcl_own_team_seen) return 0;
     if (p->team < 0) return 0;
     if (p->team == rcl_own_team_a) return 1;
     if (rcl_own_team_b >= 0 && p->team == rcl_own_team_b) return 1;
@@ -383,7 +387,13 @@ static void rcl_ad_collect(float mx, float my, float myRadius, uint64_t nowMs)
         float dy = 0.0f;
 
         if (!p->elem) continue;
-        if (rcl_ad_is_mine(p)) continue;
+
+        if (rcl_ad_is_mine(p))
+        {
+            rcl_ad_mine_skipped++;
+
+            continue;
+        }
 
         shaped = rcl_shape_hazards(p, nowMs, rcl_ad_caps, RCL_AD_CAP_MAX);
 
@@ -1278,6 +1288,18 @@ void rcl_autododge(void)
         rcl_own_team_a = (int)ownTeam;
 
         if (ownIndex >= 0 && ownTeam >= 0 && ownTeam <= 15) rcl_own_team_seen = 1;
+
+        if (rcl_ad_team_logged_own != rcl_own_team_a ||
+            rcl_ad_team_logged_armed != rcl_own_team_seen)
+        {
+            rcl_ad_team_logged_own = rcl_own_team_a;
+            rcl_ad_team_logged_armed = rcl_own_team_seen;
+
+            rcl_log_info("teamOff=%#x armed=%d ownTeam=%d mineSkipped=%d", (unsigned)rcl_team_off,
+                         rcl_own_team_seen, rcl_own_team_a, rcl_ad_mine_skipped);
+
+            rcl_ad_mine_skipped = 0;
+        }
 
         rcl_roster(rcl_own_elem_2, ownIndex, (int)ownTeam, objects, usable);
 

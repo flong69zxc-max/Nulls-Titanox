@@ -1,23 +1,5 @@
 #include "../recoil.h"
 
-int rcl_dodge_is_proj(uintptr_t obj) {
-    void *vt = NULL;
-    intptr_t cls = 0;
-
-    if (!obj) return 0;
-    if (!rcl_read_ptr(obj, &vt) || !vt) return 0;
-
-    cls = (intptr_t)((uintptr_t)vt - rcl_base);
-
-#if RCL_DODGE_PROJ_ONLY
-    return (cls == (intptr_t)RCL_CLASS_PROJ_RVA) ? 1 : 0;
-#else
-    (void)cls;
-
-    return 1;
-#endif
-}
-
 float rcl_proj_radius(const rcl_proj_t *p, float speed) {
     uintptr_t base = 0;
     int off = 0;
@@ -55,7 +37,6 @@ float rcl_proj_radius(const rcl_proj_t *p, float speed) {
         float r = 0.0f;
         float d = 0.0f;
 
-
         if (!rcl_read_float(base + (uintptr_t)off, &v)) continue;
         if (!rcl_ok(v, 1.0f, 1.0e6f)) continue;
 
@@ -79,12 +60,8 @@ float rcl_proj_radius(const rcl_proj_t *p, float speed) {
         rcl_rad_off = off + 4;
         rcl_rad_est = r;
 
-
         return r;
     }
-
-
-
 
     return RCL_DATA_PROJ_R;
 }

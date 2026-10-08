@@ -237,19 +237,13 @@ static int rcl_pred_ok(uintptr_t pred) {
 static int rcl_move_pair_ok(uintptr_t obj, int32_t *outX, int32_t *outY) {
     int32_t ix = 0;
     int32_t iy = 0;
-    int32_t key = 0;
-    int32_t arm = 0;
 
     if (!obj) return 0;
     if (!rcl_read_int(obj + RCL_MOVE_X_OFF, &ix)) return 0;
     if (!rcl_read_int(obj + RCL_MOVE_Y_OFF, &iy)) return 0;
-    if (!rcl_read_int(obj + RCL_MOVE_KEY_OFF, &key)) return 0;
-    if (!rcl_read_int(obj + RCL_MOVE_ARM_OFF, &arm)) return 0;
 
     if (ix < -RCL_MOVE_COORD_LIMIT || ix > RCL_MOVE_COORD_LIMIT) return 0;
     if (iy < -RCL_MOVE_COORD_LIMIT || iy > RCL_MOVE_COORD_LIMIT) return 0;
-    if (key < 0 || key > 1) return 0;
-    if ((arm & 0xFF) > RCL_MOVE_ARM_ON) return 0;
 
     if (outX) *outX = ix;
     if (outY) *outY = iy;

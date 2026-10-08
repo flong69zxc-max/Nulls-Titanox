@@ -1720,17 +1720,6 @@ void rcl_slot_pump(void) {
         }
     }
 
-    void *ownerField = NULL;
-
-    rcl_read_ptr(object + RCL_SLOT_OWNER_OFF, &ownerField);
-
-    {
-        uintptr_t plan = rcl_slot_arg[first] ? rcl_slot_arg[first] : (uintptr_t)ownerField;
-
-        if (plan && rcl_manager_live_count(plan) >= RCL_MANAGER_MIN_OBJECTS) {
-            rcl_dodge_all_teams(plan);
-        }
-    }
 }
 
 rcl_slot_fn_t rcl_slot_orig[RCL_SLOT_COUNT] = { NULL };

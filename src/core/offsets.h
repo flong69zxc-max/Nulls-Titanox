@@ -99,18 +99,6 @@ typedef struct {
     uint64_t qtick;
     int hasPrev;
 } rcl_proj_t;
-typedef struct {
-    float ax;
-    float ay;
-    float bx;
-    float by;
-    float speed;
-    float dirX;
-    float dirY;
-    float inflatedR;
-    float remaining;
-    int32_t gid;
-} rcl_seg_t;
 
 #define RVA_BATTLESCREEN__UPDATEAUTOSHOOT 0x807668ULL
 #define RVA_COMBATHUD__SETMOVESTICKSTATE 0x5857ecULL
@@ -119,7 +107,6 @@ typedef struct {
 #define RVA_STAGE_ADDCHILD 0xc33690ULL
 
 #define RVA_LOGICBATTLEMODECLIENT_SETCLIENTPREDICTIONMOVETO 0xac3f20ULL
-
 
 #define RVA_BATTLEMODE_GETINSTANCE 0ULL
 #define RVA_BATTLESCREEN__BATTLESCREEN 0ULL
@@ -157,9 +144,6 @@ typedef struct {
 #define OFF_OBJECTMANAGER_OBJECTSARRAY 0x0ULL
 #define OFF_OBJECTMANAGER_PTRSTRIDE 0x8ULL
 
-#define OFF_GAMEOBJ_X 0x30
-#define OFF_GAMEOBJ_Y 0x34
-
 #define RCL_JOYSTATE_OFF 0xed7ULL
 #define RCL_GATE_OFF 0x70ULL
 #define RCL_MODE_MANAGER_OFF 0x28ULL
@@ -177,16 +161,10 @@ typedef struct {
 #define RCL_MOVE_Y_OFF 0x110ULL
 #define RCL_MOVE_KEY_OFF 0x114ULL
 #define RCL_MOVE_ARM_OFF 0xacULL
-#define RCL_MOVE_ARM_ON 1
 #define RCL_MOVE_COORD_LIMIT 200000
 #define RCL_ALLOC_RVA 0x00d8da2cULL
 #define RCL_MSGCTOR_RVA 0x00a95798ULL
 #define RCL_CI_MGR_QUEUE_OFF 0x20ULL
-#define RCL_TYPE_MOVE_ALT 0xaULL
-
-#define RCL_TYPE_ATTACK RCL_TYPE_MOVE_ALT
-
-#define RCL_AIM_HIT_DIST 400.0f
 
 #define RCL_ADDINPUT_RVA 0x74675cULL
 #define RCL_GETBATTLE_RVA 0x008c5130ULL
@@ -223,7 +201,6 @@ typedef struct {
 #define RCL_OBJ_DEADFLAG_OFF 0xd0ULL
 #define RCL_MODE_PREDICTX_OFF 0x1d4ULL
 #define RCL_MODE_PREDICTY_OFF 0x1d8ULL
-#define RCL_SLOT_OWNER_OFF 0x20ULL
 #define RCL_TILES_OFF 0x20ULL
 #define RCL_TYPE_MOVE_OFF 0x56ULL
 #define RCL_TYPE_PROJ_OFF 0x57ULL
@@ -290,74 +267,11 @@ typedef struct {
 #define RCL_CI_TOKEN_MASK 0x7fUL
 #define RCL_CI_TOKEN_MIN 1UL
 
-
 #define RCL_IMAGE_TEXT_WINDOW 0x4000ULL
 #define RCL_CLASS_PROJ_RVA 0x000ff57b0ULL
 #define RCL_PROJ_CLASS_ONLY 1
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 #define RCL_WRITE_GUARD 1
-#define RCL_ESCAPE 1
-#define RCL_MODE_TUNE 1
-#define RCL_HORIZON 1.0f
-#define RCL_SEL_MAX 8
 #define RCL_MGR_CAP_MAX 4096
 #define RCL_MANAGER_MAX_OBJECTS 96
 #define RCL_DC_RVA_SIZE 0xd4000ULL
@@ -370,21 +284,13 @@ typedef struct {
 #define RCL_JOURNAL 24
 #define RCL_TILE_SIZE 300.0f
 #define RCL_GRID_MAX 128
-#define RCL_SEG_MAX 32
 #define RCL_BS_MODE 0x8ac
-#define RCL_BS_COS 0x8f4
-#define RCL_BS_SIN 0x8f8
-#define RCL_BS_AX 0x9b8
-#define RCL_BS_AY 0x9bc
-#define RCL_BS_BX 0x9c0
-#define RCL_BS_BY 0x9c4
 #define RCL_PLAYER_GID 1000000
 #define RCL_SHOT_GID 2000000
 #define RCL_STEP_b 60.0f
 #define RCL_MATE_MAX 8
 #define RCL_PLAYER_MAX 12
 #define RCL_CAND 3
-#define RCL_REACH 600.0f
 #define RCL_PROJ_MAX 16
 #define RCL_DIFF_BYTES 0x100
 #define RCL_COORD_ABS_MAX 1000000
@@ -401,13 +307,11 @@ typedef struct {
 #define RCL_HEAP_REGION_MAX 512
 #define RCL_HEAP_REGION_MAX_SIZE 0x100000000ULL
 #define RCL_TRAIL_MAX 8
-#define RCL_DIR_COUNT 64
 #define RCL_ADV_BUCKETS 8
 #define RCL_GEOM 1
 #define RCL_GEOM_LOGS 6
 #define RCL_RADIUS_MIN 0.0f
 #define RCL_RADIUS_MAX 600.0f
-#define RCL_RADIUS_MARGIN 8.0f
 #define RCL_CAL_OFF_LO 0x20
 #define RCL_CAL_OFF_HI 0x120
 #define RCL_CAL_STEP 4
@@ -423,10 +327,8 @@ typedef struct {
 #define RCL_WALL_LOGS 8
 #define RCL_TEAM_LOGS 6
 #ifndef RCL_DODGE_PROJ_ONLY
-#define RCL_DODGE_PROJ_ONLY 1
 
 #ifndef RCL_PROJ_ANGLE_OFF
-#define RCL_PROJ_ANGLE_OFF 0xb8
 
 #ifndef RCL_JS_ENEMY_W
 #define RCL_JS_ENEMY_W 300.0f
@@ -435,7 +337,6 @@ typedef struct {
 #endif
 
 #ifndef RCL_JS_SPEED_FALLBACK
-#define RCL_JS_SPEED_FALLBACK 1200.0f
 #endif
 
 #ifndef RCL_JS_RADIUS_FALLBACK
@@ -444,37 +345,26 @@ typedef struct {
 
 #endif
 #ifndef RCL_HIT_MARGIN
-#define RCL_HIT_MARGIN 60.0f
 #endif
 #ifndef RCL_DODGE_CLEAR_R
-#define RCL_DODGE_CLEAR_R 96.0f
 #endif
 #ifndef RCL_RAGE_FORCE
-#define RCL_RAGE_FORCE 0
 #endif
 #ifndef RCL_LOOKAHEAD_MAX
-#define RCL_LOOKAHEAD_MAX 400.0f
 #endif
 #ifndef RCL_ENGAGE_NEAR
-#define RCL_ENGAGE_NEAR 24.0f
 #endif
 #ifndef RCL_JS_DODGE
-#define RCL_JS_DODGE 1
 #endif
 #ifndef RCL_DIR_COUNT
-#define RCL_DIR_COUNT 48
 #endif
 #ifndef RCL_HORIZON_S
-#define RCL_HORIZON_S 1.0f
 #endif
 #ifndef RCL_DATA_MOMENTUM
-#define RCL_DATA_MOMENTUM 300.0f
 #endif
 #ifndef RCL_WALL_PENALTY
-#define RCL_WALL_PENALTY 9000.0f
 #endif
 #ifndef RCL_DATA_SPEED
-#define RCL_DATA_SPEED 750.0f
 #endif
 #ifndef RCL_DATA_OWN_R
 #define RCL_DATA_OWN_R 120.0f
@@ -486,19 +376,14 @@ typedef struct {
 #define RCL_DATA_HOLD 10
 #endif
 #ifndef RCL_DATA_BAND
-#define RCL_DATA_BAND 300.0f
 #endif
 #ifndef RCL_DATA_CRIT_EVERY
-#define RCL_DATA_CRIT_EVERY 4
 #endif
 #ifndef RCL_JS_CLEAR_STEPS
-#define RCL_JS_CLEAR_STEPS 4
 #endif
 #ifndef RCL_PROJ_LIFE_MS
-#define RCL_PROJ_LIFE_MS 1200.0f
 #endif
 #ifndef RCL_OVERSHOOT
-#define RCL_OVERSHOOT 220.0f
 #endif
 #ifndef RCL_FREEST_RADII
 #define RCL_FREEST_RADII 3
@@ -507,7 +392,6 @@ typedef struct {
 #define RCL_FREEST_LOGS 6
 #endif
 #ifndef RCL_BODY_GAIN
-#define RCL_BODY_GAIN 0.0f
 #endif
 #ifndef RCL_ETA_PENALTY
 #define RCL_ETA_PENALTY 100000.0f
@@ -528,7 +412,6 @@ typedef struct {
 #define RCL_RADIUS_MAX 600.0f
 #endif
 #ifndef RCL_RADIUS_MARGIN
-#define RCL_RADIUS_MARGIN 8.0f
 #endif
 #ifndef RCL_CAL_OFF_LO
 #define RCL_CAL_OFF_LO 0x20
@@ -585,7 +468,6 @@ typedef struct {
 #define RCL_SIDE_FLIP 1
 #define RCL_SIDE_STALE 45
 #ifndef RCL_DODGE_PROJ_ONLY
-#define RCL_DODGE_PROJ_ONLY 1
 #endif
 #ifndef RCL_PROJ_ACTIVE_BYPASS
 #define RCL_PROJ_ACTIVE_BYPASS 1

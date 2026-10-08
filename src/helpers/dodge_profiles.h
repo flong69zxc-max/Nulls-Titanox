@@ -3,69 +3,15 @@
 
 #include "../core/offsets.h"
 
-#define RCL_ONESHOT 1
-#define RCL_BODY_CLEAR 180.0f
-#define RCL_TEAM_STRICT 1
-#define RCL_LOOKAHEAD_MS 220.0f
-#define RCL_LOOKAHEAD_MS_2 800.0f
-#define RCL_MATE_AVOID 1
-#define RCL_MATE_CLEAR_2 700.0f
-#define RCL_HIT_ONLY 1
-#define RCL_REJECT 1
-#define RCL_MIN_SPEED 220.0f
-#define RCL_MAX_SPEED 9000.0f
-#define RCL_BLINK_TICKS 2
-#define RCL_BLINK_REM 320.0f
-#define RCL_BODY_SCAN 1
-#define RCL_BODY_W 1.0f
-#define RCL_STEPS 4
-#define RCL_FLEE 1
-#define RCL_FLEE_STEP 150.0f
-#define RCL_FREEST_ANGLES 32
-#define RCL_FREEST_MIN 120.0f
-#define DODGE_STEP 600.0f
 #define RCL_OWNER_VOTE_MIN 3
 #define RCL_OWNER_VOTE_TEAMS_MIN 2
-#define RCL_TEAM_FILTER 0
-#define RCL_STEP 120.0f
 #define RCL_ELEM_RESET 1
-#define RCL_STAGE_POSITION 2
-#define RCL_STEP_a 150.0f
-#define RCL_DEFAULT_RANGE 9000.0f
-#define RCL_EXTEND_DEFAULT 60.0f
 #define RCL_MIN_USABLE_2 1
-#define RCL_MIN_PROJ_SPEED 10.0f
 #define RCL_MIN_USABLE 1
-#define RCL_INFLATE 350.0f
-#define RCL_THREAT_MIN_MS 0
-#define RCL_DODGE_MIN_MS 0
 #define RCL_REPROBE_MS 5000
 #define RCL_VERIFY_FRAMES 3
-#define RCL_REACT_CRIT 1
-#define RCL_VIEW_RANGE 3400.0f
-#define RCL_DODGE_DIST 400.0f
-#define RCL_ADV_STEP 50.0f
-#define RCL_SKIP_UNSAFE 1
-#define RCL_BLACK_SPEED_TOL 60.0f
-#define RCL_BLACK_RADIUS_TOL 40.0f
-#define RCL_NO_THREAT_TICKS 6
 #define RCL_PROJ_RADIUS_DEFAULT 150.0f
 #define RCL_OWN_RADIUS_MIN 40.0f
-#define RCL_DODGE_SPAWN_MARGIN 60.0f
-#define RCL_DODGE_DETECT_SAFETY 2.5f
 #define RCL_OWN_RADIUS_MAX 200.0f
-#define RCL_MEAS_FPS 60.0f
-#define RCL_MEAS_DT_MAX 8.0f
-#define RCL_MEAS_SPEED_MIN 300.0f
-#define RCL_MEAS_SPEED_MAX 8500.0f
-
-int rcl_body_blocked(float x, float y, float ownX, float ownY);
-int rcl_body_blocked_2(float px, float py, float dirX, float dirY, float len);
-float rcl_body_score(float px, float py, float dirX, float dirY, float len);
-float rcl_body_score_2(float px, float py, float dirX, float dirY, float len);
-float rcl_score(float px, float py, float dirX, float dirY, float len);
-int rcl_valid_point(float x, float y);
-int rcl_passed(float px, float py);
-int rcl_wall_blocked(float x0, float y0, float x1, float y1);
 
 #endif

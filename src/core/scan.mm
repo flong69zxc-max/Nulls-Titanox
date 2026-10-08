@@ -1526,11 +1526,44 @@ uint64_t rcl_idle_start = 0;
 
 int rcl_idle_logged = 0;
 
+static int rcl_prologue_ok(uintptr_t address)
+{
+    uint32_t word = 0;
+
+    if (!rcl_read_word(address, &word)) return 0;
+
+    if ((word & 0xFFC003FFu) == 0xD10003FFu) return 1;
+    if ((word & 0xFF4003E0u) == 0xA90003E0u) return 1;
+    if ((word & 0xFF4003E0u) == 0xA80003E0u) return 1;
+    if (word == 0xD503237Fu) return 1;
+    if (word == 0xD503245Fu) return 1;
+    if (word == 0xD65F03C0u) return 1;
+    if (word == 0x910003FDu) return 1;
+    if ((word & 0xFF000000u) == 0x14000000u) return 1;
+    if ((word & 0x9F000000u) == 0x10000000u) return 1;
+
+    return 0;
+}
+
 void rcl_slot_hooks_install(void)
 {
+    int installed = 0;
+
     if (!rcl_base) return;
 
-    rcl_hooks_install(rcl_base, rcl_slot_specs, RCL_SLOT_COUNT, (void **)rcl_slot_orig);
+    installed = rcl_hooks_install(rcl_base, rcl_slot_specs, RCL_SLOT_COUNT, (void **)rcl_slot_orig);
+
+    rcl_log_info("hooks installed=%d of %d", installed, RCL_SLOT_COUNT);
+
+    for (int i = 0; i < RCL_SLOT_COUNT; i++)
+    {
+        if (!rcl_slot_specs[i].rva) continue;
+        if (rcl_slot_orig[i]) continue;
+
+        rcl_log_info("hook skip %d rva=%#llx pro=%d", i,
+                     (unsigned long long)rcl_slot_specs[i].rva,
+                     rcl_prologue_ok(rcl_base + rcl_slot_specs[i].rva));
+    }
 }
 
 const int rcl_object_slots[RCL_OBJ_SLOTS] = { 2, 3, 4 };

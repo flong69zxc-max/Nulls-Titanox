@@ -80,7 +80,6 @@ static void rcl_dodge_speed_probe(void)
 #define RCL_AD_TICK_MS 16.0f
 #define RCL_AD_TICK_MAX_MS 250.0f
 #define RCL_AD_MINE_SPAWN 220.0f
-#define RCL_AD_ESCAPE_MS 320
 #define RCL_BDC_TURN_MAX 0.60f
 #define RCL_BDC_SWITCH_MARGIN (RCL_BDC_GAP_W * 14.0f)
 #define RCL_BDC_GAIN_MIN 30.0f
@@ -1128,7 +1127,6 @@ static void rcl_bdc_pick(float mx, float my, float myR, float ix, float iy, floa
     {
         *ox = 0.0f;
         *oy = 0.0f;
-        rcl_bdc_have_last = 0;
         return;
     }
     for (i = 0; i < RCL_AD_DIR_COUNT; i++)
@@ -1170,7 +1168,6 @@ static void rcl_bdc_pick(float mx, float my, float myR, float ix, float iy, floa
     {
         *ox = 0.0f;
         *oy = 0.0f;
-        rcl_bdc_have_last = 0;
         return;
     }
     rcl_bd_refine(mx, my, myR, speed, bx, by, &fx, &fy);
@@ -1234,26 +1231,16 @@ static int rcl_ad_update(float mx, float my)
     rcl_bd_build_threats();
     if (rcl_bd_threat_n == 0)
     {
-        if (rcl_bdc_have_last && rcl_bdc_last_ms && now - rcl_bdc_last_ms <= RCL_AD_ESCAPE_MS)
-        {
-            rcl_ad_aim_target(mx, my, rcl_bdc_last_x, rcl_bdc_last_y, &tx, &ty);
-            rcl_ad_send_move(tx, ty, mx, my);
-            return 0;
-        }
-        rcl_bdc_have_last = 0;
-        rcl_bdc_last_x = 0.0f;
-        rcl_bdc_last_y = 0.0f;
+        rcl_ad_send_move(mx, my, mx, my);
+        rcl_bdc_last_ms = 0;
         return 0;
     }
     rcl_bd_intent(&ix, &iy);
     rcl_bdc_pick(mx, my, myRadius, ix, iy, speed, &dirx, &diry);
     if (dirx == 0.0f && diry == 0.0f)
     {
-        if (rcl_bdc_have_last && rcl_bdc_last_ms && now - rcl_bdc_last_ms <= RCL_AD_ESCAPE_MS)
-        {
-            rcl_ad_aim_target(mx, my, rcl_bdc_last_x, rcl_bdc_last_y, &tx, &ty);
-            rcl_ad_send_move(tx, ty, mx, my);
-        }
+        rcl_ad_send_move(mx, my, mx, my);
+        rcl_bdc_last_ms = 0;
         return 0;
     }
     rcl_ad_aim_target(mx, my, dirx, diry, &tx, &ty);

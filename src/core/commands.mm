@@ -92,6 +92,11 @@ uint32_t rcl_ci_sign(void *ci, void *battle)
 
 int rcl_enqueue_type(int x, int y, int type)
 {
+    return rcl_enqueue_skill(x, y, type, nullptr);
+}
+
+int rcl_enqueue_skill(int x, int y, int type, void *skillData)
+{
     uintptr_t ctorFn = 0;
     uintptr_t inputFn = 0;
     uintptr_t battleFn = 0;
@@ -142,6 +147,10 @@ int rcl_enqueue_type(int x, int y, int type)
     rcl_write_bytes((uintptr_t)msg + RCL_TYPE_OFF, &type, sizeof(type));
     rcl_write_bytes((uintptr_t)msg + RCL_X_OFF, &vx, sizeof(vx));
     rcl_write_bytes((uintptr_t)msg + RCL_Y_OFF, &vy, sizeof(vy));
+    if (skillData)
+    {
+        rcl_write_bytes((uintptr_t)msg + (uintptr_t)OFF_CLIENTINPUT_SKILLDATA, &skillData, sizeof(skillData));
+    }
     rcl_ci_sign(msg, battle);
     if (type == (int)RCL_TYPE_MOVE)
     {

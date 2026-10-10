@@ -27,12 +27,13 @@
 
 #include "./helpers/dodge_kinds.h"
 #include "./helpers/dodge_profiles.h"
+#include "./helpers/assist.h"
+#include "./helpers/aim_ahead.h"
 #include "./utils/crypto.h"
 #include "./utils/log.h"
 #include "./utils/walls.h"
 #include "./utils/flags.h"
 #include "./utils/brawlers.h"
-#include "./utils/aim_ahead.h"
 
 #include "objc.h"
 #include "./core/scan.h"

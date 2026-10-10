@@ -23,5 +23,6 @@ int rcl_ci_load_constants(void);
 uint32_t rcl_ci_sign(void *ci, void *battle);
 int rcl_enqueue(int x, int y);
 int rcl_enqueue_type(int x, int y, int type);
+int rcl_enqueue_skill(int x, int y, int type, void *skillData);
 
 #endif

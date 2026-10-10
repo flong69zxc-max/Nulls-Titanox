@@ -2544,6 +2544,7 @@ void rcl_run_workload(void)
     }
     rcl_run_autododge(0);
     rcl_run_autoaim();
+    rcl_run_assist();
 }
 
 void rcl_run_autododge(int from_update)

@@ -1,8 +1,8 @@
-#ifndef RECOIL_UTILS_AIM_AHEAD_H
-#define RECOIL_UTILS_AIM_AHEAD_H
+#ifndef RECOIL_HELPERS_AIM_AHEAD_H
+#define RECOIL_HELPERS_AIM_AHEAD_H
 
 #include "../core/offsets.h"
-#include "./brawlers.h"
+#include "../utils/brawlers.h"
 #include <stdint.h>
 
 #define RCL_AIM_AHEAD_TILE 300

@@ -72,14 +72,15 @@ static void rcl_dodge_speed_probe(void)
 #define RCL_AD_FALLBACK_RANGE 2800.0f
 #define RCL_AD_DIR_COUNT 64
 #define RCL_AD_SKIN 50.0f
-#define RCL_AD_REACH 600.0f
+#define RCL_AD_REACH 240.0f
 #define RCL_AD_WALL_BODY 240.0f
 #define RCL_AD_TICK_MS 16.0f
 #define RCL_AD_TICK_MAX_MS 250.0f
 #define RCL_AD_MINE_SPAWN 220.0f
 #define RCL_AD_ESCAPE_MS 300
-#define RCL_BDC_LOCK_TICKS 8
-#define RCL_BDC_SWITCH_MARGIN 0.12f
+#define RCL_BDC_LOCK_TICKS 20
+#define RCL_BDC_SWITCH_MARGIN 150000.0f
+#define RCL_BDC_GAIN_MIN 30.0f
 #define RCL_BDC_REFINE_STEP 0.35f
 #define RCL_BDC_REFINE_MIN 0.02f
 
@@ -833,8 +834,7 @@ static int rcl_ad_send_move_7(float tx, float ty, float mx, float my)
 #define RCL_BDC_WALL_PROBE 3
 #define RCL_BDC_HIT_GATE 1.15f
 #define RCL_BDC_SEL_MAX 12
-#define RCL_BDC_RELEVANT_D2 1400.0f
-#define RCL_BDC_RELEVANT_GATE 1.60f
+#define RCL_BDC_CLOSE_D2 700.0f
 #define RCL_BD_PRE_RANGE_2 1500.0f
 #define RCL_BD_PRE_SPD_2 2600.0f
 #define RCL_BD_PRE_HIT_2 55.0f
@@ -1042,24 +1042,11 @@ static int rcl_bdc_relevant_6(const rcl_bd_threat_t *p, float mx, float my, floa
     float dx = p->x - mx;
     float dy = p->y - my;
     float d2 = dx * dx + dy * dy;
-    float tHit = 0.0f;
-    float hit2 = 0.0f;
-    float r = 0.0f;
     if (rcl_bdc_aimed_one(p, mx, my, myR))
     {
         return 1;
     }
-    if (d2 <= RCL_BDC_RELEVANT_D2 * RCL_BDC_RELEVANT_D2)
-    {
-        return 1;
-    }
-    hit2 = rcl_bd_impact_d2(p, mx, my, &tHit);
-    if (tHit < 0.0f)
-    {
-        return 0;
-    }
-    r = rcl_bdc_danger_r_6(p, myR) * RCL_BDC_RELEVANT_GATE;
-    return hit2 <= r * r;
+    return d2 <= RCL_BDC_CLOSE_D2 * RCL_BDC_CLOSE_D2;
 }
 
 static void rcl_bdc_sel_trim_6(int *sel, int *n, float mx, float my)
@@ -1164,6 +1151,16 @@ static void rcl_bdc_pick_6(float mx, float my, float myR, float ix, float iy, fl
             bx = ux;
             by = uy;
         }
+    }
+    if (rcl_bdc_clearance_6(bx, by, mx, my, speed, myR) <=
+        rcl_bdc_clearance_6(0.0f, 0.0f, mx, my, speed, myR) + RCL_BDC_GAIN_MIN)
+    {
+        *ox = 0.0f;
+        *oy = 0.0f;
+        rcl_bdc_have_last = 0;
+        rcl_bdc_lock_6 = 0;
+        rcl_bdc_idle++;
+        return;
     }
     rcl_bd_refine_6(mx, my, myR, speed, bx, by, &fx, &fy);
     if (!(fx == fx) || !(fy == fy) || (fx == 0.0f && fy == 0.0f))

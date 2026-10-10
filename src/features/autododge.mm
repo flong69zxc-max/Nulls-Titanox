@@ -82,6 +82,8 @@ static void rcl_dodge_speed_probe(void)
 #define RCL_AD_MINE_SPAWN 220.0f
 #define RCL_BDC_TURN_MAX 0.60f
 #define RCL_BDC_SWITCH_MARGIN (RCL_BDC_GAP_W * 14.0f)
+#define RCL_BDC_HOLD_TICKS 6
+#define RCL_BDC_HOLD_BREAK (RCL_BDC_GAP_W * 200.0f)
 #define RCL_BDC_GAIN_MIN 30.0f
 #define RCL_BDC_REFINE_STEP 0.5f
 #define RCL_BDC_REFINE_MIN 0.02f
@@ -859,6 +861,7 @@ static int rcl_bdc_sel_n = 0;
 static float rcl_bdc_last_x = 0.0f;
 static float rcl_bdc_last_y = 0.0f;
 static int rcl_bdc_have_last = 0;
+static int rcl_bdc_hold = 0;
 
 static void rcl_ad_aim_target(float mx, float my, float dx, float dy, float *tx, float *ty)
 {
@@ -1143,6 +1146,13 @@ static void rcl_bdc_pick(float mx, float my, float myR, float ix, float iy, floa
     if (rcl_bdc_have_last)
     {
         float hs = rcl_bdc_dir_score(rcl_bdc_last_x, rcl_bdc_last_y, mx, my, myR, speed);
+        if (rcl_bdc_hold > 0 && hs <= bs + RCL_BDC_HOLD_BREAK)
+        {
+            *ox = rcl_bdc_last_x;
+            *oy = rcl_bdc_last_y;
+            rcl_bdc_hold--;
+            return;
+        }
         if (hs <= bs + RCL_BDC_SWITCH_MARGIN)
         {
             bx = rcl_bdc_last_x;
@@ -1177,6 +1187,7 @@ static void rcl_bdc_pick(float mx, float my, float myR, float ix, float iy, floa
         fy = by;
     }
     rcl_bdc_slew(&fx, &fy);
+    rcl_bdc_hold = RCL_BDC_HOLD_TICKS;
     *ox = fx;
     *oy = fy;
     rcl_bdc_last_x = fx;
@@ -1190,6 +1201,7 @@ static int rcl_ad_update(float mx, float my)
     if (rcl_dead || !rcl_own_elem)
     {
         rcl_bdc_have_last = 0;
+        rcl_bdc_hold = 0;
         rcl_bdc_last_x = 0.0f;
         rcl_bdc_last_y = 0.0f;
         rcl_bdc_last_ms = 0;
@@ -1231,16 +1243,16 @@ static int rcl_ad_update(float mx, float my)
     rcl_bd_build_threats();
     if (rcl_bd_threat_n == 0)
     {
-        rcl_ad_send_move(mx, my, mx, my);
         rcl_bdc_last_ms = 0;
+        rcl_bdc_hold = 0;
         return 0;
     }
     rcl_bd_intent(&ix, &iy);
     rcl_bdc_pick(mx, my, myRadius, ix, iy, speed, &dirx, &diry);
     if (dirx == 0.0f && diry == 0.0f)
     {
-        rcl_ad_send_move(mx, my, mx, my);
         rcl_bdc_last_ms = 0;
+        rcl_bdc_hold = 0;
         return 0;
     }
     rcl_ad_aim_target(mx, my, dirx, diry, &tx, &ty);

@@ -225,23 +225,19 @@ int rcl_shape_hazards(const rcl_proj_t *p, uint64_t now_ms, rcl_hazard_t *out, i
     {
         return 0;
     }
-    if (strcmp(p->name, "CrossBomberProjectile") == 0)
-    {
-        return rcl_cross_profile(p, now_ms, out, max_out, &cross_bomber, 0);
-    }
-    if (strcmp(p->name, "CrossBomberUltiProjectile") == 0)
-    {
-        return rcl_cross_profile(p, now_ms, out, max_out, &cross_ulti, 0);
-    }
-    if (strcmp(p->name, "OverchargedCrossBomberUltiProjectile") == 0)
+    if (strstr(p->name, "Overcharged") != nullptr || strstr(p->name, "MegaBoss") != nullptr)
     {
         int n = rcl_cross_profile(p, now_ms, out, max_out, &cross_ulti, 0);
         n += rcl_cross_profile(p, now_ms, out + n, max_out - n, &cross_ulti, 1);
         return n;
     }
-    if (strcmp(p->name, "MegaBossCrossBomberSecondProjectile") == 0)
+    if (strstr(p->name, "CrossBomber") != nullptr && p->name[strlen(p->name) - 1] != '2')
     {
-        return rcl_cross_profile(p, now_ms, out, max_out, &cross_ulti, 0);
+        if (strstr(p->name, "Ulti") != nullptr)
+        {
+            return rcl_cross_profile(p, now_ms, out, max_out, &cross_ulti, 0);
+        }
+        return rcl_cross_profile(p, now_ms, out, max_out, &cross_bomber, 0);
     }
     if (strcmp(p->name, "CactusProjectile") == 0)
     {
@@ -264,11 +260,7 @@ int rcl_blocks_linear(const char *name)
     {
         return 0;
     }
-    if (strcmp(name, "CrossBomberProjectile") == 0)
-    {
-        return 1;
-    }
-    if (strcmp(name, "CrossBomberUltiProjectile") == 0)
+    if (strstr(name, "CrossBomber") != nullptr && name[strlen(name) - 1] != '2')
     {
         return 1;
     }

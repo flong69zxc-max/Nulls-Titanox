@@ -82,6 +82,8 @@ static void rcl_dodge_speed_probe(void)
 #define RCL_AD_TICK_MAX_MS 250.0f
 #define RCL_AD_MINE_SPAWN 220.0f
 #define RCL_BDC_TURN_MAX 0.60f
+#define RCL_BDC_TURN_PANIC 1.60f
+#define RCL_BDC_PANIC_MS 350.0f
 #define RCL_BDC_SWITCH_MARGIN (RCL_BDC_GAP_W * 14.0f)
 #define RCL_BDC_GAIN_MIN 30.0f
 #define RCL_BDC_REFINE_STEP 0.5f
@@ -870,6 +872,7 @@ static int rcl_bdc_sel_n = 0;
 static float rcl_bdc_last_x = 0.0f;
 static float rcl_bdc_last_y = 0.0f;
 static int rcl_bdc_have_last = 0;
+static float rcl_bdc_impact_ms = 0.0f;
 
 static void rcl_ad_aim_target(float mx, float my, float dx, float dy, float *tx, float *ty)
 {
@@ -886,7 +889,7 @@ static void rcl_ad_aim_target(float mx, float my, float dx, float dy, float *tx,
     *ty = roundf(my + dy * d);
 }
 
-static void rcl_bdc_slew(float *fx, float *fy)
+static void rcl_bdc_slew(float *fx, float *fy, float limit)
 {
     float ca = 0.0f;
     float da = 0.0f;
@@ -906,13 +909,13 @@ static void rcl_bdc_slew(float *fx, float *fy)
     {
         na += RCL_TAU;
     }
-    if (na > RCL_BDC_TURN_MAX)
+    if (na > limit)
     {
-        na = RCL_BDC_TURN_MAX;
+        na = limit;
     }
-    if (na < -RCL_BDC_TURN_MAX)
+    if (na < -limit)
     {
-        na = -RCL_BDC_TURN_MAX;
+        na = -limit;
     }
     *fx = cosf(ca + na);
     *fy = sinf(ca + na);
@@ -1114,6 +1117,7 @@ static void rcl_bdc_pick(float mx, float my, float myR, float ix, float iy, floa
     int i;
     int best = -1;
     int aimedNow = 0;
+    rcl_bdc_impact_ms = 0.0f;
     float bs = 0.0f;
     float bx = 0.0f;
     float by = 0.0f;
@@ -1127,7 +1131,15 @@ static void rcl_bdc_pick(float mx, float my, float myR, float ix, float iy, floa
         {
             if (aimed)
             {
+                float th = 0.0f;
                 aimedNow = 1;
+                if (rcl_bd_impact_d2(&rcl_bd_threats[i], mx, my, &th) >= 0.0f && th >= 0.0f)
+                {
+                    if (rcl_bdc_impact_ms == 0.0f || th * 1000.0f < rcl_bdc_impact_ms)
+                    {
+                        rcl_bdc_impact_ms = th * 1000.0f;
+                    }
+                }
             }
             rcl_bdc_sel[rcl_bdc_sel_n] = i;
             rcl_bdc_sel_n++;
@@ -1187,7 +1199,7 @@ static void rcl_bdc_pick(float mx, float my, float myR, float ix, float iy, floa
         fx = bx;
         fy = by;
     }
-    rcl_bdc_slew(&fx, &fy);
+    rcl_bdc_slew(&fx, &fy, RCL_BDC_TURN_MAX);
     *ox = fx;
     *oy = fy;
     rcl_bdc_last_x = fx;

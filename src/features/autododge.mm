@@ -69,6 +69,7 @@ static void rcl_dodge_speed_probe(void)
 }
 
 #define RCL_AD_AWARE 1500.0f
+#define RCL_AD_T_AHEAD 0.9f
 #define RCL_AD_FALLBACK_RANGE 2800.0f
 #define RCL_AD_DIR_COUNT 64
 #define RCL_AD_SKIN 50.0f
@@ -545,9 +546,13 @@ static void rcl_ad_collect(float mx, float my, float myRadius, uint64_t nowMs)
         }
         dx = (float)p->x - mx;
         dy = (float)p->y - my;
-        if (dx * dx + dy * dy > zoneSq)
         {
-            continue;
+            float spd0 = sqrtf(p->vx * p->vx + p->vy * p->vy);
+            float reach = RCL_AD_AWARE + spd0 * RCL_AD_T_AHEAD;
+            if (dx * dx + dy * dy > reach * reach)
+            {
+                continue;
+            }
         }
         vx = p->vx;
         vy = p->vy;

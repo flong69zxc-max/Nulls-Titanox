@@ -17,7 +17,6 @@ typedef struct
 
 #define RCL_OWNER_VOTE_MIN 3
 #define RCL_OWNER_VOTE_TEAMS_MIN 2
-#define RCL_MIN_USABLE_2 1
 #define RCL_MIN_USABLE 1
 #define RCL_REPROBE_MS 5000
 #define RCL_PROJ_RADIUS_DEFAULT 150.0f

@@ -484,6 +484,10 @@ int rcl_move_to(int32_t x, int32_t y, float ox, float oy)
     {
         ctrl = 0;
     }
+    if (ctrl && !rcl_ctrl_bounds(ctrl, nullptr, nullptr))
+    {
+        ctrl = 0;
+    }
     if (!own && !ctrl)
     {
         return 0;

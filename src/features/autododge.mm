@@ -839,7 +839,7 @@ static int rcl_ad_send_move_7(float tx, float ty, float mx, float my)
 #define RCL_BDC_TIE 1.05f
 #define RCL_BDC_WALL_HIT 200000.0f
 #define RCL_BDC_WALL_BAND 170.0f
-#define RCL_BDC_OPEN_W 420000.0f
+#define RCL_BDC_OPEN_W 900000.0f
 #define RCL_BDC_OPEN_BAND 700.0f
 #define RCL_BDC_WALL_PROBE 3
 #define RCL_BDC_EXTRA_BLEND 120.0f
@@ -1616,6 +1616,14 @@ static void rcl_bdc_pick_6(float mx, float my, float myR, float ix, float iy, fl
 static int rcl_ad_update_7(float mx, float my)
 {
     uint64_t now = rcl_ad_now_ms();
+    if (rcl_dead || !rcl_own_elem)
+    {
+        rcl_bdc_have_last = 0;
+        rcl_bdc_last_x = 0.0f;
+        rcl_bdc_last_y = 0.0f;
+        rcl_bdc_last_ms = 0;
+        return 0;
+    }
     float speed = 0.0f;
     float myRadius = 0.0f;
     float ix = 0.0f;

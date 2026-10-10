@@ -76,6 +76,8 @@ static void rcl_dodge_speed_probe(void)
 #define RCL_AD_WALL_BODY 240.0f
 #define RCL_AD_TICK_MS 16.0f
 #define RCL_AD_TICK_MAX_MS 250.0f
+#define RCL_AD_MINE_SPAWN 220.0f
+#define RCL_AD_COAST_MS 120
 #define RCL_BDC_LOCK_TICKS 8
 #define RCL_BDC_SWITCH_MARGIN 0.12f
 #define RCL_BDC_REFINE_STEP 0.35f
@@ -109,6 +111,8 @@ typedef struct
 
 static rcl_ad_hazard_t rcl_ad_hazards[RCL_AD_HAZARD_MAX];
 static int rcl_ad_mine_skipped = 0;
+static int rcl_ad_moved = 0;
+static uint64_t rcl_bdc_last_ms = 0;
 static rcl_hazard_t rcl_ad_caps[RCL_AD_CAP_MAX];
 static float rcl_ad_ring[RCL_AD_DIR_COUNT][2];
 static float rcl_ad_scores[RCL_AD_DIR_COUNT];
@@ -241,25 +245,52 @@ static float rcl_ad_traveled(const rcl_proj_t *p)
     return sqrtf(dx * dx + dy * dy);
 }
 
-static int rcl_ad_is_mine(const rcl_proj_t *p)
+static int rcl_ad_spawn_near_own(const rcl_proj_t *p, float mx, float my)
 {
-    if (!rcl_own_team_seen)
+    float sx;
+    float sy;
+    float dx;
+    float dy;
+    int i;
+    sx = p->spawnX ? (float)p->spawnX : (float)p->ownerX;
+    sy = p->spawnY ? (float)p->spawnY : (float)p->ownerY;
+    if (!sx && !sy)
     {
         return 0;
     }
-    if (p->team < 0)
-    {
-        return 0;
-    }
-    if (p->team == rcl_own_team_a)
+    dx = sx - mx;
+    dy = sy - my;
+    if (dx * dx + dy * dy <= RCL_AD_MINE_SPAWN * RCL_AD_MINE_SPAWN)
     {
         return 1;
     }
-    if (rcl_own_team_b >= 0 && p->team == rcl_own_team_b)
+    for (i = 0; i < rcl_mate_n && i < 8; i++)
     {
-        return 1;
+        dx = sx - (float)rcl_mate_x[i];
+        dy = sy - (float)rcl_mate_y[i];
+        if (dx * dx + dy * dy <= RCL_AD_MINE_SPAWN * RCL_AD_MINE_SPAWN)
+        {
+            return 1;
+        }
     }
     return 0;
+}
+
+static int rcl_ad_is_mine(const rcl_proj_t *p, float mx, float my)
+{
+    if (rcl_own_team_seen && p->team >= 0 && p->team == rcl_own_team_a)
+    {
+        return 1;
+    }
+    if (rcl_own_team_b >= 0 && p->team >= 0 && p->team == rcl_own_team_b)
+    {
+        return 1;
+    }
+    if (p->team >= 0)
+    {
+        return 0;
+    }
+    return rcl_ad_spawn_near_own(p, mx, my);
 }
 
 static float rcl_ad_seg_dist(float px, float py, float ax, float ay, float bx, float by)
@@ -448,7 +479,7 @@ static void rcl_ad_collect_7(float mx, float my, float myRadius, uint64_t nowMs)
         {
             continue;
         }
-        if (rcl_ad_is_mine(p))
+        if (rcl_ad_is_mine(p, mx, my))
         {
             rcl_ad_mine_skipped++;
             continue;
@@ -798,8 +829,19 @@ static int rcl_ad_send_move_7(float tx, float ty, float mx, float my)
     ey = (int32_t)ty;
 
     rcl_move_to(ex, ey, mx, my);
+    rcl_ad_moved = 1;
 
     return rcl_enqueue(ex, ey);
+}
+
+static void rcl_ad_release_7(float mx, float my)
+{
+    if (!rcl_ad_moved)
+    {
+        return;
+    }
+    rcl_ad_send_move_7(mx, my, mx, my);
+    rcl_ad_moved = 0;
 }
 
 #define RCL_BDC_EXTRA 12
@@ -1561,23 +1603,29 @@ static int rcl_ad_update_7(float mx, float my)
     rcl_bd_build_threats();
     if (rcl_bd_threat_n == 0)
     {
-        if (!rcl_bdc_have_last)
+        if (rcl_bdc_have_last && rcl_bdc_last_ms && now - rcl_bdc_last_ms <= RCL_AD_COAST_MS)
         {
+            rcl_ad_send_move_7(roundf(mx + rcl_bdc_last_x * RCL_AD_REACH),
+                               roundf(my + rcl_bdc_last_y * RCL_AD_REACH), mx, my);
             return 0;
         }
-        rcl_ad_send_move_7(roundf(mx + rcl_bdc_last_x * RCL_AD_REACH), roundf(my + rcl_bdc_last_y * RCL_AD_REACH), mx,
-                           my);
+        rcl_bdc_have_last = 0;
+        rcl_bdc_last_x = 0.0f;
+        rcl_bdc_last_y = 0.0f;
+        rcl_ad_release_7(mx, my);
         return 0;
     }
     rcl_bd_intent(&ix, &iy);
     rcl_bdc_pick_6(mx, my, myRadius, ix, iy, speed, &dirx, &diry);
     if (dirx == 0.0f && diry == 0.0f)
     {
+        rcl_ad_release_7(mx, my);
         return 0;
     }
     tx = roundf(mx + dirx * RCL_AD_REACH);
     ty = roundf(my + diry * RCL_AD_REACH);
     rcl_ad_send_move_7(tx, ty, mx, my);
+    rcl_bdc_last_ms = now;
     return 1;
 }
 

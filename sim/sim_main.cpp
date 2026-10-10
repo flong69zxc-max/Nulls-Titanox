@@ -972,7 +972,7 @@ static int place_away(float *x, float *y, float fromX, float fromY, float minD)
     return 0;
 }
 
-static void run_config(int nEnemies, int nMates, int mapSeed, int aiSeed, int ticks, SimMetrics *out)
+static void run_config(int nEnemies, int nMates, int mapSeed, int aiSeed, int ticks, SimMetrics *out, int mateShootsMe)
 {
     int i;
     int t;
@@ -1071,7 +1071,7 @@ static void run_config(int nEnemies, int nMates, int mapSeed, int aiSeed, int ti
             SimChar *c = &g_ch[i];
             float tx = me->x;
             float ty = me->y;
-            if (c->team == 0)
+            if (c->team == 0 && !mateShootsMe)
             {
                 int e;
                 float bestD = 1.0e9f;
@@ -1502,33 +1502,34 @@ int main(int argc, char **argv)
            RCL_BDC_TURN_MAX, RCL_AD_REACH, RCL_BDC_GAIN_MIN);
     printf("scenario,map,ai,ticks,fired,aimedTicks,hits,jerks,maxTurnDeg,walls,noInc,mateFalse,stopCmd,staleWalk,staleToward,cpuUs/tick,path,minEnemyDist\n");
     {
-        const char *names[4] = {"1v1", "1v3", "1v9", "9v9"};
-        int enemies[4] = {1, 3, 9, 9};
-        int mates[4] = {0, 0, 0, 8};
-        long totHits[4] = {0, 0, 0, 0};
-        long totFired[4] = {0, 0, 0, 0};
-        long totAimed[4] = {0, 0, 0, 0};
-        long totJerks[4] = {0, 0, 0, 0};
-        long totWalls[4] = {0, 0, 0, 0};
-        long totNoInc[4] = {0, 0, 0, 0};
-        long totMate[4] = {0, 0, 0, 0};
-        long totToward[4] = {0, 0, 0, 0};
-        long totStale[4] = {0, 0, 0, 0};
-        long totStaleTow[4] = {0, 0, 0, 0};
-        long totStop[4] = {0, 0, 0, 0};
-        double totTurn[4] = {0, 0, 0, 0};
-        double totCpu[4] = {0, 0, 0, 0};
-        double totPath[4] = {0, 0, 0, 0};
-        long totTicks[4] = {0, 0, 0, 0};
-        double worstMinDist[4] = {1e9, 1e9, 1e9, 1e9};
-        for (s = 0; s < 4; s++)
+        const char *names[5] = {"1v1", "1v3", "1v9", "9v9", "own-fire"};
+        int enemies[5] = {1, 3, 9, 9, 0};
+        int mates[5] = {0, 0, 0, 8, 8};
+        int mateToMe[5] = {0, 0, 0, 0, 1};
+        long totHits[5] = {0, 0, 0, 0};
+        long totFired[5] = {0, 0, 0, 0};
+        long totAimed[5] = {0, 0, 0, 0};
+        long totJerks[5] = {0, 0, 0, 0};
+        long totWalls[5] = {0, 0, 0, 0};
+        long totNoInc[5] = {0, 0, 0, 0};
+        long totMate[5] = {0, 0, 0, 0};
+        long totToward[5] = {0, 0, 0, 0};
+        long totStale[5] = {0, 0, 0, 0};
+        long totStaleTow[5] = {0, 0, 0, 0};
+        long totStop[5] = {0, 0, 0, 0};
+        double totTurn[5] = {0, 0, 0, 0, 0};
+        double totCpu[5] = {0, 0, 0, 0, 0};
+        double totPath[5] = {0, 0, 0, 0, 0};
+        long totTicks[5] = {0, 0, 0, 0};
+        double worstMinDist[5] = {1e9, 1e9, 1e9, 1e9, 1e9};
+        for (s = 0; s < 5; s++)
         {
             for (mi = 0; mi < 3; mi++)
             {
                 for (ai = 0; ai < 3; ai++)
                 {
                     SimMetrics m;
-                    run_config(enemies[s], mates[s], maps[mi], ais[ai], ticks, &m);
+                    run_config(enemies[s], mates[s], maps[mi], ais[ai], ticks, &m, mateToMe[s]);
                     printf("%s,%d,%d,%ld,%ld,%ld,%ld,%ld,%.1f,%ld,%ld,%ld,%ld,%ld,%ld,%.6f,%.0f,%.0f\n", names[s], maps[mi], ais[ai],
                            m.ticks, m.fired, m.aimedTicks, m.hits, m.jerks, m.maxTurn, m.wallTicks, m.noInc, m.mateFalse, m.stopCmd,
                            m.staleWalk, m.staleToward, m.cpuUs / (double)(m.ticks > 0 ? m.ticks : 1), m.path, m.minEnemyDist);
@@ -1558,7 +1559,7 @@ int main(int argc, char **argv)
             }
         }
         printf("\nscenario,ticks,fired,aimedTicks,hits,jerks,maxTurnDeg,walls,noInc,mateFalse,stopCmd,staleWalk,staleToward,cpuUs/tick,path,worstMinEnemyDist\n");
-        for (s = 0; s < 4; s++)
+        for (s = 0; s < 5; s++)
         {
             printf("%s,%ld,%ld,%ld,%ld,%ld,%.1f,%ld,%ld,%ld,%ld,%ld,%ld,%.6f,%.0f,%.0f\n", names[s], totTicks[s], totFired[s], totAimed[s], totHits[s],
                    totJerks[s], totTurn[s], totWalls[s], totNoInc[s], totMate[s], totStop[s], totStale[s], totStaleTow[s],

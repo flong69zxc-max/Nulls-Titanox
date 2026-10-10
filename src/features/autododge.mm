@@ -489,7 +489,7 @@ static void rcl_ad_collect(float mx, float my, float myRadius, uint64_t nowMs)
         {
             continue;
         }
-        if (rcl_ad_is_mine(p, mx, my) && !rcl_ad_crosses_me(p, mx, my, bodyR))
+        if (rcl_ad_is_mine(p, mx, my) && (p->team >= 0 || !rcl_ad_crosses_me(p, mx, my, bodyR)))
         {
             continue;
         }

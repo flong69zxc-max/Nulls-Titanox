@@ -11,4 +11,3 @@ derived/
 *.log
 *.patch
 out/
-tools/dodgesim/build/

@@ -66,8 +66,38 @@ static float rcl_dp_time(uint64_t spawned_at, uint64_t now_ms)
     return (float)(spawned_at ? spawned_at : now_ms);
 }
 
+static int rcl_cross_arms(rcl_hazard_t *out, int max_out, const char *name, float cx, float cy, float arm,
+                          float radius, float t0, float t1, int diagonal)
+{
+    static const float diag = 0.70710678f;
+    int n = 0;
+    int k;
+    for (k = 0; k < 2; k++)
+    {
+        float dx = 0.0f;
+        float dy = 0.0f;
+        if (n >= max_out)
+        {
+            break;
+        }
+        if (diagonal)
+        {
+            dx = diag;
+            dy = (k == 0) ? diag : -diag;
+        }
+        else
+        {
+            dx = (k == 0) ? 1.0f : 0.0f;
+            dy = (k == 0) ? 0.0f : 1.0f;
+        }
+        rcl_hz_seg(&out[n], name, cx - dx * arm, cy - dy * arm, cx + dx * arm, cy + dy * arm, radius, t0, t1);
+        n++;
+    }
+    return n;
+}
+
 static int rcl_cross_profile(const rcl_proj_t *p, uint64_t now_ms, rcl_hazard_t *out, int max_out,
-                             const rcl_cross_spec_t *spec)
+                             const rcl_cross_spec_t *spec, int diagonal)
 {
     float arm_length = spec->spawn_offset + spec->child_travel;
     float burst_life = spec->child_travel / spec->child_speed * 1000.0f;
@@ -76,7 +106,12 @@ static int rcl_cross_profile(const rcl_proj_t *p, uint64_t now_ms, rcl_hazard_t 
     float land_at = 0.0f;
     float t0 = 0.0f;
     float t1 = 0.0f;
-    int n = 0;
+    if (cx == 0.0f && cy == 0.0f)
+    {
+        float flight_s = spec->flight_time_ms / 1000.0f;
+        cx = (float)p->spawnX + p->vx * flight_s;
+        cy = (float)p->spawnY + p->vy * flight_s;
+    }
     if (cx == 0.0f || cy == 0.0f)
     {
         return 0;
@@ -88,17 +123,7 @@ static int rcl_cross_profile(const rcl_proj_t *p, uint64_t now_ms, rcl_hazard_t 
     land_at = rcl_dp_time(p->spawnedAt, now_ms) + spec->flight_time_ms;
     t0 = land_at - RCL_DP_TICK_MS;
     t1 = land_at + burst_life + RCL_DP_TICK_MS;
-    if (n < max_out)
-    {
-        rcl_hz_seg(&out[n], p->name, cx - arm_length, cy, cx + arm_length, cy, spec->child_radius, t0, t1);
-        n++;
-    }
-    if (n < max_out)
-    {
-        rcl_hz_seg(&out[n], p->name, cx, cy - arm_length, cx, cy + arm_length, spec->child_radius, t0, t1);
-        n++;
-    }
-    return n;
+    return rcl_cross_arms(out, max_out, p->name, cx, cy, arm_length, spec->child_radius, t0, t1, diagonal);
 }
 
 static void rcl_spike_endpoint(const rcl_proj_t *p, float *ex, float *ey, float *edist)
@@ -202,11 +227,21 @@ int rcl_shape_hazards(const rcl_proj_t *p, uint64_t now_ms, rcl_hazard_t *out, i
     }
     if (strcmp(p->name, "CrossBomberProjectile") == 0)
     {
-        return rcl_cross_profile(p, now_ms, out, max_out, &cross_bomber);
+        return rcl_cross_profile(p, now_ms, out, max_out, &cross_bomber, 0);
     }
     if (strcmp(p->name, "CrossBomberUltiProjectile") == 0)
     {
-        return rcl_cross_profile(p, now_ms, out, max_out, &cross_ulti);
+        return rcl_cross_profile(p, now_ms, out, max_out, &cross_ulti, 0);
+    }
+    if (strcmp(p->name, "OverchargedCrossBomberUltiProjectile") == 0)
+    {
+        int n = rcl_cross_profile(p, now_ms, out, max_out, &cross_ulti, 0);
+        n += rcl_cross_profile(p, now_ms, out + n, max_out - n, &cross_ulti, 1);
+        return n;
+    }
+    if (strcmp(p->name, "MegaBossCrossBomberSecondProjectile") == 0)
+    {
+        return rcl_cross_profile(p, now_ms, out, max_out, &cross_ulti, 0);
     }
     if (strcmp(p->name, "CactusProjectile") == 0)
     {

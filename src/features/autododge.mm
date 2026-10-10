@@ -120,6 +120,7 @@ static float rcl_ad_ring[RCL_AD_DIR_COUNT][2];
 static int rcl_ad_dir_built = 0;
 static int rcl_ad_hazard_n = 0;
 
+#define RCL_BD_SEG_SAMPLES 4
 #define RCL_BD_SAFETY_MARGIN 31.0f
 #define RCL_BDC_HIT_GATE 1.15f
 #define RCL_BD_T_FIELD 1.8f
@@ -717,8 +718,13 @@ static void rcl_bd_build_threats(void)
         float vy = 0.0f;
         if (h->has_segment)
         {
-            rcl_bd_push_style(h->ax, h->ay, 0.0f, 0.0f, h->rad, h->hitr, 0, h->style, 0.0f, h->boom);
-            rcl_bd_push_style(h->bx, h->by, 0.0f, 0.0f, h->rad, h->hitr, 0, h->style, 0.0f, h->boom);
+            int k;
+            for (k = 0; k <= RCL_BD_SEG_SAMPLES; k++)
+            {
+                float f = (float)k / (float)RCL_BD_SEG_SAMPLES;
+                rcl_bd_push_style(h->ax + (h->bx - h->ax) * f, h->ay + (h->by - h->ay) * f, 0.0f, 0.0f, h->rad, h->hitr, 0,
+                                  h->style, 0.0f, h->boom);
+            }
             continue;
         }
         rcl_ad_fade_vel(h, 0.0f, &vx, &vy);

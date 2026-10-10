@@ -129,7 +129,6 @@ static int rcl_ad_hazard_n = 0;
 #define RCL_BDC_HOLD_MAX 2
 #define RCL_BDC_TURN_DOT 0.62f
 #define RCL_BDC_TURN_FENCE 1.35f
-#define RCL_BDC_IDLE_MOVE 0
 #define RCL_BDC_DANGER_R 1.75f
 #define RCL_BDC_ALONG_HIT 120000.0f
 #define RCL_BDC_HIT_GATE 1.15f
@@ -840,9 +839,14 @@ static int rcl_ad_send_move_7(float tx, float ty, float mx, float my)
 #define RCL_BDC_TIE 1.05f
 #define RCL_BDC_WALL_HIT 200000.0f
 #define RCL_BDC_WALL_BAND 170.0f
+#define RCL_BDC_OPEN_W 420000.0f
+#define RCL_BDC_OPEN_BAND 700.0f
 #define RCL_BDC_WALL_PROBE 3
 #define RCL_BDC_EXTRA_BLEND 120.0f
 #define RCL_BDC_HIT_GATE 1.15f
+#define RCL_BDC_SEL_MAX 12
+#define RCL_BDC_RELEVANT_D2 1400.0f
+#define RCL_BDC_RELEVANT_GATE 1.60f
 #define RCL_BDC_FAR 1.0e18f
 #define RCL_BDC_EPS 1.0f
 #define RCL_BDC_ROLL_STEPS_2 5
@@ -1217,6 +1221,58 @@ static float rcl_bd_refine_6(float mx, float my, float myR, float speed, float d
     return best;
 }
 
+static int rcl_bdc_relevant_6(const rcl_bd_threat_t *p, float mx, float my, float myR)
+{
+    float dx = p->x - mx;
+    float dy = p->y - my;
+    float d2 = dx * dx + dy * dy;
+    float tHit = 0.0f;
+    float hit2 = 0.0f;
+    float r = 0.0f;
+    if (rcl_bdc_aimed_one(p, mx, my, myR))
+    {
+        return 1;
+    }
+    if (d2 <= RCL_BDC_RELEVANT_D2 * RCL_BDC_RELEVANT_D2)
+    {
+        return 1;
+    }
+    hit2 = rcl_bd_impact_d2(p, mx, my, &tHit);
+    if (tHit < 0.0f)
+    {
+        return 0;
+    }
+    r = rcl_bdc_danger_r_6(p, myR) * RCL_BDC_RELEVANT_GATE;
+    return hit2 <= r * r;
+}
+
+static void rcl_bdc_sel_trim_6(int *sel, int *n, float mx, float my)
+{
+    int j;
+    while (*n > RCL_BDC_SEL_MAX)
+    {
+        int worst = 0;
+        float wd = -1.0f;
+        for (j = 0; j < *n; j++)
+        {
+            const rcl_bd_threat_t *p = &rcl_bd_threats[sel[j]];
+            float dx = p->x - mx;
+            float dy = p->y - my;
+            float d2 = dx * dx + dy * dy;
+            if (d2 > wd)
+            {
+                wd = d2;
+                worst = j;
+            }
+        }
+        for (j = worst; j + 1 < *n; j++)
+        {
+            sel[j] = sel[j + 1];
+        }
+        (*n)--;
+    }
+}
+
 static void rcl_bdc_pick_6(float mx, float my, float myR, float ix, float iy, float speed, float *ox, float *oy)
 {
     rcl_bd_pre_2(mx, my, myR);
@@ -1243,21 +1299,27 @@ static void rcl_bdc_pick_6(float mx, float my, float myR, float ix, float iy, fl
     rcl_bdc_sel_n = 0;
     for (i = 0; i < rcl_bd_threat_n; i++)
     {
-        if (rcl_bdc_aimed_one(&rcl_bd_threats[i], mx, my, myR))
+        if (rcl_bdc_relevant_6(&rcl_bd_threats[i], mx, my, myR))
         {
             rcl_bdc_sel[rcl_bdc_sel_n] = i;
             rcl_bdc_sel_n++;
         }
     }
+    rcl_bdc_sel_trim_6(rcl_bdc_sel, &rcl_bdc_sel_n, mx, my);
     if (rcl_bdc_sel_n == 0)
     {
-        if (!RCL_BDC_IDLE_MOVE)
+        if (rcl_bd_threat_n == 0)
         {
             *ox = 0.0f;
             *oy = 0.0f;
             rcl_bdc_have_last = 0;
             rcl_bdc_idle++;
             return;
+        }
+        for (i = 0; i < rcl_bd_threat_n && rcl_bdc_sel_n < RCL_BD_THREAT_MAX; i++)
+        {
+            rcl_bdc_sel[rcl_bdc_sel_n] = i;
+            rcl_bdc_sel_n++;
         }
         if (!hasRef && rcl_bd_threat_n > 0)
         {
@@ -1347,7 +1409,10 @@ static void rcl_bdc_pick_6(float mx, float my, float myR, float ix, float iy, fl
     {
         rcl_bdc_wallc_6[i] = rcl_bdc_wall_cost(mx, my, rcl_bdc_dirs_6[i][0], rcl_bdc_dirs_6[i][1]);
         rcl_bdc_scores_6[i] =
-            rcl_bdc_score_dir_6(rcl_bdc_dirs_6[i][0], rcl_bdc_dirs_6[i][1], mx, my, myR, speed) + rcl_bdc_wallc_6[i];
+            rcl_bdc_score_dir_6(rcl_bdc_dirs_6[i][0], rcl_bdc_dirs_6[i][1], mx, my, myR, speed) + rcl_bdc_wallc_6[i] -
+            RCL_BDC_OPEN_W * (rcl_wall_trace(mx, my, rcl_bdc_dirs_6[i][0], rcl_bdc_dirs_6[i][1], RCL_BDC_OPEN_BAND,
+                                            RCL_WALL_BLOCKS_MOVEMENT) /
+                              RCL_BDC_OPEN_BAND);
         rcl_bdc_impacts_6[i] = rcl_bdc_impact_dir_6(rcl_bdc_dirs_6[i][0], rcl_bdc_dirs_6[i][1], mx, my, myR, speed);
         if (rcl_bdc_wallc_6[i] < RCL_BDC_WALL_HIT && (freeBest < 0 || rcl_bdc_scores_6[i] < bestScore))
         {

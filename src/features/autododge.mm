@@ -77,7 +77,7 @@ static void rcl_dodge_speed_probe(void)
 #define RCL_AD_TICK_MS 16.0f
 #define RCL_AD_TICK_MAX_MS 250.0f
 #define RCL_AD_MINE_SPAWN 220.0f
-#define RCL_AD_COAST_MS 120
+#define RCL_AD_ESCAPE_MS 900
 #define RCL_BDC_LOCK_TICKS 8
 #define RCL_BDC_SWITCH_MARGIN 0.12f
 #define RCL_BDC_REFINE_STEP 0.35f
@@ -111,7 +111,6 @@ typedef struct
 
 static rcl_ad_hazard_t rcl_ad_hazards[RCL_AD_HAZARD_MAX];
 static int rcl_ad_mine_skipped = 0;
-static int rcl_ad_moved = 0;
 static uint64_t rcl_bdc_last_ms = 0;
 static rcl_hazard_t rcl_ad_caps[RCL_AD_CAP_MAX];
 static float rcl_ad_ring[RCL_AD_DIR_COUNT][2];
@@ -829,19 +828,8 @@ static int rcl_ad_send_move_7(float tx, float ty, float mx, float my)
     ey = (int32_t)ty;
 
     rcl_move_to(ex, ey, mx, my);
-    rcl_ad_moved = 1;
 
     return rcl_enqueue(ex, ey);
-}
-
-static void rcl_ad_release_7(float mx, float my)
-{
-    if (!rcl_ad_moved)
-    {
-        return;
-    }
-    rcl_ad_send_move_7(mx, my, mx, my);
-    rcl_ad_moved = 0;
 }
 
 #define RCL_BDC_EXTRA 12
@@ -1603,7 +1591,7 @@ static int rcl_ad_update_7(float mx, float my)
     rcl_bd_build_threats();
     if (rcl_bd_threat_n == 0)
     {
-        if (rcl_bdc_have_last && rcl_bdc_last_ms && now - rcl_bdc_last_ms <= RCL_AD_COAST_MS)
+        if (rcl_bdc_have_last && rcl_bdc_last_ms && now - rcl_bdc_last_ms <= RCL_AD_ESCAPE_MS)
         {
             rcl_ad_send_move_7(roundf(mx + rcl_bdc_last_x * RCL_AD_REACH),
                                roundf(my + rcl_bdc_last_y * RCL_AD_REACH), mx, my);
@@ -1612,14 +1600,17 @@ static int rcl_ad_update_7(float mx, float my)
         rcl_bdc_have_last = 0;
         rcl_bdc_last_x = 0.0f;
         rcl_bdc_last_y = 0.0f;
-        rcl_ad_release_7(mx, my);
         return 0;
     }
     rcl_bd_intent(&ix, &iy);
     rcl_bdc_pick_6(mx, my, myRadius, ix, iy, speed, &dirx, &diry);
     if (dirx == 0.0f && diry == 0.0f)
     {
-        rcl_ad_release_7(mx, my);
+        if (rcl_bdc_have_last && rcl_bdc_last_ms && now - rcl_bdc_last_ms <= RCL_AD_ESCAPE_MS)
+        {
+            rcl_ad_send_move_7(roundf(mx + rcl_bdc_last_x * RCL_AD_REACH),
+                               roundf(my + rcl_bdc_last_y * RCL_AD_REACH), mx, my);
+        }
         return 0;
     }
     tx = roundf(mx + dirx * RCL_AD_REACH);

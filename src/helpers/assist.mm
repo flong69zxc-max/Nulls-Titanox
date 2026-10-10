@@ -7,7 +7,7 @@ static int32_t rcl_assist_vel_y = 0;
 static uint64_t rcl_assist_vel_ms = 0;
 static float rcl_assist_seen_vx = 0.0f;
 static float rcl_assist_seen_vy = 0.0f;
-static uint64_t rcl_assist_fire_ms = 0;
+static uint64_t rcl_assist_shot_ms = 0;
 
 void rcl_assist_reset(void)
 {
@@ -16,7 +16,7 @@ void rcl_assist_reset(void)
     rcl_assist_vel_ms = 0;
     rcl_assist_seen_vx = 0.0f;
     rcl_assist_seen_vy = 0.0f;
-    rcl_assist_fire_ms = 0;
+    rcl_assist_shot_ms = 0;
 }
 
 static uint64_t rcl_assist_now(void)
@@ -24,55 +24,13 @@ static uint64_t rcl_assist_now(void)
     return (uint64_t)(CFAbsoluteTimeGetCurrent() * 1000.0);
 }
 
-uintptr_t rcl_assist_battle(uintptr_t screen)
-{
-    uintptr_t fn = 0;
-    void *battle = nullptr;
-    if (!screen)
-    {
-        return 0;
-    }
-    fn = rcl_entry_2(RCL_GETBATTLE_RVA);
-    if (!fn)
-    {
-        return 0;
-    }
-    battle = ((void *(*)(void *))fn)((void *)screen);
-    if (!rcl_object_plausible(battle))
-    {
-        return 0;
-    }
-    return (uintptr_t)battle;
-}
-
-uintptr_t rcl_assist_own(uintptr_t battle)
-{
-    uintptr_t fn = 0;
-    void *own = nullptr;
-    if (!battle)
-    {
-        return 0;
-    }
-    fn = rcl_entry_2(RVA_LOGICBATTLEMODECLIENT_GETOWNCHARACTER);
-    if (!fn)
-    {
-        return 0;
-    }
-    own = ((void *(*)(void *))fn)((void *)battle);
-    if (!rcl_object_plausible(own))
-    {
-        return 0;
-    }
-    return (uintptr_t)own;
-}
-
-uintptr_t rcl_assist_elem(uintptr_t own)
+uintptr_t rcl_assist_own(void)
 {
     if (rcl_own_elem && rcl_object_plausible((void *)rcl_own_elem))
     {
         return rcl_own_elem;
     }
-    return own;
+    return 0;
 }
 
 void *rcl_assist_skill(uintptr_t elem)
@@ -153,8 +111,8 @@ int rcl_assist_speed(uintptr_t elem, const char *code)
     const rcl_aim_ahead_t *row = nullptr;
     int32_t speed = 0;
     if (skill && rcl_read_ptr((uintptr_t)skill + (uintptr_t)OFF_SKILLDATA_PROJECTILES, &list) && list &&
-        rcl_pointer_plausible((uintptr_t)list) && rcl_read_ptr((uintptr_t)list, &projectile) && projectile &&
-        rcl_pointer_plausible((uintptr_t)projectile) &&
+        rcl_pointer_plausible((uintptr_t)list) && rcl_read_ptr((uintptr_t)list, &projectile) &&
+        projectile && rcl_pointer_plausible((uintptr_t)projectile) &&
         rcl_read_int((uintptr_t)projectile + (uintptr_t)OFF_PROJECTILEDATA_SPEED, &speed))
     {
         if (speed >= RCL_ASSIST_SPEED_MIN && speed <= RCL_ASSIST_SPEED_MAX)
@@ -164,6 +122,20 @@ int rcl_assist_speed(uintptr_t elem, const char *code)
     }
     row = code ? rcl_aim_ahead_of(code) : nullptr;
     return row ? row->shotSpeed : 0;
+}
+
+static int rcl_assist_chain_ok(uintptr_t elem)
+{
+    void *skill = rcl_assist_skill(elem);
+    if (!skill)
+    {
+        return 0;
+    }
+    if (rcl_assist_linked(skill))
+    {
+        return 0;
+    }
+    return rcl_assist_range(elem, nullptr) > 0;
 }
 
 static const char *rcl_assist_code(void)
@@ -208,17 +180,17 @@ static int rcl_assist_reachable(const rcl_obj_t *object, int32_t myX, int32_t my
     return rcl_wall_los((float)myX, (float)myY, (float)object->x, (float)object->y, RCL_WALL_BLOCKS_PROJECTILES);
 }
 
-int rcl_assist_pick(uintptr_t battle, uintptr_t elem, int32_t myX, int32_t myY, int range, rcl_assist_target_t *out)
+int rcl_assist_pick(uintptr_t elem, int32_t myX, int32_t myY, int range, rcl_assist_target_t *out)
 {
     rcl_obj_t objects[RCL_ASSIST_TARGET_MAX];
-    void *manager = nullptr;
+    uintptr_t manager = rcl_manager_ptr ? rcl_manager_ptr : rcl_players_object;
     int usable = 0;
     int i = 0;
     int stickyRange = range + RCL_ASSIST_STICKY;
     float limit = (float)range * (float)range;
     float best = 0.0f;
     int found = 0;
-    if (!battle || !out || range <= 0)
+    if (!out || range <= 0 || !manager)
     {
         return 0;
     }
@@ -226,11 +198,7 @@ int rcl_assist_pick(uintptr_t battle, uintptr_t elem, int32_t myX, int32_t myY, 
     {
         return 0;
     }
-    if (!rcl_read_ptr(battle + (uintptr_t)RCL_MODE_MANAGER_OFF, &manager) || !manager)
-    {
-        return 0;
-    }
-    usable = rcl_collect((uintptr_t)manager, objects, RCL_ASSIST_TARGET_MAX);
+    usable = rcl_collect(manager, objects, RCL_ASSIST_TARGET_MAX);
     if (usable <= 0)
     {
         return 0;
@@ -308,59 +276,38 @@ int rcl_assist_pick(uintptr_t battle, uintptr_t elem, int32_t myX, int32_t myY, 
 
 int rcl_assist_aim(uintptr_t screen, int32_t aimX, int32_t aimY)
 {
-    int32_t px = aimX;
-    int32_t py = aimY;
+    uintptr_t fireX = 0;
+    uintptr_t fireY = 0;
     if (!screen)
     {
         return 0;
     }
-    if (!rcl_addr_writable(screen + (uintptr_t)OFF_BATTLESCREEN_AIMX, 4))
+    fireX = screen + (uintptr_t)OFF_BATTLESCREEN_AUTOFIREX;
+    fireY = screen + (uintptr_t)OFF_BATTLESCREEN_AUTOFIREY;
+    if (!rcl_addr_writable(fireX, 4) || !rcl_addr_writable(fireY, 4))
     {
         return 0;
     }
-    if (!rcl_addr_writable(screen + (uintptr_t)OFF_BATTLESCREEN_AIMY, 4))
+    if (!rcl_write_bytes(fireX, &aimX, sizeof(aimX)))
     {
         return 0;
     }
-    if (!rcl_write_bytes(screen + (uintptr_t)OFF_BATTLESCREEN_AIMX, &px, sizeof(px)))
+    if (!rcl_write_bytes(fireY, &aimY, sizeof(aimY)))
     {
         return 0;
     }
-    if (!rcl_write_bytes(screen + (uintptr_t)OFF_BATTLESCREEN_AIMY, &py, sizeof(py)))
-    {
-        return 0;
-    }
-    return 1;
-}
-
-int rcl_assist_fire(uintptr_t screen, uintptr_t own, int32_t fireX, int32_t fireY)
-{
-    uintptr_t fn = 0;
-    if (!screen || !own)
-    {
-        return 0;
-    }
-    fn = rcl_entry_2(RVA_BATTLESCREEN_FIREWRAPPER);
-    if (!fn)
-    {
-        return 0;
-    }
-    if (!rcl_assist_aim(screen, fireX, fireY))
-    {
-        return 0;
-    }
-    ((int (*)(void *, void *))fn)((void *)screen, (void *)own);
     return 1;
 }
 
 int rcl_assist_cast(uintptr_t elem, int32_t dx, int32_t dy)
 {
-    void *skill = rcl_assist_skill(elem);
-    if (!skill)
+    void *skill = nullptr;
+    if (!rcl_assist_chain_ok(elem))
     {
         return 0;
     }
-    if (rcl_assist_linked(skill))
+    skill = rcl_assist_skill(elem);
+    if (!skill)
     {
         return 0;
     }
@@ -421,8 +368,6 @@ static float rcl_assist_intercept(float px, float py, float vx, float vy, float 
 void rcl_run_assist(void)
 {
     uintptr_t screen = 0;
-    uintptr_t battle = 0;
-    uintptr_t own = 0;
     uintptr_t elem = 0;
     const char *code = nullptr;
     rcl_assist_target_t target;
@@ -441,29 +386,14 @@ void rcl_run_assist(void)
         return;
     }
     screen = rcl_controller();
-    if (!screen)
-    {
-        return;
-    }
-    battle = rcl_assist_battle(screen);
-    if (!battle)
-    {
-        return;
-    }
-    own = rcl_assist_own(battle);
-    elem = rcl_assist_elem(own);
-    if (!elem)
+    elem = rcl_assist_own();
+    if (!screen || !elem)
     {
         return;
     }
     if (!rcl_own(&myX, &myY))
     {
-        if (!own || !rcl_addr_getx || !rcl_addr_gety)
-        {
-            return;
-        }
-        myX = ((fn_get_coord_t)rcl_addr_getx)((void *)own);
-        myY = ((fn_get_coord_t)rcl_addr_gety)((void *)own);
+        return;
     }
     if (myX < (int32_t)-RCL_ASSIST_COORD_MAX || myX > (int32_t)RCL_ASSIST_COORD_MAX ||
         myY < (int32_t)-RCL_ASSIST_COORD_MAX || myY > (int32_t)RCL_ASSIST_COORD_MAX)
@@ -473,17 +403,13 @@ void rcl_run_assist(void)
     code = rcl_assist_code();
     range = rcl_assist_range(elem, code);
     memset(&target, 0, sizeof(target));
-    if (!rcl_assist_pick(battle, elem, myX, myY, range, &target))
+    if (!rcl_assist_pick(elem, myX, myY, range, &target))
     {
         rcl_assist_reset();
         return;
     }
     speed = rcl_assist_speed(elem, code);
     interval = rcl_assist_interval(elem);
-    if (interval < RCL_ASSIST_FIRE_GAP)
-    {
-        interval = RCL_ASSIST_FIRE_GAP;
-    }
     now = rcl_assist_now();
     rcl_assist_velocity(target.object, target.x, target.y, now);
     leadX = (float)(target.x - myX);
@@ -507,13 +433,10 @@ void rcl_run_assist(void)
         return;
     }
     rcl_assist_aim(screen, fireX, fireY);
-    if (rcl_assist_fire_ms && (now - rcl_assist_fire_ms) < (uint64_t)interval)
+    if (rcl_assist_shot_ms && (now - rcl_assist_shot_ms) < (uint64_t)interval)
     {
         return;
     }
     rcl_assist_cast(elem, fireX - myX, fireY - myY);
-    if (rcl_assist_fire(screen, own, fireX, fireY))
-    {
-        rcl_assist_fire_ms = now;
-    }
+    rcl_assist_shot_ms = now;
 }
